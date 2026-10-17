@@ -17,6 +17,13 @@ defmodule Handbeam.RepoIdentity do
           required(:checkout_path) => String.t()
         }
 
+  @type checkout :: %{
+          required(:path) => String.t(),
+          required(:branch) => String.t() | nil,
+          required(:detached?) => boolean(),
+          required(:main?) => boolean()
+        }
+
   @spec resolve(Path.t()) :: {:ok, identity()} | {:error, term()}
   def resolve(path) when is_binary(path) do
     expanded = Path.expand(path)
@@ -28,6 +35,27 @@ defmodule Handbeam.RepoIdentity do
   end
 
   def resolve(_path), do: {:error, :invalid_path}
+
+  @doc """
+  List readable checkouts for a selected directory.
+
+  A plain directory returns itself. A Git repository returns its linked
+  worktrees, excluding Handbeam-managed subagent worktrees.
+  """
+  @spec list_checkouts(Path.t()) :: {:ok, [checkout()]} | {:error, term()}
+  def list_checkouts(path) when is_binary(path) do
+    with {:ok, identity} <- resolve(path) do
+      case identity.kind do
+        :directory ->
+          {:ok, [checkout_entry(identity.checkout_path, nil, false, true)]}
+
+        :git ->
+          list_git_checkouts(path, identity)
+      end
+    end
+  end
+
+  def list_checkouts(_path), do: {:error, :invalid_path}
 
   @doc "Canonicalize and validate an existing, readable directory."
   @spec canonical_directory(Path.t()) :: {:ok, String.t()} | {:error, term()}
@@ -122,31 +150,108 @@ defmodule Handbeam.RepoIdentity do
     end
   end
 
-  defp parse_main_worktree(output) do
-    blocks =
-      output
-      |> String.trim()
-      |> String.split(~r/\n\s*\n/, trim: true)
+  defp list_git_checkouts(git_cwd, identity) do
+    fallback = [checkout_entry(identity.checkout_path, nil, false, true)]
 
-    paths =
-      Enum.map(blocks, fn block ->
-        block
-        |> String.split("\n", trim: true)
-        |> Enum.find_value(fn
-          "worktree " <> path -> String.trim(path)
-          _line -> nil
-        end)
+    case Detect.resolve_executable() do
+      {:ok, executable} ->
+        case run(executable, git_cwd, ["worktree", "list", "--porcelain"]) do
+          {:ok, output} ->
+            {:ok, parse_checkout_list(output, fallback)}
+
+          {:error, _reason} ->
+            {:ok, fallback}
+        end
+
+      {:error, _reason} ->
+        {:ok, fallback}
+    end
+  end
+
+  defp parse_checkout_list(output, fallback) do
+    checkouts =
+      output
+      |> parse_worktree_blocks()
+      |> Enum.with_index()
+      |> Enum.flat_map(fn {block, index} ->
+        case checkout_from_block(block, index == 0) do
+          {:ok, checkout} -> [checkout]
+          :skip -> []
+        end
       end)
 
-    case paths do
-      [main | _] when is_binary(main) and main != "" ->
-        if Enum.all?(paths, &is_binary/1) and Enum.uniq(paths) == paths,
-          do: {:ok, main},
-          else: {:error, :malformed_worktree_list}
+    if checkouts == [], do: fallback, else: Enum.uniq_by(checkouts, & &1.path)
+  end
+
+  defp checkout_from_block(block, main?) do
+    with path when is_binary(path) <- block.path,
+         :ok <- reject_managed_worktree(path),
+         {:ok, canonical} <- canonical_directory(path) do
+      {:ok, checkout_entry(canonical, block.branch, block.detached?, main?)}
+    else
+      _ -> :skip
+    end
+  end
+
+  defp checkout_entry(path, branch, detached?, main?) do
+    %{path: path, branch: branch, detached?: detached?, main?: main?}
+  end
+
+  defp parse_main_worktree(output) do
+    case parse_worktree_blocks(output) do
+      [%{path: main} | rest] when is_binary(main) and main != "" ->
+        paths = [main | Enum.map(rest, & &1.path)]
+
+        if Enum.all?(paths, &(is_binary(&1) and &1 != "")) and Enum.uniq(paths) == paths do
+          {:ok, main}
+        else
+          {:error, :malformed_worktree_list}
+        end
 
       _ ->
         {:error, :malformed_worktree_list}
     end
+  end
+
+  defp parse_worktree_blocks(output) do
+    output
+    |> String.trim()
+    |> String.split(~r/\n\s*\n/, trim: true)
+    |> Enum.map(&parse_worktree_block/1)
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp parse_worktree_block(block) do
+    lines = String.split(block, "\n", trim: true)
+
+    path =
+      Enum.find_value(lines, fn
+        "worktree " <> path -> String.trim(path)
+        _line -> nil
+      end)
+
+    cond do
+      not is_binary(path) or path == "" ->
+        nil
+
+      Enum.any?(lines, &(&1 == "bare")) ->
+        nil
+
+      true ->
+        %{
+          path: path,
+          branch: worktree_branch(lines),
+          detached?: Enum.any?(lines, &(&1 == "detached"))
+        }
+    end
+  end
+
+  defp worktree_branch(lines) do
+    Enum.find_value(lines, fn
+      "branch refs/heads/" <> name -> String.trim(name)
+      "branch " <> ref -> String.trim(ref)
+      _line -> nil
+    end)
   end
 
   defp command_value(output) do

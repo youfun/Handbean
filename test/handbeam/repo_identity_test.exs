@@ -45,6 +45,18 @@ defmodule Handbeam.RepoIdentityTest do
     assert main.repo_key == worktree.repo_key
     assert main.workspace_path == worktree.workspace_path
     refute main.checkout_path == worktree.checkout_path
+
+    assert {:ok, checkouts} = RepoIdentity.list_checkouts(root)
+    assert Enum.map(checkouts, & &1.path) == [main.checkout_path, worktree.checkout_path]
+    assert hd(checkouts).main?
+    refute List.last(checkouts).main?
+    assert List.last(checkouts).branch == "feature"
+  end
+
+  test "plain directory lists a single checkout", %{root: root} do
+    assert {:ok, [checkout]} = RepoIdentity.list_checkouts(root)
+    assert checkout.path == Handbeam.Security.PathValidator.resolve_symlink(root)
+    assert checkout.main?
   end
 
   test "independent clones remain distinct", %{root: root} do

@@ -173,6 +173,7 @@ defmodule HandbeamWeb.WorkspaceLive.SidebarComponents do
   attr :chat_scope, :any, required: true
   attr :collapsed_workspace_ids, :any, required: true
   attr :conversation_menu_id, :any, required: true
+  attr :checkout_picker, :any, default: nil
   attr :conversations_by_workspace, :any, required: true
   attr :current_conversation_id, :any, required: true
   attr :current_workspace_id, :any, required: true
@@ -539,21 +540,11 @@ defmodule HandbeamWeb.WorkspaceLive.SidebarComponents do
             </button>
             <span class="workspace-title-rule" aria-hidden="true"></span>
             <div class="workspace-row-actions">
-              <button
-                phx-click="new_conversation_in_workspace"
-                phx-value-ws_id={ws["id"]}
-                class="workspace-add-btn flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-tertiary hover:text-primary hover:bg-surface-hover transition-colors"
-                title={gettext("在此工作区新建对话")}
-              >
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                  <path
-                    d="M6 1v10M1 6h10"
-                    stroke="currentColor"
-                    stroke-width="1.5"
-                    stroke-linecap="round"
-                  />
-                </svg>
-              </button>
+              <.checkout_picker
+                workspace_id={ws["id"]}
+                picker={@checkout_picker}
+                source={:sidebar}
+              />
             </div>
             <button
               type="button"
@@ -1048,6 +1039,89 @@ defmodule HandbeamWeb.WorkspaceLive.SidebarComponents do
     </span>
     """
   end
+
+  attr :workspace_id, :string, required: true
+  attr :picker, :any, default: nil
+  attr :source, :atom, default: :sidebar
+
+  def checkout_picker(assigns) do
+    open? =
+      ConversationSwitching.checkout_picker_open?(
+        assigns.picker,
+        assigns.workspace_id,
+        assigns.source
+      )
+
+    checkouts = if open?, do: assigns.picker.checkouts, else: []
+
+    click =
+      if assigns.source == :mobile,
+        do: "mobile_new_conversation_in_workspace",
+        else: "new_conversation_in_workspace"
+
+    assigns =
+      assigns
+      |> assign(:open?, open?)
+      |> assign(:checkouts, checkouts)
+      |> assign(:click, click)
+
+    ~H"""
+    <div class="workspace-checkout-picker">
+      <button
+        type="button"
+        phx-click={@click}
+        phx-value-ws_id={@workspace_id}
+        class={[
+          @source != :mobile &&
+            "workspace-add-btn flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-tertiary hover:text-primary hover:bg-surface-hover transition-colors",
+          @source == :mobile && "sheet-new-conv-btn",
+          @open? && "is-open"
+        ]}
+        title={gettext("在此工作区新建对话")}
+        aria-label={gettext("在此工作区新建对话")}
+        aria-haspopup="menu"
+        aria-expanded={to_string(@open?)}
+      >
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+          <path
+            d="M6 1v10M1 6h10"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+          />
+        </svg>
+      </button>
+      <div
+        :if={@open?}
+        id={"checkout-picker-#{@source}-#{@workspace_id}"}
+        class="workspace-checkout-menu"
+        role="menu"
+        phx-click-away="close_checkout_picker"
+      >
+        <div class="workspace-checkout-heading">{gettext("当前 worktree 列表")}</div>
+        <button
+          :for={checkout <- @checkouts}
+          type="button"
+          role="menuitem"
+          phx-click="new_conversation_on_checkout"
+          phx-value-ws_id={@workspace_id}
+          phx-value-path={checkout.path}
+          class="workspace-checkout-item"
+          title={checkout.path}
+        >
+          <span class="workspace-checkout-name">{Path.basename(checkout.path)}</span>
+          <span :if={checkout_ref(checkout)} class="workspace-checkout-ref">
+            {checkout_ref(checkout)}
+          </span>
+        </button>
+      </div>
+    </div>
+    """
+  end
+
+  defp checkout_ref(%{branch: branch}) when is_binary(branch) and branch != "", do: branch
+  defp checkout_ref(%{detached?: true}), do: "detached"
+  defp checkout_ref(_checkout), do: nil
 
   attr :conv, :map, required: true
   attr :conversation_menu_id, :any, required: true

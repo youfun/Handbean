@@ -116,7 +116,8 @@
 }
 
 .workspace-title-row:hover .workspace-row-actions,
-.workspace-title-row:focus-within .workspace-row-actions {
+.workspace-title-row:focus-within .workspace-row-actions,
+.workspace-title-row:has(.workspace-add-btn.is-open) .workspace-row-actions {
   flex: 0 0 auto;
   width: auto;
   overflow: visible;
@@ -767,6 +768,67 @@
 
 .conversation-menu-item[data-copied="true"] .copy-done {
   display: inline;
+}
+
+.workspace-checkout-picker {
+  position: relative;
+}
+
+.workspace-checkout-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 50;
+  min-width: 11.5rem;
+  max-width: 16rem;
+  padding: 0.3rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow);
+}
+
+.workspace-checkout-heading {
+  padding: 0.25rem 0.45rem 0.35rem;
+  color: var(--color-text-tertiary);
+  font-size: 0.65rem;
+  letter-spacing: 0.02em;
+}
+
+.workspace-checkout-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 1.75rem;
+  padding: 0.3rem 0.45rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  text-align: left;
+  cursor: pointer;
+}
+
+.workspace-checkout-item:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+}
+
+.workspace-checkout-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-checkout-ref {
+  flex-shrink: 0;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.65rem;
 }
 
 /* ── Conversation badge (workspace label in trash) ── */

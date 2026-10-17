@@ -464,6 +464,53 @@ defmodule HandbeamWeb.WorkspaceLive.ConversationSwitching do
     end)
   end
 
+  def begin_new_conversation(socket, workspace_id, opts \\ []) do
+    {:ok, ws} = refreshed_workspace(workspace_id)
+    checkouts = checkouts_for(ws)
+    requested = Keyword.get(opts, :checkout_path)
+
+    cond do
+      is_binary(requested) and requested != "" ->
+        {socket, conv_id} = new_conversation(socket, workspace_id, opts)
+        {:created, socket, conv_id}
+
+      match?(%{workspace_id: ^workspace_id}, socket.assigns[:checkout_picker]) ->
+        {:picker, close_checkout_picker(socket)}
+
+      length(checkouts) > 1 ->
+        {:picker,
+         assign(socket, :checkout_picker, %{
+           workspace_id: workspace_id,
+           checkouts: checkouts,
+           source: Keyword.get(opts, :source, :sidebar)
+         })}
+
+      true ->
+        {socket, conv_id} = new_conversation(socket, workspace_id, opts)
+        {:created, socket, conv_id}
+    end
+  end
+
+  def close_checkout_picker(socket), do: assign(socket, :checkout_picker, nil)
+
+  def checkout_picker_open?(picker, workspace_id, source \\ :sidebar)
+
+  def checkout_picker_open?(nil, _workspace_id, _source), do: false
+
+  def checkout_picker_open?(%{workspace_id: open_id, source: open_source}, workspace_id, source),
+    do: open_id == workspace_id and open_source == source
+
+  def checkout_picker_open?(_picker, _workspace_id, _source), do: false
+
+  defp checkouts_for(ws) do
+    root = ws["path"] || ws["default_checkout_path"]
+
+    case Handbeam.RepoIdentity.list_checkouts(root) do
+      {:ok, checkouts} -> checkouts
+      {:error, _reason} -> []
+    end
+  end
+
   def new_conversation(socket, workspace_id, opts \\ []) do
     {:ok, ws} = refreshed_workspace(workspace_id)
     Handbeam.WorkspaceStore.touch(workspace_id)

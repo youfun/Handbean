@@ -4003,13 +4003,48 @@ defmodule HandbeamWeb.WorkspaceLiveTest do
         )
         |> render_click()
 
-        conversations = Handbeam.ConversationStore.list_for_workspace(main_workspace["id"])
+        html = render(view)
+        assert html =~ "当前 worktree 列表"
+        assert html =~ Path.basename(repo)
+        assert html =~ Path.basename(linked)
+        refute html =~ "checkout-picker-sidebar-default"
+
         linked_path = Handbeam.Security.PathValidator.resolve_symlink(linked)
-        assert Enum.count(conversations, &(&1["checkout_path"] == linked_path)) == 2
+        before = Handbeam.ConversationStore.list_for_workspace(main_workspace["id"])
+
+        view
+        |> element(
+          "#checkout-picker-sidebar-#{main_workspace["id"]} button[phx-click='new_conversation_on_checkout'][phx-value-path='#{linked_path}']"
+        )
+        |> render_click()
+
+        conversations = Handbeam.ConversationStore.list_for_workspace(main_workspace["id"])
+
+        assert Enum.count(conversations, &(&1["checkout_path"] == linked_path)) ==
+                 Enum.count(before, &(&1["checkout_path"] == linked_path)) + 1
+
         assert length(Enum.reject(Handbeam.WorkspaceStore.list(), & &1["default"])) == 1
+        html = render(view)
+        refute html =~ "当前 worktree 列表"
+        assert html =~ ~s(data-checkout-path="#{linked_path}")
       after
         File.rm_rf!(base)
       end
+    end
+
+    test "new conversation in a single-checkout workspace still creates immediately", %{
+      conn: conn
+    } do
+      {:ok, view, _html} = live(conn, "/")
+      before = Handbeam.ConversationStore.list_for_workspace("default")
+
+      view
+      |> element("button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']")
+      |> render_click()
+
+      refute render(view) =~ "当前 worktree 列表"
+      after_list = Handbeam.ConversationStore.list_for_workspace("default")
+      assert length(after_list) == length(before) + 1
     end
 
     test "adding a workspace creates a checkout-bound first conversation", %{conn: conn} do

@@ -157,6 +157,7 @@ defmodule HandbeamWeb.WorkspaceLive do
       |> assign(:remove_workspace, nil)
       |> assign(:rename_workspace, nil)
       |> assign(:conversation_menu_id, nil)
+      |> assign(:checkout_picker, nil)
       |> assign(:rename_conversation, nil)
       |> assign(:pending_approval, nil)
       |> Schedules.defaults()
@@ -1255,17 +1256,10 @@ defmodule HandbeamWeb.WorkspaceLive do
   end
 
   def handle_event("new_conversation", _params, socket) do
-    ws_id = socket.assigns.current_workspace_id
-
-    {socket, conv_id} =
-      ConversationSwitching.new_conversation(socket, ws_id, ModelSelection.switching_opts())
-
-    socket =
-      socket
-      |> WorkspaceNavigation.expand_group(ws_id)
-      |> RuntimeProjection.subscribe_session()
-
-    {:noreply, push_patch(socket, to: "/w/#{ws_id}/c/#{conv_id}")}
+    begin_conversation_in_workspace(socket, socket.assigns.current_workspace_id,
+      source: :sidebar,
+      close_sheets?: false
+    )
   end
 
   @impl true
@@ -1307,12 +1301,23 @@ defmodule HandbeamWeb.WorkspaceLive do
 
   @impl true
   def handle_event("new_conversation_in_workspace", %{"ws_id" => ws_id}, socket) do
-    create_conversation_in_workspace(socket, ws_id, close_sheets?: false)
+    begin_conversation_in_workspace(socket, ws_id, source: :sidebar, close_sheets?: false)
   end
 
   @impl true
   def handle_event("mobile_new_conversation_in_workspace", %{"ws_id" => ws_id}, socket) do
-    create_conversation_in_workspace(socket, ws_id, close_sheets?: true)
+    begin_conversation_in_workspace(socket, ws_id, source: :mobile, close_sheets?: true)
+  end
+
+  def handle_event("new_conversation_on_checkout", %{"ws_id" => ws_id, "path" => path}, socket) do
+    begin_conversation_in_workspace(socket, ws_id,
+      checkout_path: path,
+      close_sheets?: get_in(socket.assigns, [:checkout_picker, :source]) == :mobile
+    )
+  end
+
+  def handle_event("close_checkout_picker", _params, socket) do
+    {:noreply, ConversationSwitching.close_checkout_picker(socket)}
   end
 
   @impl true
@@ -1461,26 +1466,34 @@ defmodule HandbeamWeb.WorkspaceLive do
     {:noreply, Schedules.revise(socket, id)}
   end
 
-  defp create_conversation_in_workspace(socket, ws_id, opts) do
-    socket = drop_composer_for_switch(socket)
+  defp begin_conversation_in_workspace(socket, ws_id, opts) do
+    close_sheets? = Keyword.get(opts, :close_sheets?, false)
 
-    {socket, conv_id} =
-      ConversationSwitching.new_conversation(socket, ws_id, ModelSelection.switching_opts())
+    case ConversationSwitching.begin_new_conversation(
+           socket,
+           ws_id,
+           ModelSelection.switching_opts()
+           |> Keyword.merge(Keyword.take(opts, [:checkout_path, :source]))
+         ) do
+      {:picker, socket} ->
+        {:noreply, socket}
 
-    socket =
-      socket
-      |> WorkspaceNavigation.expand_group(ws_id)
-      |> WorkspaceNavigation.after_switch()
-      |> RuntimeProjection.subscribe_session()
+      {:created, socket, conv_id} ->
+        socket =
+          socket
+          |> drop_composer_for_switch()
+          |> ConversationSwitching.close_checkout_picker()
+          |> WorkspaceNavigation.expand_group(ws_id)
+          |> WorkspaceNavigation.after_switch()
+          |> RuntimeProjection.subscribe_session()
 
-    socket =
-      if Keyword.get(opts, :close_sheets?, false) do
-        WorkspaceNavigation.close_mobile_sheets(socket)
-      else
-        socket
-      end
+        socket =
+          if close_sheets?,
+            do: WorkspaceNavigation.close_mobile_sheets(socket),
+            else: socket
 
-    {:noreply, push_patch(socket, to: "/w/#{ws_id}/c/#{conv_id}")}
+        {:noreply, push_patch(socket, to: "/w/#{ws_id}/c/#{conv_id}")}
+    end
   end
 
   # ── Agent events ──

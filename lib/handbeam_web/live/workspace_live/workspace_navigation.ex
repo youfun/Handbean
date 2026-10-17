@@ -434,6 +434,7 @@ defmodule HandbeamWeb.WorkspaceLive.WorkspaceNavigation do
     |> assign(:show_permission_menu, false)
     |> assign(:show_file_drawer, false)
     |> assign(:conversation_menu_id, nil)
+    |> assign(:checkout_picker, nil)
   end
 
   def open_preview_display(socket, preview_id, client) do

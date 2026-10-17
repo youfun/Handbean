@@ -14,11 +14,16 @@ defmodule HandbeamWeb.WorkspaceLive.WorkspaceComponents do
 
   def workspace_tree(assigns) do
     ~H"""
-    <ul class="workspace-file-tree" role={if(@depth == 0, do: "tree", else: "group")}>
+    <ul
+      class="workspace-file-tree"
+      role={if(@depth == 0, do: "tree", else: "group")}
+      id={@depth == 0 && "workspace-file-tree-#{checkout_dom_id(@workspace_root)}"}
+    >
       <li :for={entry <- Map.get(@entries, @parent, [])} role="treeitem">
         <button
           :if={entry.kind == :directory}
           type="button"
+          id={"workspace-dir-#{checkout_dom_id(Path.join(@workspace_root, entry.relative_path))}"}
           class="workspace-file-row directory"
           style={"--tree-depth: #{@depth}"}
           phx-click="toggle_workspace_directory"
@@ -62,6 +67,7 @@ defmodule HandbeamWeb.WorkspaceLive.WorkspaceComponents do
         />
         <div
           :if={entry.kind == :file}
+          id={"workspace-file-#{checkout_dom_id(Path.join(@workspace_root, entry.relative_path))}"}
           class="workspace-file-entry"
           data-workspace-relative-path={entry.relative_path}
           data-workspace-absolute-path={Path.join(@workspace_root, entry.relative_path)}
@@ -238,6 +244,7 @@ defmodule HandbeamWeb.WorkspaceLive.WorkspaceComponents do
         :if={@right_panel_view == :changes}
         id="workspace-changes"
         class="workspace-changes-view flex-1 min-h-0 overflow-auto"
+        data-checkout-path={@workspace_root}
       >
         <% changes = FileChangeCard.changes(@timeline) %>
         <p :if={changes == []} class="workspace-changes-empty">
@@ -256,9 +263,14 @@ defmodule HandbeamWeb.WorkspaceLive.WorkspaceComponents do
 
       <div
         :if={@right_panel_view == :files}
+        id="workspace-files"
         class="workspace-files-view flex-1 min-h-0 flex flex-col"
+        data-checkout-path={@workspace_root}
       >
-        <div class={["workspace-tree-pane", if(@active_file, do: "has-preview", else: "")]}>
+        <div
+          id={"workspace-tree-pane-#{checkout_dom_id(@workspace_root)}"}
+          class={["workspace-tree-pane", if(@active_file, do: "has-preview", else: "")]}
+        >
           <div :if={@workspace_tree_error} class="workspace-tree-error">
             {gettext("Unable to list workspace files")}
           </div>
@@ -775,4 +787,10 @@ defmodule HandbeamWeb.WorkspaceLive.WorkspaceComponents do
         :file
     end
   end
+
+  defp checkout_dom_id(path) when is_binary(path) and path != "" do
+    :crypto.hash(:sha256, path) |> Base.encode16(case: :lower) |> binary_part(0, 12)
+  end
+
+  defp checkout_dom_id(_path), do: "none"
 end

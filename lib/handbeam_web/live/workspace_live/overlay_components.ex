@@ -11,6 +11,7 @@ defmodule HandbeamWeb.WorkspaceLive.OverlayComponents do
   attr :available_reasoning_levels, :any, required: true
   attr :chat_scope, :any, required: true
   attr :collapsed_workspace_ids, :any, required: true
+  attr :checkout_picker, :any, default: nil
   attr :conversations_by_workspace, :any, required: true
   attr :current_conversation_id, :any, required: true
   attr :current_workspace_id, :any, required: true
@@ -259,26 +260,11 @@ defmodule HandbeamWeb.WorkspaceLive.OverlayComponents do
             >
               {gettext("移除")}
             </button>
-            <button
-              phx-click="mobile_new_conversation_in_workspace"
-              phx-value-ws_id={ws["id"]}
-              class="sheet-new-conv-btn"
-              title={gettext("在此工作区新建对话")}
-              aria-label={gettext("在此工作区新建对话")}
-            >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.5"
-                stroke-linecap="round"
-              >
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-            </button>
+            <SidebarComponents.checkout_picker
+              workspace_id={ws["id"]}
+              picker={@checkout_picker}
+              source={:mobile}
+            />
           </div>
           <%= if not workspace_group_collapsed?(@collapsed_workspace_ids, ws["id"]) do %>
             <%= for conv <- workspace_conversations(@conversations_by_workspace, ws["id"], @workspaces) |> Enum.reject(&(&1[:archived] or &1.pinned)) do %>
