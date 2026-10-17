@@ -4,8 +4,8 @@ defmodule Handbeam.Agent.Provider.Ollama do
 
   Pro and Max are usage-credit plans, not a separate protocol. Direct cloud
   access uses the OpenAI Chat Completions API at `https://ollama.com/v1`
-  with `Authorization: Bearer`. Model ids are hosted names such as
-  `gemma4:31b`, not the local `:cloud` suffix.
+  with `Authorization: Bearer`. Model ids come from `GET /api/tags`, such as
+  `gemma4:31b`, not a fixed list or the local `:cloud` suffix.
 
   This is not the local daemon at `http://localhost:11434`.
   """

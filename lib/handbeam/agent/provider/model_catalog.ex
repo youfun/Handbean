@@ -4,8 +4,8 @@ defmodule Handbeam.Agent.Provider.ModelCatalog do
 
   Chat Completions bases already end in `/v1`, so the request is `{base}/models`.
   Responses bases do not, so the request is `{base}/v1/models`. An xAI
-  subscription uses the same list with its OAuth transport key. Anthropic,
-  Codex, and Cursor keep their own catalogs.
+  subscription uses the same list with its OAuth transport key. Ollama Cloud
+  uses `GET /api/tags`. Anthropic, Codex, and Cursor keep their own catalogs.
 
   Existing rows keep custom names, enabled flags, and hand-edited limits.
   Missing llm_db fields are filled. Remote ids that disappear stay in the
@@ -14,6 +14,7 @@ defmodule Handbeam.Agent.Provider.ModelCatalog do
   """
 
   alias Handbeam.Agent.ModelConfig
+  alias Handbeam.Agent.Provider.Ollama.Models, as: OllamaModels
   alias Handbeam.Agent.Provider.Xai.Models, as: XaiModels
   alias Handbeam.LlmDbDefaults
 
@@ -23,20 +24,28 @@ defmodule Handbeam.Agent.Provider.ModelCatalog do
   @spec fetchable?(map()) :: boolean()
   def fetchable?(%{"authType" => "oauth"} = provider), do: XaiModels.remote_catalog?(provider)
 
-  def fetchable?(%{"api" => api, "baseUrl" => base_url})
-      when api in @fetchable_apis and is_binary(base_url) and base_url != "",
-      do: true
+  def fetchable?(provider),
+    do: compatible_catalog?(provider) or OllamaModels.remote_catalog?(provider)
 
-  def fetchable?(_provider), do: false
+  defp compatible_catalog?(%{"api" => api, "baseUrl" => base_url})
+       when api in @fetchable_apis and is_binary(base_url) and base_url != "",
+       do: true
+
+  defp compatible_catalog?(_provider), do: false
 
   @spec discover(String.t(), keyword()) :: {:ok, map()} | {:error, String.t()}
   def discover(provider_id, opts \\ []) when is_binary(provider_id) do
     with {:ok, config} <- ModelConfig.read_config(),
          {:ok, provider} <- fetch_provider(config, provider_id) do
-      if XaiModels.remote_catalog?(provider) do
-        XaiModels.discover(provider_id, provider, opts)
-      else
-        discover_compatible(provider_id, provider, opts)
+      cond do
+        XaiModels.remote_catalog?(provider) ->
+          XaiModels.discover(provider_id, provider, opts)
+
+        OllamaModels.remote_catalog?(provider) ->
+          OllamaModels.discover(provider_id, provider, opts)
+
+        true ->
+          discover_compatible(provider_id, provider, opts)
       end
     end
   end

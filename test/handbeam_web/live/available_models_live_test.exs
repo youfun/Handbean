@@ -639,7 +639,7 @@ defmodule HandbeamWeb.AvailableModelsLiveTest do
     assert html =~ "composer-2.5"
   end
 
-  test "adding an Ollama Cloud subscription stores the cloud catalog without a typed model", %{
+  test "adding an Ollama Cloud subscription stores the endpoint without a fixed catalog", %{
     conn: conn
   } do
     {:ok, view, _html} =
@@ -668,7 +668,7 @@ defmodule HandbeamWeb.AvailableModelsLiveTest do
     assert provider["baseUrl"] == "https://ollama.com/v1"
     assert provider["api"] == "ollama-cloud"
     assert provider["provider"] == "ollama"
-    assert Enum.any?(provider["models"], &(&1["id"] == "gemma4:31b"))
+    assert provider["models"] == []
   end
 
   defp isolate_sigil_home! do

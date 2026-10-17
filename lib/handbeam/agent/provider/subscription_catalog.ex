@@ -2,22 +2,14 @@ defmodule Handbeam.Agent.Provider.SubscriptionCatalog do
   @moduledoc """
   Built-in model rows for API-key coding subscriptions.
 
+  Ollama Cloud is not listed here. Its models come from `GET /api/tags`.
+
   Prices are the vendor's per-million-token rates used to draw down the
   plan, not a separate Handbeam charge. Rows the user later disables stay
   disabled when a preset is merged back in.
   """
 
   @type model :: %{required(String.t()) => term()}
-
-  @ollama_specs [
-    {"gemma4:31b", "Gemma 4 31B", 131_072, 8_192, true, [input: 0.20, output: 0.40]},
-    {"deepseek-v4.1-flash", "DeepSeek V4.1 Flash", 1_000_000, 8_192, true,
-     [input: 0.30, output: 1.20, cache_read: 0.006]},
-    {"kimi-k2.7-code", "Kimi K2.7 Code", 256_000, 8_192, true,
-     [input: 0.95, output: 4.00, cache_read: 0.19]},
-    {"kimi-k2.6", "Kimi K2.6", 256_000, 8_192, true,
-     [input: 0.95, output: 4.00, cache_read: 0.16]}
-  ]
 
   @opencode_specs [
     {"glm-5.3-flash", "GLM-5.3 Flash", 200_000, 8_192, true,
@@ -45,10 +37,6 @@ defmodule Handbeam.Agent.Provider.SubscriptionCatalog do
     {"grok-4.7", "Grok 4.7", 200_000, 8_192, true, [input: 2.00, output: 6.00, cache_read: 0.50]}
   ]
 
-  @doc "Ollama Cloud models billed against Pro or Max usage credits."
-  @spec ollama_models() :: [model()]
-  def ollama_models, do: Enum.map(@ollama_specs, &model/1)
-
   @doc "OpenCode Go models. The adapter picks the wire protocol from the id."
   @spec opencode_go_models() :: [model()]
   def opencode_go_models, do: Enum.map(@opencode_specs, &model/1)
@@ -70,7 +58,7 @@ defmodule Handbeam.Agent.Provider.SubscriptionCatalog do
       "baseUrl" => "https://ollama.com/v1",
       "api" => "ollama-cloud",
       "provider" => "ollama",
-      "models" => ollama_models()
+      "models" => []
     }
   end
 
