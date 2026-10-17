@@ -283,6 +283,29 @@ defmodule Handbean.Agent.Provider.CodexTest do
              )
   end
 
+  test "replays persisted opaque reasoning for the same model and account" do
+    item = %{"type" => "reasoning", "encrypted_content" => "persisted-secret"}
+
+    message =
+      Message.assistant_blocks([
+        %{
+          "type" => "responses_reasoning",
+          "account_id" => "account-a",
+          "model" => "gpt-5.4",
+          "item" => item
+        },
+        %{type: "text", text: "Prior answer"}
+      ])
+
+    Req.Test.stub(__MODULE__, fn conn ->
+      {:ok, body, conn} = read_body(conn)
+      assert [^item | _] = Jason.decode!(body)["input"]
+      sse(conn, completed([text_item("ok")]))
+    end)
+
+    assert {:ok, _} = Codex.complete([message], [], config())
+  end
+
   test "opaque reasoning is not replayed under another model or account" do
     message =
       Message.assistant_blocks([

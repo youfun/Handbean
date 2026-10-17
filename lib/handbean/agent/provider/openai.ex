@@ -101,7 +101,9 @@ defmodule Handbean.Agent.Provider.OpenAI do
 
     case request(req_opts, config) do
       {:ok, %{status: 200, body: resp_body}} ->
-        parse_response(resp_body)
+        resp_body
+        |> parse_response()
+        |> tag_reasoning_origin(config)
 
       {:ok, %{status: status, body: resp_body}} ->
         {:error, parse_error(status, resp_body)}
@@ -152,7 +154,7 @@ defmodule Handbean.Agent.Provider.OpenAI do
     case request(req_opts, config) do
       {:ok, %{status: 200} = resp} ->
         acc = Map.get(resp.private, :sse_acc, initial_acc)
-        build_stream_response(acc)
+        build_stream_response(acc, config)
 
       {:ok, %{status: status} = resp} ->
         error_body = streaming_error_body(resp, initial_acc)
@@ -205,7 +207,8 @@ defmodule Handbean.Agent.Provider.OpenAI do
         Map.has_key?(config, :previous_response_id) ->
           Map.get(config, :previous_response_id)
 
-        Map.get(config, :use_previous_response_id, false) ->
+        Map.get(config, :use_previous_response_id, false) and
+            same_provider_context?(Map.get(config, :provider_state, %{}), config) ->
           get_in(config, [:provider_state, :response_id])
 
         true ->
@@ -273,24 +276,30 @@ defmodule Handbean.Agent.Provider.OpenAI do
       end
 
     convo_items =
-      messages |> Handbean.Tool.Images.bound_history() |> Enum.flat_map(&format_input_item/1)
+      messages
+      |> Handbean.Tool.Images.bound_history()
+      |> Enum.flat_map(&format_input_item(&1, config))
 
     system_items ++ convo_items
   end
 
-  defp format_input_item(%Message{role: :user, content: content}) when is_binary(content) do
+  defp format_input_item(%Message{role: :user, content: content}, _config)
+       when is_binary(content) do
     [%{"role" => "user", "content" => content}]
   end
 
-  defp format_input_item(%Message{role: :assistant, content: content}) when is_binary(content) do
+  defp format_input_item(%Message{role: :assistant, content: content}, _config)
+       when is_binary(content) do
     [%{"role" => "assistant", "content" => content}]
   end
 
-  defp format_input_item(%Message{role: :assistant, content: blocks}) when is_list(blocks) do
-    Enum.flat_map(blocks, &format_assistant_block/1)
+  defp format_input_item(%Message{role: :assistant, content: blocks}, config)
+       when is_list(blocks) do
+    Enum.flat_map(blocks, &format_assistant_block(&1, config))
   end
 
-  defp format_input_item(%Message{role: :tool_result, content: blocks}) when is_list(blocks) do
+  defp format_input_item(%Message{role: :tool_result, content: blocks}, _config)
+       when is_list(blocks) do
     blocks
     |> Enum.map(fn
       %{type: "tool_result", tool_use_id: tool_call_id, content: content} = block ->
@@ -307,7 +316,8 @@ defmodule Handbean.Agent.Provider.OpenAI do
     |> Enum.reject(&is_nil/1)
   end
 
-  defp format_input_item(%Message{role: :user, content: blocks}) when is_list(blocks) do
+  defp format_input_item(%Message{role: :user, content: blocks}, _config)
+       when is_list(blocks) do
     if Enum.any?(blocks, &(&1[:type] == "tool_result")) do
       blocks
       |> Enum.map(fn
@@ -328,33 +338,42 @@ defmodule Handbean.Agent.Provider.OpenAI do
     end
   end
 
-  defp format_assistant_block(%{type: "responses_reasoning", item: item}) when is_map(item) do
-    if reasoning_replay_item?(item), do: [stringify_reasoning_item(item)], else: []
-  end
-
-  defp format_assistant_block(%{"type" => "responses_reasoning", "item" => item})
+  defp format_assistant_block(%{type: "responses_reasoning", item: item} = block, config)
        when is_map(item) do
-    if reasoning_replay_item?(item), do: [stringify_reasoning_item(item)], else: []
+    if reasoning_replay_item?(item) and same_provider_context?(block, config),
+      do: [stringify_reasoning_item(item)],
+      else: []
   end
 
-  defp format_assistant_block(%{type: "tool_use"} = block) do
+  defp format_assistant_block(
+         %{"type" => "responses_reasoning", "item" => item} = block,
+         config
+       )
+       when is_map(item) do
+    if reasoning_replay_item?(item) and same_provider_context?(block, config),
+      do: [stringify_reasoning_item(item)],
+      else: []
+  end
+
+  defp format_assistant_block(%{type: "tool_use"} = block, _config) do
     [format_assistant_function_call_item(block)]
   end
 
-  defp format_assistant_block(%{"type" => "tool_use"} = block) do
+  defp format_assistant_block(%{"type" => "tool_use"} = block, _config) do
     [format_assistant_function_call_item(block)]
   end
 
-  defp format_assistant_block(%{type: "text", text: text}) when is_binary(text) and text != "" do
-    [%{"role" => "assistant", "content" => text}]
-  end
-
-  defp format_assistant_block(%{"type" => "text", "text" => text})
+  defp format_assistant_block(%{type: "text", text: text}, _config)
        when is_binary(text) and text != "" do
     [%{"role" => "assistant", "content" => text}]
   end
 
-  defp format_assistant_block(_block), do: []
+  defp format_assistant_block(%{"type" => "text", "text" => text}, _config)
+       when is_binary(text) and text != "" do
+    [%{"role" => "assistant", "content" => text}]
+  end
+
+  defp format_assistant_block(_block, _config), do: []
 
   defp format_user_content_block(%{type: "text", text: text}) do
     %{"type" => "input_text", "text" => text}
@@ -416,6 +435,33 @@ defmodule Handbean.Agent.Provider.OpenAI do
 
     type == "reasoning" and is_binary(encrypted) and encrypted != ""
   end
+
+  defp same_provider_context?(value, config) do
+    source = Handbean.Utils.SafeMap.get_any(value, :provider_context, "provider_context")
+
+    is_map(source) and reasoning_origin(source) == reasoning_origin(config)
+  end
+
+  defp reasoning_origin(config) when is_map(config) do
+    %{
+      provider:
+        identity_value(
+          Handbean.Utils.SafeMap.get_any(config, :provider_key, "provider_key") ||
+            Handbean.Utils.SafeMap.get_any(config, :provider, "provider") ||
+            Handbean.Utils.SafeMap.get_any(config, :api_url, "api_url") ||
+            Handbean.Utils.SafeMap.get_any(config, :base_url, "base_url") ||
+            @default_api_url
+        ),
+      api:
+        identity_value(Handbean.Utils.SafeMap.get_any(config, :api, "api") || :openai_responses),
+      model: identity_value(Handbean.Utils.SafeMap.get_any(config, :model, "model"))
+    }
+  end
+
+  defp identity_value(nil), do: nil
+  defp identity_value(value) when is_atom(value), do: Atom.to_string(value)
+  defp identity_value(value) when is_binary(value), do: value
+  defp identity_value(value), do: to_string(value)
 
   defp stringify_reasoning_item(item) do
     item
@@ -552,11 +598,11 @@ defmodule Handbean.Agent.Provider.OpenAI do
     String.match?(pattern, ~r/[\p{L}\p{N}]/u)
   end
 
-  defp build_stream_response(%{stream_error: error}) when is_binary(error) do
+  defp build_stream_response(%{stream_error: error}, _config) when is_binary(error) do
     {:error, error}
   end
 
-  defp build_stream_response(%{response: response} = acc) when is_map(response) do
+  defp build_stream_response(%{response: response} = acc, config) when is_map(response) do
     response = merge_stream_response(response, acc)
 
     Logger.debug(
@@ -564,10 +610,12 @@ defmodule Handbean.Agent.Provider.OpenAI do
         "fallback_bytes=#{byte_size(Map.get(response, "output_text", ""))}"
     )
 
-    parse_response(response)
+    response
+    |> parse_response()
+    |> tag_reasoning_origin(config)
   end
 
-  defp build_stream_response(_acc) do
+  defp build_stream_response(_acc, _config) do
     {:error, "OpenAI stream ended without response.completed"}
   end
 
@@ -892,6 +940,36 @@ defmodule Handbean.Agent.Provider.OpenAI do
 
   defp format_error_payload(error) when is_binary(error), do: error
   defp format_error_payload(_error), do: "provider_error: Provider request failed"
+
+  defp tag_reasoning_origin({:ok, %{messages: messages} = response}, config) do
+    origin = reasoning_origin(config)
+
+    tagged =
+      Enum.map(messages, fn
+        %Message{content: blocks} = message when is_list(blocks) ->
+          %{message | content: Enum.map(blocks, &tag_reasoning_block(&1, origin))}
+
+        message ->
+          message
+      end)
+
+    {:ok,
+     response
+     |> Map.put(:messages, tagged)
+     |> Map.update(:provider_state, %{provider_context: origin}, fn provider_state ->
+       Map.put(provider_state, :provider_context, origin)
+     end)}
+  end
+
+  defp tag_reasoning_origin(result, _config), do: result
+
+  defp tag_reasoning_block(%{type: "responses_reasoning"} = block, origin),
+    do: Map.put(block, :provider_context, origin)
+
+  defp tag_reasoning_block(%{"type" => "responses_reasoning"} = block, origin),
+    do: Map.put(block, "provider_context", origin)
+
+  defp tag_reasoning_block(block, _origin), do: block
 
   defp provider_state_from_response(%{"id" => id}) when is_binary(id) and id != "" do
     %{response_id: id}

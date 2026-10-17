@@ -218,7 +218,19 @@ defmodule Handbean.Agent.Provider.Codex do
       when type in ["codex_reasoning", "responses_reasoning"] ->
         [item]
 
+      %{
+        "type" => type,
+        "account_id" => ^account_id,
+        "model" => ^model,
+        "item" => item
+      }
+      when type in ["codex_reasoning", "responses_reasoning"] ->
+        [item]
+
       %{type: type} when type in ["codex_reasoning", "responses_reasoning"] ->
+        []
+
+      %{"type" => type} when type in ["codex_reasoning", "responses_reasoning"] ->
         []
 
       %{type: "text"} = block ->

@@ -39,7 +39,15 @@ defmodule Handbean.Agent.Provider.OpenAITest do
       assert result.usage.total_input_tokens == 10
       assert result.usage.cache_read_input_tokens == 8
       assert result.usage.cache_creation_input_tokens == 0
-      assert result.provider_state == %{response_id: "resp_test"}
+
+      assert result.provider_state == %{
+               response_id: "resp_test",
+               provider_context: %{
+                 provider: "openai",
+                 api: "openai_responses",
+                 model: "gpt-5.2"
+               }
+             }
     end
 
     test "accepts Responses-compatible text content item" do
@@ -173,10 +181,17 @@ defmodule Handbean.Agent.Provider.OpenAITest do
       refute Map.has_key?(decoded, "previous_response_id")
     end
 
-    test "can opt into previous_response_id from provider_state" do
+    test "can opt into previous_response_id from matching provider state" do
       config =
         config_that_captures_request()
-        |> Map.put(:provider_state, %{response_id: "resp_prev"})
+        |> Map.put(:provider_state, %{
+          response_id: "resp_prev",
+          provider_context: %{
+            provider: "openai",
+            api: "openai_responses",
+            model: "gpt-5.2"
+          }
+        })
         |> Map.put(:use_previous_response_id, true)
 
       OpenAI.complete([Message.user("Hi")], [], config)
@@ -184,6 +199,36 @@ defmodule Handbean.Agent.Provider.OpenAITest do
       assert_received {:request_body, body}
       decoded = Jason.decode!(body)
       assert decoded["previous_response_id"] == "resp_prev"
+    end
+
+    test "drops previous_response_id after a provider, API, or model switch" do
+      source = %{
+        response_id: "resp_prev",
+        provider_context: %{
+          provider: "openai",
+          api: "openai_responses",
+          model: "gpt-5.2"
+        }
+      }
+
+      targets = [
+        %{provider_key: "xai"},
+        %{api: :openai},
+        %{model: "gpt-5.4"}
+      ]
+
+      for target <- targets do
+        config =
+          config_that_captures_request()
+          |> Map.put(:provider_state, source)
+          |> Map.put(:use_previous_response_id, true)
+          |> Map.merge(target)
+
+        OpenAI.complete([Message.user("Hi")], [], config)
+
+        assert_received {:request_body, body}
+        refute Map.has_key?(Jason.decode!(body), "previous_response_id")
+      end
     end
 
     test "explicit previous_response_id is still sent" do
@@ -513,7 +558,7 @@ defmodule Handbean.Agent.Provider.OpenAITest do
       assert Message.text(hd(result.messages)) == Enum.join(chunks)
     end
 
-    test "replays encrypted reasoning items ahead of assistant text" do
+    test "replays encrypted reasoning only for the exact provider API and model" do
       item = %{
         "type" => "reasoning",
         "id" => "rs_test",
@@ -521,18 +566,88 @@ defmodule Handbean.Agent.Provider.OpenAITest do
         "summary" => []
       }
 
+      source = %{
+        "provider" => "openai",
+        "api" => "openai_responses",
+        "model" => "gpt-5.2"
+      }
+
       message =
         Message.assistant_blocks([
-          %{type: "responses_reasoning", item: item},
+          %{"type" => "responses_reasoning", "provider_context" => source, "item" => item},
           %{type: "text", text: "done"}
         ])
 
-      items = OpenAI.build_input_items([message], %{})
+      config = %{provider_key: "openai", api: :openai_responses, model: "gpt-5.2"}
+      items = OpenAI.build_input_items([message], config)
 
       assert items == [
                item,
                %{"role" => "assistant", "content" => "done"}
              ]
+    end
+
+    test "drops encrypted reasoning after a provider, API, or model switch" do
+      item = %{
+        "type" => "reasoning",
+        "id" => "rs_old",
+        "encrypted_content" => "old-secret",
+        "summary" => []
+      }
+
+      message =
+        Message.assistant_blocks([
+          %{
+            type: "responses_reasoning",
+            provider_context: %{
+              provider: "openai",
+              api: "openai_responses",
+              model: "gpt-5.2"
+            },
+            item: item
+          },
+          %{type: "text", text: "Prior answer"},
+          %{type: "tool_use", id: "call-1", name: "read", input: %{file_path: "README.md"}}
+        ])
+
+      targets = [
+        %{provider_key: "xai", api: :openai_responses, model: "gpt-5.2"},
+        %{provider_key: "openai", api: :openai, model: "gpt-5.2"},
+        %{provider_key: "openai", api: :openai_responses, model: "gpt-5.4"}
+      ]
+
+      for target <- targets do
+        items = OpenAI.build_input_items([message], target)
+
+        refute Enum.any?(items, &(&1["type"] == "reasoning"))
+        assert %{"role" => "assistant", "content" => "Prior answer"} in items
+
+        assert %{
+                 "type" => "function_call",
+                 "call_id" => "call-1",
+                 "name" => "read"
+               } = Enum.find(items, &(&1["type"] == "function_call"))
+      end
+    end
+
+    test "does not replay legacy encrypted reasoning without source provenance" do
+      message =
+        Message.assistant_blocks([
+          %{
+            type: "responses_reasoning",
+            item: %{"type" => "reasoning", "encrypted_content" => "legacy-secret"}
+          },
+          %{type: "text", text: "Visible history"}
+        ])
+
+      items =
+        OpenAI.build_input_items(message |> List.wrap(), %{
+          provider_key: "xai",
+          api: :openai_responses,
+          model: "grok-4.6"
+        })
+
+      assert items == [%{"role" => "assistant", "content" => "Visible history"}]
     end
 
     test "keeps encrypted reasoning from a completed stream" do
@@ -555,7 +670,15 @@ defmodule Handbean.Agent.Provider.OpenAITest do
                OpenAI.stream([Message.user("Think")], [], config, fn _ -> :ok end)
 
       assert [
-               %{type: "responses_reasoning", item: ^reasoning},
+               %{
+                 type: "responses_reasoning",
+                 provider_context: %{
+                   provider: "openai",
+                   api: "openai_responses",
+                   model: "gpt-5.2"
+                 },
+                 item: ^reasoning
+               },
                %{type: "text", text: "visible"}
              ] = hd(result.messages).content
     end
@@ -738,6 +861,8 @@ defmodule Handbean.Agent.Provider.OpenAITest do
   defp config_with_response(response) do
     %{
       api_key: "sk-test-key",
+      provider_key: "openai",
+      api: :openai_responses,
       model: "gpt-5.2",
       max_tokens: 4096,
       req_options: [plug: {Req.Test, __MODULE__}, retry: false]
@@ -754,6 +879,8 @@ defmodule Handbean.Agent.Provider.OpenAITest do
 
     %{
       api_key: "sk-test-key",
+      provider_key: "openai",
+      api: :openai_responses,
       model: "gpt-5.2",
       max_tokens: 4096,
       req_options: [plug: {Req.Test, __MODULE__}, retry: false]
@@ -775,6 +902,8 @@ defmodule Handbean.Agent.Provider.OpenAITest do
   defp config_with_sse_stream(chunks) do
     %{
       api_key: "sk-test-key",
+      provider_key: "openai",
+      api: :openai_responses,
       model: "gpt-5.2",
       max_tokens: 4096,
       req_options: [plug: {Req.Test, __MODULE__}, retry: false]
@@ -785,6 +914,8 @@ defmodule Handbean.Agent.Provider.OpenAITest do
   defp config_with_sse_error_stream(status, body) do
     %{
       api_key: "sk-test-key",
+      provider_key: "openai",
+      api: :openai_responses,
       model: "gpt-5.2",
       max_tokens: 4096,
       req_options: [plug: {Req.Test, __MODULE__}, retry: false]

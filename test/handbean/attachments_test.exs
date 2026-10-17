@@ -299,19 +299,27 @@ defmodule Handbean.AttachmentsTest do
       "encrypted_content" => "enc-hist"
     }
 
+    source = %{
+      "provider" => "openai",
+      "api" => "openai_responses",
+      "model" => "gpt-5.2"
+    }
+
     [restored] =
       History.to_messages(
         %{
           "role" => "assistant",
           "content" => "visible",
           "status" => "completed",
-          "content_blocks" => [%{"type" => "responses_reasoning", "item" => item}]
+          "content_blocks" => [
+            %{"type" => "responses_reasoning", "provider_context" => source, "item" => item}
+          ]
         },
         nil
       )
 
     assert restored.content == [
-             %{"type" => "responses_reasoning", "item" => item},
+             %{"type" => "responses_reasoning", "provider_context" => source, "item" => item},
              %{type: "text", text: "visible"}
            ]
 

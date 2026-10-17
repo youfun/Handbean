@@ -515,6 +515,126 @@ defmodule Handbean.Agent.TranscriptPersistenceTest do
            )
   end
 
+  test "persists provider reasoning that arrives after streamed assistant text" do
+    {:ok, conversation} = Handbean.ConversationStore.create("default", timeline: [])
+    conversation_id = conversation["id"]
+    opts = [run_id: "reasoning-stream"]
+
+    reasoning = %{
+      type: "responses_reasoning",
+      provider_context: %{
+        provider: "openai",
+        api: "openai_responses",
+        model: "gpt-5.2"
+      },
+      item: %{
+        "type" => "reasoning",
+        "id" => "rs_stream",
+        "encrypted_content" => "opaque"
+      }
+    }
+
+    assert :ok = TranscriptPersistence.handle_event(conversation_id, {:run_start, %{}}, opts)
+
+    assert :ok =
+             TranscriptPersistence.handle_event(
+               conversation_id,
+               {:message_delta, %{chunk: "visible"}},
+               opts
+             )
+
+    assert :ok =
+             TranscriptPersistence.handle_event(
+               conversation_id,
+               {:provider_items, %{items: [reasoning]}},
+               opts
+             )
+
+    assert :ok =
+             TranscriptPersistence.handle_event(
+               conversation_id,
+               {:run_end, %{status: :completed}},
+               opts
+             )
+
+    assistant =
+      conversation_id
+      |> Handbean.ConversationStore.load_messages()
+      |> Enum.find(&(&1["role"] == "assistant"))
+
+    assert assistant["content_blocks"] == [
+             %{
+               "type" => "responses_reasoning",
+               "provider_context" => %{
+                 "provider" => "openai",
+                 "api" => "openai_responses",
+                 "model" => "gpt-5.2"
+               },
+               "item" => %{
+                 "type" => "reasoning",
+                 "id" => "rs_stream",
+                 "encrypted_content" => "opaque"
+               }
+             }
+           ]
+  end
+
+  test "persists and restores provider reasoning from a tool-only assistant turn" do
+    {:ok, conversation} = Handbean.ConversationStore.create("default", timeline: [])
+    conversation_id = conversation["id"]
+    opts = [run_id: "reasoning-tool"]
+
+    reasoning = %{
+      type: "responses_reasoning",
+      provider_context: %{
+        provider: "openai",
+        api: "openai_responses",
+        model: "gpt-5.2"
+      },
+      item: %{"type" => "reasoning", "encrypted_content" => "tool-opaque"}
+    }
+
+    assert :ok = TranscriptPersistence.handle_event(conversation_id, {:run_start, %{}}, opts)
+
+    assert :ok =
+             TranscriptPersistence.handle_event(
+               conversation_id,
+               {:provider_items, %{items: [reasoning]}},
+               opts
+             )
+
+    assert :ok =
+             TranscriptPersistence.handle_event(
+               conversation_id,
+               {:tool_start, %{tool_use_id: "read-1", tool: "read", input: %{file_path: "a"}}},
+               opts
+             )
+
+    assert :ok =
+             TranscriptPersistence.handle_event(
+               conversation_id,
+               {:tool_end, %{tool_use_id: "read-1", tool: "read", output: "ok"}},
+               opts
+             )
+
+    tool =
+      conversation_id
+      |> Handbean.ConversationStore.load_messages()
+      |> Enum.find(&(&1["id"] == "tool-read-1"))
+
+    assert [%{"type" => "responses_reasoning"}] = tool["content_blocks"]
+
+    assert [assistant, result] =
+             Handbean.Attachments.History.to_messages(tool, nil, conversation_id)
+
+    assert [
+             %{"type" => "responses_reasoning"},
+             %{type: "tool_use", id: "read-1"}
+           ] = assistant.content
+
+    assert [%{type: "tool_result", tool_use_id: "read-1"}] = result.content
+  end
+
   test "does not persist provider thinking wrappers as assistant text" do
     {:ok, conversation} = Handbean.ConversationStore.create("default", timeline: [])
     conversation_id = conversation["id"]

@@ -141,10 +141,10 @@ defmodule Handbean.Agent.TranscriptPersistence do
     :ok
   end
 
-  def handle_event(conversation_id, {:provider_items, %{items: items}}, _opts)
+  def handle_event(conversation_id, {:provider_items, %{items: items}}, opts)
       when is_binary(conversation_id) and is_list(items) do
     remember_provider_items(conversation_id, items)
-    :ok
+    persist_provider_items(conversation_id, opts)
   end
 
   def handle_event(conversation_id, {:turn_start, payload}, opts)
@@ -206,6 +206,7 @@ defmodule Handbean.Agent.TranscriptPersistence do
         "started_at" => payload_value(payload, :started_at) || now_iso8601(),
         "timing_fidelity" => payload_value(payload, :timing_fidelity)
       })
+      |> maybe_put_provider_items(conversation_id)
 
     with {:ok, _saved} <- append_or_update(conversation_id, entry, opts), do: :ok
   end
@@ -910,6 +911,33 @@ defmodule Handbean.Agent.TranscriptPersistence do
     items = Process.get(provider_items_key(conversation_id), [])
     Process.delete(provider_items_key(conversation_id))
     items
+  end
+
+  # Streaming text is flushed before the completed provider response is available.
+  # Attach opaque provider items to the already-open assistant entry as soon as
+  # they arrive; otherwise they would be discarded at run_end and same-model
+  # continuation after transcript reconstruction would lose its reasoning state.
+  defp persist_provider_items(conversation_id, opts) do
+    items = Process.get(provider_items_key(conversation_id), [])
+    entry_id = Process.get(assistant_key(conversation_id))
+
+    if items == [] or not is_binary(entry_id) do
+      :ok
+    else
+      patch = %{"content_blocks" => stringify_value(items)}
+
+      case Handbean.ConversationTranscriptStore.update(conversation_id, entry_id, patch, opts) do
+        {:ok, _entry} ->
+          Process.delete(provider_items_key(conversation_id))
+          :ok
+
+        {:error, :not_found} ->
+          :ok
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
   end
 
   defp provider_item?(%{type: "responses_reasoning", item: item}) when is_map(item), do: true

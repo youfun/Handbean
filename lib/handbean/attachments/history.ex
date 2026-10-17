@@ -49,7 +49,7 @@ defmodule Handbean.Attachments.History do
 
     messages =
       cond do
-        role == "tool" and attachments == [] and entry["images"] not in [nil, []] ->
+        role == "tool" and attachments == [] ->
           restore_tool(entry, conversation_id)
 
         role == "user" and attachments != [] ->
@@ -112,6 +112,12 @@ defmodule Handbean.Attachments.History do
          entry["tool_status"] in ["done", "error"] do
       call = %{type: "tool_use", id: id, name: entry["tool_name"], input: entry["input"] || %{}}
 
+      assistant =
+        entry["content_blocks"]
+        |> replay_blocks()
+        |> Kernel.++([call])
+        |> Message.assistant_blocks()
+
       result =
         Message.tool_result_block(
           id,
@@ -120,7 +126,7 @@ defmodule Handbean.Attachments.History do
         )
         |> Map.put(:images, images)
 
-      [Message.tool_use([call]), Message.tool_results([result])]
+      [assistant, Message.tool_results([result])]
     else
       []
     end
