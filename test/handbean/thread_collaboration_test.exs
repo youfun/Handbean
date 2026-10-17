@@ -214,6 +214,7 @@ defmodule Handbean.ThreadCollaborationTest do
              Collaboration.create(Map.delete(input, "model"), c.context)
 
     assert {:ok, meta} = ConversationStore.get_metadata(receipt.thread)
+    assert meta["selected_model"] == "fake/fake-model"
     refute get_in(meta, ["collaboration", "provider"])
     refute get_in(meta, ["collaboration", "model"])
   end
@@ -512,6 +513,8 @@ defmodule Handbean.ThreadCollaborationTest do
     assert config[:provider_key] == "other"
     assert config[:api_key] == "other-key"
     refute_received {:held, _, _}
+    assert {:ok, meta} = ConversationStore.get_metadata(receipt.thread)
+    assert meta["selected_model"] == "other/other-model"
     {:ok, status} = Handbean.Agent.Runner.status(receipt.thread)
     opts = :sys.get_state(status.run_pid).opts
     assert opts[:model] == "other-model"

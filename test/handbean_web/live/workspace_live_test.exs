@@ -4389,6 +4389,41 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
       end
     end
 
+    test "delegated conversations display their pinned model instead of a stale selection", %{
+      conn: conn
+    } do
+      configure_test_models!()
+
+      {:ok, parent} =
+        Handbean.ConversationStore.create("default",
+          title: "Delegation parent",
+          selected_model: "stepfun/step-router-v1"
+        )
+
+      {:ok, child} =
+        Handbean.ConversationStore.create("default",
+          title: "Pinned child",
+          parent_conversation_id: parent["id"],
+          selected_model: "stepfun/step-router-v1",
+          collaboration: %{
+            "read_only" => true,
+            "provider" => "sui2api",
+            "model" => "gpt-5.5"
+          }
+        )
+
+      {:ok, view, _html} = live(conn, "/")
+      render_async(view, 5_000)
+
+      view
+      |> element(
+        ".conversation-item[phx-click='select_conversation'][phx-value-id='#{child["id"]}']"
+      )
+      |> render_click()
+
+      assert has_element?(view, "#model-picker option[value='sui2api/gpt-5.5'][selected]")
+    end
+
     test "new conversations without a default inherit the model and retain independent selections",
          %{
            conn: conn

@@ -675,11 +675,17 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationState do
   end
 
   defp conversation_selected_model(_socket, conv, available) do
+    pinned_model = collaboration_model(conv)
     stored_model = conv_value(conv, "selected_model", nil)
 
+    selected_model =
+      Enum.find([pinned_model, stored_model], fn model ->
+        is_binary(model) and Enum.any?(available, &(&1.id == model))
+      end)
+
     cond do
-      stored_model && Enum.any?(available, &(&1.id == stored_model)) ->
-        stored_model
+      selected_model ->
+        selected_model
 
       match?([_ | _], available) ->
         first = List.first(available)
@@ -688,6 +694,13 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationState do
       true ->
         nil
     end
+  end
+
+  defp collaboration_model(conv) do
+    provider = get_in(conv || %{}, ["collaboration", "provider"])
+    model = get_in(conv || %{}, ["collaboration", "model"])
+
+    if is_binary(provider) and is_binary(model), do: "#{provider}/#{model}"
   end
 
   defp sync_reasoning_for_conversation(socket, conv, selected_model, opts) do

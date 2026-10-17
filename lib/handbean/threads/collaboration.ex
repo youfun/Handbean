@@ -155,6 +155,8 @@ defmodule Handbean.Threads.Collaboration do
       |> maybe_put("provider", pinned && pinned["provider"])
       |> maybe_put("model", pinned && pinned["model"])
 
+    selected_model = child_selected_model(source, pinned, context)
+
     case ConversationStore.get_metadata(id) do
       {:ok, target} ->
         if child_matches?(target, source["id"], spec),
@@ -169,10 +171,28 @@ defmodule Handbean.Threads.Collaboration do
           parent_run_id: context[:run_id],
           parent_tool_call_id: context[:tool_call_id],
           checkout_path: source["checkout_path"],
+          selected_model: selected_model,
           collaboration: spec
         )
     end
   end
+
+  defp child_selected_model(_source, %{"provider" => provider, "model" => model}, _context)
+       when is_binary(provider) and is_binary(model),
+       do: "#{provider}/#{model}"
+
+  defp child_selected_model(source, _pinned, context) do
+    source["selected_model"] || inherited_model_ref(context[:thread_run_opts])
+  end
+
+  defp inherited_model_ref(opts) when is_list(opts) do
+    case Keyword.get(opts, :model) do
+      model when is_binary(model) -> if String.contains?(model, "/"), do: model
+      _ -> nil
+    end
+  end
+
+  defp inherited_model_ref(_opts), do: nil
 
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
