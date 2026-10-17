@@ -94,7 +94,7 @@ mix test --exclude slow --exclude e2e
 
 ## Migrate existing data
 
-When upgrading from Handbeam, use [the migration script](scripts/MIGRATION.md) to copy configuration and the production database into the new locations. Preview with `python3 scripts/migrate_legacy_data.py`, then run with `--apply`. Existing destinations and original files are preserved.
+When upgrading from Handbeam, use [the migration script](scripts/MIGRATION.md) to copy configuration, the workspace registry (preserving conversation associations), and the production database into the new locations. Preview with `python3 scripts/migrate_legacy_data.py`, then run with `--apply`. Existing destinations and original files are preserved.
 
 ## Inspect effective host configuration
 

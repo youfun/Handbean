@@ -7,6 +7,7 @@ Existing destinations are preserved. Sources are never removed.
 """
 
 import argparse
+import json
 import os
 from pathlib import Path
 import shutil
@@ -50,15 +51,50 @@ def copy_file(source, target, database=False):
         temporary.unlink(missing_ok=True)
 
 
+def validate_workspace_links(database, registry):
+    if not database.is_file():
+        return
+    if database.is_symlink() or registry.is_symlink():
+        raise RuntimeError('Refusing symlink database or workspace registry')
+    connection = sqlite3.connect(database.absolute().as_uri() + '?mode=ro', uri=True)
+    try:
+        columns = {row[1] for row in connection.execute('PRAGMA table_info(conversations)')}
+        if not {'scope', 'workspace_id'}.issubset(columns):
+            return
+        workspace_ids = {row[0] for row in connection.execute(
+            "SELECT DISTINCT workspace_id FROM conversations WHERE scope = 'workspace'"
+        )}
+    finally:
+        connection.close()
+    if not workspace_ids:
+        return
+    try:
+        data = json.loads(registry.read_bytes())
+        registered_ids = {item['id'] for item in data['workspaces']}
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        raise RuntimeError(f'Cannot validate workspace identities in {registry}') from error
+    if not workspace_ids.issubset(registered_ids):
+        raise RuntimeError(
+            f'Workspace identities in {registry} do not match {database}. '
+            'Stop both applications and back up the existing destination database and '
+            'workspaces.json together before restoring the matching legacy pair.'
+        )
+
+
 def migrate(home, workspace, apply=False, database_source=None, database_target=None):
     legacy = home / '.handbeam'
     current = home / '.handbean'
     pairs = [(legacy / name, current / name, False)
-             for name in ('settings.json', 'models.json', 'auth.json')]
+             for name in ('settings.json', 'models.json', 'auth.json', 'workspaces.json')]
     pairs += [
         (workspace / '.handbeam/settings.jsonc', workspace / '.handbean/settings.jsonc', False),
         (database_source or legacy / 'handbeam.db', database_target or current / 'handbean.db', True),
     ]
+    registry_target = current / 'workspaces.json'
+    effective_registry = registry_target if registry_target.exists() else legacy / 'workspaces.json'
+    source_database, target_database, _ = pairs[-1]
+    effective_database = target_database if target_database.exists() else source_database
+    validate_workspace_links(effective_database, effective_registry)
     for source, target, database in pairs:
         if target.exists() or target.is_symlink():
             print(f'KEEP existing: {target}')
