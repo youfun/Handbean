@@ -57,8 +57,10 @@ search.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
 assert.equal(options[0].hidden, false);
 assert.equal(options[1].hidden, true);
 
+element.querySelector("select").setAttribute("value", "mg/b");
 options[0].click();
 assert.equal(element.querySelector("select").value, "mg/a");
+assert.equal(element.querySelector(".model-picker-trigger-label").textContent, "Alpha");
 assert.equal(changes, 1);
 assert.equal(element.querySelector("[data-model-picker-panel]").hidden, true);
 assert.equal(trigger.getAttribute("aria-expanded"), "false");

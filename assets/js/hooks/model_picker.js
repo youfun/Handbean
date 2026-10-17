@@ -93,6 +93,8 @@ export const ModelPicker = {
   updated() {
     this.el.dataset.enhanced = "true";
     this.enhanceNativeSelect();
+    const select = this.nativeSelect();
+    if (select) applyServerValue(select);
     this.syncSelection();
 
     if (this.open) {
@@ -184,7 +186,6 @@ export const ModelPicker = {
     const triggerLabel = this.el.querySelector(".model-picker-trigger-label");
     if (!select || !triggerLabel) return;
 
-    applyServerValue(select);
     const selected = select.options[select.selectedIndex];
     if (selected) triggerLabel.textContent = selected.textContent.trim();
 
