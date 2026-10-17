@@ -575,7 +575,7 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
 
     projection = ToolProjection.finish(payload, base_entry)
     %{entry: entry, status: status, file_path: file_path, diff_lines: diff_lines} = projection
-    tools_active = Map.put(socket.assigns.tools_active, tool_name, status)
+    tools_active = Map.put(socket.assigns.tools_active, projection.tool_name, status)
 
     updated =
       socket

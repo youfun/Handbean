@@ -210,17 +210,16 @@ defmodule Handbean.Agent.CliAgent.Run do
   end
 
   defp persist(conversation_id, {:tool_end, tool}, opts) do
-    TranscriptPersistence.handle_event(
-      conversation_id,
-      {:tool_end,
-       %{
-         tool_use_id: tool.id,
-         output: Map.get(tool, :output, ""),
-         error: if(tool[:is_error], do: "cli tool error"),
-         projected: true
-       }},
-      opts
-    )
+    payload =
+      %{
+        tool_use_id: tool.id,
+        output: Map.get(tool, :output, ""),
+        error: if(tool[:is_error], do: "cli tool error"),
+        projected: true
+      }
+      |> copy_tool_name(tool)
+
+    TranscriptPersistence.handle_event(conversation_id, {:tool_end, payload}, opts)
   end
 
   defp persist(conversation_id, {:usage, usage}, opts) do
@@ -247,19 +246,29 @@ defmodule Handbean.Agent.CliAgent.Run do
   defp projected_event(_conversation_id, {:tool_start, tool}) when is_map(tool) do
     {:tool_start,
      tool
-     |> Map.put_new(:tool, tool[:name])
+     |> copy_tool_name(tool)
      |> Map.put_new(:tool_use_id, tool[:id])}
   end
 
   defp projected_event(_conversation_id, {:tool_end, tool}) when is_map(tool) do
     {:tool_end,
      tool
-     |> Map.put_new(:tool, tool[:name])
+     |> copy_tool_name(tool)
      |> Map.put_new(:tool_use_id, tool[:id])
      |> Map.put_new(:error, if(tool[:is_error], do: "cli tool error"))}
   end
 
   defp projected_event(_conversation_id, event), do: event
+
+  defp copy_tool_name(event, tool) when is_map(tool) do
+    case tool[:name] || tool["name"] do
+      name when is_binary(name) and name != "" and name != "unknown" ->
+        Map.put_new(event, :tool, name)
+
+      _ ->
+        event
+    end
+  end
 
   defp resolve_session_id(conversation_id, opts) when is_binary(conversation_id) do
     if Keyword.has_key?(opts, :session_id) do

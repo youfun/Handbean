@@ -580,6 +580,49 @@ defmodule Handbean.Agent.TranscriptPersistenceTest do
     refute Map.has_key?(tool, "error")
   end
 
+  test "a nameless tool_end keeps the name recorded at tool_start" do
+    {:ok, conversation} = Handbean.ConversationStore.create("default", timeline: [])
+    conversation_id = conversation["id"]
+
+    assert :ok =
+             TranscriptPersistence.handle_event(
+               conversation_id,
+               {:tool_start,
+                %{
+                  tool_use_id: "WrxcLFl8Z",
+                  tool: "Execute",
+                  input: %{command: "git status"}
+                }}
+             )
+
+    assert :ok =
+             TranscriptPersistence.handle_event(
+               conversation_id,
+               {:tool_end, %{tool_use_id: "WrxcLFl8Z", output: " M lib/app.ex"}}
+             )
+
+    [entry] = Handbean.ConversationStore.load_messages(conversation_id)
+    assert entry["tool_name"] == "Execute"
+    assert entry["tool_status"] == "done"
+    assert entry["output"] =~ "lib/app.ex"
+  end
+
+  test "tool_end without a prior start still records a placeholder name" do
+    {:ok, conversation} = Handbean.ConversationStore.create("default", timeline: [])
+    conversation_id = conversation["id"]
+
+    assert :ok =
+             TranscriptPersistence.handle_event(
+               conversation_id,
+               {:tool_end, %{tool_use_id: "orphan-1", output: "done"}}
+             )
+
+    [entry] = Handbean.ConversationStore.load_messages(conversation_id)
+    assert entry["id"] == "tool-orphan-1"
+    assert entry["tool_name"] == "unknown"
+    assert entry["tool_status"] == "done"
+  end
+
   test "persists invalid UTF-8 in a tool error without crashing the run" do
     {:ok, conversation} = Handbean.ConversationStore.create("default", timeline: [])
     conversation_id = conversation["id"]

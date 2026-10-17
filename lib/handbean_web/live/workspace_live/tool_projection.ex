@@ -30,7 +30,7 @@ defmodule HandbeanWeb.WorkspaceLive.ToolProjection do
   end
 
   def finish(payload, base_entry) do
-    tool_name = value(payload, :tool) || value(payload, :name) || "unknown"
+    tool_name = resolved_tool_name(payload, base_entry)
     duration_ms = value(payload, :duration_ms)
     error = value(payload, :error)
 
@@ -95,5 +95,25 @@ defmodule HandbeanWeb.WorkspaceLive.ToolProjection do
     end
   end
 
-  defp value(map, key), do: Map.get(map, key) || Map.get(map, Atom.to_string(key))
+  defp resolved_tool_name(payload, base_entry) do
+    incoming = value(payload, :tool) || value(payload, :name)
+
+    existing =
+      value(base_entry, :tool_name) || value(base_entry, :tool) || value(base_entry, :name)
+
+    usable_tool_name(incoming) || usable_tool_name(existing) || "unknown"
+  end
+
+  defp usable_tool_name(name) when is_binary(name) do
+    trimmed = String.trim(name)
+
+    if trimmed == "" or trimmed == "unknown", do: nil, else: name
+  end
+
+  defp usable_tool_name(_), do: nil
+
+  defp value(map, key) when is_map(map),
+    do: Map.get(map, key) || Map.get(map, Atom.to_string(key))
+
+  defp value(_map, _key), do: nil
 end

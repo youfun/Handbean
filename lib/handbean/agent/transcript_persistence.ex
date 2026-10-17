@@ -213,8 +213,8 @@ defmodule Handbean.Agent.TranscriptPersistence do
   def handle_event(conversation_id, {:tool_end, payload}, opts) when is_binary(conversation_id) do
     flush!(conversation_id, opts)
 
-    tool_name = payload_value(payload, :tool, payload_value(payload, :name, "unknown"))
-    tool_use_id = payload_value(payload, :tool_use_id, tool_name)
+    tool_name = payload_value(payload, :tool) || payload_value(payload, :name)
+    tool_use_id = payload_value(payload, :tool_use_id) || tool_name
     error = payload_value(payload, :error)
     status = tool_status(payload, error)
 
@@ -233,7 +233,6 @@ defmodule Handbean.Agent.TranscriptPersistence do
 
     patch =
       %{
-        "tool_name" => tool_name,
         "tool_status" => status,
         "tool_duration_ms" => payload_value(payload, :duration_ms),
         "tool_error" => error,
@@ -244,6 +243,7 @@ defmodule Handbean.Agent.TranscriptPersistence do
         "file_path" => payload_value(payload, :file_path) || map_value(details, :file_path),
         "diff_lines" => map_value(details, :diff_lines)
       }
+      |> put_if_present("tool_name", usable_tool_name(tool_name))
       |> put_if_present("started_at", payload_value(payload, :started_at))
       |> put_if_present("completed_at", payload_value(payload, :completed_at))
       |> put_if_present("timing_fidelity", payload_value(payload, :timing_fidelity))
@@ -251,7 +251,7 @@ defmodule Handbean.Agent.TranscriptPersistence do
     entry =
       base_entry(conversation_id, opts)
       |> Map.merge(%{
-        "id" => tool_entry_id(tool_use_id, tool_name),
+        "id" => tool_entry_id(tool_use_id, usable_tool_name(tool_name) || "unknown"),
         "content_type" => "tool",
         "message_type" => "tool",
         "role" => "tool",
@@ -263,7 +263,7 @@ defmodule Handbean.Agent.TranscriptPersistence do
       })
       |> Map.merge(patch)
 
-    with {:ok, _saved} <- append_or_update(conversation_id, entry, opts), do: :ok
+    with {:ok, _saved} <- persist_tool_end(conversation_id, entry, opts), do: :ok
   end
 
   def handle_event(conversation_id, {:candidate_message_injected, %{message_ids: ids}}, opts)
@@ -372,6 +372,30 @@ defmodule Handbean.Agent.TranscriptPersistence do
 
       {:error, :not_found} ->
         Handbean.ConversationTranscriptStore.append(conversation_id, entry, opts)
+
+      {:error, reason} ->
+        Logger.warning(fn ->
+          "[TranscriptPersistence] failed to update transcript entry conversation=#{conversation_id} " <>
+            "id=#{id} reason=#{inspect(reason)}"
+        end)
+
+        {:error, reason}
+    end
+  end
+
+  # CLI backends such as Droid emit tool_result without a name. Updating the
+  # existing row must not replace the start name with the "unknown" placeholder.
+  defp persist_tool_end(conversation_id, %{"id" => id} = entry, opts) do
+    case Handbean.ConversationTranscriptStore.update(conversation_id, id, entry, opts) do
+      {:ok, updated} ->
+        {:ok, updated}
+
+      {:error, :not_found} ->
+        Handbean.ConversationTranscriptStore.append(
+          conversation_id,
+          Map.put_new(entry, "tool_name", "unknown"),
+          opts
+        )
 
       {:error, reason} ->
         Logger.warning(fn ->
@@ -1087,6 +1111,14 @@ defmodule Handbean.Agent.TranscriptPersistence do
 
   defp put_if_present(map, _key, nil), do: map
   defp put_if_present(map, key, value), do: Map.put(map, key, value)
+
+  defp usable_tool_name(name) when is_binary(name) do
+    trimmed = String.trim(name)
+
+    if trimmed == "" or trimmed == "unknown", do: nil, else: name
+  end
+
+  defp usable_tool_name(_), do: nil
 
   defp bound_persisted_output(output) when is_binary(output) and byte_size(output) > 16_000 do
     String.slice(output, 0, 15_900) <> "\n[truncated]"
