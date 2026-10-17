@@ -309,6 +309,86 @@ defmodule HandbeamWeb.AvailableModelsLiveTest do
     assert provider["authType"] == "oauth"
     assert provider["api"] == "openai-responses"
     assert Enum.any?(provider["models"], &(&1["id"] == "grok-4.7"))
+    assert Enum.any?(provider["models"], &(&1["id"] == "grok-4.6"))
+    assert Enum.any?(provider["models"], &(&1["id"] == "grok-4.5"))
+    assert Enum.any?(provider["models"], &(&1["id"] == "grok-4.3"))
+  end
+
+  test "reopening xAI login adds older grok models without replacing grok-4.7", %{
+    conn: conn
+  } do
+    :ets.new(:xai_oauth_live_mock, [:named_table, :public, :set])
+    :ets.insert(:xai_oauth_live_mock, {:calls, []})
+    Application.put_env(:handbeam, :xai_oauth_req_module, MockXaiReq)
+
+    on_exit(fn ->
+      Application.delete_env(:handbeam, :xai_oauth_req_module)
+
+      if :ets.whereis(:xai_oauth_live_mock) != :undefined do
+        :ets.delete(:xai_oauth_live_mock)
+      end
+    end)
+
+    :ets.insert(
+      :xai_oauth_live_mock,
+      {:replies,
+       [
+         {:ok,
+          %{
+            status: 200,
+            body: %{
+              "device_code" => "device-1",
+              "user_code" => "ABCD-1234",
+              "verification_uri" => "https://accounts.x.ai/oauth2/device",
+              "expires_in" => 900,
+              "interval" => 5
+            }
+          }}
+       ]}
+    )
+
+    :ok =
+      ModelConfig.add_provider("xai", %{
+        "name" => "xAI",
+        "provider" => "openai",
+        "baseUrl" => "https://api.x.ai/v1",
+        "api" => "openai-responses",
+        "authType" => "oauth",
+        "models" => [
+          %{
+            "id" => "grok-4.7",
+            "name" => "Custom Grok 4.7",
+            "reasoning" => true,
+            "input" => ["text"],
+            "contextWindow" => 500_000,
+            "maxTokens" => 32_000
+          }
+        ]
+      })
+
+    {:ok, view, _html} =
+      live_isolated(conn, HandbeamWeb.AvailableModelsLive, session: %{"embedded" => "true"})
+
+    view
+    |> element(~s|button[phx-click="open_subscription_login"]|)
+    |> render_click()
+
+    view
+    |> element(~s|button[phx-click="start_subscription_oauth"][phx-value-id="xai"]|)
+    |> render_click()
+
+    {:ok, config} =
+      ModelConfig.config_file_path()
+      |> File.read!()
+      |> Jason.decode()
+
+    models = get_in(config, ["providers", "xai", "models"])
+    grok_47 = Enum.find(models, &(&1["id"] == "grok-4.7"))
+
+    assert grok_47["name"] == "Custom Grok 4.7"
+    assert grok_47["input"] == ["text"]
+    assert Enum.any?(models, &(&1["id"] == "grok-4.6"))
+    assert Enum.any?(models, &(&1["id"] == "grok-4.3"))
   end
 
   test "Cursor subscription login shows the browser authorization URL", %{conn: conn} do

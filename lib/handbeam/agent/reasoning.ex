@@ -114,6 +114,7 @@ defmodule Handbeam.Agent.Reasoning do
     cond do
       levels == [] -> "off"
       default in levels and default != "off" -> default
+      "low" in levels and grok_4_3?(model_entry) -> "low"
       "high" in levels and not disableable?(model_entry) -> "high"
       "medium" in levels -> "medium"
       true -> List.first(levels) || "off"
@@ -213,10 +214,19 @@ defmodule Handbeam.Agent.Reasoning do
   # xAI reasoning models reject requests that omit effort, and do not accept
   # "off" or "minimal". Keep the picker aligned with the API.
   defp family_levels(model_entry) do
-    if grok_reasoning?(model_entry), do: ["low", "medium", "high", "xhigh"], else: []
+    cond do
+      grok_4_3?(model_entry) -> ["none", "low", "medium", "high", "xhigh"]
+      grok_reasoning?(model_entry) -> ["low", "medium", "high", "xhigh"]
+      true -> []
+    end
   end
 
-  defp disableable?(model_entry), do: not grok_reasoning?(model_entry)
+  defp disableable?(model_entry), do: not grok_reasoning?(model_entry) or grok_4_3?(model_entry)
+
+  defp grok_4_3?(model_entry) do
+    tokens = identity_tokens(model_entry)
+    String.contains?(tokens, "grok-4.3") or String.contains?(tokens, "grok-4-3")
+  end
 
   defp grok_reasoning?(model_entry) do
     tokens = identity_tokens(model_entry)
@@ -276,7 +286,12 @@ defmodule Handbeam.Agent.Reasoning do
   end
 
   defp default_for(model_entry, enabled) do
-    preferred = if(grok_reasoning?(model_entry), do: "high", else: "medium")
+    preferred =
+      cond do
+        grok_4_3?(model_entry) -> "low"
+        grok_reasoning?(model_entry) -> "high"
+        true -> "medium"
+      end
 
     cond do
       preferred in enabled -> preferred

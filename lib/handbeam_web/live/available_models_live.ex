@@ -9,6 +9,7 @@ defmodule HandbeamWeb.AvailableModelsLive do
     Epoch,
     Storage,
     Subscriptions,
+    XaiCredential,
     XaiOAuth
   }
 
@@ -636,6 +637,7 @@ defmodule HandbeamWeb.AvailableModelsLive do
 
     with {:ok, method} <- Subscriptions.get(provider_id),
          :ok <- ensure_subscription_provider(method),
+         :ok <- seed_subscription_models(method.id),
          {:ok, device} <- start_device_flow(method) do
       attempt_id = System.unique_integer([:positive])
       schedule_subscription_poll(device, attempt_id)
@@ -933,6 +935,26 @@ defmodule HandbeamWeb.AvailableModelsLive do
         end
     end
   end
+
+  # Presets written before a model was added stay as the user saved them.
+  # Reopening login only inserts catalog ids that are still missing.
+  defp seed_subscription_models("xai") do
+    Enum.reduce_while(XaiCredential.subscription_models(), :ok, fn model, :ok ->
+      case ModelConfig.add_model("xai", model["id"], Map.delete(model, "id")) do
+        :ok ->
+          {:cont, :ok}
+
+        {:error, message} ->
+          if String.contains?(message, "already exists") do
+            {:cont, :ok}
+          else
+            {:halt, {:error, message}}
+          end
+      end
+    end)
+  end
+
+  defp seed_subscription_models(_provider_id), do: :ok
 
   # Catalog lookup takes a cluster-wide lock. Doing it while mounting stalls
   # the nested LiveView long enough for the settings page to stay blank, so

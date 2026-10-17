@@ -80,6 +80,25 @@ defmodule Handbeam.Agent.ReasoningTest do
       assert Reasoning.default_level(%{id: "grok-4.7", reasoning: true}) == "high"
     end
 
+    test "defaults grok 4.3 to low and allows reasoning to be turned off" do
+      model = %{
+        id: "grok-4.3",
+        reasoning: true,
+        reasoning_levels: ["none", "low", "medium", "high", "xhigh"]
+      }
+
+      assert Reasoning.supported_levels(model) == [
+               "off",
+               "none",
+               "low",
+               "medium",
+               "high",
+               "xhigh"
+             ]
+
+      assert Reasoning.default_level(model) == "low"
+    end
+
     test "returns off for non-reasoning models" do
       assert Reasoning.default_level(%{reasoning: false}) == "off"
     end
