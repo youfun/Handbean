@@ -90,6 +90,10 @@ mix phx.server
 mix test --exclude slow --exclude e2e
 ```
 
+## 迁移已有数据
+
+从 Handbeam 升级时，可使用[迁移脚本](scripts/MIGRATION.md)复制配置和正式数据库到新路径。先运行 `python3 scripts/migrate_legacy_data.py` 预览，确认后添加 `--apply` 执行。已有目标文件和原文件均会保留。
+
 ## 检查宿主生效配置（Inspect Config）
 
 在不启动完整服务、不初始化存储目录、不暴露真实凭据且不连接 MCP 的前提下，你可以通过诊断工具导出当前环境的配置解析报告：

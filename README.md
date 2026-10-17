@@ -92,6 +92,10 @@ Open `http://localhost:5002` in your browser and select a workspace directory to
 mix test --exclude slow --exclude e2e
 ```
 
+## Migrate existing data
+
+When upgrading from Handbeam, use [the migration script](scripts/MIGRATION.md) to copy configuration and the production database into the new locations. Preview with `python3 scripts/migrate_legacy_data.py`, then run with `--apply`. Existing destinations and original files are preserved.
+
 ## Inspect effective host configuration
 
 Inspect your resolved runtime configuration safely without booting the full server, initializing file stores, resolving credentials, or connecting to MCP servers:
