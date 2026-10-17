@@ -121,7 +121,7 @@ jobs:
 
       - uses: goto-bus-stop/setup-zig@v2
         with:
-          version: "0.17.0-dev.269+ebff43698"
+          version: "0.16.0"
 
       - uses: erlef/setup-beam@v1
         with:
@@ -262,7 +262,7 @@ jobs:
       - uses: goto-bus-stop/setup-zig@v2
         if: matrix.target == 'linux-x86_64' || matrix.target == 'macos-arm64'
         with:
-          version: "0.17.0-dev.269+ebff43698"
+          version: "0.16.0"
 
       - uses: erlef/setup-beam@v1
         if: matrix.target != 'windows-arm64'

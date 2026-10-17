@@ -59,7 +59,7 @@ GitHub Releases 的 `web-latest` 及各版本标签提供了开箱即用的自�
 - **Elixir**：`>= 1.20.0`
 - **Erlang/OTP**：`28+`
 - **Node.js**：`24`（LTS，用于前端资源构建）
-- **Zig**：Linux/macOS 需要 `0.17.0-dev.269+ebff43698`，Linux 还需要 **patchelf**，用于构建 fork 中的 Ghostty 终端引擎和 NIF。`mix compile` 会自动构建依赖锁定的引擎；首次构建需要下载 Ghostty 源码及 Zig 依赖。
+- **Zig**：Linux/macOS 需要 `0.16.0`，Linux 还需要 **patchelf**，用于构建 fork 中的 Ghostty 终端引擎和 NIF。`mix compile` 会自动构建依赖锁定的引擎；首次构建需要下载 Ghostty 源码及 Zig 依赖。
 
 ### 启动步骤
 

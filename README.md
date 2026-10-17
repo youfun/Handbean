@@ -61,7 +61,7 @@ Prebuilt packages with a bundled OTP runtime are available on GitHub Releases un
 - **Elixir**: `>= 1.20.0`
 - **Erlang/OTP**: `28+`
 - **Node.js**: `24` (LTS, for asset bundling)
-- **Zig**: `0.17.0-dev.269+ebff43698` on Linux/macOS, plus **patchelf** on Linux, for the forked Ghostty terminal engine and NIFs. `mix compile` builds the engine pinned by the dependency automatically; the first build downloads Ghostty sources and Zig dependencies.
+- **Zig**: `0.16.0` on Linux/macOS, plus **patchelf** on Linux, for the forked Ghostty terminal engine and NIFs. `mix compile` builds the engine pinned by the dependency automatically; the first build downloads Ghostty sources and Zig dependencies.
 
 ### Setup & run
 

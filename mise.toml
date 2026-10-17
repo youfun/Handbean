@@ -1,4 +1,4 @@
 # Orb setup does not use mise for Erlang/Elixir. Kept for local mise users.
 [tools]
 elixir = "1.20.2-otp-29"
-zig = "0.17.0-dev.269+ebff43698"
+zig = "0.16.0"
