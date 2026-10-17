@@ -45,7 +45,7 @@ defmodule Handbeam.Agent.Auth.CodexCredential do
       "api" => "openai-codex-responses",
       "authType" => "oauth",
       "baseUrl" => "https://chatgpt.com/backend-api/codex",
-      # Offline fallback from the Codex CLI rust-v0.156.1 bundled catalog.
+      # Offline fallback from the Codex CLI rust-v0.163.0 bundled catalog.
       # Refresh replaces this with the account's live /models response.
       # gpt-5.4 is visibility=hide there and was retired from ChatGPT Codex.
       "models" => BuiltinModels.codex()

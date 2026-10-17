@@ -5,8 +5,8 @@ defmodule HandbeamProbe.ModelSettings.Subscriptions do
   The protocol stays in `Handbeam.Agent.Auth.CodexOAuth`, `CursorOAuth`, and
   `XaiOAuth`. This module only lists `Handbeam.Agent.Auth.Subscriptions.methods/0`,
   starts a flow, polls once, and persists through the same credential writers
-  desktop uses. Catalog refresh calls the existing Codex and Cursor discovery
-  functions. The screen process must not call the network functions directly.
+  desktop uses. Catalog refresh calls the existing Codex, Cursor, and xAI
+  discovery functions. The screen process must not call the network functions directly.
   """
 
   use Gettext, backend: HandbeamProbe.Gettext
@@ -25,6 +25,7 @@ defmodule HandbeamProbe.ModelSettings.Subscriptions do
   alias Handbeam.Agent.ModelConfig
   alias Handbeam.Agent.Provider.Codex.Models, as: CodexModels
   alias Handbeam.Agent.Provider.Cursor.Models, as: CursorModels
+  alias Handbeam.Agent.Provider.ModelCatalog
 
   @secret_keys [:device_code, :verifier, :access, :refresh, :api_key, :authorization]
 
@@ -92,7 +93,7 @@ defmodule HandbeamProbe.ModelSettings.Subscriptions do
       case CodexModels.discover(opts) do
         {:ok, models} ->
           if Epoch.current("openai_codex") == generation do
-            write_models("openai_codex", models)
+            write_models("openai_codex", preserve_enabled(models, "openai_codex"))
           else
             {:error, gettext("ChatGPT sign-in changed before the model list was saved.")}
           end
@@ -108,6 +109,13 @@ defmodule HandbeamProbe.ModelSettings.Subscriptions do
   def discover("cursor", _generation, opts) do
     case CursorModels.discover(opts) do
       {:ok, models} -> write_models("cursor", preserve_enabled(models, "cursor"))
+      {:error, message} -> {:error, safe_message(message)}
+    end
+  end
+
+  def discover("xai", _generation, opts) do
+    case ModelCatalog.discover("xai", opts) do
+      {:ok, _summary} -> :ok
       {:error, message} -> {:error, safe_message(message)}
     end
   end

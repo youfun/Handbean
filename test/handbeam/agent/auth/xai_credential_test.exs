@@ -258,21 +258,12 @@ defmodule Handbeam.Agent.Auth.XaiCredentialTest do
     assert message =~ "Sign in"
   end
 
-  test "xai preset seeds current grok text models as openai-responses models" do
+  test "xai preset is an oauth responses provider with no hardcoded models" do
     preset = XaiCredential.provider_preset()
-    by_id = Map.new(preset["models"], &{&1["id"], &1})
 
     assert preset["baseUrl"] == "https://api.x.ai/v1"
     assert preset["api"] == "openai-responses"
     assert preset["authType"] == "oauth"
-
-    assert by_id["grok-4.7"]["reasoning"] == true
-    assert by_id["grok-4.7"]["contextWindow"] == 500_000
-    assert by_id["grok-4.6"]["cost"]["cacheRead"] == 0.5
-    assert by_id["grok-4.5"]["cost"]["cacheRead"] == 0.3
-    assert by_id["grok-4.3"]["contextWindow"] == 1_000_000
-    assert by_id["grok-4.3"]["defaultReasoning"] == "low"
-    assert by_id["grok-4.3"]["cost"]["output"] == 2.5
-    refute Enum.any?(preset["models"], &(&1["id"] in ["grok-3", "grok-2"]))
+    assert preset["models"] == []
   end
 end

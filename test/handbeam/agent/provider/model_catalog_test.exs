@@ -1,8 +1,10 @@
 defmodule Handbeam.Agent.Provider.ModelCatalogTest do
   use ExUnit.Case, async: false
 
+  alias Handbeam.Agent.Auth.Storage
   alias Handbeam.Agent.ModelConfig
   alias Handbeam.Agent.Provider.ModelCatalog
+  alias Handbeam.Agent.Provider.ModelCatalogTest.XaiReq
 
   defmodule ReqMock do
     def get(url, opts) do
@@ -176,7 +178,7 @@ defmodule Handbeam.Agent.Provider.ModelCatalogTest do
     assert [%{"id" => "kept"}] = config["providers"]["magpie"]["models"]
   end
 
-  test "anthropic and oauth providers are not fetched from /v1/models" do
+  test "anthropic and non-xAI oauth providers are not fetched from /v1/models" do
     refute ModelCatalog.fetchable?(%{
              "api" => "anthropic-messages",
              "baseUrl" => "http://127.0.0.1:3425"
@@ -187,5 +189,147 @@ defmodule Handbeam.Agent.Provider.ModelCatalogTest do
              "baseUrl" => "http://127.0.0.1:3425",
              "authType" => "oauth"
            })
+
+    assert ModelCatalog.fetchable?(%{
+             "api" => "openai-responses",
+             "baseUrl" => "https://api.x.ai/v1",
+             "authType" => "oauth"
+           })
+  end
+
+  test "xAI subscription discover pulls /v1/models and refreshes vendor fields" do
+    :ok =
+      ModelConfig.add_provider("xai", %{
+        "name" => "xAI",
+        "api" => "openai-responses",
+        "baseUrl" => "https://api.x.ai/v1",
+        "authType" => "oauth",
+        "models" => [
+          %{
+            "id" => "grok-4.7",
+            "name" => "Custom Grok",
+            "enabled" => false,
+            "input" => ["text"],
+            "contextWindow" => 1,
+            "cost" => %{"input" => 9, "output" => 9, "cacheRead" => 9}
+          },
+          %{"id" => "retired", "name" => "Retired", "input" => ["text"]}
+        ]
+      })
+
+    auth_path =
+      Path.join(System.tmp_dir!(), "xai_models_auth_#{System.unique_integer([:positive])}.json")
+
+    previous_auth = System.get_env("HANDBEAM_AUTH_FILE")
+    System.put_env("HANDBEAM_AUTH_FILE", auth_path)
+
+    :ok =
+      Storage.put("xai", %{
+        "type" => "oauth",
+        "access" => "oauth-token",
+        "refresh" => "refresh",
+        "expires" => System.system_time(:millisecond) + 3_600_000
+      })
+
+    on_exit(fn ->
+      if previous_auth,
+        do: System.put_env("HANDBEAM_AUTH_FILE", previous_auth),
+        else: System.delete_env("HANDBEAM_AUTH_FILE")
+
+      File.rm(auth_path)
+    end)
+
+    assert {:ok, %{added: 1, total: 3}} = ModelCatalog.discover("xai", req_module: XaiReq)
+
+    assert_received {:models_request, "https://api.x.ai/v1/models", opts}
+    assert {"authorization", "Bearer oauth-token"} in opts[:headers]
+    assert_received {:models_request, "https://api.x.ai/v1/language-models", _language_opts}
+
+    {:ok, config} = ModelConfig.read_config()
+    models = config["providers"]["xai"]["models"]
+    grok = Enum.find(models, &(&1["id"] == "grok-4.7"))
+    older = Enum.find(models, &(&1["id"] == "grok-4.6"))
+    retired = Enum.find(models, &(&1["id"] == "retired"))
+
+    assert grok["name"] == "Custom Grok"
+    assert grok["enabled"] == false
+    assert grok["contextWindow"] == 500_000
+    assert grok["cost"]["input"] == 2.0
+    assert grok["cost"]["cacheRead"] == 0.5
+    assert grok["cost"]["output"] == 6.0
+    assert grok["input"] == ["text", "image"]
+    assert grok["reasoning"] == true
+    assert grok["defaultReasoning"] == "high"
+    assert older["contextWindow"] == 500_000
+    assert older["cost"]["input"] == 2.0
+    refute Enum.any?(models, &(&1["id"] == "grok-imagine-image"))
+    assert retired["unavailable"] == true
+  end
+end
+
+defmodule Handbeam.Agent.Provider.ModelCatalogTest.XaiReq do
+  def get(url, opts) do
+    send(self(), {:models_request, url, opts})
+
+    cond do
+      String.ends_with?(url, "/language-models") ->
+        {:ok,
+         %{
+           status: 200,
+           body: %{
+             "models" => [
+               %{
+                 "id" => "grok-4.7",
+                 "input_modalities" => ["text", "image"],
+                 "prompt_text_token_price" => 20_000,
+                 "cached_prompt_text_token_price" => 5_000,
+                 "completion_text_token_price" => 60_000,
+                 "capabilities" => %{
+                   "reasoning_effort" => ["low", "medium", "high", "xhigh"],
+                   "default_reasoning_effort" => "high"
+                 }
+               },
+               %{
+                 "id" => "grok-4.6",
+                 "input_modalities" => ["text", "image"],
+                 "prompt_text_token_price" => 20_000,
+                 "cached_prompt_text_token_price" => 5_000,
+                 "completion_text_token_price" => 60_000
+               }
+             ]
+           }
+         }}
+
+      true ->
+        {:ok,
+         %{
+           status: 200,
+           body: %{
+             "object" => "list",
+             "data" => [
+               %{
+                 "id" => "grok-4.7",
+                 "object" => "model",
+                 "context_length" => 500_000,
+                 "prompt_text_token_price" => 20_000,
+                 "completion_text_token_price" => 60_000,
+                 "cached_prompt_text_token_price" => 5_000
+               },
+               %{
+                 "id" => "grok-4.6",
+                 "object" => "model",
+                 "context_length" => 500_000,
+                 "prompt_text_token_price" => 20_000
+               },
+               %{
+                 "id" => "grok-imagine-image",
+                 "object" => "model",
+                 "image_price" => 5,
+                 "prompt_text_token_price" => nil
+               }
+             ]
+           }
+         }}
+    end
   end
 end

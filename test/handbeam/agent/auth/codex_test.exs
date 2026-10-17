@@ -224,7 +224,8 @@ defmodule Handbeam.Agent.Auth.CodexTest do
     assert config.reasoning == %{effort: "high"}
     models = CodexCredential.provider_preset()["models"]
 
-    assert Enum.map(models, & &1["id"]) |> Enum.take(3) == [
+    assert Enum.map(models, & &1["id"]) |> Enum.take(4) == [
+             "gpt-6.1-sol",
              "gpt-6-sol",
              "gpt-6-luna",
              "gpt-6-astra"

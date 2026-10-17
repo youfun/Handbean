@@ -8,6 +8,15 @@ defmodule Handbeam.Agent.BuiltinModels do
 
   @codex_models [
     %{
+      "id" => "gpt-6.1-sol",
+      "name" => "GPT-6.1-Sol",
+      "reasoning" => true,
+      "input" => ["text", "image"],
+      "contextWindow" => 272_000,
+      "reasoningLevels" => ["low", "medium", "high", "xhigh", "max", "ultra"],
+      "defaultReasoning" => "low"
+    },
+    %{
       "id" => "gpt-6-sol",
       "name" => "GPT-6-Sol",
       "reasoning" => true,

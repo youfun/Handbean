@@ -9,7 +9,6 @@ defmodule HandbeamWeb.AvailableModelsLive do
     Epoch,
     Storage,
     Subscriptions,
-    XaiCredential,
     XaiOAuth
   }
 
@@ -637,7 +636,6 @@ defmodule HandbeamWeb.AvailableModelsLive do
 
     with {:ok, method} <- Subscriptions.get(provider_id),
          :ok <- ensure_subscription_provider(method),
-         :ok <- seed_subscription_models(method.id),
          {:ok, device} <- start_device_flow(method) do
       attempt_id = System.unique_integer([:positive])
       schedule_subscription_poll(device, attempt_id)
@@ -760,6 +758,7 @@ defmodule HandbeamWeb.AvailableModelsLive do
         |> reload_providers()
         |> maybe_discover_codex_models(oauth.provider_id)
         |> maybe_discover_cursor_models(oauth.provider_id, oauth.attempt_id)
+        |> maybe_discover_subscription_models(oauth.provider_id)
 
       {:error, message} ->
         socket |> clear_subscription_oauth() |> assign(:form_error, message)
@@ -786,6 +785,9 @@ defmodule HandbeamWeb.AvailableModelsLive do
   end
 
   defp maybe_discover_cursor_models(socket, _provider_id, _attempt_id), do: socket
+
+  defp maybe_discover_subscription_models(socket, "xai"), do: discover_provider_models(socket)
+  defp maybe_discover_subscription_models(socket, _provider_id), do: socket
 
   defp discover_provider_models(socket) do
     provider_id = socket.assigns.selected_provider_id
@@ -851,6 +853,8 @@ defmodule HandbeamWeb.AvailableModelsLive do
 
       case result do
         {:ok, models} ->
+          models = CodexModels.preserve_enabled(models, stored_models("openai_codex"))
+
           case ModelConfig.update_provider("openai_codex", %{"models" => models}) do
             :ok -> reload_providers(socket)
             {:error, message} -> assign(socket, :form_error, message)
@@ -936,26 +940,6 @@ defmodule HandbeamWeb.AvailableModelsLive do
     end
   end
 
-  # Presets written before a model was added stay as the user saved them.
-  # Reopening login only inserts catalog ids that are still missing.
-  defp seed_subscription_models("xai") do
-    Enum.reduce_while(XaiCredential.subscription_models(), :ok, fn model, :ok ->
-      case ModelConfig.add_model("xai", model["id"], Map.delete(model, "id")) do
-        :ok ->
-          {:cont, :ok}
-
-        {:error, message} ->
-          if String.contains?(message, "already exists") do
-            {:cont, :ok}
-          else
-            {:halt, {:error, message}}
-          end
-      end
-    end)
-  end
-
-  defp seed_subscription_models(_provider_id), do: :ok
-
   # Catalog lookup takes a cluster-wide lock. Doing it while mounting stalls
   # the nested LiveView long enough for the settings page to stay blank, so
   # stored prices render immediately and missing ones fill in afterwards.
@@ -1017,6 +1001,13 @@ defmodule HandbeamWeb.AvailableModelsLive do
 
   defp display_cost(%{"cost" => cost}) when is_map(cost) and map_size(cost) > 0, do: cost
   defp display_cost(_), do: %{}
+
+  defp stored_models(provider_id) do
+    case load_raw_config() do
+      %{"providers" => %{^provider_id => %{"models" => models}}} when is_list(models) -> models
+      _ -> []
+    end
+  end
 
   defp preserve_model_enabled(models, provider_id) do
     previous =

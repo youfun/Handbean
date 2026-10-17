@@ -4,10 +4,11 @@ defmodule Handbeam.Agent.Provider.Codex.Models do
   alias Handbeam.Agent.Auth.CodexCredential
   alias Handbeam.Agent.Provider.Codex
 
-  # Codex filters /models by this query param. 0.1.0 is below every current
-  # minimal_client_version, so the backend returns no visible models.
-  # Keep this at or above the newest bundled Codex CLI catalog requirement.
-  @client_version "0.156.1"
+  # Codex filters /models by this query param. The live catalog can hide a
+  # model even when the advertised client is above that model's
+  # minimal_client_version. Keep this on the current stable Codex CLI:
+  # 0.156.1 omitted gpt-6.1-sol, while rust-v0.163.0 returns it.
+  @client_version "0.163.0"
 
   def discover(opts \\ []) do
     with {:ok, auth} <- CodexCredential.resolve_transport_key("openai_codex", opts) do
@@ -57,8 +58,32 @@ defmodule Handbeam.Agent.Provider.Codex.Models do
 
     case visible do
       [] -> {:error, "No Codex models were returned. The existing model list was kept."}
-      _ -> {:ok, Enum.uniq_by(visible, & &1["id"])}
+      models -> {:ok, Enum.uniq_by(models, & &1["id"])}
     end
+  end
+
+  @doc """
+  Keep enabled flags from the stored catalog when a refresh replaces rows.
+
+  Remote order and metadata win. Models the account no longer returns are
+  dropped, matching the subscription catalog rather than a local union.
+  """
+  def preserve_enabled(models, existing) when is_list(models) and is_list(existing) do
+    enabled =
+      Map.new(existing, fn
+        %{"id" => id, "enabled" => enabled} when is_binary(id) and is_boolean(enabled) ->
+          {id, enabled}
+
+        _ ->
+          {nil, nil}
+      end)
+
+    Enum.map(models, fn model ->
+      case Map.get(enabled, model["id"]) do
+        enabled when is_boolean(enabled) -> Map.put(model, "enabled", enabled)
+        _ -> model
+      end
+    end)
   end
 
   defp catalog_model(id, model) do

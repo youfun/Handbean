@@ -28,45 +28,7 @@ defmodule Handbeam.Agent.Auth.XaiCredential do
       "baseUrl" => "https://api.x.ai/v1",
       "api" => "openai-responses",
       "authType" => "oauth",
-      "models" => subscription_models()
-    }
-  end
-
-  @doc """
-  Text models offered on an xAI subscription.
-
-  Prices are the vendor's short-context per-million-token rates. xAI bills the
-  whole request at the long-context rate once the prompt reaches 200k tokens;
-  this catalog keeps the lower rate so the picker stays comparable.
-  """
-  @spec subscription_models() :: [map()]
-  def subscription_models do
-    [
-      model("grok-4.7", "Grok 4.7", 500_000, 2, 0.5, 6),
-      model("grok-4.6", "Grok 4.6", 500_000, 2, 0.5, 6),
-      model("grok-4.5", "Grok 4.5", 500_000, 2, 0.3, 6),
-      model("grok-4.3", "Grok 4.3", 1_000_000, 1.25, 0.2, 2.5)
-    ]
-  end
-
-  defp model(id, name, context_window, input, cache_read, output) do
-    default_reasoning = if String.starts_with?(id, "grok-4.3"), do: "low", else: "high"
-
-    %{
-      "id" => id,
-      "name" => name,
-      "reasoning" => true,
-      "defaultReasoning" => default_reasoning,
-      "input" => ["text", "image"],
-      "contextWindow" => context_window,
-      "maxTokens" => 32_000,
-      "include" => ["reasoning.encrypted_content"],
-      "cost" => %{
-        "input" => input,
-        "output" => output,
-        "cacheRead" => cache_read,
-        "cacheWrite" => 0
-      }
+      "models" => []
     }
   end
 

@@ -308,13 +308,11 @@ defmodule HandbeamWeb.AvailableModelsLiveTest do
     provider = get_in(config, ["providers", "xai"])
     assert provider["authType"] == "oauth"
     assert provider["api"] == "openai-responses"
-    assert Enum.any?(provider["models"], &(&1["id"] == "grok-4.7"))
-    assert Enum.any?(provider["models"], &(&1["id"] == "grok-4.6"))
-    assert Enum.any?(provider["models"], &(&1["id"] == "grok-4.5"))
-    assert Enum.any?(provider["models"], &(&1["id"] == "grok-4.3"))
+    assert provider["models"] == []
+    assert render(view) =~ "refresh_provider_models"
   end
 
-  test "reopening xAI login adds older grok models without replacing grok-4.7", %{
+  test "reopening xAI login keeps the saved grok model instead of inserting a catalog", %{
     conn: conn
   } do
     :ets.new(:xai_oauth_live_mock, [:named_table, :public, :set])
@@ -387,8 +385,8 @@ defmodule HandbeamWeb.AvailableModelsLiveTest do
 
     assert grok_47["name"] == "Custom Grok 4.7"
     assert grok_47["input"] == ["text"]
-    assert Enum.any?(models, &(&1["id"] == "grok-4.6"))
-    assert Enum.any?(models, &(&1["id"] == "grok-4.3"))
+    refute Enum.any?(models, &(&1["id"] == "grok-4.6"))
+    refute Enum.any?(models, &(&1["id"] == "grok-4.3"))
   end
 
   test "Cursor subscription login shows the browser authorization URL", %{conn: conn} do

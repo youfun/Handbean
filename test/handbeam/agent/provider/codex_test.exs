@@ -497,7 +497,7 @@ defmodule Handbeam.Agent.Provider.CodexTest do
     Req.Test.stub(ReqMock, fn conn ->
       assert conn.host == "chatgpt.com"
       assert conn.request_path == "/backend-api/codex/models"
-      assert conn.query_string =~ "client_version=0.156.1"
+      assert conn.query_string =~ "client_version=0.163.0"
       refute conn.query_string =~ "client_version=0.1.0"
       assert get_req_header(conn, "chatgpt-account-id") == ["account-a"]
 
@@ -523,6 +523,15 @@ defmodule Handbeam.Agent.Provider.CodexTest do
     assert model["reasoningLevels"] == ["low", "high"]
     assert model["defaultReasoning"] == "low"
     refute Map.has_key?(model, "cost")
+
+    assert Models.preserve_enabled(
+             [%{"id" => "gpt-6.1-sol", "name" => "GPT-6.1-Sol"}, %{"id" => "kept"}],
+             [%{"id" => "kept", "enabled" => false}, %{"id" => "gone", "enabled" => true}]
+           ) == [
+             %{"id" => "gpt-6.1-sol", "name" => "GPT-6.1-Sol"},
+             %{"id" => "kept", "enabled" => false}
+           ]
+
     Req.Test.stub(ReqMock, &Req.Test.json(&1, %{models: []}))
     assert {:error, _} = Models.discover(opts)
   end
