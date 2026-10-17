@@ -448,17 +448,26 @@ defmodule Handbeam.Agent.Config do
 
   defp inject_workspace_contract(system_prompt, opts) do
     working_directory = Keyword.get(opts, :working_directory, File.cwd!())
+    workspace_path = Keyword.get(opts, :workspace_path)
 
     system_prompt <>
       """
 
-      ## Current Workspace
+      ## Current checkout
 
-      Current workspace: #{working_directory}
-
+      Current checkout: #{working_directory}
+      #{workspace_identity_line(workspace_path, working_directory)}
       #{workspace_tool_contract(working_directory)}
       """
   end
+
+  defp workspace_identity_line(workspace_path, working_directory)
+       when is_binary(workspace_path) and workspace_path != "" and
+              workspace_path != working_directory do
+    "Workspace: #{workspace_path}. Same-repo linked worktrees stay in this workspace; do not ask the user to switch workspaces to read another checkout."
+  end
+
+  defp workspace_identity_line(_workspace_path, _working_directory), do: ""
 
   defp workspace_tool_contract(working_directory) do
     tools =
@@ -476,14 +485,14 @@ defmodule Handbeam.Agent.Config do
     extra =
       cond do
         Handbeam.Host.shell?() ->
-          "The `bash` tool runs commands from the current workspace by default. Do not prefix commands with `cd #{working_directory} &&`; call the command directly, or set the `cwd` argument only when you need to run inside a subdirectory of the workspace."
+          "The `bash` tool runs commands from the current checkout by default. Do not prefix commands with `cd #{working_directory} &&`; call the command directly, or set the `cwd` argument only when you need to run inside a subdirectory of the checkout."
 
         true ->
           ""
       end
 
     """
-    Prefer workspace-relative file paths in tool calls (#{tools}), for example `workspace-check.txt` or `reports/summary.md`. Relative paths are joined with the current workspace root; do not prepend the workspace directory name. The workspace root is NOT the filesystem root `/`: `/workspace-check.txt` refers to the filesystem root, not this workspace. Absolute and `~`-expanded paths remain subject to tool path permissions; use paths inside the current workspace for generated files.
+    Prefer checkout-relative file paths in tool calls (#{tools}), for example `workspace-check.txt` or `reports/summary.md`. Relative paths are joined with the current checkout; do not prepend the checkout directory name. The checkout is NOT the filesystem root `/`: `/workspace-check.txt` refers to the filesystem root, not this checkout. Absolute and `~`-expanded paths remain subject to tool path permissions; use paths inside the current checkout for generated files. Ask the user to open another conversation on that checkout instead of switching workspaces.
 
     #{extra}
     """
