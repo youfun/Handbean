@@ -950,6 +950,8 @@ defmodule HandbeamWeb.WorkspaceLive.ChatComponents do
                 <select
                   id="cli-picker"
                   name="cli"
+                  phx-hook="BoundSelect"
+                  data-value={HandbeamWeb.WorkspaceLive.CliSelection.form_value(@selected_cli)}
                   phx-change="select_cli"
                   aria-label={gettext("CLI")}
                   title={gettext("Handbeam owns the turn unless a CLI is selected")}
@@ -998,6 +1000,8 @@ defmodule HandbeamWeb.WorkspaceLive.ChatComponents do
                   id="reasoning-picker"
                   name="reasoning"
                   value={@selected_reasoning_level}
+                  phx-hook="BoundSelect"
+                  data-value={@selected_reasoning_level || ""}
                   phx-change="select_reasoning"
                   aria-label={gettext("推理等级")}
                   title={gettext("推理等级")}

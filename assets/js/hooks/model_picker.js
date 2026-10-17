@@ -4,6 +4,31 @@ function normalize(value) {
   return String(value || "").trim().toLocaleLowerCase();
 }
 
+export function applyServerValue(select) {
+  const serverValue = select.getAttribute("value");
+  if (serverValue == null) return;
+  if (select.value === serverValue) return;
+  if ([...select.options].some((option) => option.value === serverValue)) {
+    select.value = serverValue;
+  }
+}
+
+export const BoundSelect = {
+  mounted() {
+    this.sync();
+  },
+
+  updated() {
+    this.sync();
+  },
+
+  sync() {
+    const value = this.el.getAttribute("data-value");
+    if (value == null) return;
+    if (this.el.value !== value) this.el.value = value;
+  },
+};
+
 export function optionMatches(option, query) {
   return normalize(option?.dataset?.search).includes(normalize(query));
 }
@@ -159,6 +184,7 @@ export const ModelPicker = {
     const triggerLabel = this.el.querySelector(".model-picker-trigger-label");
     if (!select || !triggerLabel) return;
 
+    applyServerValue(select);
     const selected = select.options[select.selectedIndex];
     if (selected) triggerLabel.textContent = selected.textContent.trim();
 

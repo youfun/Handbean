@@ -11,7 +11,7 @@ import { ConversationContextMenu } from "./hooks/conversation_context_menu.js";
 import { ConversationHover } from "./hooks/conversation_hover.js";
 import { ConversationActivity } from "./hooks/conversation_activity.js";
 import { ScheduleCountdown } from "./hooks/schedule_countdown.js";
-import { ModelPicker } from "./hooks/model_picker.js";
+import { BoundSelect, ModelPicker } from "./hooks/model_picker.js";
 import { SettingsNav } from "./hooks/settings_nav.js";
 
 const ConversationSidebar = {
@@ -79,7 +79,7 @@ const MobHook = {
 }
 
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content");
-let Hooks = { StreamingMarkdown, ChatScroll, ConversationNav, ComposerPasteUpload, WorkspacePanel, FilePreview, FileTabs, FileImage, CopyText, ConversationContextMenu, ConversationActivity, ConversationSidebar, LocalWebGPUProbe, GhosttyTerminal, ThemeBridge, MobHook, BrowserSurface, ScheduleCountdown, ModelPicker, SettingsNav };
+let Hooks = { StreamingMarkdown, ChatScroll, ConversationNav, ComposerPasteUpload, WorkspacePanel, FilePreview, FileTabs, FileImage, CopyText, ConversationContextMenu, ConversationActivity, ConversationSidebar, LocalWebGPUProbe, GhosttyTerminal, ThemeBridge, MobHook, BrowserSurface, ScheduleCountdown, ModelPicker, BoundSelect, SettingsNav };
 
 try {
   let liveSocket = new LiveSocket("/live", Socket, {

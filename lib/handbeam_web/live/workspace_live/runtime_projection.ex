@@ -7,6 +7,7 @@ defmodule HandbeamWeb.WorkspaceLive.RuntimeProjection do
   require Logger
 
   alias Handbeam.PubSub.{AgentEvent, Projection}
+  alias HandbeamWeb.WorkspaceLive.CliSelection
 
   def timeline_insert(socket, entry) do
     expanded = Map.get(socket.assigns, :expanded_tool_groups, MapSet.new())
@@ -682,6 +683,7 @@ defmodule HandbeamWeb.WorkspaceLive.RuntimeProjection do
       else
         {:error, _} -> socket
       end
+      |> CliSelection.restore_current()
     else
       socket
     end

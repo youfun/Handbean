@@ -77,6 +77,86 @@ defmodule HandbeamWeb.CliComposerLiveTest do
     assert render(view) =~ "fake"
   end
 
+  test "switching away and back keeps the CLI model and reasoning", %{conn: conn} do
+    Registry.register(HandbeamWeb.CliComposerLiveTest.TwoModels)
+    {:ok, view, _html} = live(conn, "/")
+
+    view
+    |> element("button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']")
+    |> render_click()
+
+    other_id = first_conversation_id(view)
+
+    view
+    |> element("button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']")
+    |> render_click()
+
+    cli_id = first_conversation_id(view)
+    refute cli_id == other_id
+
+    select_cli(view, "two-cli")
+    view |> element("#cli-model-picker") |> render_change(%{"model" => "model-b"})
+    view |> element("#reasoning-picker") |> render_change(%{"reasoning" => "off"})
+
+    view
+    |> element("#conversation-#{other_id} button[phx-click='select_conversation']")
+    |> render_click()
+
+    assert first_conversation_id(view) == other_id
+    assert has_element?(view, "#model-picker")
+    refute has_element?(view, "#cli-model-picker")
+
+    view
+    |> element("#conversation-#{cli_id} button[phx-click='select_conversation']")
+    |> render_click()
+
+    assert first_conversation_id(view) == cli_id
+    assert has_element?(view, "#cli-picker option[value='two-cli'][selected]")
+    assert has_element?(view, "#cli-model-picker option[value='model-b'][selected]")
+    assert has_element?(view, "#reasoning-picker option[value='off'][selected]")
+
+    assigns = :sys.get_state(view.pid).socket.assigns
+    assert assigns.selected_cli == "two-cli"
+    assert assigns.selected_model == "model-b"
+    assert assigns.selected_reasoning_level == "off"
+  end
+
+  test "a CLI model list that finishes while away is restored on return", %{conn: conn} do
+    Registry.register(HandbeamWeb.CliComposerLiveTest.SlowModels)
+    Application.put_env(:handbeam, :slow_cli_models_notify, self())
+    {:ok, view, _html} = live(conn, "/")
+
+    view
+    |> element("button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']")
+    |> render_click()
+
+    other_id = first_conversation_id(view)
+
+    view
+    |> element("button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']")
+    |> render_click()
+
+    cli_id = first_conversation_id(view)
+
+    view |> element("#cli-picker") |> render_change(%{"cli" => "slow-models"})
+    assert_receive {:slow_cli_models_started, loader}
+
+    view
+    |> element("#conversation-#{other_id} button[phx-click='select_conversation']")
+    |> render_click()
+
+    send(loader, :finish_slow_cli_models)
+    render_async(view, 5_000)
+    refute has_element?(view, "#cli-model-picker option[value='slow-model']")
+
+    view
+    |> element("#conversation-#{cli_id} button[phx-click='select_conversation']")
+    |> render_click()
+
+    assert has_element?(view, "#cli-picker option[value='slow-models'][selected]")
+    assert has_element?(view, "#cli-model-picker option[value='slow-model'][selected]")
+  end
+
   test "loading CLI models does not block switching conversations", %{conn: conn} do
     Registry.register(HandbeamWeb.CliComposerLiveTest.SlowModels)
     Application.put_env(:handbeam, :slow_cli_models_notify, self())
@@ -645,6 +725,41 @@ defmodule HandbeamWeb.CliComposerLiveTest.RefusingTranscriptStore do
 
   def replace_all(conversation_id, entries, opts),
     do: ConversationStore.replace_all(conversation_id, entries, opts)
+end
+
+defmodule HandbeamWeb.CliComposerLiveTest.TwoModels do
+  @moduledoc false
+  @behaviour Handbeam.Agent.CliAgent
+
+  alias Handbeam.Agent.CliAgent.Session
+
+  @impl true
+  def id, do: "two-cli"
+  @impl true
+  def available?, do: true
+
+  @impl true
+  def list_models(_opts) do
+    {:ok,
+     [
+       %{id: "model-a", display_name: "Model A", reasoning_levels: ["low", "off"]},
+       %{id: "model-b", display_name: "Model B", reasoning_levels: ["low", "off"]}
+     ]}
+  end
+
+  @impl true
+  def start_session(opts) do
+    {:ok, %Session{backend: id(), cwd: Keyword.get(opts, :cwd, ".")}}
+  end
+
+  @impl true
+  def send_message(session, _text, _on_event), do: {:ok, session, []}
+  @impl true
+  def interrupt(_session), do: :ok
+  @impl true
+  def update_model(session, _opts), do: {:ok, session}
+  @impl true
+  def stop_session(_session), do: :ok
 end
 
 defmodule HandbeamWeb.CliComposerLiveTest.UnavailableModels do

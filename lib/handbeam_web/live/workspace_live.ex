@@ -628,7 +628,8 @@ defmodule HandbeamWeb.WorkspaceLive do
 
   @impl true
   def handle_event("select_reasoning", %{"reasoning" => level}, socket) do
-    {:noreply, ModelSelection.select_reasoning(socket, level)}
+    {:noreply,
+     socket |> ModelSelection.select_reasoning(level) |> CliSelection.remember_current()}
   end
 
   @impl true
@@ -1349,7 +1350,10 @@ defmodule HandbeamWeb.WorkspaceLive do
 
   @impl true
   def handle_event("select_reasoning_from_sheet", %{"level" => level}, socket) do
-    {:noreply, ModelSelection.select_reasoning_from_sheet(socket, level)}
+    {:noreply,
+     socket
+     |> ModelSelection.select_reasoning_from_sheet(level)
+     |> CliSelection.remember_current()}
   end
 
   @impl true
@@ -1469,6 +1473,8 @@ defmodule HandbeamWeb.WorkspaceLive do
   defp begin_conversation_in_workspace(socket, ws_id, opts) do
     close_sheets? = Keyword.get(opts, :close_sheets?, false)
 
+    socket = CliSelection.prepare_switch(socket)
+
     case ConversationSwitching.begin_new_conversation(
            socket,
            ws_id,
@@ -1476,7 +1482,7 @@ defmodule HandbeamWeb.WorkspaceLive do
            |> Keyword.merge(Keyword.take(opts, [:checkout_path, :source]))
          ) do
       {:picker, socket} ->
-        {:noreply, socket}
+        {:noreply, CliSelection.restore_current(socket)}
 
       {:created, socket, conv_id} ->
         socket =
@@ -1817,12 +1823,13 @@ defmodule HandbeamWeb.WorkspaceLive do
     |> assign(:conversation_list_boot, nil)
     |> Composer.materialize_uploads()
     |> Composer.switch_conversation(next_id)
-    |> CliSelection.restore_handbeam_for_switch()
+    |> CliSelection.prepare_switch()
   end
 
   defp restore_session(socket) do
     socket
     |> RuntimeProjection.restore_active_session()
+    |> CliSelection.restore_current()
     |> WorkspaceNavigation.finish_runtime()
   end
 

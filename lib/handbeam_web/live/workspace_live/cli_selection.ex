@@ -40,7 +40,8 @@ defmodule HandbeamWeb.WorkspaceLive.CliSelection do
       handbeam_selected_model: nil,
       handbeam_reasoning_level: nil,
       handbeam_reasoning_levels: nil,
-      cli_sessions: %{}
+      cli_sessions: %{},
+      cli_choices: %{}
     }
   end
 
@@ -66,6 +67,7 @@ defmodule HandbeamWeb.WorkspaceLive.CliSelection do
     socket
     |> forget_current()
     |> restore_handbeam()
+    |> remember_current()
   end
 
   def select(socket, cli) when is_binary(cli) do
@@ -75,6 +77,7 @@ defmodule HandbeamWeb.WorkspaceLive.CliSelection do
       |> remember_handbeam()
       |> assign(:selected_cli, cli)
       |> load_cli_models_async(cli)
+      |> remember_current()
     else
       socket
     end
@@ -89,6 +92,7 @@ defmodule HandbeamWeb.WorkspaceLive.CliSelection do
       socket
       |> assign(:selected_model, model)
       |> assign_reasoning(entry)
+      |> remember_current()
     else
       socket
     end
@@ -112,9 +116,57 @@ defmodule HandbeamWeb.WorkspaceLive.CliSelection do
     end
   end
 
-  @doc "Restore Handbeam controls when changing conversations without forgetting resumable CLI state."
-  @spec restore_handbeam_for_switch(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
-  def restore_handbeam_for_switch(socket), do: restore_handbeam(socket)
+  @doc """
+  Remember this conversation's CLI choice, then show Handbeam controls.
+
+  Conversation switching reloads the Handbeam catalog. Call `restore_current/1`
+  after that reload so the destination conversation gets its own CLI choice back.
+  """
+  @spec prepare_switch(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
+  def prepare_switch(socket) do
+    socket
+    |> remember_current()
+    |> restore_handbeam()
+  end
+
+  @doc "Show the current conversation's CLI choice after a Handbeam model reload."
+  @spec restore_current(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
+  def restore_current(socket) do
+    case choice_for(socket, socket.assigns[:current_conversation_id]) do
+      %{cli: cli} = choice when is_binary(cli) and cli != "" ->
+        if cli_available?(socket, cli) do
+          socket
+          |> remember_handbeam()
+          |> apply_choice(choice)
+        else
+          socket
+        end
+
+      _ ->
+        socket
+    end
+  end
+
+  @doc "Keep the in-memory CLI choice aligned with the controls the user is looking at."
+  @spec remember_current(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
+  def remember_current(socket) do
+    id = socket.assigns[:current_conversation_id]
+    choices = socket.assigns[:cli_choices] || %{}
+
+    choices =
+      cond do
+        not is_binary(id) ->
+          choices
+
+        choice = choice_from_assigns(socket.assigns) ->
+          Map.put(choices, id, choice)
+
+        true ->
+          Map.delete(choices, id)
+      end
+
+    assign(socket, :cli_choices, choices)
+  end
 
   @doc "Form value for the CLI picker. Empty string means Handbeam."
   @spec form_value(String.t() | nil) :: String.t()
@@ -199,9 +251,107 @@ defmodule HandbeamWeb.WorkspaceLive.CliSelection do
       socket
       |> assign(:cli_models_loading, false)
       |> apply_cli_models(result)
+      |> remember_current()
     else
-      socket
+      stash_load_result(socket, cli, revision, result)
     end
+  end
+
+  defp choice_for(socket, id) when is_binary(id) do
+    choices = socket.assigns[:cli_choices] || %{}
+    choices[id]
+  end
+
+  defp choice_for(_socket, _id), do: nil
+
+  defp cli_available?(socket, cli) do
+    Enum.any?(socket.assigns[:available_clis] || [], &(&1.id == cli))
+  end
+
+  defp choice_from_assigns(assigns) do
+    if cli_selected?(assigns) do
+      %{
+        cli: assigns.selected_cli,
+        models: assigns[:available_models] || [],
+        model: assigns[:selected_model],
+        levels: assigns[:available_reasoning_levels] || [],
+        reasoning: assigns[:selected_reasoning_level],
+        error: assigns[:cli_models_error],
+        loading: assigns[:cli_models_loading] == true,
+        revision: assigns[:cli_models_revision] || 0
+      }
+    end
+  end
+
+  defp apply_choice(socket, choice) do
+    assign(socket, %{
+      selected_cli: choice.cli,
+      available_models: choice.models,
+      selected_model: choice.model,
+      available_reasoning_levels: choice.levels,
+      selected_reasoning_level: choice.reasoning,
+      cli_models_error: choice.error,
+      cli_models_loading: choice.loading,
+      cli_models_revision: choice.revision
+    })
+  end
+
+  defp stash_load_result(socket, cli, revision, result) do
+    choices = socket.assigns[:cli_choices] || %{}
+
+    choices =
+      Map.new(choices, fn
+        {id, %{cli: ^cli, revision: ^revision, loading: true} = choice} ->
+          {id, completed_choice(choice, result)}
+
+        other ->
+          other
+      end)
+
+    assign(socket, :cli_choices, choices)
+  end
+
+  defp completed_choice(choice, {:ok, []}) do
+    %{choice | models: [], model: nil, levels: [], reasoning: nil, loading: false, error: :empty}
+  end
+
+  defp completed_choice(choice, {:ok, models}) do
+    model =
+      if choice.model && Enum.any?(models, &(&1.id == choice.model)),
+        do: choice.model,
+        else: hd(models).id
+
+    entry = Enum.find(models, &(&1.id == model)) || %{}
+    levels = Map.get(entry, :reasoning_levels, [])
+
+    reasoning =
+      if choice.reasoning in levels, do: choice.reasoning, else: List.first(levels)
+
+    %{
+      choice
+      | models: models,
+        model: model,
+        levels: levels,
+        reasoning: reasoning,
+        loading: false,
+        error: nil
+    }
+  end
+
+  defp completed_choice(choice, {:error, :not_available}) do
+    %{choice | cli: nil, loading: false, error: nil}
+  end
+
+  defp completed_choice(choice, {:error, _reason}) do
+    %{
+      choice
+      | models: [],
+        model: nil,
+        levels: [],
+        reasoning: nil,
+        loading: false,
+        error: :models_unavailable
+    }
   end
 
   defp load_cli_models_async(socket, cli) do

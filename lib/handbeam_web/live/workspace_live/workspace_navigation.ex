@@ -4,6 +4,7 @@ defmodule HandbeamWeb.WorkspaceLive.WorkspaceNavigation do
   import Phoenix.Component, only: [assign: 3, update: 3]
   import Phoenix.LiveView, only: [connected?: 1, push_event: 3, push_patch: 2, put_flash: 3]
 
+  alias HandbeamWeb.WorkspaceLive.CliSelection
   alias HandbeamWeb.WorkspaceLive.ConversationState
   alias HandbeamWeb.WorkspaceLive.ConversationSwitching
   alias HandbeamWeb.WorkspaceLive.ModelSelection
@@ -24,6 +25,7 @@ defmodule HandbeamWeb.WorkspaceLive.WorkspaceNavigation do
     |> ModelSelection.reload_workspace_counts()
     |> load_skills()
     |> load_permission_mode_into_socket()
+    |> CliSelection.restore_current()
   end
 
   def open_add_project(socket) do
@@ -316,6 +318,7 @@ defmodule HandbeamWeb.WorkspaceLive.WorkspaceNavigation do
         socket
 
       ws ->
+        socket = CliSelection.prepare_switch(socket)
         {socket, conv_id} = ConversationSwitching.select_workspace(socket, ws["id"])
 
         socket =
@@ -397,6 +400,7 @@ defmodule HandbeamWeb.WorkspaceLive.WorkspaceNavigation do
     |> assign(:mobile_right_panel_open, false)
     |> ConversationState.sync_conv_state(reload?: true)
     |> ModelSelection.reload_free_models()
+    |> CliSelection.restore_current()
     |> assign(:skill_suggestions, [])
     |> assign(:workspace_tree, %{})
   end

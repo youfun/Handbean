@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
-import { ModelPicker, optionMatches } from "../js/hooks/model_picker.js";
+import { BoundSelect, ModelPicker, optionMatches } from "../js/hooks/model_picker.js";
 
 const dom = new JSDOM(`<!doctype html><html><body>
   <div id="picker-control" data-model-picker>
@@ -64,6 +64,16 @@ assert.equal(element.querySelector("[data-model-picker-panel]").hidden, true);
 assert.equal(trigger.getAttribute("aria-expanded"), "false");
 
 picker.destroyed();
+
+const bound = document.createElement("select");
+bound.setAttribute("data-value", "off");
+bound.innerHTML = "<option value='low' selected>Low</option><option value='off'>Off</option>";
+document.body.appendChild(bound);
+bound.value = "low";
+const hook = { ...BoundSelect, el: bound };
+hook.updated();
+assert.equal(bound.value, "off");
+
 delete globalThis.document;
 delete globalThis.CustomEvent;
 delete globalThis.Event;
