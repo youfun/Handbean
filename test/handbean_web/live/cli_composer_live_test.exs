@@ -14,6 +14,7 @@ defmodule HandbeanWeb.CliComposerLiveTest do
   alias Handbean.Agent.CliAgent.Registry
   alias Handbean.PubSub.Session
   alias Handbean.TestSupport.E2EHarness
+  alias HandbeanWeb.WorkspaceLive.CliSelection
 
   setup do
     E2EHarness.isolate_home!("cli-composer")
@@ -35,12 +36,18 @@ defmodule HandbeanWeb.CliComposerLiveTest do
     :ok
   end
 
+  test "CLI picker labels capitalize the first letter of the backend id" do
+    assert CliSelection.display_name("droid") == "Droid"
+    assert CliSelection.display_name("grok") == "Grok"
+  end
+
   test "default send keeps the Handbean model picker and does not call a CLI", %{conn: conn} do
     Registry.register(Handbean.Agent.CliAgentTest.FakeBackend)
     {:ok, view, html} = live(conn, "/")
 
     assert html =~ ~s(id="cli-picker")
     assert html =~ "Handbean"
+    assert has_element?(view, "#cli-picker option[value='fake-cli']", "Fake-cli")
     assert html =~ ~s(id="model-picker")
     assert html =~ ~s(id="model-picker-trigger")
     assert html =~ ~s(phx-hook="ModelPicker")

@@ -972,7 +972,7 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
                     value={cli.id}
                     selected={is_binary(@selected_cli) and cli.id == @selected_cli}
                   >
-                    {cli.id}
+                    {HandbeanWeb.WorkspaceLive.CliSelection.display_name(cli.id)}
                   </option>
                 </select>
               </div>

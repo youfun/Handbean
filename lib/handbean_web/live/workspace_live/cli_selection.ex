@@ -173,6 +173,15 @@ defmodule HandbeanWeb.WorkspaceLive.CliSelection do
   def form_value(nil), do: @handbean
   def form_value(cli), do: cli
 
+  @doc "Composer label for a CLI id. Keeps the stable id; capitalizes the first letter."
+  @spec display_name(String.t()) :: String.t()
+  def display_name(id) when is_binary(id) do
+    case String.next_grapheme(id) do
+      {first, rest} -> String.upcase(first) <> rest
+      nil -> id
+    end
+  end
+
   @doc "Composer copy when a CLI cannot provide its own model list."
   @spec error_message(atom()) :: String.t()
   def error_message(:models_unavailable), do: "This CLI cannot list models."
