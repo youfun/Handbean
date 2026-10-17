@@ -5,17 +5,14 @@ defmodule HandbeamWeb.FileBrowserComponent do
   Allows users to browse server directories and select a folder.
   Directory-only view — files are hidden.
 
-  Hidden directories:
-    - .git
-    - node_modules
-    - _build
-    - deps
-    - .DS_Store
+  Hidden directories are omitted by default:
+    - names beginning with `.` (dot folders)
+    - node_modules, _build, deps
   """
 
   use HandbeamWeb, :live_component
 
-  @hidden_dirs ~w(.git node_modules _build deps .DS_Store)
+  @hidden_dirs ~w(node_modules _build deps)
 
   @impl true
   def update(assigns, socket) do
@@ -198,7 +195,7 @@ defmodule HandbeamWeb.FileBrowserComponent do
           entries
           |> Enum.filter(fn name ->
             full_path = Path.join(path, name)
-            File.dir?(full_path) and name not in @hidden_dirs
+            File.dir?(full_path) and visible_directory?(name)
           end)
           |> Enum.map(fn name ->
             %{name: name, path: Path.join(path, name)}
@@ -215,6 +212,10 @@ defmodule HandbeamWeb.FileBrowserComponent do
         |> assign(:directories, [])
         |> assign(:error, "无法访问目录: #{inspect(reason)}")
     end
+  end
+
+  defp visible_directory?(name) do
+    not String.starts_with?(name, ".") and name not in @hidden_dirs
   end
 
   defp render_error(msg) when is_binary(msg), do: msg
