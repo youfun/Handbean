@@ -8,6 +8,8 @@ defmodule Handbean.Agent.CliAgent.Binding do
   conversation transcript projection.
   """
 
+  require Logger
+
   alias Handbean.Agent.CliAgent.Registry
   alias Handbean.Agent.CliAgent.Session, as: CliSession
   alias Handbean.PubSub.Session
@@ -50,43 +52,50 @@ defmodule Handbean.Agent.CliAgent.Binding do
 
     normalize(raw, conversation_id)
   catch
-    :exit, _ -> nil
+    :exit, reason ->
+      Logger.warning(
+        "[Binding] failed to load binding conversation=#{conversation_id} reason=#{inspect(reason)}"
+      )
+
+      nil
   end
 
   def get(_conversation_id), do: nil
 
   @doc "Upsert the CLI harness binding for a conversation."
-  @spec put(String.t(), map() | keyword()) :: t()
+  @spec put(String.t(), map() | keyword()) :: t() | nil
   def put(conversation_id, attrs) when is_binary(conversation_id) do
     attrs_map = Map.new(attrs)
     incoming_backend = SafeMap.get_any(attrs_map, :backend, "backend")
 
-    base =
-      case get(conversation_id) do
-        %{backend: ^incoming_backend} = existing when is_binary(incoming_backend) ->
-          existing
+    if not is_binary(incoming_backend) or incoming_backend == "" do
+      Logger.warning(
+        "[Binding] put rejected missing backend conversation=#{conversation_id} keys=#{inspect(Map.keys(attrs_map))}"
+      )
 
-        existing when is_nil(incoming_backend) and is_map(existing) ->
-          existing
+      get(conversation_id)
+    else
+      base =
+        case get(conversation_id) do
+          %{backend: ^incoming_backend} = existing -> existing
+          _ -> %{}
+        end
 
-        _ ->
-          %{}
+      merged =
+        base
+        |> Map.merge(attrs_map)
+        |> Map.put(:conversation_id, conversation_id)
+        |> Map.put(:updated_at_ms, System.system_time(:millisecond))
+
+      binding = normalize(merged, conversation_id)
+
+      if is_map(binding) do
+        _ = Session.start_or_get(session_id: conversation_id)
+        Session.update_extension_state(conversation_id, :cli_agent, :session, binding)
       end
 
-    merged =
-      base
-      |> Map.merge(attrs_map)
-      |> Map.put(:conversation_id, conversation_id)
-      |> Map.put(:updated_at_ms, System.system_time(:millisecond))
-
-    binding = normalize(merged, conversation_id)
-
-    if is_map(binding) do
-      _ = Session.start_or_get(session_id: conversation_id)
-      Session.update_extension_state(conversation_id, :cli_agent, :session, binding)
+      binding
     end
-
-    binding
   end
 
   @doc "Clear the persisted CLI harness binding for a conversation."
@@ -374,8 +383,15 @@ defmodule Handbean.Agent.CliAgent.Binding do
   defp cwd_compatible?(bound_cwd, requested_cwd)
        when is_binary(bound_cwd) and bound_cwd != "" and is_binary(requested_cwd) and
               requested_cwd != "" do
-    Path.expand(bound_cwd) == Path.expand(requested_cwd)
+    canonical_path(bound_cwd) == canonical_path(requested_cwd)
   end
 
   defp cwd_compatible?(_bound_cwd, _requested_cwd), do: true
+
+  defp canonical_path(path) do
+    case Handbean.Security.PathValidator.canonicalize(path) do
+      {:ok, resolved} -> resolved
+      {:error, _} -> Path.expand(path)
+    end
+  end
 end

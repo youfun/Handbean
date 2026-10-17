@@ -279,22 +279,25 @@ defmodule Handbean.Agent.CliAgent.Droid.Codec do
   defp render_output(other), do: other |> inspect() |> clean_terminal()
 
   @max_rendered_output 4_000
+  @osc_regex ~r/\e\][^\a\e]*(?:\a|\e\\)/
+  @csi_regex ~r/\e\[[0-9;?]*[ -\/]*[@-~]/
+  @cr_overwrite_regex ~r/^.*\r(?!\n)/m
 
   defp clean_terminal(text) when is_binary(text) do
     cleaned =
       text
-      |> String.replace(~r/\e\][^\a\e]*(?:\a|\e\\)/, "")
-      |> String.replace(~r/\e\[[0-9;?]*[ -\/]*[@-~]/, "")
+      |> String.replace(@osc_regex, "")
+      |> String.replace(@csi_regex, "")
       |> String.replace("\r\n", "\n")
-      |> String.replace(~r/^.*\r(?!\n)/m, "")
+      |> String.replace(@cr_overwrite_regex, "")
       |> String.replace("\r", "\n")
 
     if byte_size(cleaned) > @max_rendered_output do
       prefix = String.slice(cleaned, 0, @max_rendered_output)
-      hidden_bytes = byte_size(cleaned) - byte_size(prefix)
+      hidden = byte_size(cleaned) - byte_size(prefix)
 
-      if hidden_bytes > 0 do
-        prefix <> "\n... (#{hidden_bytes} bytes hidden)"
+      if hidden > 0 do
+        prefix <> "\n... (#{hidden} bytes hidden)"
       else
         cleaned
       end
