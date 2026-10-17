@@ -46,9 +46,7 @@ defmodule HandbeamWeb.WorkspaceLive do
 
   @impl true
   def mount(params, _session, socket) do
-    # Ensure v2 workspace storage exists. Legacy metadata is backed up, not migrated.
-    {:ok, default_ws, workspace_format_updated?} =
-      Handbeam.WorkspaceStore.ensure_default_for_ui()
+    {:ok, default_ws} = Handbeam.WorkspaceStore.ensure_default!()
 
     workspaces = Handbeam.WorkspaceStore.list()
 
@@ -71,7 +69,6 @@ defmodule HandbeamWeb.WorkspaceLive do
     socket =
       socket
       |> assign(:page_title, "Handbeam — Workspace")
-      |> maybe_warn_workspace_format(workspace_format_updated?)
       |> assign(:chat_scope, boot.chat_scope)
       |> assign(:workspaces, workspaces)
       |> assign(:current_workspace_id, boot.workspace_id)
@@ -194,12 +191,6 @@ defmodule HandbeamWeb.WorkspaceLive do
 
     {:ok, socket}
   end
-
-  defp maybe_warn_workspace_format(socket, true) do
-    put_flash(socket, :warning, "工作区格式已更新，请重新添加工作区")
-  end
-
-  defp maybe_warn_workspace_format(socket, false), do: socket
 
   defp boot_location(params, workspaces, default_ws, conversations_by_ws) do
     if is_binary(params["conversation_id"]) do

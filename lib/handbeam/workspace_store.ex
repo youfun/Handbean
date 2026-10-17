@@ -28,50 +28,6 @@ defmodule Handbeam.WorkspaceStore do
     Handbeam.Home.expand(path)
   end
 
-  @doc """
-  Ensure UI-readable v2 storage.
-
-  Legacy workspace metadata is moved to a timestamped backup and never imported;
-  callers must tell the user to re-add projects.
-  """
-  @spec ensure_default_for_ui() :: {:ok, map(), boolean()} | {:error, term()}
-  def ensure_default_for_ui do
-    case ensure_default!() do
-      {:ok, workspace} -> {:ok, workspace, false}
-      {:error, :workspace_format_outdated} -> archive_outdated_storage()
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp archive_outdated_storage do
-    path = storage_path()
-
-    with_storage_lock(path, fn ->
-      case read_storage(path) do
-        {:error, :workspace_format_outdated} ->
-          backup = path <> ".v1-backup-#{System.os_time(:millisecond)}"
-
-          with :ok <- File.rename(path, backup),
-               {:ok, workspace} <- ensure_default(path) do
-            Logger.warning(
-              "[WorkspaceStore] archived outdated workspace metadata at #{backup}; projects must be re-added"
-            )
-
-            {:ok, workspace, true}
-          end
-
-        {:ok, _data} ->
-          case ensure_default(path) do
-            {:ok, workspace} -> {:ok, workspace, false}
-            error -> error
-          end
-
-        {:error, reason} ->
-          {:error, reason}
-      end
-    end)
-  end
-
   @spec ensure_default!() :: {:ok, map()} | {:error, term()}
   def ensure_default! do
     path = storage_path()

@@ -40,8 +40,7 @@ defmodule HandbeamWeb.SettingsLive do
   def mount(params, _session, socket) do
     active_tab = tab_from_params(params)
 
-    {:ok, default_ws, workspace_format_updated?} =
-      Handbeam.WorkspaceStore.ensure_default_for_ui()
+    {:ok, default_ws} = Handbeam.WorkspaceStore.ensure_default!()
 
     workspace =
       case Map.get(params, "workspace_id") do
@@ -71,7 +70,6 @@ defmodule HandbeamWeb.SettingsLive do
     socket =
       socket
       |> assign(:page_title, gettext("Settings"))
-      |> maybe_warn_workspace_format(workspace_format_updated?)
       |> assign(:active_tab, active_tab)
       |> assign(:tabs, @tabs)
       |> assign(:workspace, workspace)
@@ -91,12 +89,6 @@ defmodule HandbeamWeb.SettingsLive do
 
     {:ok, socket}
   end
-
-  defp maybe_warn_workspace_format(socket, true) do
-    put_flash(socket, :warning, "工作区格式已更新，请重新添加工作区")
-  end
-
-  defp maybe_warn_workspace_format(socket, false), do: socket
 
   @impl true
   def handle_params(params, _uri, socket) do

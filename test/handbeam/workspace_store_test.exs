@@ -663,19 +663,6 @@ defmodule Handbeam.WorkspaceStoreTest do
                storage_path |> File.read!() |> Jason.decode!()
     end
 
-    test "UI bootstrap archives v1 metadata and asks for project re-addition", %{
-      storage_path: storage_path
-    } do
-      legacy = Jason.encode!(%{"workspaces" => [%{"id" => "old", "path" => "/old"}]})
-      File.write!(storage_path, legacy)
-
-      assert {:ok, %{"id" => "default"}, true} = WorkspaceStore.ensure_default_for_ui()
-      assert %{"version" => 2} = storage_path |> File.read!() |> Jason.decode!()
-      assert [backup] = Path.wildcard(storage_path <> ".v1-backup-*")
-      assert File.read!(backup) == legacy
-      File.rm!(backup)
-    end
-
     test "rejects unversioned storage without rewriting it", %{storage_path: storage_path} do
       legacy = Jason.encode!(%{"workspaces" => []})
       File.write!(storage_path, legacy)
