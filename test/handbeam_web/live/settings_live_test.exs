@@ -179,7 +179,7 @@ defmodule HandbeamWeb.SettingsLiveTest do
       html = render(view)
       assert html =~ "思考等级"
       assert html =~ "记忆模型"
-      assert html =~ "顾问模型使用的思考等级。"
+      assert html =~ "顾问 Agent 使用的思考等级。"
       assert html =~ "处理记忆时使用的思考等级。"
       assert html =~ "用于观察对话和整合记忆。"
       refute html =~ "Think level"

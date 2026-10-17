@@ -1065,7 +1065,7 @@ msgstr "顾问"
 #: lib/handbeam_web/live/settings/model_ai_panel.ex:107
 #, elixir-autogen, elixir-format
 msgid "Advisor model"
-msgstr "顾问模型"
+msgstr "顾问 Agent"
 
 #: lib/handbeam_web/live/settings_live.ex:333
 #: lib/handbeam_web/live/workspace_live.ex:1822
@@ -1364,7 +1364,7 @@ msgstr "已探索 %{details}"
 #: lib/handbeam_web/workspace_helper.ex
 #, elixir-autogen, elixir-format
 msgid "Called advisor model"
-msgstr "已调用顾问模型"
+msgstr "已调用顾问 Agent"
 
 #: lib/handbeam_web/live/workspace_live.ex:1343
 #, elixir-autogen, elixir-format
@@ -1635,7 +1635,7 @@ msgstr "正在读取浏览器能力…"
 #: lib/handbeam_web/live/settings/model_ai_panel.ex:142
 #, elixir-autogen, elixir-format
 msgid "Reasoning level used by the advisor model."
-msgstr "顾问模型使用的思考等级。"
+msgstr "顾问 Agent 使用的思考等级。"
 
 #: lib/handbeam_web/live/settings/model_ai_panel.ex:265
 #, elixir-autogen, elixir-format
