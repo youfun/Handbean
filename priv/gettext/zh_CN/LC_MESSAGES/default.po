@@ -2615,3 +2615,7 @@ msgstr "安全上下文"
 
 msgid "Not a secure context"
 msgstr "非安全上下文"
+
+#: lib/handbeam_web/live/workspace_live/sidebar_components.ex
+msgid "Choose a checkout"
+msgstr "当前 worktree 列表"

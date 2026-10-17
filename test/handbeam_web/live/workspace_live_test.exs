@@ -3963,6 +3963,11 @@ defmodule HandbeamWeb.WorkspaceLiveTest do
       {:ok, ws_dir: ws_dir, home_dir: home_dir}
     end
 
+    test "checkout picker heading has a zh_CN translation" do
+      assert {:ok, _translation} =
+               HandbeamWeb.Gettext.lgettext("zh_CN", "default", "Choose a checkout", %{})
+    end
+
     test "adding two linked checkouts creates one workspace with checkout-bound conversations", %{
       conn: conn
     } do
@@ -4004,7 +4009,7 @@ defmodule HandbeamWeb.WorkspaceLiveTest do
         |> render_click()
 
         html = render(view)
-        assert html =~ "当前 worktree 列表"
+        assert html =~ "checkout-picker-sidebar-#{main_workspace["id"]}"
         assert html =~ Path.basename(repo)
         assert html =~ Path.basename(linked)
         refute html =~ "checkout-picker-sidebar-default"
@@ -4025,7 +4030,7 @@ defmodule HandbeamWeb.WorkspaceLiveTest do
 
         assert length(Enum.reject(Handbeam.WorkspaceStore.list(), & &1["default"])) == 1
         html = render(view)
-        refute html =~ "当前 worktree 列表"
+        refute html =~ "checkout-picker-sidebar-#{main_workspace["id"]}"
         assert html =~ ~s(data-checkout-path="#{linked_path}")
       after
         File.rm_rf!(base)
@@ -4042,7 +4047,7 @@ defmodule HandbeamWeb.WorkspaceLiveTest do
       |> element("button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']")
       |> render_click()
 
-      refute render(view) =~ "当前 worktree 列表"
+      refute render(view) =~ "checkout-picker-sidebar-default"
       after_list = Handbeam.ConversationStore.list_for_workspace("default")
       assert length(after_list) == length(before) + 1
     end

@@ -1098,7 +1098,7 @@ defmodule HandbeamWeb.WorkspaceLive.SidebarComponents do
         role="menu"
         phx-click-away="close_checkout_picker"
       >
-        <div class="workspace-checkout-heading">{gettext("当前 worktree 列表")}</div>
+        <div class="workspace-checkout-heading">{gettext("Choose a checkout")}</div>
         <button
           :for={checkout <- @checkouts}
           type="button"

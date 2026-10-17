@@ -55,7 +55,7 @@ defmodule HandbeamWeb.AvailableModelsLiveTest do
       }
     })
 
-    {:ok, config} = ModelConfig.config_file_path() |> File.read!() |> Jason.decode()
+    {:ok, config} = ModelConfig.config_file_path() |> File.read!() |> Handbeam.JSON.decode()
     provider = get_in(config, ["providers", "moonshotai_cn"])
 
     assert provider["name"] == "Moonshot AI (China)"
@@ -81,7 +81,7 @@ defmodule HandbeamWeb.AvailableModelsLiveTest do
     })
     |> render_submit()
 
-    {:ok, config} = ModelConfig.config_file_path() |> File.read!() |> Jason.decode()
+    {:ok, config} = ModelConfig.config_file_path() |> File.read!() |> Handbeam.JSON.decode()
 
     model =
       config
@@ -121,7 +121,7 @@ defmodule HandbeamWeb.AvailableModelsLiveTest do
       }
     })
 
-    {:ok, config} = ModelConfig.config_file_path() |> File.read!() |> Jason.decode()
+    {:ok, config} = ModelConfig.config_file_path() |> File.read!() |> Handbeam.JSON.decode()
 
     model =
       config
@@ -164,7 +164,7 @@ defmodule HandbeamWeb.AvailableModelsLiveTest do
     {:ok, config} =
       ModelConfig.config_file_path()
       |> File.read!()
-      |> Jason.decode()
+      |> Handbeam.JSON.decode()
 
     model =
       config
@@ -209,7 +209,7 @@ defmodule HandbeamWeb.AvailableModelsLiveTest do
     {:ok, config} =
       ModelConfig.config_file_path()
       |> File.read!()
-      |> Jason.decode()
+      |> Handbeam.JSON.decode()
 
     model =
       config
@@ -303,7 +303,7 @@ defmodule HandbeamWeb.AvailableModelsLiveTest do
     {:ok, config} =
       ModelConfig.config_file_path()
       |> File.read!()
-      |> Jason.decode()
+      |> Handbeam.JSON.decode()
 
     provider = get_in(config, ["providers", "xai"])
     assert provider["authType"] == "oauth"
@@ -378,7 +378,7 @@ defmodule HandbeamWeb.AvailableModelsLiveTest do
     {:ok, config} =
       ModelConfig.config_file_path()
       |> File.read!()
-      |> Jason.decode()
+      |> Handbeam.JSON.decode()
 
     models = get_in(config, ["providers", "xai", "models"])
     grok_47 = Enum.find(models, &(&1["id"] == "grok-4.7"))
@@ -415,7 +415,7 @@ defmodule HandbeamWeb.AvailableModelsLiveTest do
     {:ok, config} =
       ModelConfig.config_file_path()
       |> File.read!()
-      |> Jason.decode()
+      |> Handbeam.JSON.decode()
 
     provider = get_in(config, ["providers", "cursor"])
     assert provider["authType"] == "oauth"
@@ -517,7 +517,7 @@ defmodule HandbeamWeb.AvailableModelsLiveTest do
     {:ok, config} =
       ModelConfig.config_file_path()
       |> File.read()
-      |> then(fn {:ok, json} -> Jason.decode(json) end)
+      |> then(fn {:ok, json} -> Handbeam.JSON.decode(json) end)
 
     provider = get_in(config, ["providers", "stepfun"])
     assert provider["name"] == "StepFun Updated"
@@ -542,7 +542,7 @@ defmodule HandbeamWeb.AvailableModelsLiveTest do
     assert html =~ "step-router-v1"
     assert html =~ "is-disabled"
 
-    {:ok, stored} = ModelConfig.config_file_path() |> File.read!() |> Jason.decode()
+    {:ok, stored} = ModelConfig.config_file_path() |> File.read!() |> Handbeam.JSON.decode()
     model = get_in(stored, ["providers", "stepfun", "models", Access.at(0)])
     assert model["enabled"] == false
 
@@ -550,7 +550,7 @@ defmodule HandbeamWeb.AvailableModelsLiveTest do
     |> element(~s|input[phx-click="toggle_model_enabled"][phx-value-id="step-router-v1"]|)
     |> render_click()
 
-    {:ok, stored} = ModelConfig.config_file_path() |> File.read!() |> Jason.decode()
+    {:ok, stored} = ModelConfig.config_file_path() |> File.read!() |> Handbeam.JSON.decode()
     model = get_in(stored, ["providers", "stepfun", "models", Access.at(0)])
     assert model["enabled"] == true
 
@@ -585,7 +585,7 @@ defmodule HandbeamWeb.AvailableModelsLiveTest do
     assert html =~ "step-5-preview"
     refute has_element?(view, ~s|button[phx-click="disable_all_models"]|)
 
-    {:ok, stored} = ModelConfig.config_file_path() |> File.read!() |> Jason.decode()
+    {:ok, stored} = ModelConfig.config_file_path() |> File.read!() |> Handbeam.JSON.decode()
     models = get_in(stored, ["providers", "stepfun", "models"])
     assert Enum.all?(models, &(&1["enabled"] == false))
 
@@ -593,7 +593,7 @@ defmodule HandbeamWeb.AvailableModelsLiveTest do
     |> element(~s|input[phx-click="toggle_model_enabled"][phx-value-id="step-5-preview"]|)
     |> render_click(%{"id" => "step-5-preview"})
 
-    {:ok, stored} = ModelConfig.config_file_path() |> File.read!() |> Jason.decode()
+    {:ok, stored} = ModelConfig.config_file_path() |> File.read!() |> Handbeam.JSON.decode()
 
     enabled =
       get_in(stored, ["providers", "stepfun", "models"]) |> Enum.filter(&(&1["enabled"] != false))
@@ -606,7 +606,7 @@ defmodule HandbeamWeb.AvailableModelsLiveTest do
 
     File.write!(
       path,
-      Jason.encode!(%{
+      Handbeam.JSON.encode!(%{
         "defaultProvider" => "cursor",
         "providers" => %{
           "cursor" => %{
@@ -662,7 +662,7 @@ defmodule HandbeamWeb.AvailableModelsLiveTest do
       "add_provider" => %{"id" => "ollama", "api_key" => "env:OLLAMA_API_KEY"}
     })
 
-    {:ok, config} = ModelConfig.config_file_path() |> File.read!() |> Jason.decode()
+    {:ok, config} = ModelConfig.config_file_path() |> File.read!() |> Handbeam.JSON.decode()
     provider = get_in(config, ["providers", "ollama"])
 
     assert provider["baseUrl"] == "https://ollama.com/v1"
@@ -699,7 +699,7 @@ defmodule HandbeamWeb.AvailableModelsLiveTest do
 
     File.write!(
       path,
-      Jason.encode!(%{
+      Handbeam.JSON.encode!(%{
         "defaultProvider" => "stepfun",
         "defaultModel" => "step-router-v1",
         "providers" => %{

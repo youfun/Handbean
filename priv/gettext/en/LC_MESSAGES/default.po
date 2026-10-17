@@ -2557,3 +2557,7 @@ msgstr "On"
 #: lib/handbeam_web/live/workspace_memory_live.html.heex
 msgid "已关闭"
 msgstr "Off"
+
+#: lib/handbeam_web/live/workspace_live/sidebar_components.ex
+msgid "Choose a checkout"
+msgstr "Choose a checkout"
