@@ -1,4 +1,4 @@
-defmodule Handbeam.Repo.Migrations.AddCheckoutPathToConversations do
+defmodule Handbean.Repo.Migrations.AddCheckoutPathToConversations do
   use Ecto.Migration
 
   def change do

@@ -538,12 +538,12 @@
   height: 22px;
 }
 [data-run-state="idle"] .conversation-idle-stem { display: block; }
-.conversation-idle-stem .idle-stem-fill { fill: var(--run-color, #6e94cc); }
+.conversation-idle-stem .idle-stem-fill { fill: var(--run-color, #6c9add); }
 .conversation-idle-stem .idle-stem-outline {
-  fill: color-mix(in srgb, var(--run-color, #6e94cc) 45%, #263b25);
+  fill: color-mix(in srgb, var(--run-color, #6c9add) 45%, #263b25);
 }
 .conversation-idle-stem .idle-stem-highlight {
-  fill: color-mix(in srgb, var(--run-color, #6e94cc) 65%, #f1efb5);
+  fill: color-mix(in srgb, var(--run-color, #6c9add) 65%, #f1efb5);
 }
 
 .conversation-run-sprite {
@@ -559,15 +559,15 @@
 [data-run-state="running"] .conversation-run-sprite { display: block; }
 [data-run-state="waiting_confirmation"]::after { content: "Ⅱ"; font-size: 11px; }
 
-.conversation-run-sprite .run-fill { fill: var(--run-color, #6e94cc); }
+.conversation-run-sprite .run-fill { fill: var(--run-color, #6c9add); }
 .conversation-run-sprite .run-outline {
-  fill: color-mix(in srgb, var(--run-color, #6e94cc) 45%, #263b25);
+  fill: color-mix(in srgb, var(--run-color, #6c9add) 45%, #263b25);
 }
 .conversation-run-sprite .run-highlight {
-  fill: color-mix(in srgb, var(--run-color, #6e94cc) 65%, #f1efb5);
+  fill: color-mix(in srgb, var(--run-color, #6c9add) 65%, #f1efb5);
 }
 .conversation-run-sprite .run-shade {
-  fill: color-mix(in srgb, var(--run-color, #6e94cc) 75%, #263b25);
+  fill: color-mix(in srgb, var(--run-color, #6c9add) 75%, #263b25);
 }
 .conversation-run-sprite .run-shadow {
   fill: var(--color-text-tertiary);

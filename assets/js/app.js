@@ -41,7 +41,7 @@ const serverTheme = document.documentElement.getAttribute("data-theme");
 if (!serverTheme) {
   let theme = "light";
   try {
-    theme = localStorage.getItem("handbeam-theme") || "light";
+    theme = localStorage.getItem("handbean-theme") || "light";
   } catch (_) {}
   document.documentElement.setAttribute("data-theme", theme);
 }
@@ -58,7 +58,7 @@ window.addEventListener("phx:scroll_to_file_change", ({ detail }) => {
 function applyTheme(theme) {
   if (!theme) return;
   document.documentElement.setAttribute("data-theme", theme);
-  try { localStorage.setItem("handbeam-theme", theme); } catch (_) {}
+  try { localStorage.setItem("handbean-theme", theme); } catch (_) {}
 }
 
 const ThemeBridge = {
@@ -102,5 +102,5 @@ try {
     if (node) node.scrollIntoView({behavior: "smooth", block: "center"});
   });
 } catch (error) {
-  console.error("Handbeam LiveSocket failed to start", error);
+  console.error("Handbean LiveSocket failed to start", error);
 }

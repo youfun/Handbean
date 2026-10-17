@@ -50,7 +50,7 @@ assert.ok(frame.srcdoc.includes(widget));
 target.querySelector(".code-block-copy").click();
 assert.equal(copied, widget);
 const resize = (source, height) => window.dispatchEvent(new window.MessageEvent("message", {
-  source, data: { type: "handbeam:preview-height", height }
+  source, data: { type: "handbean:preview-height", height }
 }));
 resize(window, 500);
 assert.equal(frame.style.height, "", "other windows cannot resize the preview");

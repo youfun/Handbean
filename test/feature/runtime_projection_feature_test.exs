@@ -1,11 +1,11 @@
-defmodule HandbeamWeb.Feature.RuntimeProjectionFeatureTest do
-  use HandbeamWeb.FeatureCase, async: false
+defmodule HandbeanWeb.Feature.RuntimeProjectionFeatureTest do
+  use HandbeanWeb.FeatureCase, async: false
 
-  alias Handbeam.Agent.Coordinator
-  alias Handbeam.ConversationTranscriptStore
-  alias Handbeam.PubSub.Session
-  alias Handbeam.TestSupport.E2EHarness
-  alias HandbeamWeb.WorkspaceLive.RuntimeProjection
+  alias Handbean.Agent.Coordinator
+  alias Handbean.ConversationTranscriptStore
+  alias Handbean.PubSub.Session
+  alias Handbean.TestSupport.E2EHarness
+  alias HandbeanWeb.WorkspaceLive.RuntimeProjection
 
   defmodule UnavailableHistory do
     def page(_id, _opts), do: {:error, :unavailable}
@@ -14,7 +14,7 @@ defmodule HandbeamWeb.Feature.RuntimeProjectionFeatureTest do
   setup do
     %{workspace: workspace} = E2EHarness.isolate_home!("projection-feature")
     E2EHarness.use_fake_provider!(:simple_answer)
-    {:ok, conversation} = Handbeam.ConversationStore.create("default")
+    {:ok, conversation} = Handbean.ConversationStore.create("default")
     id = conversation["id"]
     on_exit(fn -> E2EHarness.cancel!(id) end)
 
@@ -24,7 +24,7 @@ defmodule HandbeamWeb.Feature.RuntimeProjectionFeatureTest do
       source: :web,
       tools: [],
       middleware: [],
-      provider: Handbeam.TestSupport.ProjectionProvider,
+      provider: Handbean.TestSupport.ProjectionProvider,
       provider_config: %{notify: self()},
       streaming: true
     ]
@@ -79,7 +79,7 @@ defmodule HandbeamWeb.Feature.RuntimeProjectionFeatureTest do
   test "session restart recovers a lower seq without losing the active run", ctx do
     page = visit(ctx.conn, "/w/default/c/#{ctx.id}")
     previous = Session.snapshot(ctx.id)
-    :ok = Handbeam.SessionSupervisor.stop_session(ctx.id)
+    :ok = Handbean.SessionSupervisor.stop_session(ctx.id)
     {:ok, _} = Session.start_or_get(session_id: ctx.id, session_store_enabled?: false)
     restarted = Session.snapshot(ctx.id)
     assert restarted.last_seq < previous.last_seq
@@ -104,10 +104,10 @@ defmodule HandbeamWeb.Feature.RuntimeProjectionFeatureTest do
     page = visit(ctx.conn, "/w/default/c/#{ctx.id}")
     snapshot = Session.snapshot(ctx.id)
     delta = Enum.find(snapshot.events, &(&1.kind == :message_delta))
-    previous_store = Application.get_env(:handbeam, :conversation_transcript_store)
+    previous_store = Application.get_env(:handbean, :conversation_transcript_store)
 
     try do
-      Application.put_env(:handbeam, :conversation_transcript_store, UnavailableHistory)
+      Application.put_env(:handbean, :conversation_transcript_store, UnavailableHistory)
 
       page
       |> unwrap(fn view ->
@@ -126,8 +126,8 @@ defmodule HandbeamWeb.Feature.RuntimeProjectionFeatureTest do
       |> refute_has("#ai-messages", "suffix")
     after
       if previous_store,
-        do: Application.put_env(:handbeam, :conversation_transcript_store, previous_store),
-        else: Application.delete_env(:handbeam, :conversation_transcript_store)
+        do: Application.put_env(:handbean, :conversation_transcript_store, previous_store),
+        else: Application.delete_env(:handbean, :conversation_transcript_store)
 
       send(ctx.provider, :finish)
     end

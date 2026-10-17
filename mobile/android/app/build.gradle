@@ -31,7 +31,7 @@ def ertsVsn = new File(mobOtpRelease).listFiles()
     ?.find { it.name.startsWith('erts-') }?.name ?: 'erts-17.0'
 
 android {
-    namespace 'com.example.handbeam_probe'
+    namespace 'com.example.handbean_probe'
     compileSdk 35
 
     // Pin NDK to match the one that built the bundled OTP runtime.
@@ -42,7 +42,7 @@ android {
     ndkVersion '27.2.12479018'
 
     defaultConfig {
-        applicationId foundationTestApp ? "com.example.handbeam_probe.foundationtest" : "com.example.handbeam_probe.nativechat"
+        applicationId foundationTestApp ? "com.example.handbean_probe.foundationtest" : "com.example.handbean_probe.nativechat"
         minSdk 28
         targetSdk 35
         versionCode Integer.parseInt(releaseProps.getProperty('build'))

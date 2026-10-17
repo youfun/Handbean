@@ -1,8 +1,8 @@
-defmodule Handbeam.Agent.CliAgentTest.FakeBackend do
+defmodule Handbean.Agent.CliAgentTest.FakeBackend do
   @moduledoc false
-  @behaviour Handbeam.Agent.CliAgent
+  @behaviour Handbean.Agent.CliAgent
 
-  alias Handbeam.Agent.CliAgent.Session
+  alias Handbean.Agent.CliAgent.Session
 
   @impl true
   def id, do: "fake-cli"
@@ -30,7 +30,7 @@ defmodule Handbeam.Agent.CliAgentTest.FakeBackend do
 
   @impl true
   def send_message(session, text, on_event) do
-    if pid = Application.get_env(:handbeam, :fake_cli_notify),
+    if pid = Application.get_env(:handbean, :fake_cli_notify),
       do: send(pid, {:fake_cli_turn, text, session})
 
     cond do
@@ -39,6 +39,10 @@ defmodule Handbeam.Agent.CliAgentTest.FakeBackend do
 
       text == "streaming-slow" ->
         slow_turn(session, on_event, true)
+
+      text == "status-slow" ->
+        on_event.({:status, %{state: "compacting"}})
+        slow_turn(session, on_event, false)
 
       text == "ordered-cross-sender" ->
         cross_sender_turn(session, on_event)
@@ -54,7 +58,7 @@ defmodule Handbeam.Agent.CliAgentTest.FakeBackend do
           {:permission_request,
            %{
              id: "perm-1",
-             tools: [%{name: "Edit", id: "t1"}],
+             tools: [%{name: "Edit", id: "t1", input: %{"file_path" => "lib/demo.ex"}}],
              options: [
                %{"label" => "Once", "value" => "proceed_once"},
                %{"label" => "Cancel", "value" => "cancel"}
@@ -72,7 +76,7 @@ defmodule Handbeam.Agent.CliAgentTest.FakeBackend do
   defp slow_turn(session, on_event, streaming?) do
     if streaming?, do: on_event.({:text_delta, "partial"})
 
-    if pid = Application.get_env(:handbeam, :fake_cli_notify),
+    if pid = Application.get_env(:handbean, :fake_cli_notify),
       do: send(pid, {:fake_cli_waiting, self()})
 
     receive do
@@ -82,7 +86,7 @@ defmodule Handbeam.Agent.CliAgentTest.FakeBackend do
 
   defp cross_sender_turn(session, on_event) do
     caller = self()
-    notify = Application.get_env(:handbeam, :fake_cli_notify)
+    notify = Application.get_env(:handbean, :fake_cli_notify)
 
     spawn(fn ->
       if notify, do: send(notify, {:fake_cli_event_ready, self()})
@@ -126,11 +130,11 @@ defmodule Handbeam.Agent.CliAgentTest.FakeBackend do
   def stop_session(%Session{}), do: :ok
 end
 
-defmodule Handbeam.Agent.CliAgentTest.AttachmentBackend do
+defmodule Handbean.Agent.CliAgentTest.AttachmentBackend do
   @moduledoc false
-  @behaviour Handbeam.Agent.CliAgent
+  @behaviour Handbean.Agent.CliAgent
 
-  alias Handbeam.Agent.CliAgent.Session
+  alias Handbean.Agent.CliAgent.Session
 
   @impl true
   def id, do: "attachment-cli"
@@ -158,7 +162,7 @@ defmodule Handbeam.Agent.CliAgentTest.AttachmentBackend do
 
   @impl true
   def send_message(session, input, on_event) do
-    send(Application.fetch_env!(:handbeam, :fake_cli_notify), {:attachment_cli_input, input})
+    send(Application.fetch_env!(:handbean, :fake_cli_notify), {:attachment_cli_input, input})
     done = {:turn_end, %{stop_reason: :end_turn, session_id: session.session_id}}
     on_event.(done)
     {:ok, session, [done]}

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prepare handbeam_probe for mix mob.pack_apk (local or CI).
+# Prepare handbean_probe for mix mob.pack_apk (local or CI).
 # Writes gitignored android/local.properties from ANDROID_HOME + cached OTP tarballs.
 # Copies config/mob.exs.template → gitignored mob.exs (static_nifs).
 set -euo pipefail

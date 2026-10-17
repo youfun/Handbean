@@ -41,9 +41,9 @@ if (-not $env:PHX_SERVER) { $env:PHX_SERVER = "true" }
 if (-not $env:PORT) { $env:PORT = "5008" }
 if (-not $env:PHX_HOST) { $env:PHX_HOST = "localhost" }
 
-$data = Join-Path $env:USERPROFILE ".handbeam"
+$data = Join-Path $env:USERPROFILE ".handbean"
 New-Item -ItemType Directory -Force -Path $data | Out-Null
-if (-not $env:DATABASE_PATH) { $env:DATABASE_PATH = Join-Path $data "handbeam.db" }
+if (-not $env:DATABASE_PATH) { $env:DATABASE_PATH = Join-Path $data "handbean.db" }
 Add-ExperimentalToolchain $data
 if (-not $env:SECRET_KEY_BASE) {
   $bytes = New-Object byte[] 48
@@ -51,7 +51,7 @@ if (-not $env:SECRET_KEY_BASE) {
   $env:SECRET_KEY_BASE = [Convert]::ToBase64String($bytes)
 }
 
-Write-Host "Handbeam http://localhost:$($env:PORT)"
+Write-Host "Handbean http://localhost:$($env:PORT)"
 Write-Host "Stop with Ctrl+C"
-& "$PSScriptRoot\bin\handbeam.bat" start
+& "$PSScriptRoot\bin\handbean.bat" start
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

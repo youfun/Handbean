@@ -25,7 +25,7 @@ defmodule ExFff.Config do
 
   @default_ignored_dirs ~w(
     _build build deps .git node_modules .gradle .elixir_ls target .zig-cache
-    zig-out .cxx cover tmp artifacts .handbeam .local-archive mix_toolchain
+    zig-out .cxx cover tmp artifacts .handbean .local-archive mix_toolchain
     .idea .vscode .hg .svn .amp .build .cache .pytest_cache .mypy_cache
     .ruff_cache .tox .venv .next .nuxt .svelte-kit .parcel-cache .turbo
     .dart_tool

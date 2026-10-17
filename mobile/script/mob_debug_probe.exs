@@ -50,8 +50,8 @@ end
 true = Node.set_cookie(MobDev.DistCookie.for_project!())
 
 candidates = [
-  :"handbeam_probe_android_nativechat@127.0.0.1",
-  :"handbeam_probe_android@127.0.0.1"
+  :"handbean_probe_android_nativechat@127.0.0.1",
+  :"handbean_probe_android@127.0.0.1"
 ]
 
 {node, ping} =
@@ -157,7 +157,7 @@ IO.inspect(
 
 IO.puts("\n=== rpc Process.whereis ===")
 
-for name <- [:mob_screen, HandbeamWeb.Endpoint, Handbeam.Repo, Handbeam.Agent.Coordinator] do
+for name <- [:mob_screen, HandbeanWeb.Endpoint, Handbean.Repo, Handbean.Agent.Coordinator] do
   IO.puts("  #{inspect(name)} => #{inspect(:rpc.call(node, Process, :whereis, [name]))}")
 end
 

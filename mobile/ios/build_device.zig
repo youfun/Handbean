@@ -1,4 +1,4 @@
-// build_device.zig — Native build orchestration for HandbeamProbe (iOS device).
+// build_device.zig — Native build orchestration for HandbeanProbe (iOS device).
 //
 // Phase 2 iter 12 of the build-system migration. Sister to ios/build.zig
 // (which targets iOS sim). Handles the seven standard native sources for
@@ -132,7 +132,7 @@ pub fn build(b: *std.Build) void {
     inline for (.{ "MobViewModel.swift", "MobGpuView.swift" }) |name| {
         swift_run.addFileArg(.{ .cwd_relative = b.fmt("{s}/ios/{s}", .{ mob_dir, name }) });
     }
-    swift_run.addFileArg(.{ .cwd_relative = b.fmt("{s}/HandbeamMarkdown.swift", .{project_ios_dir}) });
+    swift_run.addFileArg(.{ .cwd_relative = b.fmt("{s}/HandbeanMarkdown.swift", .{project_ios_dir}) });
     if (project_swift_sources.len > 0) {
         var swift_it = std.mem.splitScalar(u8, project_swift_sources, ',');
         while (swift_it.next()) |source| {
@@ -370,7 +370,7 @@ pub fn build(b: *std.Build) void {
         var c_it = std.mem.splitScalar(u8, project_c_nifs, ',');
         while (c_it.next()) |nif_name| {
             if (nif_name.len == 0) continue;
-            const extra: usize = if (std.mem.eql(u8, nif_name, "handbeam_ios") and ish_libs.len > 0) 3 else 2;
+            const extra: usize = if (std.mem.eql(u8, nif_name, "handbean_ios") and ish_libs.len > 0) 3 else 2;
             const flags = b.allocator.alloc([]const u8, c_flags_base.len + extra) catch unreachable;
             @memcpy(flags[0..c_flags_base.len], c_flags_base);
             flags[c_flags_base.len] = "-DSTATIC_ERLANG_NIF";
@@ -379,8 +379,8 @@ pub fn build(b: *std.Build) void {
 
             if (extra == 3) {
                 installAndCollect(b, objects_step, &objs, addCObject(b, .{
-                    .name = "handbeam_ios_guest",
-                    .source = b.fmt("{s}/c_src/handbeam_ios_guest.c", .{project_root}),
+                    .name = "handbean_ios_guest",
+                    .source = b.fmt("{s}/c_src/handbean_ios_guest.c", .{project_root}),
                     .target = target,
                     .optimize = optimize,
                     .c_flags = flags,
@@ -389,7 +389,7 @@ pub fn build(b: *std.Build) void {
                     .erts_vsn = erts_vsn,
                     .sdkroot = sdkroot,
                     .ish_include = ish_include,
-                }), "handbeam_ios_guest.o");
+                }), "handbean_ios_guest.o");
             }
 
             installAndCollect(b, objects_step, &objs, addCObject(b, .{
@@ -599,7 +599,7 @@ fn addGuestBridge(b: *std.Build, mob_dir: []const u8, header: std.Build.LazyPath
     );
     run.addArg(b.fmt("{s}/ios/MobDemo-Bridging-Header.h", .{mob_dir}));
     run.addFileArg(header);
-    return run.addOutputFileArg("Handbeam-Bridging-Header.h");
+    return run.addOutputFileArg("Handbean-Bridging-Header.h");
 }
 
 fn addMarkdownOverlay(b: *std.Build, mob_dir: []const u8, project_ios_dir: []const u8) MarkdownOverlay {

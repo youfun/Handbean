@@ -217,7 +217,7 @@ function probeSharedWorker(environment, timeoutMs) {
 
     try {
       worker = new environment.SharedWorker("/assets/js/webgpu_probe_worker.js", {
-        name: "handbeam-capability-probe",
+        name: "handbean-capability-probe",
       });
       worker.port.addEventListener("message", (event) => {
         if (event.data === "ready") finish(result(STATUS.READY, "Worker handshake completed"));
@@ -240,7 +240,7 @@ async function probeOPFS(environment, timeoutMs) {
     return result(STATUS.UNSUPPORTED, "navigator.storage.getDirectory is not available");
   }
 
-  const filename = `.handbeam-webgpu-probe-${environment.crypto?.randomUUID?.() || Date.now()}`;
+  const filename = `.handbean-webgpu-probe-${environment.crypto?.randomUUID?.() || Date.now()}`;
   let root;
   let created = false;
 
@@ -250,10 +250,10 @@ async function probeOPFS(environment, timeoutMs) {
       const handle = await root.getFileHandle(filename, { create: true });
       created = true;
       const writable = await handle.createWritable();
-      await writable.write("handbeam-opfs-probe");
+      await writable.write("handbean-opfs-probe");
       await writable.close();
       const contents = await (await handle.getFile()).text();
-      if (contents !== "handbeam-opfs-probe") throw new Error("OPFS readback mismatch");
+      if (contents !== "handbean-opfs-probe") throw new Error("OPFS readback mismatch");
     })(), environment, timeoutMs, "OPFS probe");
     return result(STATUS.READY, "Temporary file write/read/delete completed");
   } catch (error) {
@@ -332,7 +332,7 @@ export const LocalWebGPUProbe = {
       try {
         const probe = await runLocalWebGPUProbe(window);
         renderProbe(this.el, probe);
-        window.dispatchEvent(new CustomEvent("handbeam:webgpu-probe", { detail: probe }));
+        window.dispatchEvent(new CustomEvent("handbean:webgpu-probe", { detail: probe }));
       } catch (error) {
         const probe = {
           status: STATUS.FAILURE,
@@ -342,7 +342,7 @@ export const LocalWebGPUProbe = {
           timestamp: new Date().toISOString(),
         };
         renderProbe(this.el, probe);
-        window.dispatchEvent(new CustomEvent("handbeam:webgpu-probe", { detail: probe }));
+        window.dispatchEvent(new CustomEvent("handbean:webgpu-probe", { detail: probe }));
       } finally {
         button.disabled = false;
         button.textContent = this.el.dataset.runAgain || "Run probe again";

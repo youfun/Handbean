@@ -15,7 +15,7 @@ function messagesEl() {
 
 function unpinChatScroll(scroller) {
   if (!scroller) return;
-  scroller.dispatchEvent(new CustomEvent("handbeam:unpin-chat-scroll"));
+  scroller.dispatchEvent(new CustomEvent("handbean:unpin-chat-scroll"));
 }
 
 export const ConversationNav = {

@@ -17,18 +17,18 @@ mix esbuild.install --if-missing
 mix assets.deploy
 mix release --overwrite
 
-release_dir="_build/prod/rel/handbeam"
+release_dir="_build/prod/rel/handbean"
 bash scripts/version.sh verify-web "$release_dir"
 cp scripts/start.sh "$release_dir/start.sh"
-chmod +x "$release_dir/start.sh" "$release_dir/bin/handbeam"
+chmod +x "$release_dir/start.sh" "$release_dir/bin/handbean"
 
 case "$target" in
-  macos-*) printf '%s\n' macos > "$release_dir/.handbeam-host" ;;
-  linux-*) rm -f "$release_dir/.handbeam-host" ;;
+  macos-*) printf '%s\n' macos > "$release_dir/.handbean-host" ;;
+  linux-*) rm -f "$release_dir/.handbean-host" ;;
   *) echo "unsupported Web UI target: $target" >&2; exit 2 ;;
 esac
 
-archive="handbeam-web-${target}.tar.gz"
+archive="handbean-web-${target}.tar.gz"
 rm -f "$archive" "${archive}.sha256"
 tar -C "$release_dir" -czf "$archive" .
 

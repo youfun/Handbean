@@ -1,9 +1,9 @@
-defmodule Handbeam.TestSupport.FakeProvider do
+defmodule Handbean.TestSupport.FakeProvider do
   @moduledoc """
    Fake provider for testing the agent loop without real API calls.
 
-   Reference: `jido_ai/test/support/fake_req_llm.ex` — adapted for Handbeam's
-   `Handbeam.Agent.Provider` behaviour without Jido/ReqLLM dependencies.
+   Reference: `jido_ai/test/support/fake_req_llm.ex` — adapted for Handbean's
+   `Handbean.Agent.Provider` behaviour without Jido/ReqLLM dependencies.
 
    ## Usage pattern
 
@@ -27,9 +27,9 @@ defmodule Handbeam.TestSupport.FakeProvider do
      - `:streaming_error_after_chunk` — emits a chunk, then returns retryable error
   """
 
-  @behaviour Handbeam.Agent.Provider
+  @behaviour Handbean.Agent.Provider
 
-  alias Handbeam.Agent.Message
+  alias Handbean.Agent.Message
 
   @impl true
   def context_editing?, do: true

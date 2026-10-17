@@ -15,18 +15,18 @@ if not File.exists?(root) do
   File.mkdir_p!(Path.join(root, "test"))
 
   File.write!(Path.join(root, "mix.exs"), """
-  defmodule HandbeamMixProbe.Project do
+  defmodule HandbeanMixProbe.Project do
     use Mix.Project
     def project do
-      [app: :handbeam_mix_probe_project, version: "0.1.0", consolidate_protocols: false,
-       phandbeam_code_paths: false, deps: [{:bimap, "== 1.3.0"}]]
+      [app: :handbean_mix_probe_project, version: "0.1.0", consolidate_protocols: false,
+       phandbean_code_paths: false, deps: [{:bimap, "== 1.3.0"}]]
     end
     def application, do: []
   end
   """)
 
   File.write!(Path.join(root, "lib/demo.ex"), """
-  defmodule HandbeamMixProbe.Demo do
+  defmodule HandbeanMixProbe.Demo do
     def run, do: BiMap.new([{"phone", 42}]) |> BiMap.fetch_key(42)
   end
   """)
@@ -34,17 +34,17 @@ if not File.exists?(root) do
   File.write!(Path.join(root, "test/test_helper.exs"), "ExUnit.start(autorun: false)\n")
 
   File.write!(Path.join(root, "test/demo_test.exs"), """
-  defmodule HandbeamMixProbe.DemoTest do
+  defmodule HandbeanMixProbe.DemoTest do
     use ExUnit.Case
     test "calls installed dependency" do
-      assert HandbeamMixProbe.Demo.run() == {:ok, "phone"}
+      assert HandbeanMixProbe.Demo.run() == {:ok, "phone"}
     end
     test "missing key remains an error" do
       assert BiMap.fetch(BiMap.new(), "missing") == :error
     end
     test "external build commands are rejected" do
       assert_raise RuntimeError, ~r/external commands/, fn ->
-        HandbeamMixProbe.Shell.cmd("make", [])
+        HandbeanMixProbe.Shell.cmd("make", [])
       end
     end
   end
@@ -63,7 +63,7 @@ try do
 
   try do
     Mix.env(:test)
-    Mix.shell(HandbeamMixProbe.Shell)
+    Mix.shell(HandbeanMixProbe.Shell)
 
     # Register the original Hex app with only the transport/startup adapted.
     {:ok, [{:application, :hex, hex_spec}]} =
@@ -72,7 +72,7 @@ try do
     hex_spec =
       hex_spec
       |> Keyword.update!(:applications, &List.delete(&1, :inets))
-      |> Keyword.put(:mod, {HandbeamMixProbe.HexApplication, []})
+      |> Keyword.put(:mod, {HandbeanMixProbe.HexApplication, []})
 
     :ok = :application.load({:application, :hex, hex_spec})
     {:ok, _} = Application.ensure_all_started(:hex)
@@ -80,13 +80,13 @@ try do
     Mix.Task.clear()
 
     results =
-      Mix.Project.in_project(:handbeam_mix_probe_project, root, fn _ ->
+      Mix.Project.in_project(:handbean_mix_probe_project, root, fn _ ->
         deps = Mix.Task.run("deps.get", ["--no-archives-check"])
 
         compile =
           Mix.Task.run("compile", [
             "--no-protocol-consolidation",
-            "--no-phandbeam-code-paths",
+            "--no-phandbean-code-paths",
             "--return-errors"
           ])
 
@@ -99,7 +99,7 @@ try do
             "--no-compile"
           ])
 
-        {:ok, "phone"} = result = apply(HandbeamMixProbe.Demo, :run, [])
+        {:ok, "phone"} = result = apply(HandbeanMixProbe.Demo, :run, [])
 
         %{
           deps: deps,

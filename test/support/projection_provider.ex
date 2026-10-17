@@ -1,14 +1,14 @@
-defmodule Handbeam.TestSupport.ProjectionProvider do
+defmodule Handbean.TestSupport.ProjectionProvider do
   @moduledoc false
-  @behaviour Handbeam.Agent.Provider
+  @behaviour Handbean.Agent.Provider
 
   def complete(messages, tools, config) do
-    Handbeam.TestSupport.FakeProvider.complete(messages, tools, config)
+    Handbean.TestSupport.FakeProvider.complete(messages, tools, config)
   end
 
   def stream(messages, tools, config, on_chunk) do
     result =
-      Handbeam.TestSupport.FakeProvider.stream(
+      Handbean.TestSupport.FakeProvider.stream(
         messages,
         tools,
         Map.put(config, :scenario, :streaming_chunks),

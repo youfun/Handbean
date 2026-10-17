@@ -9,7 +9,7 @@
 本文分成两块。
 
 - **事实**：某份文件、某次 GitHub 文件树、或本仓库源码里写明的内容。引用处标了路径。文档之间互相矛盾时，两份都记下，不在事实节里裁定谁代表当前运行行为。
-- **推理**：对照这些事实之后的判断、缺口和未拍板的选择。推理不是 pace 的决策，也不是 Handbeam 已有行为。
+- **推理**：对照这些事实之后的判断、缺口和未拍板的选择。推理不是 pace 的决策，也不是 Handbean 已有行为。
 
 ## 读过什么
 
@@ -24,12 +24,12 @@ pace（`main`，通过 GitHub API 读取，不是本地 clone）：
 
 没有通读 `browser-host.ts`、`browser-annotation.ts`（electron 侧）、`browser-annotation-preload.ts`、`composer-injections.ts`、`session-browser-panel.tsx`。下面凡是「ADR 写」「PRD 写」的句子，都还没有用这些实现文件逐行复核。
 
-Handbeam（本仓库当前工作区）：
+Handbean（本仓库当前工作区）：
 
-- `lib/handbeam/host.ex`、`lib/handbeam/tool/builtin/browser.ex`、`lib/handbeam/tool/builtin/preview_serve.ex`、`lib/handbeam/tool/registry.ex` 的 host gate
-- `lib/handbeam/preview/url.ex`、`lib/handbeam_web/controllers/preview_controller.ex`
-- `lib/handbeam_web/router.ex`、`lib/handbeam_web/live/workspace_live.ex` 的上传与 composer 事件、`lib/handbeam_web/live/workspace_live/composer.ex`
-- `lib/handbeam/attachments.ex` 的图片字节上限
+- `lib/handbean/host.ex`、`lib/handbean/tool/builtin/browser.ex`、`lib/handbean/tool/builtin/preview_serve.ex`、`lib/handbean/tool/registry.ex` 的 host gate
+- `lib/handbean/preview/url.ex`、`lib/handbean_web/controllers/preview_controller.ex`
+- `lib/handbean_web/router.ex`、`lib/handbean_web/live/workspace_live.ex` 的上传与 composer 事件、`lib/handbean_web/live/workspace_live/composer.ex`
+- `lib/handbean/attachments.ex` 的图片字节上限
 - `docs/macos-computer-use.md` 的开头
 - `AGENTS.md` 里 browser / preview_serve / Coordinator 的现有说明
 
@@ -47,7 +47,7 @@ ADR-0029 状态为 Accepted，日期 2026-09-03，来源写明 PRD、PR #149 / #
 
 ## 2. pace 写成文档的决策
 
-以下是 PRD 与 ADR 的文字，不是我对 Handbeam 的建议。
+以下是 PRD 与 ADR 的文字，不是我对 Handbean 的建议。
 
 ### 2.1 宿主
 
@@ -137,34 +137,34 @@ PRD 的范围外还包括：插件化浏览器面板、Session 之间共享原�
 
 pace 源码里的按钮文案是 `Send to composer`，计数文案是 `{n} marked`，overlay 强调色是 `#6d28d9`，可视物是序号和评论气泡。转写里的 “To composer”、浅蓝色自由箭头、“Describe the change”、“Design Mode” 与我读到的 pace 源码用词不一致。
 
-## 4. Handbeam 现在有的浏览器相关能力
+## 4. Handbean 现在有的浏览器相关能力
 
 这些是本仓库源码，与 pace 无关。
 
 ### 4.1 桌面工作台是 LiveView，不是 Electron
 
-`lib/handbeam_web/router.ex` 把 `/`、`/c/:conversation_id`、`/w/:workspace_id/c/:conversation_id` 都挂到 `WorkspaceLive`。没有独立的桌面主进程，也没有 `WebContentsView`。
+`lib/handbean_web/router.ex` 把 `/`、`/c/:conversation_id`、`/w/:workspace_id/c/:conversation_id` 都挂到 `WorkspaceLive`。没有独立的桌面主进程，也没有 `WebContentsView`。
 
 ### 4.2 `browser` 工具是 Agent 在开车，不是用户标注面
 
-`Handbeam.Host.browser_backend/0`：声明值为 `:cli` 或 `:webview`，其他值当成没有浏览器。未声明时桌面默认 `:cli`。
+`Handbean.Host.browser_backend/0`：声明值为 `:cli` 或 `:webview`，其他值当成没有浏览器。未声明时桌面默认 `:cli`。
 
-`Handbeam.Tool.Builtin.Browser`：
+`Handbean.Tool.Builtin.Browser`：
 
 - `:cli`：把参数交给 `agent-browser`。描述写的是打开、snapshot、点击、填表、截图、抽取内容。
 - `:webview`：窄动作 `open` / `snapshot` / `eval` / `click` / `fill` / `back` / `show` / `hide` / `close`，打在独立的 Agent WebView 上。模块文档写明这不是系统浏览器。
 
-`Handbeam.Tool.Registry`：`browser` 在 `browser_backend` 非空时注册。`preview_serve` 只在 `browser_backend == :webview` 时注册。桌面默认 `:cli`，因此桌面默认有 `browser`、没有 `preview_serve`。
+`Handbean.Tool.Registry`：`browser` 在 `browser_backend` 非空时注册。`preview_serve` 只在 `browser_backend == :webview` 时注册。桌面默认 `:cli`，因此桌面默认有 `browser`、没有 `preview_serve`。
 
-聊天里已有一张「接管浏览器」卡：`takeover_browser` 调用 `Handbeam.Browser.WebViewSession.user_takeover/1`。这是把已有 WebView 会话交给用户，不是标注层。
+聊天里已有一张「接管浏览器」卡：`takeover_browser` 调用 `Handbean.Browser.WebViewSession.user_takeover/1`。这是把已有 WebView 会话交给用户，不是标注层。
 
 ### 4.3 PreviewShell 只预览已登记的本地内容
 
 `preview_serve` 的描述：登记工作区静态目录，或一台已经在跑的 loopback 端口，返回 `preview_id`。用户从对话卡片打开 PreviewShell。
 
-`Handbeam.Preview.URL`：顶层只允许 loopback 上的 PreviewShell 路径。
+`Handbean.Preview.URL`：顶层只允许 loopback 上的 PreviewShell 路径。
 
-`HandbeamWeb.PreviewController`：
+`HandbeanWeb.PreviewController`：
 
 - 壳页面带 `frame-ancestors 'none'`。
 - `files` 读登记目录里的文件。
@@ -181,7 +181,7 @@ pace 源码里的按钮文案是 `Send to composer`，计数文案是 `{n} marke
 
 ### 4.5 macOS computer use 也不是内嵌浏览器
 
-`docs/macos-computer-use.md`：`computer` 工具由 Handbeam.app 持有屏幕录制与辅助功能权限，对选中的原生窗口做 `observe` / `click` / `type` / `key` / `scroll`。同一文档写明普通 `click` / `scroll` 仍返回 `unsupportedPointer`，不真正派发。它观察的是 macOS 窗口，不是会话里的一个浏览器 surface。
+`docs/macos-computer-use.md`：`computer` 工具由 Handbean.app 持有屏幕录制与辅助功能权限，对选中的原生窗口做 `observe` / `click` / `type` / `key` / `scroll`。同一文档写明普通 `click` / `scroll` 仍返回 `unsupportedPointer`，不真正派发。它观察的是 macOS 窗口，不是会话里的一个浏览器 surface。
 
 ### 4.6 Composer 没有外部注入口
 
@@ -189,7 +189,7 @@ pace 源码里的按钮文案是 `Send to composer`，计数文案是 `{n} marke
 
 本次检索到的 `input_value` 写入点是：mount 置空、`launch_skill` 填入技能 prompt、`update_input`、技能补全、`Composer` 的草稿切换与清空、`MessageSubmission` 发送失败时把草稿放回去或发送成功后清空。没有一个事件表示「把浏览器标注追加进草稿」。
 
-图片上传（`WorkspaceLive.mount`）：`accept` 为 `.png .jpg .jpeg .gif .webp`，`max_entries: 4`，`max_file_size: 5_000_000`。`Handbeam.Attachments` 的 `@max_image_bytes` 也是 `5_000_000`。`Composer` 合并附件时 `Enum.take(..., 4)`。
+图片上传（`WorkspaceLive.mount`）：`accept` 为 `.png .jpg .jpeg .gif .webp`，`max_entries: 4`，`max_file_size: 5_000_000`。`Handbean.Attachments` 的 `@max_image_bytes` 也是 `5_000_000`。`Composer` 合并附件时 `Enum.take(..., 4)`。
 
 用户发出去的唯一入口是 `Coordinator.add_message/3`（`send_message` / `steer_message` / `queue_message`）。`AGENTS.md` 写明：会话 idle 时起新 run；会话 running 时，LiveView 的 Send / Enter 默认 steer，显式排队才是 follow_up。
 
@@ -197,15 +197,15 @@ pace 源码里的按钮文案是 `Send to composer`，计数文案是 `{n} marke
 
 # 推理
 
-本节全部是判断。pace 没有这些句子，Handbeam 也还没有这些行为。
+本节全部是判断。pace 没有这些句子，Handbean 也还没有这些行为。
 
 ## 5. 用户要的能力和两边现有代码的关系
 
-用户要的是：人在 Handbeam 里打开一个页面，在页面上做标注，把标注送进**当前这条对话**，让模型知道「哪个元素、什么问题」。
+用户要的是：人在 Handbean 里打开一个页面，在页面上做标注，把标注送进**当前这条对话**，让模型知道「哪个元素、什么问题」。
 
 pace 已经把这件事做成会话里的一个 surface：真页面、design mode、序号和评论、截图加固定 markdown、放进 composer 草稿，由人再决定发送。
 
-Handbeam 现有的四条相邻路径都不是这件事：
+Handbean 现有的四条相邻路径都不是这件事：
 
 | 现有路径 | 它实际是什么 | 和这次目标的差距 |
 | --- | --- | --- |
@@ -218,17 +218,17 @@ Handbeam 现有的四条相邻路径都不是这件事：
 
 ## 6. 不能把 pace 的宿主原样搬过来
 
-pace 选 `WebContentsView` 是因为他们有 Electron 主进程。Handbeam 桌面工作台是 Phoenix LiveView，跑在浏览器或系统 webview 里，没有那层主进程。
+pace 选 `WebContentsView` 是因为他们有 Electron 主进程。Handbean 桌面工作台是 Phoenix LiveView，跑在浏览器或系统 webview 里，没有那层主进程。
 
-iframe 被 pace 否决，理由在他们的壳里成立：跨源注不进脚本，`X-Frame-Options: DENY` 的站装不进去。Handbeam 若用 iframe 直连目标站，会撞上同一堵墙。PreviewShell 的反向代理只覆盖「已经登记的 loopback」，而且会丢掉上游 CSP 和 `Set-Cookie`，不能当成通用浏览器的半成品。
+iframe 被 pace 否决，理由在他们的壳里成立：跨源注不进脚本，`X-Frame-Options: DENY` 的站装不进去。Handbean 若用 iframe 直连目标站，会撞上同一堵墙。PreviewShell 的反向代理只覆盖「已经登记的 loopback」，而且会丢掉上游 CSP 和 `Set-Cookie`，不能当成通用浏览器的半成品。
 
 因此宿主形态是实现前的分叉，不是实现细节。三条都接得上 pace 的载荷，接不上的是「页面怎么被拿住」：
 
-1. **桌面继续用 `agent-browser` / CDP，由 Handbeam 进程持有一个 headed 或嵌入页面。** 标注脚本用 isolated world 注入，截图用 CDP 的 page capture。这最接近 pace 的安全模型：页面不在 LiveView 的文档里，cookie 不进 Handbeam 的 session。代价是要有一块真正的浏览器画面，以及和 LiveView 面板对齐的尺寸同步。pace 用 `ResizeObserver` → `setBounds` 做的就是这件事；他们的 spike 记录了视图比 DOM 晚大约一个 IPC 往返。
-2. **服务端代理进沙箱 iframe，并注入标注脚本。** LiveView 里能做，但必须是独立 origin 或带 sandbox 的框架，不能把敌意页面放进工作台文档。还要自己做 pace 已经列过的闸：只允许 `http`/`https`、拒绝下载和权限、不把 Handbeam 的 cookie 带给目标站、不把目标站的 cookie 写进工作台。Preview 控制器今天丢弃 `Set-Cookie`，通用浏览器若也丢弃，本地 dev 站的登录态留不住；pace 用独立 `persist:` 分区就是为了留下这块登录态，同时不污染自己的壳。
+1. **桌面继续用 `agent-browser` / CDP，由 Handbean 进程持有一个 headed 或嵌入页面。** 标注脚本用 isolated world 注入，截图用 CDP 的 page capture。这最接近 pace 的安全模型：页面不在 LiveView 的文档里，cookie 不进 Handbean 的 session。代价是要有一块真正的浏览器画面，以及和 LiveView 面板对齐的尺寸同步。pace 用 `ResizeObserver` → `setBounds` 做的就是这件事；他们的 spike 记录了视图比 DOM 晚大约一个 IPC 往返。
+2. **服务端代理进沙箱 iframe，并注入标注脚本。** LiveView 里能做，但必须是独立 origin 或带 sandbox 的框架，不能把敌意页面放进工作台文档。还要自己做 pace 已经列过的闸：只允许 `http`/`https`、拒绝下载和权限、不把 Handbean 的 cookie 带给目标站、不把目标站的 cookie 写进工作台。Preview 控制器今天丢弃 `Set-Cookie`，通用浏览器若也丢弃，本地 dev 站的登录态留不住；pace 用独立 `persist:` 分区就是为了留下这块登录态，同时不污染自己的壳。
 3. **只标注 PreviewShell 已经能打开的 loopback / 静态预览。** 范围小于用户说的「内置浏览器」。`X-Frame-Options: DENY` 的任意网站不在范围内。pace 把「这类站点能打开」写成了验收项。
 
-我倾向 1：Handbeam 桌面已经依赖 `agent-browser`，而且页面与 LiveView 隔离。2 要在 Phoenix 里重做一套浏览器安全边界，敌意 JS 和 SSRF 的面都比 1 大。3 可以当更小的预览标注，但是另一项产品，不该叫内置浏览器。
+我倾向 1：Handbean 桌面已经依赖 `agent-browser`，而且页面与 LiveView 隔离。2 要在 Phoenix 里重做一套浏览器安全边界，敌意 JS 和 SSRF 的面都比 1 大。3 可以当更小的预览标注，但是另一项产品，不该叫内置浏览器。
 
 手机宿主已经有独立 WebView。若做，桌面和手机应各用自己的画面，共用同一份载荷和同一段 markdown。这和现在的 `browser_backend` 分叉一致：能力在 host 启动前定死，不在运行中从操作系统猜测。
 
@@ -239,20 +239,20 @@ iframe 被 pace 否决，理由在他们的壳里成立：跨源注不进脚本�
 - 元素字段就是 core 里那一组：序号、selector、tag、截断后的可见文本、标记时的视口 rect、可选 `data-*` source、可选评论。不要在 v1 承诺 React 组件名。
 - `screenshot: boolean` 决定模板怎么写。有图靠序号对图；没图才写 rect。rect 会过期，模板不该在有图时再写一份可能指错的坐标。
 - 没写评论的标记仍占一行。丢掉等于用户的指向消失。
-- **进草稿，不调用 `Coordinator.add_message/3`。** Handbeam 里直接发送会在 idle 时开新 run，在 running 时默认 steer。pace 把「人先改再发」当成已拍板项。Handbeam 的三条发送路径（新消息 / steer / 排队）已经在 composer 上，草稿进去之后自然覆盖。
+- **进草稿，不调用 `Coordinator.add_message/3`。** Handbean 里直接发送会在 idle 时开新 run，在 running 时默认 steer。pace 把「人先改再发」当成已拍板项。Handbean 的三条发送路径（新消息 / steer / 排队）已经在 composer 上，草稿进去之后自然覆盖。
 - 截图走现有图片附件，不新开 transcript 附件类型。pace 也没有新类型。
-- 注入只针对当前已挂载的对话。切换会话后，标注留在浏览器那一页，不跟着写进别的对话。pace 用在途截图的 revision 丢掉过期结果；Handbeam 至少要在切换 `current_conversation_id` 时作废还没写进草稿的那一次。
+- 注入只针对当前已挂载的对话。切换会话后，标注留在浏览器那一页，不跟着写进别的对话。pace 用在途截图的 revision 丢掉过期结果；Handbean 至少要在切换 `current_conversation_id` 时作废还没写进草稿的那一次。
 
-Handbeam 侧需要新建的只有两小块，而且 pace 也是后补的：一段纯函数 `format`（对应 `formatBrowserAnnotationPrompt`），以及一个只给当前 LiveView 用的草稿写入（追加文本、把 PNG 放进 `pending_attachments`）。`launch_skill` 已经会改 `input_value`，但那是替换成技能 prompt，不是追加，也不能带图片。
+Handbean 侧需要新建的只有两小块，而且 pace 也是后补的：一段纯函数 `format`（对应 `formatBrowserAnnotationPrompt`），以及一个只给当前 LiveView 用的草稿写入（追加文本、把 PNG 放进 `pending_attachments`）。`launch_skill` 已经会改 `input_value`，但那是替换成技能 prompt，不是追加，也不能带图片。
 
-图片上限要对齐 Handbeam 已有约束，而不是 pace 的 8 MiB：最多 4 张，单张 5_000_000 字节，类型限于 png/jpeg/gif/webp。2x 全幅 PNG 很容易超过 5MB，所以要在进草稿之前降采样。降完仍超限就只送文本，并把 `screenshot` 设为 false，让模板改走 rect。不要静默丢掉整次标注。
+图片上限要对齐 Handbean 已有约束，而不是 pace 的 8 MiB：最多 4 张，单张 5_000_000 字节，类型限于 png/jpeg/gif/webp。2x 全幅 PNG 很容易超过 5MB，所以要在进草稿之前降采样。降完仍超限就只送文本，并把 `screenshot` 设为 false，让模板改走 rect。不要静默丢掉整次标注。
 
 ## 8. 不该照抄的部分
 
 - Electron 的 bounds、vibrancy、1280px Dialog 遮罩、Popover `toggle` 监听。那是原生视图盖住 DOM 的补丁。LiveView 里没有 `WebContentsView`，这套不存在。
 - 自由箭头和 “Describe the change”。那是附件里另一个 agent / Cursor Design Mode 的样子。pace 落地的是元素命中、序号、评论框。两套定位语义不同：箭头是画面坐标，序号是 DOM selector。按 pace 做就做后者。
 - ADR 里的 `pigui.browserTabs.v1` 恢复。更新更晚的 PRD 写明这套已删除，而我还没用当前渲染层证实。v1 用空白空态更符合那条更新，也少一块持久化。
-- 让 Agent 用这块浏览器代点击。pace 把 browser-use 划在范围外。Handbeam 的 `browser` 工具继续负责 Agent 驾驶；人的标注面不要变成第二套工具执行器。
+- 让 Agent 用这块浏览器代点击。pace 把 browser-use 划在范围外。Handbean 的 `browser` 工具继续负责 Agent 驾驶；人的标注面不要变成第二套工具执行器。
 - 多 tab、弹层截图占位、跨源 iframe 内元素。pace 的 v1 已知限制可以原样接受，不必在第一版补 CDP。
 
 ## 9. 安全上我不会放宽的点

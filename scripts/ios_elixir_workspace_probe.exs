@@ -10,7 +10,7 @@ source = ~S'''
 root = Path.join(System.fetch_env!("MOB_DATA_DIR"), "workspace/elixir_workspace_probe")
 ebin = Path.join(root, "_build/ebin")
 expected = "bf5a2b078528465aa705f405a5c638becd63e41d280ada41e0f77e6d255a10b4"
-modules = [BiMap, BiMultiMap, HandbeamWorkspaceProbe.Demo]
+modules = [BiMap, BiMultiMap, HandbeanWorkspaceProbe.Demo]
 
 unless Enum.all?(modules, &(:code.which(&1) == :non_existing)) do
   raise "probe modules already available; use a fresh app process"
@@ -40,7 +40,7 @@ else
   end
 
   project_source = """
-  defmodule HandbeamWorkspaceProbe.Demo do
+  defmodule HandbeanWorkspaceProbe.Demo do
     def run do
       map = BiMap.new([{"phone", 42}])
       {BiMap.fetch(map, "phone"), BiMap.fetch_key(map, 42)}
@@ -51,9 +51,9 @@ else
   File.mkdir_p!(Path.dirname(project_path))
   File.write!(project_path, project_source)
   File.write!(Path.join(root, "mix.exs"), """
-  defmodule HandbeamWorkspaceProbe.MixProject do
+  defmodule HandbeanWorkspaceProbe.MixProject do
     use Mix.Project
-    def project, do: [app: :handbeam_workspace_probe, version: "0.1.0",
+    def project, do: [app: :handbean_workspace_probe, version: "0.1.0",
       deps: [{:bimap, "== 1.3.0"}]]
   end
   """)
@@ -64,7 +64,7 @@ else
 
   File.write!(
     Path.join(root, "probe-lock.json"),
-    Handbeam.JSON.encode!(%{
+    Handbean.JSON.encode!(%{
       package: "bimap",
       version: "1.3.0",
       sha256: expected,
@@ -74,7 +74,7 @@ else
   )
 end
 
-{{:ok, 42}, {:ok, "phone"}} = result = apply(HandbeamWorkspaceProbe.Demo, :run, [])
+{{:ok, 42}, {:ok, "phone"}} = result = apply(HandbeanWorkspaceProbe.Demo, :run, [])
 %{
   phase: if(resume, do: :resume, else: :install),
   workspace: root,
@@ -84,7 +84,7 @@ end
   mix: :code.which(Mix),
   hex: :code.which(Hex),
   ex_unit: :code.which(ExUnit),
-  loaded_from: :code.which(HandbeamWorkspaceProbe.Demo),
+  loaded_from: :code.which(HandbeanWorkspaceProbe.Demo),
   screen_alive: is_pid(Process.whereis(:mob_screen))
 }
 '''

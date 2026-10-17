@@ -1,0 +1,191 @@
+package com.example.handbean_probe
+
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.setValue
+import androidx.compose.material3.Text
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithText
+import androidx.test.espresso.Espresso.pressBack
+import org.json.JSONArray
+import org.json.JSONObject
+import org.junit.Rule
+import org.junit.Test
+import org.junit.Assert.assertEquals
+
+class SheetIdentityTest {
+    @get:Rule
+    val composeTestRule = createComposeRule()
+
+    @Test
+    fun replacedSheetStateIsIsolatedAndReplacementDismissesOnce() {
+        var sheetNode by mutableStateOf(sheet("actions", "Actions"))
+        var dismissActions: () -> Unit = {}
+        var dismissConfirmation: () -> Unit = {}
+        var actionsDeliveryCount = 0
+        var confirmationDeliveryCount = 0
+
+        composeTestRule.setContent {
+            MobSheetSlot(sheetNode) { presentation ->
+                val id = sheetNode.props["id"] as String
+                if (presentation.visible) {
+                    Text(sheetNode.children.single().props["text"] as String)
+                }
+                SideEffect {
+                    val dismiss = {
+                        presentation.dismiss {
+                            if (id == "actions") actionsDeliveryCount++ else confirmationDeliveryCount++
+                        }
+                    }
+                    if (id == "actions") dismissActions = dismiss else dismissConfirmation = dismiss
+                }
+            }
+        }
+
+        composeTestRule.waitForText("Actions")
+
+        composeTestRule.runOnIdle {
+            sheetNode = sheet("confirmation", "Confirmation")
+        }
+
+        composeTestRule.waitForText("Confirmation")
+        composeTestRule.runOnIdle {
+            dismissActions()
+            dismissActions()
+        }
+        composeTestRule.onNodeWithText("Confirmation").assertIsDisplayed()
+        assertEquals(0, actionsDeliveryCount)
+        assertEquals(0, confirmationDeliveryCount)
+
+        composeTestRule.runOnIdle {
+            dismissConfirmation()
+            dismissConfirmation()
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Confirmation").assertDoesNotExist()
+        assertEquals(1, confirmationDeliveryCount)
+    }
+
+    @Test
+    fun stringSheetIdentityIsStableAcrossRerenderAndReplacement() {
+        val first = sheet("actions", "Actions")
+        val rerender = sheet("actions", "Updated actions")
+        val replacement = sheet("confirmation", "Confirmation")
+        val reappeared = sheet("actions", "Actions again")
+
+        assertEquals(MobNodeIdentity.keyFor(first), MobNodeIdentity.keyFor(rerender))
+        assertEquals(false, MobNodeIdentity.keyFor(first) == MobNodeIdentity.keyFor(replacement))
+        assertEquals(MobNodeIdentity.keyFor(first), MobNodeIdentity.keyFor(reappeared))
+    }
+
+    @Test
+    fun numericSheetIdentityIsStableAcrossRerenderReplacementAndAba() {
+        val first = sheet(42, "Numeric")
+        val rerender = sheet(42, "Updated numeric")
+        val replacement = sheet(43, "Replacement")
+        val reappeared = sheet(42, "Numeric again")
+
+        assertEquals(MobNodeIdentity.keyFor(first), MobNodeIdentity.keyFor(rerender))
+        assertEquals(false, MobNodeIdentity.keyFor(first) == MobNodeIdentity.keyFor(replacement))
+        assertEquals(MobNodeIdentity.keyFor(first), MobNodeIdentity.keyFor(reappeared))
+    }
+
+    @Test
+    fun structuredSheetIdentityIsCanonicalAcrossObjectKeyOrder() {
+        val firstId = JSONObject()
+            .put("region", "north")
+            .put("parts", JSONArray().put(1).put(true).put(JSONObject.NULL))
+        val reorderedId = JSONObject()
+            .put("parts", JSONArray().put(1).put(true).put(JSONObject.NULL))
+            .put("region", "north")
+        val first = sheet(firstId, "Structured")
+        val rerender = sheet(reorderedId, "Updated structured")
+        val replacement = sheet(JSONArray().put("different"), "Replacement")
+        val reappeared = sheet(firstId, "Structured again")
+
+        assertEquals(MobNodeIdentity.keyFor(first), MobNodeIdentity.keyFor(rerender))
+        assertEquals(false, MobNodeIdentity.keyFor(first) == MobNodeIdentity.keyFor(replacement))
+        assertEquals(MobNodeIdentity.keyFor(first), MobNodeIdentity.keyFor(reappeared))
+    }
+
+    @Test
+    fun booleanAndExplicitNullIdsAreKeyedWhileAbsentIdUsesFallback() {
+        val booleanSheet = sheet(true, "Boolean")
+        val nullSheet = sheet(JSONObject.NULL, "Null")
+        val rerenderedNull = sheet(JSONObject.NULL, "Updated null")
+        val absentSheet = sheet(null, "Absent", includeId = false)
+
+        assertEquals(false, MobNodeIdentity.keyFor(booleanSheet) == MobNodeIdentity.keyFor(nullSheet))
+        assertEquals(null, MobNodeIdentity.keyFor(absentSheet))
+        assertEquals(MobNodeIdentity.keyFor(nullSheet), MobNodeIdentity.keyFor(rerenderedNull))
+    }
+
+    @Test
+    fun listStateIdentityIgnoresHandleGenerationAndPrefersNodeId() {
+        val untagged = list(null, includeId = false)
+        val firstHandle = (41 shl 8) or 7
+        val nextHandle = (42 shl 8) or 7
+
+        assertEquals(
+            MobLazyListStateIdentity.keyFor(untagged, firstHandle),
+            MobLazyListStateIdentity.keyFor(untagged, nextHandle)
+        )
+        assertEquals(null, MobLazyListStateIdentity.keyFor(untagged, -1))
+
+        val tagged = list("holdings")
+        assertEquals(
+            MobLazyListStateIdentity.keyFor(tagged, firstHandle),
+            MobLazyListStateIdentity.keyFor(tagged, (99 shl 8) or 12)
+        )
+    }
+
+    @Test
+    fun sheetWithoutIdKeepsOrdinaryPresentationBehavior() {
+        composeTestRule.setContent {
+            RenderNode(sheet(null, "Ordinary sheet", includeId = false))
+        }
+
+        composeTestRule.waitForText("Ordinary sheet")
+        pressBack()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Ordinary sheet").assertDoesNotExist()
+    }
+
+    private fun sheet(id: Any?, text: String, includeId: Boolean = true): MobNode {
+        val props = JSONObject().put("detents", JSONArray().put("large"))
+        if (includeId) props.put("id", id ?: JSONObject.NULL)
+        return JSONObject()
+            .put("type", "sheet")
+            .put("props", props)
+            .put(
+                "children",
+                JSONArray().put(
+                    JSONObject()
+                        .put("type", "text")
+                        .put("props", JSONObject().put("text", text))
+                        .put("children", JSONArray())
+                )
+            )
+            .toMobNode()
+    }
+
+    private fun list(id: Any?, includeId: Boolean = true): MobNode {
+        val props = JSONObject()
+        if (includeId) props.put("id", id ?: JSONObject.NULL)
+        return JSONObject()
+            .put("type", "lazy_list")
+            .put("props", props)
+            .put("children", JSONArray())
+            .toMobNode()
+    }
+
+    private fun androidx.compose.ui.test.junit4.ComposeContentTestRule.waitForText(text: String) {
+        waitUntil(timeoutMillis = 5_000) {
+            onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
+        }
+        onNodeWithText(text).assertIsDisplayed()
+    }
+}

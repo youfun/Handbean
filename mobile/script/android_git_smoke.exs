@@ -3,9 +3,9 @@
 # No LLM, credentials or writes to external repositories. Uses a disposable workspace.
 {:ok, _} = Node.start(:"android_git_smoke_#{System.unique_integer([:positive])}@127.0.0.1")
 Node.set_cookie(MobDev.DistCookie.for_project!())
-device = :"handbeam_probe_android_nativechat@127.0.0.1"
+device = :"handbean_probe_android_nativechat@127.0.0.1"
 :pong = Node.ping(device)
-HandbeamProbe.HomeScreen = Mob.Test.screen(device)
+HandbeanProbe.HomeScreen = Mob.Test.screen(device)
 
 {result, _bindings} =
   :rpc.call(
@@ -15,13 +15,13 @@ HandbeamProbe.HomeScreen = Mob.Test.screen(device)
     [
       ~S"""
       true = ExGit.nif_loaded?()
-      root = Path.join(Handbeam.Host.data_dir(), "git-smoke-#{System.unique_integer([:positive])}")
+      root = Path.join(Handbean.Host.data_dir(), "git-smoke-#{System.unique_integer([:positive])}")
       File.mkdir_p!(root)
 
       try do
         context = %{working_directory: root}
         run = fn input ->
-          {:ok, text, details} = Handbeam.Tool.Builtin.Git.execute(input, context)
+          {:ok, text, details} = Handbean.Tool.Builtin.Git.execute(input, context)
           {text, details}
         end
 

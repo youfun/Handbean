@@ -7,8 +7,8 @@
 mobile = Path.expand("..", __DIR__)
 File.cd!(mobile)
 
-Mix.Task.run("handbeam.prepare_ios")
-HandbeamProbe.IosMarkdownRelease.install!()
+Mix.Task.run("handbean.prepare_ios")
+HandbeanProbe.IosMarkdownRelease.install!()
 
 driver = Path.join(mobile, "priv/generated/driver_tab_ios.c")
 File.exists?(driver) || Mix.raise("missing #{driver}")
@@ -72,7 +72,7 @@ EOF
 SWIFT_SOURCES+=("$BUILD_DIR/mob_plugin_bootstrap.swift")
 """
 
-markdown_src = ~S[SWIFT_SOURCES+=("ios/HandbeamMarkdown.swift")]
+markdown_src = ~S[SWIFT_SOURCES+=("ios/HandbeanMarkdown.swift")]
 
 unless String.contains?(script, markdown_src) do
   Mix.raise("could not find the markdown Swift source list")
@@ -96,15 +96,15 @@ compile_static_nif() {
     -c "$src" -o "$BUILD_DIR/$name.o"
   PLUGIN_OBJS="$PLUGIN_OBJS $BUILD_DIR/$name.o"
 }
-compile_static_nif handbeam_storage c_src/handbeam_storage.c
+compile_static_nif handbean_storage c_src/handbean_storage.c
 if [ -n "${HANDREAM_ISH_LIBS:-}" ]; then
-  echo "  static NIF: handbeam_ios (guest)"
-  $CC $IFLAGS -DSTATIC_ERLANG_NIF -DSTATIC_ERLANG_NIF_LIBNAME=handbeam_ios \
+  echo "  static NIF: handbean_ios (guest)"
+  $CC $IFLAGS -DSTATIC_ERLANG_NIF -DSTATIC_ERLANG_NIF_LIBNAME=handbean_ios \
     -DHANDREAM_IOS_GUEST -I "${HANDREAM_ISH_INCLUDE:?}" \
-    -c c_src/handbeam_ios.c -o "$BUILD_DIR/handbeam_ios.o"
+    -c c_src/handbean_ios.c -o "$BUILD_DIR/handbean_ios.o"
   $CC $IFLAGS -DHANDREAM_IOS_GUEST -DGUEST_ARM64=1 -I "$HANDREAM_ISH_INCLUDE" \
-    -c c_src/handbeam_ios_guest.c -o "$BUILD_DIR/handbeam_ios_guest.o"
-  PLUGIN_OBJS="$PLUGIN_OBJS $BUILD_DIR/handbeam_ios.o $BUILD_DIR/handbeam_ios_guest.o"
+    -c c_src/handbean_ios_guest.c -o "$BUILD_DIR/handbean_ios_guest.o"
+  PLUGIN_OBJS="$PLUGIN_OBJS $BUILD_DIR/handbean_ios.o $BUILD_DIR/handbean_ios_guest.o"
   old_ifs=$IFS
   IFS=,
   for lib in $HANDREAM_ISH_LIBS; do
@@ -114,7 +114,7 @@ if [ -n "${HANDREAM_ISH_LIBS:-}" ]; then
   IFS=$old_ifs
   PLUGIN_OBJS="$PLUGIN_OBJS -lsqlite3 -lresolv -Xlinker -framework -Xlinker SystemConfiguration"
 else
-  compile_static_nif handbeam_ios c_src/handbeam_ios.c
+  compile_static_nif handbean_ios c_src/handbean_ios.c
 fi
 BCRYPT_SRC="deps/bcrypt_elixir/c_src"
 echo "  static NIF: bcrypt_nif ($BCRYPT_SRC)"
@@ -137,11 +137,11 @@ script =
     global: false
   )
 
-script_path = Path.join(System.tmp_dir!(), "handbeam-sideload-release.sh")
+script_path = Path.join(System.tmp_dir!(), "handbean-sideload-release.sh")
 File.write!(script_path, script)
 File.chmod!(script_path, 0o755)
 
-output_dir = Path.expand(System.get_env("HANDBEAM_IPA_DIR") || "artifacts", mobile)
+output_dir = Path.expand(System.get_env("HANDBEAN_IPA_DIR") || "artifacts", mobile)
 File.mkdir_p!(output_dir)
 
 plugin_env = MobDev.Release.plugin_ios_build_env(MobDev.Plugin.activated())
@@ -173,7 +173,7 @@ IO.puts("output_dir=#{output_dir}")
 case System.cmd("bash", [script_path], env: env, stderr_to_stdout: true, into: IO.stream()) do
   {_, 0} ->
     built = Path.join(output_dir, "#{app_name}.ipa")
-    dest = Path.join(output_dir, "Handbeam-ios-sideload.ipa")
+    dest = Path.join(output_dir, "Handbean-ios-sideload.ipa")
 
     if built != dest do
       File.rm(dest)

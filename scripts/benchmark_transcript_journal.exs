@@ -1,5 +1,5 @@
 # Run with: mix run --no-start scripts/benchmark_transcript_journal.exs [entry_count] [updates]
-alias Handbeam.ConversationTranscriptStore.Journal
+alias Handbean.ConversationTranscriptStore.Journal
 
 {:ok, _supervisor} = Supervisor.start_link([Journal], strategy: :one_for_one)
 
@@ -7,7 +7,7 @@ count = String.to_integer(Enum.at(System.argv(), 0, "10000"))
 updates = String.to_integer(Enum.at(System.argv(), 1, "500"))
 
 dir =
-  Path.join(System.tmp_dir!(), "handbeam-transcript-bench-#{System.unique_integer([:positive])}")
+  Path.join(System.tmp_dir!(), "handbean-transcript-bench-#{System.unique_integer([:positive])}")
 
 File.mkdir_p!(dir)
 snapshot_path = Path.join(dir, "rewrite.jsonl")

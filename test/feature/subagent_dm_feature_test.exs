@@ -1,4 +1,4 @@
-defmodule HandbeamWeb.Feature.SubagentDmFeatureTest do
+defmodule HandbeanWeb.Feature.SubagentDmFeatureTest do
   @moduledoc """
   PhoenixTest feature test for direct messages to a subagent from the
   workspace composer: `@<subagent_type or child id> text` is routed to the
@@ -8,12 +8,12 @@ defmodule HandbeamWeb.Feature.SubagentDmFeatureTest do
   Run: mix test test/feature/subagent_dm_feature_test.exs
   """
 
-  use HandbeamWeb.FeatureCase, async: false
+  use HandbeanWeb.FeatureCase, async: false
 
-  alias Handbeam.Agent.{Coordinator, Delegation, Message}
-  alias Handbeam.ConversationStore
-  alias Handbeam.PubSub.Session
-  alias Handbeam.TestSupport.E2EHarness
+  alias Handbean.Agent.{Coordinator, Delegation, Message}
+  alias Handbean.ConversationStore
+  alias Handbean.PubSub.Session
+  alias Handbean.TestSupport.E2EHarness
 
   @moduletag :e2e
 
@@ -59,9 +59,9 @@ defmodule HandbeamWeb.Feature.SubagentDmFeatureTest do
       Coordinator.add_message(sid, "delegate the work",
         workspace_path: workspace,
         model: "fake/fake-model",
-        provider: Handbeam.TestSupport.FakeProvider,
+        provider: Handbean.TestSupport.FakeProvider,
         provider_config: %{scenario: {:script, script()}},
-        tools: Handbeam.Agent.default_tools(),
+        tools: Handbean.Agent.default_tools(),
         source: :cli,
         streaming: false
       )
@@ -99,7 +99,7 @@ defmodule HandbeamWeb.Feature.SubagentDmFeatureTest do
 
     busy? =
       state.jobs != %{} or state.reports != %{} or
-        Enum.any?(ids, &(Registry.lookup(Handbeam.AgentRunRegistry, &1) != []))
+        Enum.any?(ids, &(Registry.lookup(Handbean.AgentRunRegistry, &1) != []))
 
     if busy? and attempts > 0 do
       receive after: (20 -> settle(ids, attempts - 1))

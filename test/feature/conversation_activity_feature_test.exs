@@ -1,9 +1,9 @@
-defmodule HandbeamWeb.Feature.ConversationActivityTest do
-  use HandbeamWeb.FeatureCase, async: false
+defmodule HandbeanWeb.Feature.ConversationActivityTest do
+  use HandbeanWeb.FeatureCase, async: false
 
-  alias Handbeam.Agent.Coordinator
-  alias Handbeam.ConversationStore
-  alias Handbeam.PubSub.Session
+  alias Handbean.Agent.Coordinator
+  alias Handbean.ConversationStore
+  alias Handbean.PubSub.Session
 
   @moduletag :e2e
 
@@ -12,21 +12,21 @@ defmodule HandbeamWeb.Feature.ConversationActivityTest do
     old_home = System.get_env("HOME")
     home = Path.join(System.tmp_dir!(), "activity-#{Ecto.UUID.generate()}")
     workspace = Path.join(home, "workspace")
-    File.mkdir_p!(Path.join(workspace, ".handbeam"))
+    File.mkdir_p!(Path.join(workspace, ".handbean"))
 
     File.write!(
-      Path.join(workspace, ".handbeam/settings.jsonc"),
-      Handbeam.JSON.encode!(%{"tools" => %{"per_tool" => %{"write" => "prompt"}}})
+      Path.join(workspace, ".handbean/settings.jsonc"),
+      Handbean.JSON.encode!(%{"tools" => %{"per_tool" => %{"write" => "prompt"}}})
     )
 
     System.put_env("HOME", home)
-    {:ok, ws} = Handbeam.WorkspaceStore.ensure_default!()
+    {:ok, ws} = Handbean.WorkspaceStore.ensure_default!()
     {:ok, active} = ConversationStore.create(ws["id"], title: "Active fixture")
     {:ok, other} = ConversationStore.create(ws["id"], title: "Other fixture")
     id = active["id"]
 
     on_exit(fn ->
-      Handbeam.TestSupport.E2EHarness.stop_runtime!()
+      Handbean.TestSupport.E2EHarness.stop_runtime!()
       if old_home, do: System.put_env("HOME", old_home), else: System.delete_env("HOME")
       File.rm_rf!(home)
     end)
@@ -58,9 +58,9 @@ defmodule HandbeamWeb.Feature.ConversationActivityTest do
              Coordinator.add_message(id, "Write the result",
                workspace_path: workspace,
                model: "fake-model",
-               provider: Handbeam.TestSupport.FakeProvider,
+               provider: Handbean.TestSupport.FakeProvider,
                provider_config: %{scenario: {:script, script}},
-               tools: Handbeam.Agent.default_tools(),
+               tools: Handbean.Agent.default_tools(),
                source: :cli,
                streaming: false
              )
@@ -98,7 +98,7 @@ defmodule HandbeamWeb.Feature.ConversationActivityTest do
     page = assert_has(page, selector <> "[data-run-state='idle']", timeout: 2_000)
     refute_has(page, selector <> "[role='img']")
     assert_receive {:agent_event, %{kind: :run_end, payload: %{status: :completed}}}, 2_000
-    {:ok, entries} = Handbeam.ConversationTranscriptStore.list(id)
+    {:ok, entries} = Handbean.ConversationTranscriptStore.list(id)
     assert Enum.any?(entries, &(&1["content"] == "Activity verified"))
   end
 end

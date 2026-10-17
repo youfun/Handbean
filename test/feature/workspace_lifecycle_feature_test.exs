@@ -1,4 +1,4 @@
-defmodule HandbeamWeb.Feature.WorkspaceLifecycleFeatureTest do
+defmodule HandbeanWeb.Feature.WorkspaceLifecycleFeatureTest do
   @moduledoc """
   Adding, renaming, and removing a workspace updates the sidebar and the same
   workspace store. Removing a workspace does not delete its directory.
@@ -6,10 +6,10 @@ defmodule HandbeamWeb.Feature.WorkspaceLifecycleFeatureTest do
   Run: mix test --include e2e test/feature/workspace_lifecycle_feature_test.exs
   """
 
-  use HandbeamWeb.FeatureCase, async: false
+  use HandbeanWeb.FeatureCase, async: false
 
-  alias Handbeam.TestSupport.E2EHarness
-  alias Handbeam.WorkspaceStore
+  alias Handbean.TestSupport.E2EHarness
+  alias Handbean.WorkspaceStore
 
   import Phoenix.LiveViewTest, only: [render_click: 3]
 

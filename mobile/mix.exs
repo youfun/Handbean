@@ -1,4 +1,4 @@
-defmodule HandbeamProbe.MixProject do
+defmodule HandbeanProbe.MixProject do
   use Mix.Project
 
   @version_file Path.expand("../version.properties", __DIR__)
@@ -14,7 +14,7 @@ defmodule HandbeamProbe.MixProject do
 
   def project do
     [
-      app: :handbeam_probe,
+      app: :handbean_probe,
       version: @version,
       elixir: "~> 1.18",
       start_permanent: false,
@@ -35,11 +35,11 @@ defmodule HandbeamProbe.MixProject do
       {:mob_dev, "~> 0.7", only: :dev, runtime: false},
       # The native host configures its private data directory and runs root
       # migrations before starting the shared runtime explicitly.
-      {:handbeam, path: "..", runtime: false},
+      {:handbean, path: "..", runtime: false},
       # Phone Git backend (libgit2 NIF). Root Mix uses the host Git CLI and
       # must not depend on this package.
       {:ex_git, github: "youfun/ex-git", tag: "v0.0.4"},
-      # Handbeam pins these; Mob pulled newer ones into this Mix lock.
+      # Handbean pins these; Mob pulled newer ones into this Mix lock.
       {:phoenix_live_view, "~> 1.2.0", override: true},
       {:req, "~> 0.7.4", override: true},
       {:ghostty, "~> 0.5.0", override: true},
@@ -61,10 +61,10 @@ defmodule HandbeamProbe.MixProject do
   defp aliases do
     [
       connect: ["mob.connect"],
-      deploy: ["handbeam.pack_mix_toolchain", "mob.deploy"],
+      deploy: ["handbean.pack_mix_toolchain", "mob.deploy"],
       watch: ["mob.watch"],
       icon: ["mob.icon"],
-      "handbeam.prepare_ios": [fn _ -> prepare_ios!() end],
+      "handbean.prepare_ios": [fn _ -> prepare_ios!() end],
       "mob.deploy": [
         fn args ->
           if "--ios" in args or ("--android" not in args and :os.type() == {:unix, :darwin}),
@@ -74,7 +74,7 @@ defmodule HandbeamProbe.MixProject do
           Mix.Tasks.Mob.Deploy.run(args)
         end
       ],
-      ios: ["handbeam.pack_mix_toolchain", "mob.deploy --ios"],
+      ios: ["handbean.pack_mix_toolchain", "mob.deploy --ios"],
       # TestFlight rewrites ios/release_device.sh from mob_dev. Splice the
       # markdown host overlay back in before that rewrite, then run the real task.
       "mob.release": [
@@ -82,15 +82,15 @@ defmodule HandbeamProbe.MixProject do
           unless "--android" in args do
             prepare_ios!()
             Mix.Task.run("compile")
-            HandbeamProbe.IosMarkdownRelease.install!()
+            HandbeanProbe.IosMarkdownRelease.install!()
           end
 
           Mix.Tasks.Mob.Release.run(args)
         end
       ],
-      "ios.native": ["handbeam.pack_mix_toolchain", "mob.deploy --native --ios"],
-      android: ["handbeam.pack_mix_toolchain", "mob.deploy --android"],
-      "android.native": ["handbeam.pack_mix_toolchain", "mob.deploy --native --android"]
+      "ios.native": ["handbean.pack_mix_toolchain", "mob.deploy --native --ios"],
+      android: ["handbean.pack_mix_toolchain", "mob.deploy --android"],
+      "android.native": ["handbean.pack_mix_toolchain", "mob.deploy --native --android"]
     ]
   end
 

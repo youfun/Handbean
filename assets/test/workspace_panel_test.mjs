@@ -28,7 +28,7 @@ const dom = new JSDOM(`
       <button data-workspace-tree-action="reveal-in-file-manager" hidden>Reveal in Finder</button>
     </div>
   </div>
-`, { url: "https://handbeam.test" });
+`, { url: "https://handbean.test" });
 
 const { document } = dom.window;
 const root = document.getElementById("workspace-panel");

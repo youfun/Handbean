@@ -21,7 +21,7 @@ extern void mob_register_plugins(void);
 // (UIInterfaceOrientationMaskAll when unlocked).
 extern UIInterfaceOrientationMask mob_locked_orientation_mask(void);
 
-// Called from the thin `handbeam_ios` C NIF. Snapshot paths are already copied
+// Called from the thin `handbean_ios` C NIF. Snapshot paths are already copied
 // into the app sandbox by Elixir; this only presents them.
 int sigil_present_file(const char *path, const char *mode);
 

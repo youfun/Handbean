@@ -170,7 +170,7 @@ assert.equal(panel.hidden, false);
 assert.equal(toggle.getAttribute("aria-expanded"), "true");
 
 let unpinned = 0;
-messages.addEventListener("handbeam:unpin-chat-scroll", () => {
+messages.addEventListener("handbean:unpin-chat-scroll", () => {
   unpinned += 1;
 });
 

@@ -2,5 +2,5 @@
 .swiftpm/
 build/
 *.app
-Resources/handbeam-web/**
-!Resources/handbeam-web/.gitkeep
+Resources/handbea[mn]-web/**
+!Resources/handbea[mn]-web/.gitkeep

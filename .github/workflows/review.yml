@@ -34,13 +34,13 @@ jobs:
       - name: Permit Bubblewrap user namespaces on the CI runner
         run: |
           # Keep Ubuntu's system-wide restriction; permit only this sandbox binary.
-          sudo tee /etc/apparmor.d/handbeam-ci-bwrap >/dev/null <<'EOF'
+          sudo tee /etc/apparmor.d/handbean-ci-bwrap >/dev/null <<'EOF'
           abi <abi/4.0>,
-          profile handbeam-ci-bwrap /usr/bin/bwrap flags=(unconfined) {
+          profile handbean-ci-bwrap /usr/bin/bwrap flags=(unconfined) {
             userns,
           }
           EOF
-          sudo apparmor_parser -r /etc/apparmor.d/handbeam-ci-bwrap
+          sudo apparmor_parser -r /etc/apparmor.d/handbean-ci-bwrap
           bwrap --unshare-user --uid 0 --gid 0 --ro-bind / / -- /usr/bin/true
 
       - uses: goto-bus-stop/setup-zig@v2
@@ -136,13 +136,13 @@ jobs:
 
       - name: Permit Bubblewrap user namespaces on the CI runner
         run: |
-          sudo tee /etc/apparmor.d/handbeam-ci-bwrap >/dev/null <<'EOF'
+          sudo tee /etc/apparmor.d/handbean-ci-bwrap >/dev/null <<'EOF'
           abi <abi/4.0>,
-          profile handbeam-ci-bwrap /usr/bin/bwrap flags=(unconfined) {
+          profile handbean-ci-bwrap /usr/bin/bwrap flags=(unconfined) {
             userns,
           }
           EOF
-          sudo apparmor_parser -r /etc/apparmor.d/handbeam-ci-bwrap
+          sudo apparmor_parser -r /etc/apparmor.d/handbean-ci-bwrap
           bwrap --unshare-user --uid 0 --gid 0 --ro-bind / / -- /usr/bin/true
 
       - uses: goto-bus-stop/setup-zig@v2
@@ -182,7 +182,7 @@ jobs:
         run: mix assets.setup
 
       - name: FakeProvider Agent end-to-end path
-        run: mix test --include e2e test/handbeam/e2e/fake_provider_e2e_test.exs
+        run: mix test --include e2e test/handbean/e2e/fake_provider_e2e_test.exs
 
       - name: Web feature paths
         run: mix test --include e2e test/feature

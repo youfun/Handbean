@@ -1,4 +1,4 @@
-# .credo.exs — Credo config for handbeam_probe.
+# .credo.exs — Credo config for handbean_probe.
 #
 # Run `mix credo --strict`. ExSlop is registered as a *plugin* (per its
 # README) — registering it under checks.enabled makes Credo ignore it as an

@@ -1,4 +1,4 @@
-defmodule Handbeam.Repo.Migrations.CreateSchedules do
+defmodule Handbean.Repo.Migrations.CreateSchedules do
   use Ecto.Migration
 
   def change do

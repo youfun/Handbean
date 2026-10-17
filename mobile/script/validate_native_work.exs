@@ -2,7 +2,7 @@
 # With instrumentation waiting, invoke start, queue, then finish from a named host
 # node with the project's local debug cookie and _build/dev/lib/*/ebin on its path.
 # Uses a local controlled provider, never calls an external model API.
-n = :"handbeam_probe_android_nativechat@127.0.0.1"
+n = :"handbean_probe_android_nativechat@127.0.0.1"
 :pong = Node.ping(n)
 
 eval = fn source ->
@@ -15,7 +15,7 @@ case System.argv() do
     id =
       eval.(~S"""
       defmodule NativeWorkArcHold do
-        @behaviour Handbeam.Agent.Tool
+        @behaviour Handbean.Agent.Tool
         def name, do: "native_work_hold"
         def description, do: "Controlled local Work validation"
         def input_schema, do: %{type: "object", properties: %{}}
@@ -29,8 +29,8 @@ case System.argv() do
         end
       end
       defmodule NativeWorkArcProvider do
-        @behaviour Handbeam.Agent.Provider
-        alias Handbeam.Agent.Message
+        @behaviour Handbean.Agent.Provider
+        alias Handbean.Agent.Message
         def complete(messages, _, _) do
           done = Enum.any?(messages, &(&1.role == :tool_result))
           texts = if done do
@@ -46,9 +46,9 @@ case System.argv() do
           complete(messages, tools, config)
         end
       end
-      {:ok, w} = Handbeam.WorkspaceStore.ensure_default!()
-      {:ok, c} = Handbeam.ConversationStore.create(w["id"], title: "Native Work 中文steer验收")
-      {:ok, _} = Handbeam.Agent.Coordinator.add_message(c["id"], "开始受控本地操作",
+      {:ok, w} = Handbean.WorkspaceStore.ensure_default!()
+      {:ok, c} = Handbean.ConversationStore.create(w["id"], title: "Native Work 中文steer验收")
+      {:ok, _} = Handbean.Agent.Coordinator.add_message(c["id"], "开始受控本地操作",
         provider: NativeWorkArcProvider, provider_config: %{}, source: :native,
         model: "fixture", streaming: true, workspace_path: w["path"],
         tools: [NativeWorkArcHold], max_turns: 4)
@@ -61,9 +61,9 @@ case System.argv() do
 
   ["cleanup"] ->
     id = File.read!("/tmp/native_work_live_id")
-    :rpc.call(n, Handbeam.Agent.Coordinator, :cancel, [id])
-    :rpc.call(n, Handbeam.ConversationStore, :archive, [id])
-    :rpc.call(n, Handbeam.Tool.Registry, :unregister, ["native_work_hold"])
+    :rpc.call(n, Handbean.Agent.Coordinator, :cancel, [id])
+    :rpc.call(n, Handbean.ConversationStore, :archive, [id])
+    :rpc.call(n, Handbean.Tool.Registry, :unregister, ["native_work_hold"])
 
     for module <- [NativeWorkArcHold, NativeWorkArcProvider] do
       :rpc.call(n, :code, :purge, [module])
@@ -74,8 +74,8 @@ case System.argv() do
 
   ["queue"] ->
     id = File.read!("/tmp/native_work_live_id")
-    {:ok, status} = :rpc.call(n, Handbeam.Agent.Coordinator, :status, [id])
-    items = :rpc.call(n, Handbeam.Agent.CandidateQueue, :get_messages, [status.queue_pid])
+    {:ok, status} = :rpc.call(n, Handbean.Agent.Coordinator, :status, [id])
+    items = :rpc.call(n, Handbean.Agent.CandidateQueue, :get_messages, [status.queue_pid])
     [%{message: %{content: "追加中文🙂 不要取消工具"}, metadata: %{deliver_as: :steer}}] = items
     true = status.running?
     true = is_pid(:rpc.call(n, Process, :whereis, [:native_work_hold]))
@@ -87,7 +87,7 @@ case System.argv() do
 
   ["check"] ->
     id = File.read!("/tmp/native_work_live_id")
-    entries = :rpc.call(n, HandbeamProbe.NativeChat, :transcript, [id])
+    entries = :rpc.call(n, HandbeanProbe.NativeChat, :transcript, [id])
     true = Enum.any?(entries, &(&1["interrupts_work"] == true))
     true = Enum.any?(entries, &(&1["id"] == "tool-held-tool" and &1["tool_status"] == "done"))
     true = Enum.any?(entries, &(&1["phase"] == "commentary"))

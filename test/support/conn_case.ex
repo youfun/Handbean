@@ -1,4 +1,4 @@
-defmodule HandbeamWeb.ConnCase do
+defmodule HandbeanWeb.ConnCase do
   @moduledoc """
   This module defines the test case to be used by
   tests that require setting up a connection.
@@ -11,7 +11,7 @@ defmodule HandbeamWeb.ConnCase do
   we enable the SQL sandbox, so changes done to the database
   are reverted at the end of every test. If you are using
   PostgreSQL, you can even run database tests asynchronously
-  by setting `use HandbeamWeb.ConnCase, async: true`, although
+  by setting `use HandbeanWeb.ConnCase, async: true`, although
   this option is not recommended for other databases.
   """
 
@@ -20,26 +20,26 @@ defmodule HandbeamWeb.ConnCase do
   using do
     quote do
       # The default endpoint for testing
-      @endpoint HandbeamWeb.Endpoint
+      @endpoint HandbeanWeb.Endpoint
 
-      use HandbeamWeb, :verified_routes
+      use HandbeanWeb, :verified_routes
 
       # Import conveniences for testing with connections
       import Plug.Conn
       import Phoenix.ConnTest
-      import HandbeamWeb.ConnCase
+      import HandbeanWeb.ConnCase
     end
   end
 
   setup tags do
-    Handbeam.DataCase.setup_sandbox(tags)
+    Handbean.DataCase.setup_sandbox(tags)
     conn = Phoenix.ConnTest.build_conn() |> Map.put(:host, "localhost")
     conn = if tags[:unauthenticated], do: conn, else: authenticate(conn)
     {:ok, conn: conn}
   end
 
   def authenticate(conn) do
-    config = Application.get_env(:handbeam, :access, [])
+    config = Application.get_env(:handbean, :access, [])
 
     if config[:mode] == :password do
       credentials = config[:username] <> ":" <> config[:password]

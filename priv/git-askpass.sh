@@ -3,7 +3,7 @@
 # Only Username/Password prompts for the expected HTTPS host receive a reply.
 
 prompt=$1
-expected=`printf '%s' "${HANDBEAM_GIT_CREDENTIAL_HOST-}" | tr 'A-Z' 'a-z'`
+expected=`printf '%s' "${HANDBEAN_GIT_CREDENTIAL_HOST-}" | tr 'A-Z' 'a-z'`
 
 if [ -z "$expected" ]; then
   exit 1
@@ -11,10 +11,10 @@ fi
 
 case "$prompt" in
   *[Uu]sername*)
-    value=${HANDBEAM_GIT_USERNAME:-x-access-token}
+    value=${HANDBEAN_GIT_USERNAME:-x-access-token}
     ;;
   *[Pp]assword*)
-    value=${HANDBEAM_GIT_PASSWORD-}
+    value=${HANDBEAN_GIT_PASSWORD-}
     ;;
   *)
     exit 1

@@ -2,12 +2,12 @@
 
 ## 1. 结论与范围
 
-Handbeam 直接把现有 `Handbeam.Repo` 管理的本地 SQLite 数据库作为会话与运行持久事实的唯一主存储（打包宿主默认文件名为 `handbeam.db`），不再把 `index.json`、`meta.json`、`messages.jsonl`、`files.json`、operation receipt JSONL、Session snapshot JSON 和 transcript recovery marker 作为运行时事实源。
+Handbean 直接把现有 `Handbean.Repo` 管理的本地 SQLite 数据库作为会话与运行持久事实的唯一主存储（打包宿主默认文件名为 `handbean.db`），不再把 `index.json`、`meta.json`、`messages.jsonl`、`files.json`、operation receipt JSONL、Session snapshot JSON 和 transcript recovery marker 作为运行时事实源。
 
 这是一次受控的全量冷启动，不保留旧存储数据：
 
-- 切换是部署前提，不是运行时兼容功能：先停止所有 Handbeam 进程，确认没有进程持有数据库，再删除旧 Handbeam Repo；旧库中的 memory、schedule、UI setting、error tracker 及其他业务记录一并丢弃。
-- “数据库”指按当前环境实际配置解析出的精确文件，而不是一律硬编码 `handbeam.db`；开发、测试、release、显式 `DATABASE_PATH` 和 mobile 的文件名可能不同。只处理该主库及同名 `-wal`、`-shm`、`-journal` companion，不删除目录、不用 glob。
+- 切换是部署前提，不是运行时兼容功能：先停止所有 Handbean 进程，确认没有进程持有数据库，再删除旧 Handbean Repo；旧库中的 memory、schedule、UI setting、error tracker 及其他业务记录一并丢弃。
+- “数据库”指按当前环境实际配置解析出的精确文件，而不是一律硬编码 `handbean.db`；开发、测试、release、显式 `DATABASE_PATH` 和 mobile 的文件名可能不同。只处理该主库及同名 `-wal`、`-shm`、`-journal` companion，不删除目录、不用 glob。
 - 删除后再次确认主库与 companions 均不存在，再运行正常 Ecto migrations 创建空库。若删除中断，保持应用停止并重新执行同一删除步骤即可；旧数据本就不要求恢复。
 - 不增加 storage epoch、initializing/resetting marker、自动 reset、旧库识别或数据迁移代码。若旧库没有按步骤删除就启动新版本，属于不受支持的部署操作。
 - 此计划编写阶段不会删除开发机数据库；实际删除只发生在后续实施切换时。
@@ -20,7 +20,7 @@ Handbeam 直接把现有 `Handbeam.Repo` 管理的本地 SQLite 数据库作为�
 
 这里只采纳已合并实现、源码或可复现 issue 中能够支持的结论；用户报告而未确认根因的内容不当成定论。
 
-| 来源 | 已验证事实 | Handbeam 采用或规避 |
+| 来源 | 已验证事实 | Handbean 采用或规避 |
 | --- | --- | --- |
 | [Pi Fast Sessions #5804](https://github.com/earendil-works/pi/issues/5804) | JSONL 会话列表需要解析所有文件；搜索正文会拖慢 resume；压缩后仍重放旧路径；SQLite 还会把同步接口扩成异步持久化边界 | SQLite 直接提供元数据列表和有界分页；保留显式 store API，不让 UI 假定即时文件可见性 |
 | [Pi SQLite session storage #6594](https://github.com/earendil-works/pi/pull/6594)（已合并） | schema 将共享 entry 字段列化、其余内容放 payload；独立 sequence 表达追加顺序；materialized 数据用于快速列表/恢复 | 消息采用“稳定 envelope 列 + payload”并保存每会话顺序；只把可重建数据称为 projection，不复制主状态 |
@@ -29,10 +29,10 @@ Handbeam 直接把现有 `Handbeam.Repo` 管理的本地 SQLite 数据库作为�
 | [OpenCode migration #13654](https://github.com/anomalyco/opencode/issues/13654)（用户报告） | 用“DB 文件存在”充当数据迁移完成标记会漏掉增量升级用户 | 本计划不做增量数据迁移；部署前直接删除整个旧 Repo 并从空库建 schema，也不增加迁移完成 marker |
 | [OpenCode NFS corruption #14970](https://github.com/anomalyco/opencode/issues/14970)、[Codex NFS stalls #49543](https://github.com/openai/codex/issues/49543) | SQLite 官方明确 WAL 不支持网络文件系统；`busy_timeout` 不能修复 NFS 上的 SHM/lock 问题，甚至不能约束卡在内核 unlock 的时间 | 数据库必须位于宿主声明的本机持久目录；不把 WAL DB 放 NFS/iCloud Drive/同步盘；不静默搬到 `/tmp` |
 | [Goose lock #12473](https://github.com/aaif-goose/goose/issues/12473)（已接受并有关联 PR） | 缺少 `(session_id, message_id)` 复合索引使 compaction 在 `BEGIN IMMEDIATE` 内退化为二次复杂度，持写锁数分钟 | 所有运行查询先列清单并配复合索引；事务内禁止逐条 N+1；replace/bulk 操作分批 SQL，但保持一个短事务 |
-| [Goose connection leak #7624](https://github.com/aaif-goose/goose/issues/7624)（已修复） | 连接泄漏和并发 writer 会造成 `SQLITE_BUSY`；重启才释放资源 | 只使用受监督的 `Handbeam.Repo` pool，不按 session 自建连接；连接数与 busy policy 做并发测试 |
+| [Goose connection leak #7624](https://github.com/aaif-goose/goose/issues/7624)（已修复） | 连接泄漏和并发 writer 会造成 `SQLITE_BUSY`；重启才释放资源 | 只使用受监督的 `Handbean.Repo` pool，不按 session 自建连接；连接数与 busy policy 做并发测试 |
 | [Goose WAL growth #12898](https://github.com/aaif-goose/goose/issues/12898)（开放用户报告） | 长生命周期、多会话并发时 WAL/checkpoint 需要观测；报告把故障归因于 checkpoint 尚未被维护者确认 | 记录 WAL 大小、checkpoint 结果和 DB 写延迟；做长时并发测试，不把默认 auto-checkpoint 当作无需验证 |
 | [OpenCode SQLITE_FULL #52796](https://github.com/anomalyco/opencode/issues/52796)（开放、有关联 PR） | 外部工具已经执行后，结果持久化失败会造成内存状态和持久状态分叉；磁盘满不能当普通模型失败 | 工具副作用与 DB 事务明确分界；terminal write 失败不得在内存中先标 settled，也不得自动重放可能已发生的工具 |
-| [Codex history corruption #52732](https://github.com/openai/codex/issues/52732)、[#35091](https://github.com/openai/codex/issues/35091)（开放用户报告） | 原因未定，但 SQLite 损坏会阻断列表/恢复；Codex 因仍有 canonical JSONL 才可重建派生 DB | Handbeam 选择 SQLite canonical 后不能假装可从 JSONL 重建；必须有一致性检查、受支持的在线备份和不自动删除原库的故障路径 |
+| [Codex history corruption #52732](https://github.com/openai/codex/issues/52732)、[#35091](https://github.com/openai/codex/issues/35091)（开放用户报告） | 原因未定，但 SQLite 损坏会阻断列表/恢复；Codex 因仍有 canonical JSONL 才可重建派生 DB | Handbean 选择 SQLite canonical 后不能假装可从 JSONL 重建；必须有一致性检查、受支持的在线备份和不自动删除原库的故障路径 |
 | [Codex Windows SHM restart #49605](https://github.com/openai/codex/issues/49605)（开放用户报告） | 前一个进程尚未完全释放 SHM 时启动替代进程可失败 | 保持一个数据库一个 runtime owner；宿主重启必须等待旧进程退出，初始化 busy/SHM 错误要可重试且可诊断 |
 
 SQLite 官方约束也作为验收依据：[WAL 文档](https://www.sqlite.org/wal.html)说明同一时间只有一个 writer、长读事务会妨碍 checkpoint、WAL 不适用于网络文件系统；[Online Backup API](https://www.sqlite.org/backup.html)说明在线数据库不能靠普通文件复制获得一致备份。
@@ -44,7 +44,7 @@ SQLite 官方约束也作为验收依据：[WAL 文档](https://www.sqlite.org/w
 | JSON→SQLite 漏迁移 | 不适用 | 部署前删除整个旧 Repo，旧 JSON/JSONL 也不导入；空库仅运行正常 Ecto schema migrations |
 | JSONL 多 writer 分叉 | 切换后不适用 | 不再在线写 JSONL；转化为 SQLite 单 writer contention 与 runtime ownership 问题 |
 | NFS + WAL/SHM | 条件适用且必须阻断 | 默认 desktop/mobile data dir 是本机；用户显式把 `DATABASE_PATH` 放到网络/同步挂载时会遇到，timeout 无法修复 |
-| 缺索引导致长写锁 | 直接适用 | Handbeam 有 run terminal、replace、recovery 等批量路径；必须复合索引 + bulk SQL + query-plan test |
+| 缺索引导致长写锁 | 直接适用 | Handbean 有 run terminal、replace、recovery 等批量路径；必须复合索引 + bulk SQL + query-plan test |
 | 连接泄漏/多 writer BUSY | 直接适用 | 新空库投入使用后，一个 Repo pool仍同时服务 transcript、schedule、memory、error tracker；禁止 session 自建连接，并测真实 pool |
 | WAL 长期增长 | 条件适用 | 长生命周期、多 conversation streaming 与长 reader 可能触发；先 telemetry/load test，再决定 idle checkpoint |
 | SQLITE_FULL 后内存/DB 分叉 | 直接适用 | 工具副作用发生在事务外；持久化失败必须保持 unknown，不能先 settled 或自动重放 |
@@ -52,7 +52,7 @@ SQLite 官方约束也作为验收依据：[WAL 文档](https://www.sqlite.org/w
 | 旧进程 SHM 未释放 | 条件适用 | desktop update/relaunch、Windows endpoint security 或宿主强杀可触发；整库单 owner 与启动顺序处理 |
 | SQLite 实现工具 exactly-once | 不成立 | DB 只原子化内部记录，无法回滚 shell/network/OS side effect；继续使用 unknown + reconcile/idempotency 语义 |
 
-## 3. Handbeam 当前事实与切换风险
+## 3. Handbean 当前事实与切换风险
 
 当前 owner 分散如下：
 
@@ -63,7 +63,7 @@ SQLite 官方约束也作为验收依据：[WAL 文档](https://www.sqlite.org/w
 | editor projection | `files.json` | 与 metadata/transcript 不能同事务 | `conversation_editor_states` |
 | run/delegated usage | `meta.json` 内嵌 map | read-modify-write 和重复派生 totals | `conversation_run_usage` |
 | 请求幂等回执 | `operations-*.jsonl` | reserve、接受消息、入队分属不同提交 | `operation_receipts`，由聚合事务调用 |
-| Session reconnect snapshot | `~/.handbeam/sessions/<id>.json` | 整体重写；不是 transcript 事实 | `session_snapshots`（明确为可重建/可丢 projection） |
+| Session reconnect snapshot | `~/.handbean/sessions/<id>.json` | 整体重写；不是 transcript 事实 | `session_snapshots`（明确为可重建/可丢 projection） |
 | orphan 候选 | 空 marker 文件 + 扫描 transcript | marker 与 transcript 分离 | 查询 `conversation_entries` 中 unfinished assistant/tool；可选最小 `conversation_runs` 只作 run header/orphan 索引 |
 | 当前任务通知 | `Runtime.TaskTracker` 内存 map | 本来就是 UI/host projection，不应升级为第二事实源 | 继续由 Runner/Session lifecycle 产生 PubSub projection；重启后从 transcript unfinished 状态校准 |
 | 审批等待 | Runner 的 `interrupted_state` + Session control event | 进程死亡后不能真正 resume | live Runner 仍是唯一可执行 continuation owner；审批请求保留在 Session control projection，不另建第二套审批事实表 |
@@ -167,12 +167,12 @@ SQLite 官方约束也作为验收依据：[WAL 文档](https://www.sqlite.org/w
 
 ## 6. SQLite 运行策略
 
-当前 `ecto_sqlite3` 默认是 WAL、`synchronous: :normal`、foreign keys on、2 秒 busy timeout、pool size 5。会话切换需要把关键配置集中到 `Handbeam.Repo.init/2`，使 dev/release/mobile 不会因各自只传 database/pool 而漂移：
+当前 `ecto_sqlite3` 默认是 WAL、`synchronous: :normal`、foreign keys on、2 秒 busy timeout、pool size 5。会话切换需要把关键配置集中到 `Handbean.Repo.init/2`，使 dev/release/mobile 不会因各自只传 database/pool 而漂移：
 
 1. durability：生产固定使用 WAL + `synchronous: :full` + foreign keys on。现有契约是 visible assistant delta 在广播前已经 sync；`NORMAL` 只能覆盖进程崩溃，不能继续声称覆盖断电。若逐 chunk FULL commit 的目标设备 p95/p99 不可接受，基准和调整的是广播前的有界 coalesce cadence/bytes，不是把 synchronous 偷降为 NORMAL；合并后的每个可见 delta 仍须先 commit 再广播。
 2. location：数据库必须位于 host 声明的本机持久目录；WAL 不支持 NFS，`busy_timeout` 也不能修复 SHM/远程 lock。共享 runtime 不凭 OS 猜测静默搬到 `/tmp`；桌面/mobile host 明确声明其 data directory，显式 `DATABASE_PATH` 若指向已知不支持的位置则拒绝写入并给出可操作错误。
-3. ownership：支持边界仍是一个 resolved DB path 由一个 Handbeam runtime 使用；desktop/mobile launcher 在启动层避免重复实例。首版不为一次性切换增加 storage epoch/bootstrap 状态机。运行期保留或复用现有可崩溃释放的 native lock 时，只按实际 DB path 派生 sidecar，不能锁整个 data directory，以免与 mobile 同目录的 `app.db` 混淆；第二实例返回明确错误。
-4. writes/pool：不为每个 session 建连接，只使用受监督的 `Handbeam.Repo`。多语句 read-then-write 使用 immediate transaction，能用 `UPDATE/INSERT ... RETURNING` 的路径优先单语句原子 SQL，避免 deferred transaction 的 read→writer upgrade `BUSY_SNAPSHOT`。以真实连接池 1/2/5 做并行 streaming + schedule + error tracker workload 后固定 pool 和 bounded busy timeout；timeout 只吸收短暂本机竞争，不是长事务或 NFS 修复。
+3. ownership：支持边界仍是一个 resolved DB path 由一个 Handbean runtime 使用；desktop/mobile launcher 在启动层避免重复实例。首版不为一次性切换增加 storage epoch/bootstrap 状态机。运行期保留或复用现有可崩溃释放的 native lock 时，只按实际 DB path 派生 sidecar，不能锁整个 data directory，以免与 mobile 同目录的 `app.db` 混淆；第二实例返回明确错误。
+4. writes/pool：不为每个 session 建连接，只使用受监督的 `Handbean.Repo`。多语句 read-then-write 使用 immediate transaction，能用 `UPDATE/INSERT ... RETURNING` 的路径优先单语句原子 SQL，避免 deferred transaction 的 read→writer upgrade `BUSY_SNAPSHOT`。以真实连接池 1/2/5 做并行 streaming + schedule + error tracker workload 后固定 pool 和 bounded busy timeout；timeout 只吸收短暂本机竞争，不是长事务或 NFS 修复。
 5. checkpoint：保留显式 `wal_autocheckpoint` 基线并记录 WAL bytes、checkpoint busy/log/checkpointed pages、commit latency。只有长时 workload 证明 WAL 不收敛时才增加“无 active run + 超过实测阈值”的受监督 PASSIVE checkpoint；RESTART/TRUNCATE 仅可在 idle maintenance 使用，不在每次 run_end 执行。
 6. errors：新增统一 SQLite error classifier，区分 busy、full、ioerr、corrupt、constraint、unknown，并只输出脱敏诊断。DB 自身 BUSY/FULL/CORRUPT 不能触发 ErrorTracker 向同一个 Repo 递归写错误；Schedule Clock 等后台 writer 在 Repo health circuit breaker 打开时暂停。
 7. test isolation：SQL Sandbox 合适做业务事务测试，但会掩盖真实多连接 WAL 竞争。另建 async false、临时磁盘 DB、真实 pool 的测试组覆盖 immediate transaction、BUSY、checkpoint、backup 和第二 OS process ownership。
@@ -182,10 +182,10 @@ SQLite 官方约束也作为验收依据：[WAL 文档](https://www.sqlite.org/w
 ### 7.1 Startup recovery
 
 - 替换 marker/items 目录扫描：用 partial/indexed query 找 `status = streaming` 的 assistant entry 与 `tool_status = running` 的 tool entry；若实测需要最小 `conversation_runs`，它只缩小候选集合，不成为第二状态机。
-- 保留恢复 owner 的进程身份授权：只有注册的 `Handbeam.Agent.TranscriptRecovery` 本身可读取/收口 internal delegated conversation，不能通过 caller option 绕过。
+- 保留恢复 owner 的进程身份授权：只有注册的 `Handbean.Agent.TranscriptRecovery` 本身可读取/收口 internal delegated conversation，不能通过 caller option 绕过。
 - 对宿主重启遗留记录做幂等事务：同 run 的 streaming assistant/running tool → error/unknown，写一次稳定 recovery notice，并清除 Session pending approval projection。由于没有完整 Agent State，不恢复 approval/stall continuation，不重放工具或重发旧回复。
 - `Session` 启动时以 durable transcript、pending consumption 和活动 Runner 校准 snapshot，不能让旧 snapshot 覆盖更新事实。
-- `TranscriptRecovery` 继续在 Repo/Migrator/PubSub/Registry 之后启动。移动端现有额外 `Handbeam.Runtime.mark_interrupted_runs()` 与它合并成同一个幂等入口，不能冷启动时跑两套竞争恢复。
+- `TranscriptRecovery` 继续在 Repo/Migrator/PubSub/Registry 之后启动。移动端现有额外 `Handbean.Runtime.mark_interrupted_runs()` 与它合并成同一个幂等入口，不能冷启动时跑两套竞争恢复。
 
 ### 7.2 数据库健康、备份与恢复
 
@@ -193,17 +193,17 @@ SQLite 官方约束也作为验收依据：[WAL 文档](https://www.sqlite.org/w
 - 遇到 `SQLITE_CORRUPT/NOTADB`：Repo health circuit breaker 拒绝新的 conversation/run 写，暂停 ErrorTracker DB 写与 Schedule polling，保留数据库及 `-wal/-shm` 原样供诊断，绝不自动删除或创建空库冒充恢复成功。
 - 以 SQLite `VACUUM INTO`（或所有目标平台都实际验证过的 Online Backup API）创建在线一致 snapshot，不能在运行中直接复制 resolved DB 文件。备份写入临时目标，另开只读连接执行 `quick_check`、`foreign_key_check` 和 schema version 校验，落盘后原子发布。
 - 恢复只在 maintenance/offline 模式进行：停止 runtime，确认目标 DB 没有活动 owner，再按 SQLite 一致性恢复流程替换经过校验的备份；不得把一次性切换的“直接删除空库重建”误用于真实故障恢复。
-- 备份包含整个 Handbeam Repo，因为同库事务是设计保证。没有 JSONL canonical 副本时，不能承诺从导出文件恢复最新运行状态。
+- 备份包含整个 Handbean Repo，因为同库事务是设计保证。没有 JSONL canonical 副本时，不能承诺从导出文件恢复最新运行状态。
 
 ## 8. 实施顺序
 
 ### 阶段 A：空库切换、schema 与 contract tests
 
-1. 在部署/开发说明中列出一次性切换清单：停止所有 Handbeam 进程；用当前环境的 Repo 配置解析并回显绝对 DB 路径；只删除该主库及同名 `-wal`、`-shm`、`-journal`；确认四者均不存在；再启动新代码并运行 migrations。这个步骤由操作者明确执行，不实现 reset 命令、epoch marker 或运行时 legacy 检测。
+1. 在部署/开发说明中列出一次性切换清单：停止所有 Handbean 进程；用当前环境的 Repo 配置解析并回显绝对 DB 路径；只删除该主库及同名 `-wal`、`-shm`、`-journal`；确认四者均不存在；再启动新代码并运行 migrations。这个步骤由操作者明确执行，不实现 reset 命令、epoch marker 或运行时 legacy 检测。
 2. 由于所有环境都从空库开始，在现有 migration 历史中加入一个排序早于 `20260718000000_create_schedules.exs` 的 conversation 基础 migration，并原地修改 schedule migration，使 `schedules.conversation_id` 从建表时就是 `references(:conversations, type: :string, on_delete: :delete_all)`；`schedule_runs` 继续按 FK 级联。其余第 4 节表、约束与索引按依赖顺序创建；不实现 orphan schedule、旧 ID 对账、backfill 或数据迁移标记。
-3. 在 `Handbeam.Repo.init/2` 集中 WAL/synchronous/foreign-key/busy/checkpoint 配置和 error classifier。沿用并校正现有 migration 入口：root release 的 `Ecto.Migrator`、dev/test 的 Mix Ecto aliases、mobile `HandbeamProbe.App.migrate!/0` 都必须运行同一套 root migrations，并在 Clock/Recovery 启动前完成；不为这次切换重构成新的 bootstrap 框架。`ecto.reset`/测试清库在进程停止后使用标准 drop/create/migrate，并确认不会让 WAL/SHM companion 干扰下一次空库运行。
-4. mobile 一次性切换通过卸载/重装、Android clear-data 或清除 iOS simulator/app container 完成。这样会同时清空 Handbeam Repo、`HandbeamProbe.Repo` (`app.db`) 和旧 JSON artifacts；普通 `on_start/0` 不执行删除。
-5. 重构 `mobile/test/test_helper.exs`：在启动 `:handbeam` 之前设置唯一 data dir，并把 `Handbeam.Repo` 与 `HandbeamProbe.Repo` 都指向该测试目录；分别运行对应 migrations 后再启动依赖它们的服务。对 Handbeam Repo 使用 SQL Sandbox 或每测试独立临时 DB，不能再靠 `Handbeam.Host.put!/1` 在已启动 pool 后改变 JSON 根目录来假装隔离。
+3. 在 `Handbean.Repo.init/2` 集中 WAL/synchronous/foreign-key/busy/checkpoint 配置和 error classifier。沿用并校正现有 migration 入口：root release 的 `Ecto.Migrator`、dev/test 的 Mix Ecto aliases、mobile `HandbeanProbe.App.migrate!/0` 都必须运行同一套 root migrations，并在 Clock/Recovery 启动前完成；不为这次切换重构成新的 bootstrap 框架。`ecto.reset`/测试清库在进程停止后使用标准 drop/create/migrate，并确认不会让 WAL/SHM companion 干扰下一次空库运行。
+4. mobile 一次性切换通过卸载/重装、Android clear-data 或清除 iOS simulator/app container 完成。这样会同时清空 Handbean Repo、`HandbeanProbe.Repo` (`app.db`) 和旧 JSON artifacts；普通 `on_start/0` 不执行删除。
+5. 重构 `mobile/test/test_helper.exs`：在启动 `:handbean` 之前设置唯一 data dir，并把 `Handbean.Repo` 与 `HandbeanProbe.Repo` 都指向该测试目录；分别运行对应 migrations 后再启动依赖它们的服务。对 Handbean Repo 使用 SQL Sandbox 或每测试独立临时 DB，不能再靠 `Handbean.Host.put!/1` 在已启动 pool 后改变 JSON 根目录来假装隔离。
 6. 为 `ConversationStore`、`ConversationTranscriptStore`、`SessionStore`、`OperationReceipt` 固化与文件布局无关的公共行为测试；覆盖 sidebar recency、ISO8601 map、owned metadata、usage API、not-found、internal authorization 和 `TranscriptEntry` aliases，删除路径/行数/rename 实现断言。所有业务测试从全空数据库开始，不写 JSON import fixture，也不建立保留旧数据的升级 fixture。
 
 验收：root dev/test/release 与 Android/iOS 都能从空库得到相同 schema；schedule FK 从建表即成立；旧 JSON/JSONL 不被读取；第二 runtime、unsupported storage、BUSY/FULL/CORRUPT 有明确结果。未删除旧库的升级路径明确不在支持或测试范围内。
@@ -240,7 +240,7 @@ SQLite 官方约束也作为验收依据：[WAL 文档](https://www.sqlite.org/w
 1. 更新 `docs/runtime-contracts.md`、`docs/transcript-durability.md`、安全/备份说明和用户数据位置说明。
 2. 增加 quick-check/backup 诊断命令和 telemetry dashboard 指标；确认日志不含 transcript、工具参数、凭据或绝对隐私路径。
 3. 建立 workload：并行多 conversation streaming、审批、subagent、schedule、10k/100k entries 分页、bulk replace、长读、磁盘满、kill -9、重启重叠、WAL checkpoint。
-4. 移动端按 `verifying-handbeam-mobile` 专项流程验证双 Repo 空库 migration、clear-data/uninstall cutover、冷启动、后台/前台和强杀恢复；Android/iOS 分别报告 host test、package、模拟器和真机结论。桌面覆盖 macOS、Linux、Windows 可用矩阵，不把单平台通过写成全平台通过。
+4. 移动端按 `verifying-handbean-mobile` 专项流程验证双 Repo 空库 migration、clear-data/uninstall cutover、冷启动、后台/前台和强杀恢复；Android/iOS 分别报告 host test、package、模拟器和真机结论。桌面覆盖 macOS、Linux、Windows 可用矩阵，不把单平台通过写成全平台通过。
 
 验收门槛：无无限 retry；正常本地并发无未解释 `SQLITE_BUSY`；事务 p95/p99、WAL 峰值和 checkpoint 可解释；备份可恢复且通过 quick/FK check；数据库错误不会被包装成 provider/tool 成功。
 
@@ -264,18 +264,18 @@ SQLite 官方约束也作为验收依据：[WAL 文档](https://www.sqlite.org/w
 
 ```sh
 mix compile --warnings-as-errors
-mix test test/handbeam/conversation_store_test.exs \
-  test/handbeam/conversation_transcript_store_test.exs \
-  test/handbeam/agent/operation_receipt_test.exs \
-  test/handbeam/agent/transcript_persistence_test.exs \
-  test/handbeam/agent/transcript_recovery_test.exs \
-  test/handbeam/pubsub/session_test.exs
-mix test test/handbeam/agent test/handbeam/pubsub test/feature
+mix test test/handbean/conversation_store_test.exs \
+  test/handbean/conversation_transcript_store_test.exs \
+  test/handbean/agent/operation_receipt_test.exs \
+  test/handbean/agent/transcript_persistence_test.exs \
+  test/handbean/agent/transcript_recovery_test.exs \
+  test/handbean/pubsub/session_test.exs
+mix test test/handbean/agent test/handbean/pubsub test/feature
 mix test
 npm test
 ```
 
-共享 schema 和 runtime 改动还要进入 `mobile/`，加载 `verifying-handbeam-mobile` 技能后执行其当前 host/package/simulator/device 矩阵；migration 或 native package 行为必须重新打包并冷启动，不能只热加载。
+共享 schema 和 runtime 改动还要进入 `mobile/`，加载 `verifying-handbean-mobile` 技能后执行其当前 host/package/simulator/device 矩阵；migration 或 native package 行为必须重新打包并冷启动，不能只热加载。
 
 ## 11. 顾问评审结论与采纳
 
@@ -288,7 +288,7 @@ npm test
 - 补齐 sidebar recency、ISO8601 wire map、unkeyed usage key、owned metadata、not-found、deep merge、text offset、replace sequence 和 page cursor 契约。
 - 固定 FULL durability，把 flush coalescing 作为性能变量；补 immediate transaction、真实 pool 测试、ErrorTracker 递归写、root/mobile migration/lock 顺序、单一 recovery owner 和 verified backup/restore。
 
-评审后产品进一步明确：旧 Handbeam Repo 的全部数据均可丢弃。因此本版删除了 orphan schedule、旧 ID 对账和“保留既有非会话数据前滚”的兼容设计，改为一次显式停机 reset 后从空库执行 schema migrations。这一变更缩小了数据迁移风险，但扩大了被接受的数据损失范围。
+评审后产品进一步明确：旧 Handbean Repo 的全部数据均可丢弃。因此本版删除了 orphan schedule、旧 ID 对账和“保留既有非会话数据前滚”的兼容设计，改为一次显式停机 reset 后从空库执行 schema migrations。这一变更缩小了数据迁移风险，但扩大了被接受的数据损失范围。
 
 顾问随后针对 full-reset 增量复核时，曾按“应用必须防止操作者漏删旧库”的假设建议 storage epoch、reset marker 和 quarantine 状态机。产品现已明确这是受控开发/部署切换，旧 Repo 会在新代码启动前直接删除，因此本版不采纳这套永久运行时机制，并把“未删除旧库直接升级”明确列为不支持。仍保留评审中与简化方案有关的三项修正：conversation migration 排在 schedule 前并从建表建立 FK；所有环境按实际 DB 路径删除 companions；mobile 用 clear-data/reinstall 且测试配置两套独立 Repo。
 
@@ -298,7 +298,7 @@ npm test
 
 ## 12. 完成定义
 
-- 这是一次受控的全量冷启动：旧 Handbeam Repo 的所有业务数据均不保留；切换时先停进程，再删除实际配置的 DB 及同名 WAL/SHM/journal companions，确认不存在后才运行新 migrations。
+- 这是一次受控的全量冷启动：旧 Handbean Repo 的所有业务数据均不保留；切换时先停进程，再删除实际配置的 DB 及同名 WAL/SHM/journal companions，确认不存在后才运行新 migrations。
 - 不实现 storage epoch、自动 reset 或旧库兼容检测；未先删除旧库就启动新版本明确不受支持。
 - 旧 conversation/session JSON/JSONL 不迁移、不双写、不隐式回退，在线运行不再读取或写入它们。
 - 会话、entry、usage、receipt 的持久 owner 只有一套；工具事实仍在 transcript entry，审批 continuation 仍由 live Runner 独占，Web/native 只做适配与 projection。

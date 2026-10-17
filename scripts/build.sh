@@ -8,12 +8,12 @@ usage() {
   cat <<'EOF'
 Usage: bash scripts/build.sh [--replace [app]] [release-directory]
 
-Build Handbeam for the current platform. On macOS this creates a native
-Handbeam.app containing the production release, plus a distributable zip.
+Build Handbean for the current platform. On macOS this creates a native
+Handbean.app containing the production release, plus a distributable zip.
 On other platforms it builds the production release into release-directory.
 
 --replace copies the built app over an existing install. The default target
-is /Applications/Handbeam.app. Without --replace, an existing install is left
+is /Applications/Handbean.app. Without --replace, an existing install is left
 alone.
 EOF
 }
@@ -65,7 +65,7 @@ if [[ $# -gt 0 ]]; then
 fi
 
 echo "========================================"
-echo " Handbeam 常规部署构建脚本"
+echo " Handbean 常规部署构建脚本"
 echo "========================================"
 
 MIX_ENV="${MIX_ENV:-prod}"
@@ -75,9 +75,9 @@ echo "当前环境: $MIX_ENV"
 if [[ -n "$RELEASE_ARG" ]]; then
   RELEASE_DIR="$RELEASE_ARG"
 elif [[ "$PLATFORM" == "Darwin" ]]; then
-  RELEASE_DIR="$PROJECT_ROOT/desktop/macos/build/handbeam-web"
+  RELEASE_DIR="$PROJECT_ROOT/desktop/macos/build/handbean-web"
 else
-  RELEASE_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/handbeam/release"
+  RELEASE_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/handbean/release"
 fi
 
 mkdir -p "$(dirname "$RELEASE_DIR")"
@@ -91,8 +91,8 @@ mix deps.get
 
 # 1.5 创建默认目录
 echo ""
-echo "➡ 确保 ~/.handbeam/ 目录存在..."
-mkdir -p "$HOME/.handbeam"
+echo "➡ 确保 ~/.handbean/ 目录存在..."
+mkdir -p "$HOME/.handbean"
 
 # 2. 编译
 echo ""
@@ -113,13 +113,13 @@ if [[ "$RELEASE_DIR" == "/" ]]; then
   exit 2
 fi
 rm -rf "$RELEASE_DIR"
-MIX_ENV=$MIX_ENV mix release handbeam --path "$RELEASE_DIR" --overwrite
+MIX_ENV=$MIX_ENV mix release handbean --path "$RELEASE_DIR" --overwrite
 
 # 6. 检查输出
 echo ""
 
 if [[ -d "$RELEASE_DIR" ]]; then
-  BIN="${RELEASE_DIR}/bin/handbeam"
+  BIN="${RELEASE_DIR}/bin/handbean"
   echo "🎉 构建完成！"
   echo "Release 目录: $RELEASE_DIR"
   echo "二进制:       $BIN"
@@ -132,10 +132,10 @@ fi
 if [[ "$PLATFORM" == "Darwin" ]]; then
   echo ""
   echo "➡ 构建 macOS 原生客户端..."
-  HANDBEAM_WEB_ROOT="$RELEASE_DIR" bash desktop/macos/scripts/build_app.sh
+  HANDBEAN_WEB_ROOT="$RELEASE_DIR" bash desktop/macos/scripts/build_app.sh
 
-  APP="$PROJECT_ROOT/desktop/macos/build/Handbeam.app"
-  ARCHIVE="$PROJECT_ROOT/desktop/macos/build/Handbeam-macos-arm64.zip"
+  APP="$PROJECT_ROOT/desktop/macos/build/Handbean.app"
+  ARCHIVE="$PROJECT_ROOT/desktop/macos/build/Handbean-macos-arm64.zip"
   CHECKSUM="$ARCHIVE.sha256"
   rm -f "$ARCHIVE" "$CHECKSUM"
   ditto -c -k --keepParent "$APP" "$ARCHIVE"
@@ -151,7 +151,7 @@ if [[ "$PLATFORM" == "Darwin" ]]; then
   echo "大小:     $(du -sh "$ARCHIVE" | awk '{print $1}')"
 
   if [[ "$REPLACE" -eq 1 ]]; then
-    TARGET="${REPLACE_APP:-/Applications/Handbeam.app}"
+    TARGET="${REPLACE_APP:-/Applications/Handbean.app}"
     case "$TARGET" in
       *.app) ;;
       *)
@@ -170,7 +170,7 @@ if [[ "$PLATFORM" == "Darwin" ]]; then
     echo ""
     echo "➡ 替换已安装的应用: $TARGET"
     mkdir -p "$(dirname "$TARGET")"
-    osascript -e "tell application \"Handbeam\" to quit" >/dev/null 2>&1 || true
+    osascript -e "tell application \"Handbean\" to quit" >/dev/null 2>&1 || true
     rm -rf "$TARGET"
     ditto "$APP" "$TARGET"
     codesign --verify --deep --strict "$TARGET"
@@ -186,16 +186,16 @@ fi
 echo ""
 echo "默认配置已烘焙进 release (rel/env.sh.eex)，无需设置环境变量："
 echo "  地址:      http://localhost:5008"
-echo "  数据库:    ~/.handbeam/handbeam.db"
-echo "  模型配置:  ~/.handbeam/models.json"
-echo "  运行日志:  ~/.handbeam/runtime/log/"
-echo "  崩溃转储:  ~/.handbeam/runtime/erl_crash.dump"
+echo "  数据库:    ~/.handbean/handbean.db"
+echo "  模型配置:  ~/.handbean/models.json"
+echo "  运行日志:  ~/.handbean/runtime/log/"
+echo "  崩溃转储:  ~/.handbean/runtime/erl_crash.dump"
 echo ""
 printf '  前台:  %q start\n' "$BIN"
 printf '  后台:  %q daemon\n' "$BIN"
 printf '  停止:  %q stop\n' "$BIN"
 printf '  附加:  %q remote\n' "$BIN"
-echo "  日志:  tail -F ~/.handbeam/runtime/log/erlang.log.1"
+echo "  日志:  tail -F ~/.handbean/runtime/log/erlang.log.1"
 echo ""
 echo "如需自定义，可在启动前 export 覆盖任意变量："
-echo "  PORT DATABASE_PATH HANDBEAM_RUNTIME_DIR OPENAI_BASE_URL OPENAI_MODEL"
+echo "  PORT DATABASE_PATH HANDBEAN_RUNTIME_DIR OPENAI_BASE_URL OPENAI_MODEL"

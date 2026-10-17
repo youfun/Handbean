@@ -3,14 +3,14 @@ defmodule Mix.Tasks.Mob.PackApkTest do
 
   test "packaging includes the manually-started shared runtime closure" do
     build = Path.join(System.tmp_dir!(), "pack_runtime_#{System.unique_integer([:positive])}")
-    shared = Path.join([build, "lib", "handbeam", "ebin"])
+    shared = Path.join([build, "lib", "handbean", "ebin"])
     phoenix_ecto = Path.join([build, "lib", "phoenix_ecto", "ebin"])
     File.mkdir_p!(shared)
     File.mkdir_p!(phoenix_ecto)
 
     File.write!(
-      Path.join(shared, "handbeam.app"),
-      "{application,handbeam,[{applications,[kernel,stdlib,phoenix_ecto]}]}."
+      Path.join(shared, "handbean.app"),
+      "{application,handbean,[{applications,[kernel,stdlib,phoenix_ecto]}]}."
     )
 
     File.write!(
@@ -63,13 +63,13 @@ defmodule Mix.Tasks.Mob.PackApkTest do
   end
 
   test "environment seed cannot silently enter nativechat builds" do
-    previous = System.get_env("HANDBEAM_FOUNDATION_MODELS_SEED")
-    System.put_env("HANDBEAM_FOUNDATION_MODELS_SEED", "/no/such/private.seed.json")
+    previous = System.get_env("HANDBEAN_FOUNDATION_MODELS_SEED")
+    System.put_env("HANDBEAN_FOUNDATION_MODELS_SEED", "/no/such/private.seed.json")
 
     on_exit(fn ->
       if previous,
-        do: System.put_env("HANDBEAM_FOUNDATION_MODELS_SEED", previous),
-        else: System.delete_env("HANDBEAM_FOUNDATION_MODELS_SEED")
+        do: System.put_env("HANDBEAN_FOUNDATION_MODELS_SEED", previous),
+        else: System.delete_env("HANDBEAN_FOUNDATION_MODELS_SEED")
     end)
 
     assert {:error, :seed_requires_foundation_test_app} =

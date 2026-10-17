@@ -2,14 +2,14 @@
 
 本流程用于本地线程验收 `dev` 的移动宿主兼容性，**不是**已完成的验收报告。
 
-编写时参考版本：[21d0627](https://github.com/youfun/Handbeam/commit/21d062706fd749e873138e73bf147261f36b3f77)。执行时冻结实际待验收 SHA；后续修改必须记录新 SHA 并重测受影响项目。
+编写时参考版本：[21d0627](https://github.com/youfun/Handbean/commit/21d062706fd749e873138e73bf147261f36b3f77)。执行时冻结实际待验收 SHA；后续修改必须记录新 SHA 并重测受影响项目。
 
 相关阅读（执行前必读，不要把 GitHub `master` 当锁定文档）：
 
 - [mobile/AGENTS.md](../mobile/AGENTS.md)
 - 本仓库锁定的 Mob 工具文档：`mobile/deps/mob_dev/README.md`、`mix help`（在 `mobile/` 下）
 - [transcript-durability.md](transcript-durability.md)
-- 源码测试：`test/handbeam/storage_nif_test.exs`、`test/handbeam/storage_lock_test.exs`、`test/handbeam/conversation_transcript_store_test.exs`、`test/handbeam/e2e/transcript_durability_test.exs`
+- 源码测试：`test/handbean/storage_nif_test.exs`、`test/handbean/storage_lock_test.exs`、`test/handbean/conversation_transcript_store_test.exs`、`test/handbean/e2e/transcript_durability_test.exs`
 
 > **模拟器 / ARC / 桌面 Mix / 浏览器设备模拟不能替代真机签收。** 它们只可作为预检。分别报告 Android 实体机与 iOS 实体 iPhone。预检结果必须标明环境，不得写成“Android/iOS 全通过”。
 
@@ -59,7 +59,7 @@ macOS 上 `mix test` 会运行桌面 Bash job 测试，但仍排除 `:linux_sand
 
 Zig 必须是 `mobile/.tool-versions` 锁定的精确版本（当前 pin：`0.17.0-dev.269+ebff43698`）。`mix mob.doctor` 失败时先修工具链，不要用错版本的 Zig 打包后宣称 NIF 通过。
 
-打包前核对 gitignored `mobile/mob.exs` 与 `mobile/config/mob.exs.template` 的 `static_nifs` 是否一致。`mix mob.write_mob_exs` **不会覆盖**已有 `mob.exs`；陈旧文件会漏掉 `handbeam_storage` 等静态 NIF，安装后表现为 `:on_load_failure`。`--skip-setup` 不会修复该漂移。
+打包前核对 gitignored `mobile/mob.exs` 与 `mobile/config/mob.exs.template` 的 `static_nifs` 是否一致。`mix mob.write_mob_exs` **不会覆盖**已有 `mob.exs`；陈旧文件会漏掉 `handbean_storage` 等静态 NIF，安装后表现为 `:on_load_failure`。`--skip-setup` 不会修复该漂移。
 
 若 Orb 配置要求密码，用私密环境提供，不修改安全配置。
 
@@ -76,18 +76,18 @@ adb -s "$DEVICE" shell getprop ro.product.cpu.abi
 adb -s "$DEVICE" shell getprop ro.build.version.release
 # mobile/ 目录；打包脚本默认包含 setup 与测试
 bash script/pack_android_apks.sh --abi arm64-v8a
-shasum -a 256 artifacts/Handbeam-arm64-v8a.apk
+shasum -a 256 artifacts/Handbean-arm64-v8a.apk
 # 以下仅在已确认允许更新该测试安装后执行
-adb -s "$DEVICE" install -r artifacts/Handbeam-arm64-v8a.apk
-adb -s "$DEVICE" shell am force-stop com.example.handbeam_probe.nativechat
-adb -s "$DEVICE" shell am start -n com.example.handbeam_probe.nativechat/com.example.handbeam_probe.MainActivity
+adb -s "$DEVICE" install -r artifacts/Handbean-arm64-v8a.apk
+adb -s "$DEVICE" shell am force-stop com.example.handbean_probe.nativechat
+adb -s "$DEVICE" shell am start -n com.example.handbean_probe.nativechat/com.example.handbean_probe.MainActivity
 adb -s "$DEVICE" forward tcp:9200 tcp:9200
 adb -s "$DEVICE" reverse tcp:4369 tcp:4369
 epmd -daemon
 mix run --no-start script/mob_debug_probe.exs
 ```
 
-必须确认探针连到 `handbeam_probe_android_nativechat@127.0.0.1`，并显示 `HandbeamProbe.HomeScreen`。脚本有旧 probe fallback，连上旧包不算成功。不要用默认 `mix mob.connect` 重启错误包。不要使用 `forward --remove-all` 影响他人连接。
+必须确认探针连到 `handbean_probe_android_nativechat@127.0.0.1`，并显示 `HandbeanProbe.HomeScreen`。脚本有旧 probe fallback，连上旧包不算成功。不要用默认 `mix mob.connect` 重启错误包。不要使用 `forward --remove-all` 影响他人连接。
 
 `arm64-v8a` 是手机与 **arm64 模拟器**；`x86_64` 是 Chromos / x86 模拟器。不要把 ARC x86_64 APK 装到 ARM 设备。模拟器预检可以走同一套 Dist 配方，但结论必须写 `emulator`，不能签收真机。
 
@@ -104,13 +104,13 @@ mix ios.native --device <实体iPhone-UDID>
 
 这是包含原生宿主的构建入口；`mix ios` 或 RPC 热加载不能证明新的静态 NIF 已安装。若工具版本不支持该设备安装路径，记录精确错误并使用该版本支持的 Xcode 真机签名/安装流程，不改目标为模拟器后宣称真机通过。
 
-bundle id 为 `com.example.handbeam_probe`。记录实际签名产物及其哈希，彻底结束应用进程后由设备重新启动。从启动日志核实实际 node/端口与设备可用的受控调试通道；README 的 iOS simulator 节点名/loopback 配方**不是实体 iPhone 连接配方**。无法取得运行态证据时，只能报告 UI 烟测，不得签收 runtime 项目。
+bundle id 为 `com.example.handbean_probe`。记录实际签名产物及其哈希，彻底结束应用进程后由设备重新启动。从启动日志核实实际 node/端口与设备可用的受控调试通道；README 的 iOS simulator 节点名/loopback 配方**不是实体 iPhone 连接配方**。无法取得运行态证据时，只能报告 UI 烟测，不得签收 runtime 项目。
 
 ### 两端冷启动门槛
 
-1. 未通过热加载修补，安装产物本身能启动 HomeScreen 与 Handbeam runtime。
-2. `Handbeam.Host` 是设备 profile；`Handbeam.ConfigInspection.report(workspace: 测试目录)` 的 allowlist 报告与实际 Registry 一致。不打印完整 prompt。
-3. `:handbeam_storage` 不出现 `nif_not_loaded` / `on_load` 错误。模板 `mobile/config/mob.exs.template` 必须包含 Android/iOS 静态 NIF；源码桥为 `mobile/c_src/handbeam_storage.c`。
+1. 未通过热加载修补，安装产物本身能启动 HomeScreen 与 Handbean runtime。
+2. `Handbean.Host` 是设备 profile；`Handbean.ConfigInspection.report(workspace: 测试目录)` 的 allowlist 报告与实际 Registry 一致。不打印完整 prompt。
+3. `:handbean_storage` 不出现 `nif_not_loaded` / `on_load` 错误。模板 `mobile/config/mob.exs.template` 必须包含 Android/iOS 静态 NIF；源码桥为 `mobile/c_src/handbean_storage.c`。
 4. 创建测试对话、落盘一条 Unicode 消息，重启后经 transcript API 读到同一 ID/内容。仅 `Code.ensure_loaded?` 或构建退出 0 不足以通过。
 
 ## 4. 必测矩阵
@@ -136,9 +136,9 @@ J1/J2 建议先用 runtime 工具调用和受控阻塞/释放信号验证，再�
 
 ## 5. 存储专项：此次真机验收重点
 
-参照 [transcript-durability.md](transcript-durability.md)、`test/handbeam/storage_lock_test.exs`、`test/handbeam/conversation_transcript_store_test.exs` 和 `test/handbeam/e2e/transcript_durability_test.exs`，在设备上移植最小探针。不要原样运行会 spawn 桌面 elixir 的测试。每个故障用独立 fixture，不改真实全局 HOME、不停止带有用户任务的 owner。
+参照 [transcript-durability.md](transcript-durability.md)、`test/handbean/storage_lock_test.exs`、`test/handbean/conversation_transcript_store_test.exs` 和 `test/handbean/e2e/transcript_durability_test.exs`，在设备上移植最小探针。不要原样运行会 spawn 桌面 elixir 的测试。每个故障用独立 fixture，不改真实全局 HOME、不停止带有用户任务的 owner。
 
-1. **静态 NIF 实际 IO**：测试目录取得 `:handbeam_storage.lock/1`，第二次 lock 得 `:locked`；执行 append_sync/replace_sync/remove_sync 并读回精确内容；close 后写入得 `:closed`，重新获取成功。不得删除锁文件绕过竞争。
+1. **静态 NIF 实际 IO**：测试目录取得 `:handbean_storage.lock/1`，第二次 lock 得 `:locked`；执行 append_sync/replace_sync/remove_sync 并读回精确内容；close 后写入得 `:closed`，重新获取成功。不得删除锁文件绕过竞争。
 2. **SQLite transcript/page**：通过 Store API 构造 205 条不同 ID 的 Unicode entry，并进行至少 300 次原子追加/更新/删除；保留独立期望列表。冷启动重读后内容、顺序、revision、删除结果一致；用 transcript `page/2` 穷尽分页，无漏项/重复，删除 cursor 返回 invalid_cursor。
 3. **WAL/恢复/备份**：构造 streaming assistant 与 running tool 后强杀宿主，冷启动只收口对应 run 且不重放工具；重复启动保持幂等。并行写入期间执行受支持的在线备份，副本通过 quick/FK/schema 校验。记录明确故障点；模拟强杀不能冒称断电或闪存损坏测试。
 4. **进程退出恢复**：受控 Provider 先输出已持久化的已知前缀，再阻塞；工具另写一次计数标记。在确认已 sync 后终止测试应用进程，冷启动核对保留文本、孤儿 run 的 assistant/tool error 收尾与稳定错误 ID。再次重启不重复错误、不重跑工具、不重新投递。记录是 force-stop、调试器 terminate 还是实际 crash，不能混称断电测试。
@@ -169,4 +169,4 @@ J1/J2 建议先用 runtime 工具调用和受控阻塞/释放信号验证，再�
 
 可直接交给本地线程：
 
-> 在 Handbeam 独立 checkout 按 docs/mobile-device-verification.md 验收指定 dev SHA。先报告可用实体设备、签名/安装条件、现有数据风险与费用需求，再在已授权范围执行。保留所有其他工作，不 push/merge/部署，不扩大终端或权限能力。先构建及冷启动，再完成能力门控、存储/NIF/WAL、BEAM jobs、原生聊天/文件/模型设置矩阵；Web 专属和原生边界分开记。优先受控 Provider，真实模型需预算授权。每项提供实际状态/落盘/产物证据，外观截图打开检查；分别报告 Android/iOS 的 PASS/FAIL/BLOCKED/NOT_RUN/N/A 与未覆盖项。若修复产品代码，先回报精确失败、版本和最小复现，不能把修改前验收结论用于修改后产物。
+> 在 Handbean 独立 checkout 按 docs/mobile-device-verification.md 验收指定 dev SHA。先报告可用实体设备、签名/安装条件、现有数据风险与费用需求，再在已授权范围执行。保留所有其他工作，不 push/merge/部署，不扩大终端或权限能力。先构建及冷启动，再完成能力门控、存储/NIF/WAL、BEAM jobs、原生聊天/文件/模型设置矩阵；Web 专属和原生边界分开记。优先受控 Provider，真实模型需预算授权。每项提供实际状态/落盘/产物证据，外观截图打开检查；分别报告 Android/iOS 的 PASS/FAIL/BLOCKED/NOT_RUN/N/A 与未覆盖项。若修复产品代码，先回报精确失败、版本和最小复现，不能把修改前验收结论用于修改后产物。

@@ -617,8 +617,8 @@ textarea::placeholder {
   box-shadow: 0 1px 8px rgba(0, 0, 0, 0.06);
 }
 
-.handbeam-desktop-shell .workspace-panel-header,
-.handbeam-desktop-shell .workspace-panel-toggle {
+.handbean-desktop-shell .workspace-panel-header,
+.handbean-desktop-shell .workspace-panel-toggle {
   display: none;
 }
 

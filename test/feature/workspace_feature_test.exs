@@ -1,6 +1,6 @@
-defmodule HandbeamWeb.Feature.WorkspaceFeatureTest do
+defmodule HandbeanWeb.Feature.WorkspaceFeatureTest do
   @moduledoc """
-  PhoenixTest feature tests for the Handbeam Workspace LiveView.
+  PhoenixTest feature tests for the Handbean Workspace LiveView.
 
   Covers user-facing flows:
     - Send message (发送消息)
@@ -10,15 +10,15 @@ defmodule HandbeamWeb.Feature.WorkspaceFeatureTest do
     - Archived conversation visibility (已存档)
   """
 
-  use HandbeamWeb.FeatureCase, async: false
+  use HandbeanWeb.FeatureCase, async: false
 
-  alias Handbeam.TestSupport.E2EHarness
+  alias Handbean.TestSupport.E2EHarness
 
   defp isolate_conversation_home! do
     old_home = System.get_env("HOME")
 
     home_dir =
-      Path.join(System.tmp_dir!(), "handbeam_feature_home_#{System.unique_integer([:positive])}")
+      Path.join(System.tmp_dir!(), "handbean_feature_home_#{System.unique_integer([:positive])}")
 
     System.put_env("HOME", home_dir)
     safe_rm_test_rune!(home_dir)
@@ -35,26 +35,26 @@ defmodule HandbeamWeb.Feature.WorkspaceFeatureTest do
   end
 
   defp safe_rm_test_rune!(home_dir) do
-    target = Path.expand(Path.join(home_dir, ".handbeam"))
+    target = Path.expand(Path.join(home_dir, ".handbean"))
     tmp_root = Path.expand(System.tmp_dir!())
 
     if String.starts_with?(target, tmp_root) do
       File.rm_rf!(target)
     else
-      raise "[PathSafety] refusing to delete non-temp .handbeam/: #{target} (tmp_root=#{tmp_root})"
+      raise "[PathSafety] refusing to delete non-temp .handbean/: #{target} (tmp_root=#{tmp_root})"
     end
   end
 
   setup do
     isolate_conversation_home!()
-    old_provider = Application.get_env(:handbeam, :test_provider)
+    old_provider = Application.get_env(:handbean, :test_provider)
     E2EHarness.use_fake_provider!(:simple_answer)
 
     on_exit(fn ->
       if old_provider do
-        Application.put_env(:handbeam, :test_provider, old_provider)
+        Application.put_env(:handbean, :test_provider, old_provider)
       else
-        Application.delete_env(:handbeam, :test_provider)
+        Application.delete_env(:handbean, :test_provider)
       end
     end)
 
@@ -192,7 +192,7 @@ defmodule HandbeamWeb.Feature.WorkspaceFeatureTest do
       |> assert_path("/c/*")
 
       "/c/" <> conv_id = session.current_path
-      {:ok, meta} = Handbeam.ConversationStore.get_metadata(conv_id)
+      {:ok, meta} = Handbean.ConversationStore.get_metadata(conv_id)
       assert meta["scope"] == "free"
       assert meta["workspace_id"] in [nil, ""]
     end
@@ -226,7 +226,7 @@ defmodule HandbeamWeb.Feature.WorkspaceFeatureTest do
         )
         |> click_button("button[phx-click='toggle_conversation_menu']", "More actions")
 
-      [conv] = Handbeam.ConversationStore.list(include_timeline?: false)
+      [conv] = Handbean.ConversationStore.list(include_timeline?: false)
 
       assert_has(session, ".conversation-menu-item[data-copy='#{conv["id"]}']", "Copy ID")
     end
@@ -269,7 +269,7 @@ defmodule HandbeamWeb.Feature.WorkspaceFeatureTest do
       |> click_button("button[phx-click='toggle_archive']", "Archived")
       |> assert_has("#archived-conversation-#{archived_id}")
 
-      assert {:ok, archived} = Handbeam.ConversationStore.get_metadata(archived_id)
+      assert {:ok, archived} = Handbean.ConversationStore.get_metadata(archived_id)
       assert is_binary(archived["archived_at"])
     end
 
@@ -371,7 +371,7 @@ defmodule HandbeamWeb.Feature.WorkspaceFeatureTest do
         end)
 
       assert {:ok, archived} =
-               Handbeam.ConversationStore.get(archived_id, include_timeline?: false)
+               Handbean.ConversationStore.get(archived_id, include_timeline?: false)
 
       assert is_binary(archived["archived_at"])
 
@@ -388,7 +388,7 @@ defmodule HandbeamWeb.Feature.WorkspaceFeatureTest do
       |> assert_has(".msg-bubble.msg-user", "Restore this conversation")
 
       assert {:ok, restored} =
-               Handbeam.ConversationStore.get(archived_id, include_timeline?: false)
+               Handbean.ConversationStore.get(archived_id, include_timeline?: false)
 
       assert is_nil(restored["archived_at"])
     end

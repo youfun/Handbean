@@ -1,4 +1,4 @@
-# Reach architecture policy for Handbeam
+# Reach architecture policy for Handbean
 # See https://github.com/elixir-vibe/reach for full reference
 #
 # Known accepted trade-offs:
@@ -9,23 +9,23 @@
 [
   # ── Architecture Layers ──
   layers: [
-    web: "HandbeamWeb.*",
+    web: "HandbeanWeb.*",
 
     # Runtime = Agent + Tool + PubSub, tightly coupled by design
-    runtime: ["Handbeam.Agent.*", "Handbeam.Tool.*", "Handbeam.PubSub.*"],
-    mcp: "Handbeam.MCP.*",
-    memory: "Handbeam.Memory.*",
-    delivery: "Handbeam.Delivery*",
-    store: ["Handbeam.SessionStore*", "Handbeam.ConversationTranscriptStore*"],
-    extension: "Handbeam.Extension.*",
-    log: "Handbeam.Log.*",
-    security: "Handbeam.Security.*",
-    utils: "Handbeam.Utils*",
-    mix_tasks: "Handbeam.Mix.Tasks.*",
-    csv: ["Handbeam.Csv*", "Handbeam.CsvProfile*"],
-    permissions: "Handbeam.Permissions*",
-    settings: "Handbeam.Settings*",
-    skills: "Handbeam.Skills*"
+    runtime: ["Handbean.Agent.*", "Handbean.Tool.*", "Handbean.PubSub.*"],
+    mcp: "Handbean.MCP.*",
+    memory: "Handbean.Memory.*",
+    delivery: "Handbean.Delivery*",
+    store: ["Handbean.SessionStore*", "Handbean.ConversationTranscriptStore*"],
+    extension: "Handbean.Extension.*",
+    log: "Handbean.Log.*",
+    security: "Handbean.Security.*",
+    utils: "Handbean.Utils*",
+    mix_tasks: "Handbean.Mix.Tasks.*",
+    csv: ["Handbean.Csv*", "Handbean.CsvProfile*"],
+    permissions: "Handbean.Permissions*",
+    settings: "Handbean.Settings*",
+    skills: "Handbean.Skills*"
   ],
 
   # ── Dependency Rules ──
@@ -56,27 +56,27 @@
   calls: [
     forbidden: [
       # Runtime must not do raw IO (use Logger instead)
-      {"Handbeam.Agent.*", ["IO.puts", "IO.inspect"]},
-      {"Handbeam.Tool.*", ["IO.puts", "IO.inspect"]},
+      {"Handbean.Agent.*", ["IO.puts", "IO.inspect"]},
+      {"Handbean.Tool.*", ["IO.puts", "IO.inspect"]},
 
       # Web layer must not touch database directly
-      {"HandbeamWeb.*", ["Handbeam.Repo"]},
+      {"HandbeanWeb.*", ["Handbean.Repo"]},
 
       # PubSub must not access database directly
-      {"Handbeam.PubSub.*", "Handbeam.Repo"},
+      {"Handbean.PubSub.*", "Handbean.Repo"},
 
       # Delivery must not access database directly
-      {"Handbeam.Delivery*", "Handbeam.Repo"}
+      {"Handbean.Delivery*", "Handbean.Repo"}
     ]
   ],
 
   # ── Test Hints ──
   tests: [
     hints: [
-      {"lib/handbeam/agent/**", ["test/handbeam/agent/*_test.exs"]},
-      {"lib/handbeam/tool/**", ["test/handbeam/tool/*_test.exs"]},
-      {"lib/handbeam/mcp/**", ["test/handbeam/mcp/*_test.exs"]},
-      {"lib/handbeam_web/**", ["test/handbeam_web/*_test.exs"]}
+      {"lib/handbean/agent/**", ["test/handbean/agent/*_test.exs"]},
+      {"lib/handbean/tool/**", ["test/handbean/tool/*_test.exs"]},
+      {"lib/handbean/mcp/**", ["test/handbean/mcp/*_test.exs"]},
+      {"lib/handbean_web/**", ["test/handbean_web/*_test.exs"]}
     ]
   ]
 ]

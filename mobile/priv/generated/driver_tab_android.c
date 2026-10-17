@@ -44,9 +44,9 @@ void *nx_eigen_nif_init(void);
 #ifdef MOB_STATIC_TFLITE_NIF
 void *tflite_nif_nif_init(void);
 #endif
-void *handbeam_storage_nif_init(void);
-void *handbeam_notify_nif_init(void);
-void *handbeam_browser_nif_init(void);
+void *handbean_storage_nif_init(void);
+void *handbean_notify_nif_init(void);
+void *handbean_browser_nif_init(void);
 
 ErtsStaticNif erts_static_nif_tab[] = {
     {prim_tty_nif_init,     0, THE_NON_VALUE, NULL},
@@ -66,8 +66,8 @@ ErtsStaticNif erts_static_nif_tab[] = {
 #ifdef MOB_STATIC_TFLITE_NIF
     {tflite_nif_nif_init,   0, THE_NON_VALUE, NULL},
 #endif
-    {handbeam_storage_nif_init,0, THE_NON_VALUE, NULL},
-    {handbeam_notify_nif_init,0, THE_NON_VALUE, NULL},
-    {handbeam_browser_nif_init,0, THE_NON_VALUE, NULL},
+    {handbean_storage_nif_init,0, THE_NON_VALUE, NULL},
+    {handbean_notify_nif_init,0, THE_NON_VALUE, NULL},
+    {handbean_browser_nif_init,0, THE_NON_VALUE, NULL},
     {NULL,                  0, THE_NON_VALUE, NULL}
 };

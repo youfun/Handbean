@@ -1,4 +1,4 @@
-defmodule Handbeam.Repo.Migrations.CreateEngramsFts do
+defmodule Handbean.Repo.Migrations.CreateEngramsFts do
   use Ecto.Migration
 
   def up do

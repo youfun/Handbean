@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sign Handbeam.app with Developer ID, notarize it, staple the ticket, and
+# Sign Handbean.app with Developer ID, notarize it, staple the ticket, and
 # rewrite the release zip. This is direct distribution, not the Mac App Store.
 #
 # One-time setup (Account Holder):
@@ -9,7 +9,7 @@
 #      a Certificate Authority → Saved to disk. Upload the CSR, install the
 #      downloaded .cer into the same keychain.
 #   3. Store an app-specific password (appleid.apple.com), not the Apple ID password:
-#        xcrun notarytool store-credentials handbeam-notary \
+#        xcrun notarytool store-credentials handbean-notary \
 #          --apple-id "you@example.com" --team-id TEAMID --password "xxxx-xxxx-xxxx-xxxx"
 #
 # Then, from the repository root, after scripts/build.sh:
@@ -21,9 +21,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-APP="${1:-$ROOT/build/Handbeam.app}"
+APP="${1:-$ROOT/build/Handbean.app}"
 ENTITLEMENTS="$ROOT/entitlements.plist"
-PROFILE="${NOTARY_KEYCHAIN_PROFILE:-handbeam-notary}"
+PROFILE="${NOTARY_KEYCHAIN_PROFILE:-handbean-notary}"
 
 if [[ ! -d "$APP/Contents/MacOS" ]]; then
   echo "error: $APP is not an app bundle. Build it first with scripts/build.sh." >&2
@@ -111,7 +111,7 @@ codesign --force --sign "$CODESIGN_IDENTITY" \
 codesign --verify --deep --strict --verbose=2 "$APP"
 
 archive_dir="$(cd "$(dirname "$APP")" && pwd)"
-upload_zip="$(mktemp -t handbeam-notarize).zip"
+upload_zip="$(mktemp -t handbean-notarize).zip"
 trap 'rm -f "$list" "$upload_zip"' EXIT
 
 echo "Uploading for notarization..."
@@ -151,7 +151,7 @@ fi
 xcrun stapler validate "$APP"
 spctl --assess --type execute --verbose=4 "$APP"
 
-release_zip="$archive_dir/Handbeam-macos-arm64.zip"
+release_zip="$archive_dir/Handbean-macos-arm64.zip"
 checksum="$release_zip.sha256"
 rm -f "$release_zip" "$checksum"
 ditto -c -k --keepParent "$APP" "$release_zip"

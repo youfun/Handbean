@@ -1,6 +1,6 @@
 # macOS computer use v1
 
-The AppKit **Handbeam.app** owns Screen Recording, Accessibility and event-post
+The AppKit **Handbean.app** owns Screen Recording, Accessibility and event-post
 permissions. BEAM never obtains TCC through a CLI helper. Use the existing stable
 Developer ID signature for normal installation; ad-hoc rebuilds/`swift run` do
 not establish stable TCC identity. This change does not grant permissions,
@@ -35,19 +35,19 @@ PID/start time, CG window ID, title and bounds; moved, resized, closed, ambiguou
 or expired windows fail closed. Coordinates refer to returned image pixels, then
 map to global logical points (including Retina and negative monitor origins).
 Input verifies AX focus/window and rejects sheets, secure fields, terminals,
-Handbeam, system/security/password apps and known terminal-capable IDEs. Events
+Handbean, system/security/password apps and known terminal-capable IDEs. Events
 are PID-routed using public APIs and never posted to the global HID tap. macOS
 does not acknowledge delivery: results say `side_effect: unknown`, return another
 observation and forbid blind input retries. User movement/content can still race
 native calls; stay present. This is not a security sandbox for arbitrary programs.
 
-Stop from the native floating panel, Handbeam menu **Stop Computer Use**, runtime
+Stop from the native floating panel, Handbean menu **Stop Computer Use**, runtime
 Stop, EOF, or timeout invalidates the lease generation. Cancelled run IDs are
 retired beyond the maximum request deadline; a late request cannot reacquire it.
 No locked-screen operation or concurrent controllers.
 
 Tool images are limited to 5 MB each and two per result. Files are mode 0600 under
-`Host.data_dir()/.handbeam/tool-images/<conversation>/<uuid>.<ext>`; transcript,
+`Host.data_dir()/.handbean/tool-images/<conversation>/<uuid>.<ext>`; transcript,
 Session and history hold only bounded MIME/size/SHA256/opaque references. Provider
 encoding reads and validates those files at the wire boundary. Only the two most
 recent tool images are retained for model context, including restored history;
@@ -71,12 +71,12 @@ and launch it. This app has a text field, click counter and scroll area. It neve
 opens existing documents, launches tools or accesses user files:
 
 ```bash
-VERIFY_DIR="$(mktemp -d /tmp/handbeam-computer-verify.XXXXXX)"
+VERIFY_DIR="$(mktemp -d /tmp/handbean-computer-verify.XXXXXX)"
 chmod 700 "$VERIFY_DIR"
 bash desktop/macos/scripts/build_computer_fixture.sh "$VERIFY_DIR"
 open -n "$VERIFY_DIR/ComputerFixture.app" --args "$VERIFY_DIR/report.json"
 # Use the just-built executable or, preferably, a consistently signed app bundle.
-desktop/macos/.build/debug/Handbeam --computer-use-verification "$VERIFY_DIR"
+desktop/macos/.build/debug/Handbean --computer-use-verification "$VERIFY_DIR"
 ```
 
 Use a second terminal for commands below. The verification flag starts **only**
@@ -85,7 +85,7 @@ No BEAM or production storage starts. It writes launch credentials to mode-0600
 `bridge.json`; never publish that file. It cannot waive TCC or click Allow for you.
 If using the scratch build above, get the binary path with
 `swift build --scratch-path ../../.amp/in/computer-use-swift --show-bin-path` from
-`desktop/macos`, and use that `Handbeam` path instead.
+`desktop/macos`, and use that `Handbean` path instead.
 
 For a private App with repeatable TCC identity, package the compiled binary and
 the fixture directory using the helper below. Keep the same bundle path and
@@ -94,15 +94,15 @@ testing; it does not promise stable permissions. This does not install or launch
 the App or grant any permission:
 
 ```bash
-bash desktop/macos/scripts/build_computer_verification.sh /absolute/path/to/Handbeam "$VERIFY_DIR" 'YOUR_TEST_SIGNING_IDENTITY'
+bash desktop/macos/scripts/build_computer_verification.sh /absolute/path/to/Handbean "$VERIFY_DIR" 'YOUR_TEST_SIGNING_IDENTITY'
 open -n "$VERIFY_DIR/ComputerVerification.app"
 ```
 
-Only `com.youfun.handbeam.computerverification` reads the private Info.plist
-`HandbeamComputerVerificationDirectory`. It remains fixture-only after System
+Only `com.youfun.handbean.computerverification` reads the private Info.plist
+`HandbeanComputerVerificationDirectory`. It remains fixture-only after System
 Settings **Quit & Reopen**, without command-line flags. Missing/invalid private
 configuration terminates instead of starting the normal backend. The directory
-must exist, belong to you and be mode 700; normal Handbeam ignores this plist key.
+must exist, belong to you and be mode 700; normal Handbean ignores this plist key.
 
 ```bash
 python3 desktop/macos/scripts/computer_verify.py "$VERIFY_DIR" list
@@ -172,8 +172,8 @@ data or existing windows should be modified during acceptance.
 ## Linux shared-runtime checks (not macOS acceptance)
 
 ```bash
-AMP_ORB=0 mix test --include e2e test/handbeam/e2e/computer_use_test.exs
-AMP_ORB=0 mix test test/handbeam/tool/builtin/read_test.exs test/handbeam/tool/builtin/browser_test.exs
+AMP_ORB=0 mix test --include e2e test/handbean/e2e/computer_use_test.exs
+AMP_ORB=0 mix test test/handbean/tool/builtin/read_test.exs test/handbean/tool/builtin/browser_test.exs
 ```
 
 Use a separate process-level HOME for the test suite. FakeProvider asserts real

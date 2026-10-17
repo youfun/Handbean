@@ -4,13 +4,13 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key>
-    <string>com.example.handbeam_probe</string>
+    <string>com.example.handbean_probe</string>
     <key>CFBundleName</key>
-    <string>Handbeam</string>
+    <string>Handbean</string>
     <key>CFBundleDisplayName</key>
-    <string>Handbeam</string>
+    <string>Handbean</string>
     <key>CFBundleExecutable</key>
-    <string>HandbeamProbe</string>
+    <string>HandbeanProbe</string>
     <key>CFBundleIconName</key>
     <string>AppIcon</string>
     <key>CFBundlePackageType</key>
@@ -35,11 +35,11 @@
         <string>audio</string>
     </array>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Handbeam uses the microphone for audio recording.</string>
+    <string>Handbean uses the microphone for audio recording.</string>
     <key>NSPhotoLibraryUsageDescription</key>
-    <string>Handbeam attaches photos you pick to the current conversation.</string>
+    <string>Handbean attaches photos you pick to the current conversation.</string>
     <key>NSPhotoLibraryAddUsageDescription</key>
-    <string>Handbeam can save exported files to your photo library.</string>
+    <string>Handbean can save exported files to your photo library.</string>
     <key>UILaunchScreen</key>
     <dict/>
     <key>UIApplicationSceneManifest</key>

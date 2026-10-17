@@ -17,7 +17,7 @@ mix esbuild.install --if-missing
 mix assets.deploy
 mix release --overwrite
 
-$release = Join-Path $root "_build\prod\rel\handbeam"
+$release = Join-Path $root "_build\prod\rel\handbean"
 $expectedVersion = (Get-Content (Join-Path $root "version.properties") -Raw | ConvertFrom-StringData).version
 $actualVersion = ((Get-Content (Join-Path $release "releases\start_erl.data") -Raw).Trim() -split '\s+')[1]
 if ($actualVersion -ne $expectedVersion) {
@@ -25,13 +25,13 @@ if ($actualVersion -ne $expectedVersion) {
 }
 $startBat = Join-Path $release "start.bat"
 $startScript = Join-Path $release "start.ps1"
-$releaseLauncher = Join-Path $release "bin\handbeam.bat"
+$releaseLauncher = Join-Path $release "bin\handbean.bat"
 Copy-Item (Join-Path $root "scripts\start.bat") $startBat -Force
 Copy-Item (Join-Path $root "scripts\start.ps1") $startScript -Force
 
-$startInvocation = Select-String -Path $startScript -Pattern '^\s*&\s+"\$PSScriptRoot\\bin\\handbeam\.bat"\s+([A-Za-z0-9_]+)\s*$'
+$startInvocation = Select-String -Path $startScript -Pattern '^\s*&\s+"\$PSScriptRoot\\bin\\handbean\.bat"\s+([A-Za-z0-9_]+)\s*$'
 if (@($startInvocation).Count -ne 1) {
-    throw "start.ps1 must invoke bin\handbeam.bat with exactly one release command"
+    throw "start.ps1 must invoke bin\handbean.bat with exactly one release command"
 }
 $releaseCommand = $startInvocation.Matches[0].Groups[1].Value
 $commandDeclaration = 'if "%~1" == "' + $releaseCommand + '"'
@@ -39,7 +39,7 @@ if (-not (Select-String -Path $releaseLauncher -SimpleMatch $commandDeclaration 
     throw "start.ps1 calls unsupported release command '$releaseCommand'"
 }
 
-$archive = Join-Path $root "handbeam-web-$target.zip"
+$archive = Join-Path $root "handbean-web-$target.zip"
 $sum = "$archive.sha256"
 if (Test-Path $archive) { Remove-Item $archive -Force }
 if (Test-Path $sum) { Remove-Item $sum -Force }

@@ -1,6 +1,6 @@
 # Probe-only Hex 2.4.1 adapter. Public, read-only Hex downloads use the
 # already configured Req transport; do not start :inets in the mobile host.
-defmodule HandbeamMixProbe.HexApplication do
+defmodule HandbeanMixProbe.HexApplication do
   use Application
 
   def start(_, _) do
@@ -62,7 +62,7 @@ defmodule Hex.HTTP do
   end
 end
 
-defmodule HandbeamMixProbe.Shell do
+defmodule HandbeanMixProbe.Shell do
   def info(message), do: IO.puts(message)
   def error(message), do: IO.puts(:stderr, message)
   def prompt(_), do: raise("interactive prompts are not supported by the probe")

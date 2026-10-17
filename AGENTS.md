@@ -1,4 +1,4 @@
-# Handbeam
+# Handbean
 
 自主可控的通用 AI 助手，编码是其中一个主要场景，而不是产品的全部边界。
 仓库根目录是 Elixir/Phoenix 应用；`mobile/` 是复用共享 runtime 的
@@ -25,9 +25,9 @@ Android/iOS 宿主。
 - 修复缺陷时先复现问题并定位根因，遵循 Elixir/OTP 惯用法和现有架构边界；修复
   根因而非表面症状，并补充覆盖用户可见行为的回归测试。
 - 涉及 Agent 的探索流程、工具调用或结果呈现时，先调研同类成熟 Agent 项目的交互
-  与行为语义，再结合 Handbeam 的 owner、协议和安全模型实现；借鉴实践，不照搬其
+  与行为语义，再结合 Handbean 的 owner、协议和安全模型实现；借鉴实践，不照搬其
   架构或制造第二套状态。
-- Handbeam 自有业务代码通过 `Handbeam.JSON` 编解码 JSON；不要直接新增 `Jason`
+- Handbean 自有业务代码通过 `Handbean.JSON` 编解码 JSON；不要直接新增 `Jason`
   或 OTP `:json` 调用。第三方依赖内部使用 Jason 不在此约束范围。
 - 使用不可变数据、显式管道和 `{:ok, value} | {:error, reason}`。确实会 raise 的
   函数才使用 `!`。
@@ -46,7 +46,7 @@ mix test path/to/affected_test.exs
 mix test
 npm test
 mix test --include slow --only slow
-mix test --include e2e test/handbeam/e2e/fake_provider_e2e_test.exs
+mix test --include e2e test/handbean/e2e/fake_provider_e2e_test.exs
 mix test --include e2e test/feature
 ```
 
@@ -64,8 +64,8 @@ mix test --include e2e test/feature
 
 ## 专项流程
 
-- 发布版本时加载 `releasing-handbeam` 技能。
-- 修改或验收移动宿主时加载 `verifying-handbeam-mobile` 技能，并遵守
+- 发布版本时加载 `releasing-handbean` 技能。
+- 修改或验收移动宿主时加载 `verifying-handbean-mobile` 技能，并遵守
   `mobile/AGENTS.md`。
 - 持久化、跨客户端 runtime、安全和 macOS computer-use 的具体契约以 `docs/`
   中相应文档为准。

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import { FilePreview, FileTabs, FileImage } from "../js/hooks/file_preview.js";
 
-const dom = new JSDOM("<!doctype html><body></body>", { url: "https://handbeam.test" });
+const dom = new JSDOM("<!doctype html><body></body>", { url: "https://handbean.test" });
 const { document, MouseEvent, KeyboardEvent } = dom.window;
 
 function preview(source, { kind = "markdown", language = "markdown", path = "docs/readme.md", workspace = "ws-1" } = {}) {

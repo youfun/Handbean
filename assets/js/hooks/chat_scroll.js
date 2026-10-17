@@ -89,7 +89,7 @@ export const ChatScroll = {
       this.pinned = false;
       this._userIntent = true;
     };
-    this.el.addEventListener("handbeam:unpin-chat-scroll", this.onUnpin);
+    this.el.addEventListener("handbean:unpin-chat-scroll", this.onUnpin);
   },
 
   updated() {
@@ -111,7 +111,7 @@ export const ChatScroll = {
       this.el.removeEventListener("pointerdown", this.onUserIntent);
       this.el.removeEventListener("pointerup", this.onUserIntentEnd);
       this.el.removeEventListener("pointercancel", this.onUserIntentEnd);
-      this.el.removeEventListener("handbeam:unpin-chat-scroll", this.onUnpin);
+      this.el.removeEventListener("handbean:unpin-chat-scroll", this.onUnpin);
     }
   },
 

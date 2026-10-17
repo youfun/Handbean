@@ -1,20 +1,20 @@
-defmodule HandbeamWeb.Feature.UILocaleFeatureTest do
+defmodule HandbeanWeb.Feature.UILocaleFeatureTest do
   @moduledoc """
   Run: mix test --include e2e test/feature/ui_locale_feature_test.exs
 
   The language selected in Settings survives a fresh browser session with an
   English language header, overrides an old session, and can be changed back.
   """
-  use HandbeamWeb.FeatureCase, async: false
+  use HandbeanWeb.FeatureCase, async: false
 
-  alias Handbeam.TestSupport.E2EHarness
-  alias Handbeam.Settings.UI
+  alias Handbean.TestSupport.E2EHarness
+  alias Handbean.Settings.UI
 
   @moduletag :e2e
 
   test "language selection persists in SQLite and restores in a fresh session", %{conn: conn} do
     E2EHarness.isolate_home!("ui-locale")
-    {:ok, workspace} = Handbeam.WorkspaceStore.ensure_default!()
+    {:ok, workspace} = Handbean.WorkspaceStore.ensure_default!()
 
     path =
       "/settings?" <>
@@ -39,12 +39,12 @@ defmodule HandbeamWeb.Feature.UILocaleFeatureTest do
     |> assert_has("#ui-locale-zh_CN.active")
 
     assert UI.locale() == "zh_CN"
-    assert Handbeam.Repo.get!(UI, "ui.locale").value == "zh_CN"
+    assert Handbean.Repo.get!(UI, "ui.locale").value == "zh_CN"
 
     fresh_conn =
       Phoenix.ConnTest.build_conn()
       |> Map.put(:host, "localhost")
-      |> HandbeamWeb.ConnCase.authenticate()
+      |> HandbeanWeb.ConnCase.authenticate()
       |> Plug.Conn.put_req_header("accept-language", "en-US")
 
     fresh_conn

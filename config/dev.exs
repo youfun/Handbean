@@ -1,14 +1,14 @@
 import Config
 
-# Keep Mix dev off the packaged data root at ~/.handbeam.
+# Keep Mix dev off the packaged data root at ~/.handbean.
 # Conversations, models, and workspaces follow :host data_dir.
-config :handbeam, :host, %{
-  data_dir: Path.expand("~/.handbeam_dev")
+config :handbean, :host, %{
+  data_dir: Path.expand("~/.handbean_dev")
 }
 
 # Configure your database
-config :handbeam, Handbeam.Repo,
-  database: Path.expand("~/.handbeam_dev/handbeam_dev.db"),
+config :handbean, Handbean.Repo,
+  database: Path.expand("~/.handbean_dev/handbean_dev.db"),
   pool_size: 5,
   stacktrace: true,
   show_sensitive_data_on_connection_error: true
@@ -19,7 +19,7 @@ config :handbeam, Handbeam.Repo,
 # The watchers configuration can be used to run external
 # watchers to your application. For example, we can use it
 # to bundle .js and .css sources.
-config :handbeam, HandbeamWeb.Endpoint,
+config :handbean, HandbeanWeb.Endpoint,
   # Bind all interfaces in Amp orbs so portal health checks can reach $PORT.
   # Keep loopback-only on a normal local machine.
   # runtime.exs overrides this for every env. Unset PORT listens on 5002.
@@ -36,7 +36,7 @@ config :handbeam, HandbeamWeb.Endpoint,
     System.get_env("SECRET_KEY_BASE") ||
       "4q06/NhjIcyS+rVbrFZwpEUfBdrXzc70mUo4pQwFco7LB/q/QE9B6xkPp0hTMlfO",
   watchers: [
-    esbuild: {Esbuild, :install_and_run, [:handbeam, ~w(--watch --sourcemap=inline)]}
+    esbuild: {Esbuild, :install_and_run, [:handbean, ~w(--watch --sourcemap=inline)]}
   ]
 
 # ## SSL Support
@@ -63,20 +63,20 @@ config :handbeam, HandbeamWeb.Endpoint,
 # different ports.
 
 # Reload browser tabs when matching files change.
-config :handbeam, HandbeamWeb.Endpoint,
+config :handbean, HandbeanWeb.Endpoint,
   live_reload: [
     web_console_logger: true,
     patterns: [
       # Static assets, except user uploads
       ~r"priv/static/(?!uploads/).*\.(js|css|png|jpeg|jpg|gif|svg)$"E,
       # Router, Controllers, LiveViews and LiveComponents
-      ~r"lib/handbeam_web/router\.ex$"E,
-      ~r"lib/handbeam_web/(controllers|live|components)/.*\.(ex|heex)$"E
+      ~r"lib/handbean_web/router\.ex$"E,
+      ~r"lib/handbean_web/(controllers|live|components)/.*\.(ex|heex)$"E
     ]
   ]
 
 # Enable dev routes for dashboard and mailbox
-config :handbeam, dev_routes: true
+config :handbean, dev_routes: true
 
 # Do not include metadata nor timestamps in development logs
 config :logger, :default_formatter, format: "[$level] $message\n"
@@ -98,7 +98,7 @@ config :phoenix_live_view,
 
 # Observational Memory — automatic context capture + future LLM processing
 # Set enabled: true to activate (P0: zero-LLM middleware observations)
-config :handbeam, :observational_memory,
+config :handbean, :observational_memory,
   enabled: false,
 
   # P0 — zero-LLM automatic observations via middleware hooks

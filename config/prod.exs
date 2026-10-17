@@ -1,6 +1,6 @@
 import Config
 
-config :handbeam, HandbeamWeb.Endpoint,
+config :handbean, HandbeanWeb.Endpoint,
   check_origin: true,
   force_ssl: [
     rewrite_on: [:x_forwarded_proto],

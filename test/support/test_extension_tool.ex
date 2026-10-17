@@ -1,6 +1,6 @@
 defmodule TestExtensionTool do
   @moduledoc false
-  @behaviour Handbeam.Agent.Tool
+  @behaviour Handbean.Agent.Tool
 
   @impl true
   def name, do: "ext__test__ping"

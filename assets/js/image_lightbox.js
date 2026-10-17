@@ -5,8 +5,8 @@ let index = 0;
 let returnFocus = null;
 
 export function installImageLightbox() {
-  if (window.__handbeamImageLightbox) return;
-  window.__handbeamImageLightbox = true;
+  if (window.__handbeanImageLightbox) return;
+  window.__handbeanImageLightbox = true;
   document.addEventListener("click", onClick);
   document.addEventListener("keydown", onKey);
 }

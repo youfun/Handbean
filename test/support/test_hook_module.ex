@@ -1,8 +1,8 @@
 defmodule TestHookModule do
   @moduledoc false
-  @behaviour Handbeam.Extension.Hook
+  @behaviour Handbean.Extension.Hook
 
-  alias Handbeam.Extension.Event
+  alias Handbean.Extension.Event
 
   @impl true
   def handle_event(%Event{}, _ctx) do

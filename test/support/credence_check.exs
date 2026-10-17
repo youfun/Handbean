@@ -1,5 +1,5 @@
 changed_lines =
-  case System.get_env("HANDBEAM_CREDENCE_DIFF") do
+  case System.get_env("HANDBEAN_CREDENCE_DIFF") do
     nil ->
       nil
 

@@ -13,7 +13,7 @@ rpc = fn module, function, args ->
 end
 
 unless rpc.(System, :version, []) == System.version(), do: raise("Elixir versions differ")
-%{active: 0} = rpc.(DynamicSupervisor, :count_children, [Handbeam.AgentRunSupervisor])
+%{active: 0} = rpc.(DynamicSupervisor, :count_children, [Handbean.AgentRunSupervisor])
 data = rpc.(System, :fetch_env!, ["MOB_DATA_DIR"])
 toolchain = Path.join(data, "workspace/mix_workspace_probe_v2/toolchain")
 resume = "resume" in options

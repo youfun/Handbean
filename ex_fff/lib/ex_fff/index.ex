@@ -835,7 +835,7 @@ defmodule ExFff.Index do
   end
 
   defp frecency_path(root, nil) do
-    frecency_path(root, Path.join([System.user_home!(), ".handbeam", "fff"]))
+    frecency_path(root, Path.join([System.user_home!(), ".handbean", "fff"]))
   end
 
   defp frecency_path(root, dir) do

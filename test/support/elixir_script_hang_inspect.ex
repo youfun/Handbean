@@ -1,12 +1,12 @@
-defmodule Handbeam.Tool.Builtin.ElixirScriptHangInspect do
+defmodule Handbean.Tool.Builtin.ElixirScriptHangInspect do
   @moduledoc false
   defstruct []
 end
 
-defimpl Inspect, for: Handbeam.Tool.Builtin.ElixirScriptHangInspect do
+defimpl Inspect, for: Handbean.Tool.Builtin.ElixirScriptHangInspect do
   def inspect(_value, _opts) do
     receive do
-      :never -> "%Handbeam.Tool.Builtin.ElixirScriptHangInspect{}"
+      :never -> "%Handbean.Tool.Builtin.ElixirScriptHangInspect{}"
     end
   end
 end

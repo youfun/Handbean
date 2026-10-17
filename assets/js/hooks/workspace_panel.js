@@ -5,7 +5,7 @@ import { copyText } from "./copy_text.js";
  * and own the workspace-tree context menu.
  */
 
-const STORAGE_KEY = "handbeam:right_panel_collapsed";
+const STORAGE_KEY = "handbean:right_panel_collapsed";
 const SCROLL_TOLERANCE = 1;
 const LINE_SCROLL_PIXELS = 16;
 const FALLBACK_PAGE_HEIGHT = 400;

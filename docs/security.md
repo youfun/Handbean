@@ -1,11 +1,11 @@
 # Deployment security
 
-Handbeam can read and modify workspace files and execute tools. Treat its web
+Handbean can read and modify workspace files and execute tools. Treat its web
 endpoint as an administrative interface, not as a public application.
 
 ## Access modes
 
-`HANDBEAM_ACCESS_MODE` is an explicit deployment choice:
+`HANDBEAN_ACCESS_MODE` is an explicit deployment choice:
 
 * `local` (the default on loopback) preserves desktop/native-host operation.
   It performs no password authentication, but accepts only a loopback network
@@ -13,26 +13,26 @@ endpoint as an administrative interface, not as a public application.
   only when the listener is loopback-bound and not reachable through a proxy.
 * `password` protects HTTP routes, controllers, LiveView WebSocket, and
   LiveView long-poll connections with single-user HTTP Basic authentication.
-  Set `HANDBEAM_ACCESS_USERNAME` (default `handbeam`) and a long random
-  `HANDBEAM_ACCESS_PASSWORD`.
+  Set `HANDBEAN_ACCESS_USERNAME` (default `handbean`) and a long random
+  `HANDBEAN_ACCESS_PASSWORD`.
 
 Example:
 
 ```sh
-HANDBEAM_ACCESS_MODE=password \
-HANDBEAM_ACCESS_USERNAME=handbeam \
-HANDBEAM_ACCESS_PASSWORD="$(openssl rand -base64 32)" \
-PHX_SERVER=true bin/handbeam start
+HANDBEAN_ACCESS_MODE=password \
+HANDBEAN_ACCESS_USERNAME=handbean \
+HANDBEAN_ACCESS_PASSWORD="$(openssl rand -base64 32)" \
+PHX_SERVER=true bin/handbean start
 ```
 
-`AMP_ORB=1` binds to `0.0.0.0`, therefore Handbeam automatically defaults to
+`AMP_ORB=1` binds to `0.0.0.0`, therefore Handbean automatically defaults to
 `password` mode and refuses to start without a password. A non-loopback bind
 cannot be combined with `local` mode.
 
 ## Reverse proxies and TLS
 
-Set `HANDBEAM_ACCESS_MODE=password` explicitly when a reverse proxy exposes a
-loopback-bound Handbeam. Handbeam deliberately does **not** trust
+Set `HANDBEAN_ACCESS_MODE=password` explicitly when a reverse proxy exposes a
+loopback-bound Handbean. Handbean deliberately does **not** trust
 `X-Forwarded-For`, `Forwarded`, or similar headers to decide that a request is
 local; those headers can be forged unless a separately configured proxy trust
 boundary validates them. The listener being loopback-bound does not make a
@@ -62,7 +62,7 @@ credential-version marker. Rotate it if it may have leaked.
 
 Mint is locked to 1.10.1. Its release changelog identifies CVE-2026-82672
 (GHSA-rj5m-69wp-cxq9) as fixed by validating HTTP/1 chunk extensions.
-Handbeam's Req/Finch-backed outbound clients consume provider and other HTTP
+Handbean's Req/Finch-backed outbound clients consume provider and other HTTP
 responses, so treating this client-side advisory as irrelevant merely because
 the workbench is local would be incorrect. The reported response-smuggling
 condition involves a malicious upstream and a stricter intermediary framing a

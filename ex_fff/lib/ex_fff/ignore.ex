@@ -14,7 +14,7 @@ defmodule ExFff.Ignore do
   @spec extend(t(), String.t(), String.t()) :: t()
   def extend(%__MODULE__{} = ignore, directory, relative_base) do
     rules =
-      [".gitignore", ".handbeamignore"]
+      [".gitignore", ".handbeanignore"]
       |> Enum.flat_map(fn name -> read_rules(Path.join(directory, name), relative_base) end)
 
     %{

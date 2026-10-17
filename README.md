@@ -1,4 +1,4 @@
-# Handbeam
+# Handbean
 
 [English](README.md) · [中文](README.zh.md)
 
@@ -28,7 +28,7 @@ rules. Android / iOS native chat still displays code, without inline previews.
 
 Native Android chat interface, captured on a physical device:
 
-<img src="docs/screenshots/android-chat-en.png" alt="Handbeam Android chat screen in English" width="360">
+<img src="docs/screenshots/android-chat-en.png" alt="Handbean Android chat screen in English" width="360">
 
 ### On-device Elixir projects (experimental)
 
@@ -44,11 +44,11 @@ Prebuilt packages with a bundled OTP runtime are available on GitHub Releases un
 
 | Platform / Architecture | Package | How to run |
 |---|---|---|
-| Linux (x86_64) | `handbeam-web-linux-x86_64.tar.gz` | Run `./start.sh` |
-| macOS (Apple Silicon) | `handbeam-web-macos-arm64.tar.gz` | Run `./start.sh` |
-| macOS (Native WebKit App) | `Handbeam-macos-arm64.zip` | Launch `Handbeam.app` (native WebKit shell, zero Electron overhead) |
-| Windows (x86_64) | `handbeam-web-windows-amd64.zip` | Run `start.bat` |
-| Windows (with toolchain, experimental) | `handbeam-web-windows-amd64-toolchain.zip` | Prepend bundled Elixir, Mix, Hex, Rebar3, and MinGit to process `PATH` |
+| Linux (x86_64) | `handbean-web-linux-x86_64.tar.gz` | Run `./start.sh` |
+| macOS (Apple Silicon) | `handbean-web-macos-arm64.tar.gz` | Run `./start.sh` |
+| macOS (Native WebKit App) | `Handbean-macos-arm64.zip` | Launch `Handbean.app` (native WebKit shell, zero Electron overhead) |
+| Windows (x86_64) | `handbean-web-windows-amd64.zip` | Run `start.bat` |
+| Windows (with toolchain, experimental) | `handbean-web-windows-amd64-toolchain.zip` | Prepend bundled Elixir, Mix, Hex, Rebar3, and MinGit to process `PATH` |
 
 **Notes**:
 - **Default address**: Standalone release packages serve on `http://localhost:5008`.
@@ -97,10 +97,10 @@ mix test --exclude slow --exclude e2e
 Inspect your resolved runtime configuration safely without booting the full server, initializing file stores, resolving credentials, or connecting to MCP servers:
 
 ```bash
-mix handbeam.inspect_config --workspace /path/to/workspace
+mix handbean.inspect_config --workspace /path/to/workspace
 ```
 
-Within a running host session, call `Handbeam.ConfigInspection.report(workspace: path)`.
+Within a running host session, call `Handbean.ConfigInspection.report(workspace: path)`.
 
 **Key features**:
 - **Layered decision breakdown**: Separates Host seed capabilities, registered tool membership, passive dependency checks, and runtime authorizations.
@@ -117,9 +117,9 @@ If you have a ChatGPT subscription with Codex access, you can sign in directly w
 3. Use the **Refresh subscription models** button to update the model catalog.
 
 **Details**:
-- No Codex CLI required. Inference connects directly to the Codex Responses backend; Handbeam handles tool execution and permission prompts.
+- No Codex CLI required. Inference connects directly to the Codex Responses backend; Handbean handles tool execution and permission prompts.
 - Uses your ChatGPT Codex subscription allowance, not Platform API credits. Available models and rate limits are dictated by your account plan.
-- Auth credentials are stored locally in `~/.handbeam/auth.json` (mode `0600`). Never share or commit this file.
+- Auth credentials are stored locally in `~/.handbean/auth.json` (mode `0600`). Never share or commit this file.
 - The native mobile settings UI does not currently support device login.
 
 ## Private Git repository authentication
@@ -129,7 +129,7 @@ The `git` tool takes a named credential reference (`credential`), never raw toke
 Configure credentials in the trusted host at startup rather than in workspace settings or chat messages. For example, in host runtime configuration:
 
 ```elixir
-config :handbeam, :git_credentials, %{
+config :handbean, :git_credentials, %{
   "project-origin" => [
     endpoint: "https://github.com",
     password: System.fetch_env!("PROJECT_GIT_TOKEN")
@@ -162,10 +162,10 @@ bash script/pack_android_apks.sh --abi arm64-v8a
 mix ios.native
 ```
 
-See [`mobile/README.md`](mobile/README.md) for full instructions. Use `--abi x86_64` on ChromeOS. The iOS test app Bundle ID is `com.example.handbeam_probe`.
+See [`mobile/README.md`](mobile/README.md) for full instructions. Use `--abi x86_64` on ChromeOS. The iOS test app Bundle ID is `com.example.handbean_probe`.
 
 ## License
 
 Source and non-iOS builds are licensed under [FSL-1.1-ALv2](LICENSE). Copyright (C) 2026 youfun.
 
-iOS builds that statically link [ish-arm64](https://github.com/youfun/ish-arm64) are licensed under [GPLv3](LICENSE.GPLv3). The corresponding source for that binary, including the Handbeam code linked into it, is offered under GPLv3. See [LICENSE.iOS](LICENSE.iOS).
+iOS builds that statically link [ish-arm64](https://github.com/youfun/ish-arm64) are licensed under [GPLv3](LICENSE.GPLv3). The corresponding source for that binary, including the Handbean code linked into it, is offered under GPLv3. See [LICENSE.iOS](LICENSE.iOS).

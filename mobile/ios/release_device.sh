@@ -151,7 +151,7 @@ echo "=== Compiling native sources (release: -DMOB_RELEASE, no EPMD) ==="
 BUILD_DIR=$(mktemp -d)
 SWIFT_BRIDGING="$MOB_DIR/ios/MobDemo-Bridging-Header.h"
 # Project overlay: stock Mob drops `markdown`. mix mob.release rewrites this
-# script; HandbeamProbe.IosMarkdownRelease splices the block back in first.
+# script; HandbeanProbe.IosMarkdownRelease splices the block back in first.
 bash ios/patch_markdown_host.sh "$MOB_DIR/ios" \
     "$BUILD_DIR/MobNode.h" \
     "$BUILD_DIR/MobNode.m" \
@@ -169,7 +169,7 @@ for src in "$MOB_DIR"/ios/*.swift; do
         *) SWIFT_SOURCES+=("$src") ;;
     esac
 done
-SWIFT_SOURCES+=("ios/HandbeamMarkdown.swift")
+SWIFT_SOURCES+=("ios/HandbeanMarkdown.swift")
 if [ -n "${MOB_IOS_PLUGIN_BOOTSTRAP:-}" ]; then
     SWIFT_SOURCES+=("$MOB_IOS_PLUGIN_BOOTSTRAP")
 fi
@@ -288,8 +288,8 @@ if [ -n "${HANDREAM_ISH_LIBS:-}" ]; then
     ISH_INCLUDE="${HANDREAM_ISH_INCLUDE:?HANDREAM_ISH_INCLUDE is required with HANDREAM_ISH_LIBS}"
     [ -f "$ISH_INCLUDE/kernel/init.h" ] || { echo "missing $ISH_INCLUDE/kernel/init.h" >&2; exit 1; }
     $CC $IFLAGS -DHANDREAM_IOS_GUEST -I "$ISH_INCLUDE" \
-        -c c_src/handbeam_ios_guest.c -o "$BUILD_DIR/handbeam_ios_guest.o"
-    ISH_GUEST_FLAGS="$BUILD_DIR/handbeam_ios_guest.o"
+        -c c_src/handbean_ios_guest.c -o "$BUILD_DIR/handbean_ios_guest.o"
+    ISH_GUEST_FLAGS="$BUILD_DIR/handbean_ios_guest.o"
     old_ifs=$IFS
     IFS=,
     for lib in $HANDREAM_ISH_LIBS; do

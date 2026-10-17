@@ -1,4 +1,4 @@
-# Handbeam
+# Handbean
 
 [English](README.md) · [中文](README.zh.md)
 
@@ -26,7 +26,7 @@ Android / iOS 原生聊天目前仍显示代码，不支持此内联预览。
 
 Android 原生界面真机截图：
 
-<img src="docs/screenshots/android-chat-en.png" alt="Handbeam Android 聊天界面" width="360">
+<img src="docs/screenshots/android-chat-en.png" alt="Handbean Android 聊天界面" width="360">
 
 ### 手机端 Elixir 项目编程（实验性）
 
@@ -42,11 +42,11 @@ GitHub Releases 的 `web-latest` 及各版本标签提供了开箱即用的自�
 
 | 平台 / 架构 | 包名 | 说明 |
 |-------------|------|------|
-| Linux (x86_64) | `handbeam-web-linux-x86_64.tar.gz` | 执行 `./start.sh` 启动 |
-| macOS (Apple Silicon) | `handbeam-web-macos-arm64.tar.gz` | 执行 `./start.sh` 启动 |
-| macOS (Apple Silicon 原生应用) | `Handbeam-macos-arm64.zip` | 解压后直接打开 `Handbeam.app`（基于系统 WebKit，无 Electron 开销） |
-| Windows (x86_64) | `handbeam-web-windows-amd64.zip` | 执行 `start.bat` 启动 |
-| Windows (带开发工具链，实验性) | `handbeam-web-windows-amd64-toolchain.zip` | 启动时临时在当前进程 PATH 注入 Elixir、Mix、Hex、Rebar3 和 MinGit（不含 C 编译器） |
+| Linux (x86_64) | `handbean-web-linux-x86_64.tar.gz` | 执行 `./start.sh` 启动 |
+| macOS (Apple Silicon) | `handbean-web-macos-arm64.tar.gz` | 执行 `./start.sh` 启动 |
+| macOS (Apple Silicon 原生应用) | `Handbean-macos-arm64.zip` | 解压后直接打开 `Handbean.app`（基于系统 WebKit，无 Electron 开销） |
+| Windows (x86_64) | `handbean-web-windows-amd64.zip` | 执行 `start.bat` 启动 |
+| Windows (带开发工具链，实验性) | `handbean-web-windows-amd64-toolchain.zip` | 启动时临时在当前进程 PATH 注入 Elixir、Mix、Hex、Rebar3 和 MinGit（不含 C 编译器） |
 
 **使用说明**：
 - **访问地址**：解压启动后，默认服务地址为 `http://localhost:5008`。
@@ -95,10 +95,10 @@ mix test --exclude slow --exclude e2e
 在不启动完整服务、不初始化存储目录、不暴露真实凭据且不连接 MCP 的前提下，你可以通过诊断工具导出当前环境的配置解析报告：
 
 ```bash
-mix handbeam.inspect_config --workspace /path/to/workspace
+mix handbean.inspect_config --workspace /path/to/workspace
 ```
 
-若在运行中的宿主内部调用，可使用 `Handbeam.ConfigInspection.report(workspace: path)`。
+若在运行中的宿主内部调用，可使用 `Handbean.ConfigInspection.report(workspace: path)`。
 
 **报告特点与覆盖规则**：
 - **分层决策解析**：清晰区分宿主初始能力（Host seed）、工具注册表状态、依赖静态检查，以及未声明的运行时权限。
@@ -115,9 +115,9 @@ mix handbeam.inspect_config --workspace /path/to/workspace
 3. 可通过“刷新订阅模型”按钮同步最新的可用模型目录。
 
 **注意事项**：
-- 无需在本地安装 Codex CLI，推理直接走 Codex Responses 协议；工具执行与权限审批仍由 Handbeam 控制。
+- 无需在本地安装 Codex CLI，推理直接走 Codex Responses 协议；工具执行与权限审批仍由 Handbean 控制。
 - 该功能扣除的是 ChatGPT 订阅包含的使用额度，而非 OpenAI Platform API 预充值余额；可用模型及调用额度受 OpenAI 账号订阅套餐限制。
-- 认证凭证安全保存在本地 `~/.handbeam/auth.json`（权限为 0600），请勿共享或将该文件提交至版本库。
+- 认证凭证安全保存在本地 `~/.handbean/auth.json`（权限为 0600），请勿共享或将该文件提交至版本库。
 - 移动端设置界面暂未接入此登录流程。
 
 ## Git 私有仓库认证
@@ -127,7 +127,7 @@ mix handbeam.inspect_config --workspace /path/to/workspace
 请在宿主启动配置中声明凭据，不要保存在工作区或对话上下文中。例如在宿主运行时配置中：
 
 ```elixir
-config :handbeam, :git_credentials, %{
+config :handbean, :git_credentials, %{
   "project-origin" => [
     endpoint: "https://github.com",
     password: System.fetch_env!("PROJECT_GIT_TOKEN")
@@ -160,10 +160,10 @@ bash script/pack_android_apks.sh --abi arm64-v8a
 mix ios.native
 ```
 
-详细指南请参阅 [`mobile/README.md`](mobile/README.md)。ChromeOS 设备构建参数请使用 `--abi x86_64`。iOS 测试应用 Bundle ID 为 `com.example.handbeam_probe`。
+详细指南请参阅 [`mobile/README.md`](mobile/README.md)。ChromeOS 设备构建参数请使用 `--abi x86_64`。iOS 测试应用 Bundle ID 为 `com.example.handbean_probe`。
 
 ## 许可协议
 
 源码以及非 iOS 发行采用 [FSL-1.1-ALv2](LICENSE)（Functional Source License 1.1, Apache-2.0 Future License）。Copyright (C) 2026 youfun。
 
-静态链接 [ish-arm64](https://github.com/youfun/ish-arm64) 的 iOS 发行采用 [GPLv3](LICENSE.GPLv3)。该二进制的对应源码，包括链入其中的 Handbeam 代码，按 GPLv3 提供。见 [LICENSE.iOS](LICENSE.iOS)。
+静态链接 [ish-arm64](https://github.com/youfun/ish-arm64) 的 iOS 发行采用 [GPLv3](LICENSE.GPLv3)。该二进制的对应源码，包括链入其中的 Handbean 代码，按 GPLv3 提供。见 [LICENSE.iOS](LICENSE.iOS)。

@@ -1,4 +1,4 @@
-const OPEN_EVENT = "handbeam:model-picker-open";
+const OPEN_EVENT = "handbean:model-picker-open";
 
 function normalize(value) {
   return String(value || "").trim().toLocaleLowerCase();

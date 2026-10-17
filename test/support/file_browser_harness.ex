@@ -1,8 +1,8 @@
-defmodule HandbeamWeb.FileBrowserHarness do
+defmodule HandbeanWeb.FileBrowserHarness do
   @moduledoc false
-  use HandbeamWeb, :live_view
+  use HandbeanWeb, :live_view
 
-  alias HandbeamWeb.FileBrowserComponent
+  alias HandbeanWeb.FileBrowserComponent
 
   @impl true
   def mount(_params, session, socket) do

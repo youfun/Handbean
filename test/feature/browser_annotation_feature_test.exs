@@ -1,4 +1,4 @@
-defmodule HandbeamWeb.Feature.BrowserAnnotationFeatureTest do
+defmodule HandbeanWeb.Feature.BrowserAnnotationFeatureTest do
   @moduledoc """
   Open the workspace browser, mark an element, and append the annotation to
   the current composer. The browser subprocess is a fake runner.
@@ -6,32 +6,32 @@ defmodule HandbeamWeb.Feature.BrowserAnnotationFeatureTest do
   Run: mix test --include e2e test/feature/browser_annotation_feature_test.exs
   """
 
-  use HandbeamWeb.FeatureCase, async: false
+  use HandbeanWeb.FeatureCase, async: false
 
-  alias Handbeam.ConversationStore
-  alias Handbeam.TestSupport.E2EHarness
+  alias Handbean.ConversationStore
+  alias Handbean.TestSupport.E2EHarness
 
   @moduletag :e2e
 
   test "send to composer appends the annotation and its screenshot", %{conn: conn} do
     %{workspace: workspace} = E2EHarness.isolate_home!("browser-annotation")
-    previous = Application.get_env(:handbeam, :user_browser_cli)
+    previous = Application.get_env(:handbean, :user_browser_cli)
 
-    Application.put_env(:handbeam, :user_browser_cli,
+    Application.put_env(:handbean, :user_browser_cli,
       runner: runner(),
       find_executable: fn "agent-browser" -> "/usr/local/bin/agent-browser" end
     )
 
     ExUnit.Callbacks.on_exit(fn ->
       if previous do
-        Application.put_env(:handbeam, :user_browser_cli, previous)
+        Application.put_env(:handbean, :user_browser_cli, previous)
       else
-        Application.delete_env(:handbeam, :user_browser_cli)
+        Application.delete_env(:handbean, :user_browser_cli)
       end
     end)
 
     E2EHarness.use_fake_provider!({:script, fn _messages, _tools -> "ok" end})
-    {:ok, ws} = Handbeam.WorkspaceStore.add(workspace, name: "Browser fixture")
+    {:ok, ws} = Handbean.WorkspaceStore.add(workspace, name: "Browser fixture")
     {:ok, conversation} = ConversationStore.create(ws["id"], title: "Browser annotation")
     id = conversation["id"]
     ExUnit.Callbacks.on_exit(fn -> E2EHarness.cancel!(id) end)
@@ -73,7 +73,7 @@ defmodule HandbeamWeb.Feature.BrowserAnnotationFeatureTest do
         Enum.any?(argv, &String.contains?(&1, "elementFromPoint")) ->
           ok(%{
             "result" =>
-              Handbeam.JSON.encode!(%{
+              Handbean.JSON.encode!(%{
                 "selector" => "#cta",
                 "tag" => "button",
                 "text" => "Click me",
@@ -95,7 +95,7 @@ defmodule HandbeamWeb.Feature.BrowserAnnotationFeatureTest do
   defp ok(data) do
     {:ok,
      %{
-       stdout: Handbeam.JSON.encode!(%{"success" => true, "data" => data}),
+       stdout: Handbean.JSON.encode!(%{"success" => true, "data" => data}),
        stderr: "",
        exit_code: 0,
        timed_out: false

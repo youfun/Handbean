@@ -1,4 +1,4 @@
-defmodule HandbeamWeb.Feature.InlineWidgetFeatureTest do
+defmodule HandbeanWeb.Feature.InlineWidgetFeatureTest do
   @moduledoc """
   Send → Runner → streamed assistant Markdown → durable transcript → reopen.
   PhoenixTest checks the LiveView contract; assets/test/inline_html_feature_test.mjs
@@ -7,11 +7,11 @@ defmodule HandbeamWeb.Feature.InlineWidgetFeatureTest do
   Run: mix test --include e2e test/feature/inline_widget_feature_test.exs
   """
 
-  use HandbeamWeb.FeatureCase, async: false
+  use HandbeanWeb.FeatureCase, async: false
 
-  alias Handbeam.ConversationStore
-  alias Handbeam.PubSub.Session
-  alias Handbeam.TestSupport.E2EHarness
+  alias Handbean.ConversationStore
+  alias Handbean.PubSub.Session
+  alias Handbean.TestSupport.E2EHarness
 
   @moduletag :e2e
 
@@ -29,7 +29,7 @@ defmodule HandbeamWeb.Feature.InlineWidgetFeatureTest do
     """
 
     E2EHarness.use_fake_provider!({:script, fn _messages, _tools -> reply end})
-    {:ok, ws} = Handbeam.WorkspaceStore.add(workspace, name: "Widget fixture")
+    {:ok, ws} = Handbean.WorkspaceStore.add(workspace, name: "Widget fixture")
     {:ok, conversation} = ConversationStore.create(ws["id"], title: "Inline widget")
     id = conversation["id"]
     :ok = Session.subscribe(id)

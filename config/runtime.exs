@@ -1,37 +1,37 @@
 import Config
 
 if config_env() != :test and match?({:unix, :darwin}, :os.type()) and
-     System.get_env("HANDBEAM_NOTIFY_PORT") do
-  config :handbeam,
+     System.get_env("HANDBEAN_NOTIFY_PORT") do
+  config :handbean,
          :macos_notify_port,
-         String.to_integer(System.fetch_env!("HANDBEAM_NOTIFY_PORT"))
+         String.to_integer(System.fetch_env!("HANDBEAN_NOTIFY_PORT"))
 
-  config :handbeam, :macos_notify_token, System.fetch_env!("HANDBEAM_NOTIFY_TOKEN")
-  config :handbeam, :runtime_notify_adapter, Handbeam.Runtime.MacNotify
+  config :handbean, :macos_notify_token, System.fetch_env!("HANDBEAN_NOTIFY_TOKEN")
+  config :handbean, :runtime_notify_adapter, Handbean.Runtime.MacNotify
 end
 
 if config_env() != :test and match?({:unix, :darwin}, :os.type()) and
-     System.get_env("HANDBEAM_COMPUTER_PORT") do
-  config :handbeam,
+     System.get_env("HANDBEAN_COMPUTER_PORT") do
+  config :handbean,
          :computer_use_port,
-         String.to_integer(System.fetch_env!("HANDBEAM_COMPUTER_PORT"))
+         String.to_integer(System.fetch_env!("HANDBEAN_COMPUTER_PORT"))
 
-  config :handbeam, :computer_use_token, System.fetch_env!("HANDBEAM_COMPUTER_TOKEN")
+  config :handbean, :computer_use_token, System.fetch_env!("HANDBEAN_COMPUTER_TOKEN")
 
-  # Dev already sets data_dir to ~/.handbeam_dev. Replacing :host here would
+  # Dev already sets data_dir to ~/.handbean_dev. Replacing :host here would
   # drop it and fall back to $HOME, which is the packaged app's data root.
   host =
-    :handbeam
+    :handbean
     |> Application.get_env(:host, %{})
-    |> Map.put(:computer_use_backend, Handbeam.ComputerUse.Native)
+    |> Map.put(:computer_use_backend, Handbean.ComputerUse.Native)
 
   host =
-    case System.get_env("HANDBEAM_DATA_DIR") do
+    case System.get_env("HANDBEAN_DATA_DIR") do
       dir when is_binary(dir) and dir != "" -> Map.put(host, :data_dir, dir)
       _ -> host
     end
 
-  config :handbeam, :host, host
+  config :handbean, :host, host
 end
 
 # Desktop launchers declare the file-manager integration explicitly. Do not
@@ -40,20 +40,20 @@ file_manager_backend =
   if config_env() == :test do
     nil
   else
-    case System.get_env("HANDBEAM_FILE_MANAGER") do
+    case System.get_env("HANDBEAN_FILE_MANAGER") do
       value when value in [nil, ""] -> nil
-      "macos" -> Handbeam.Platform.FileManager.MacOS
-      value -> raise "HANDBEAM_FILE_MANAGER has unsupported backend: #{inspect(value)}"
+      "macos" -> Handbean.Platform.FileManager.MacOS
+      value -> raise "HANDBEAN_FILE_MANAGER has unsupported backend: #{inspect(value)}"
     end
   end
 
 if file_manager_backend do
   host =
-    :handbeam
+    :handbean
     |> Application.get_env(:host, %{})
     |> Map.put_new(:file_manager_backend, file_manager_backend)
 
-  config :handbeam, :host, host
+  config :handbean, :host, host
 end
 
 # config/runtime.exs is executed for all environments, including
@@ -68,7 +68,7 @@ end
 # If you use `mix release`, you need to explicitly enable the server
 # by passing the PHX_SERVER=true when you start it:
 #
-#     PHX_SERVER=true bin/handbeam start
+#     PHX_SERVER=true bin/handbean start
 #
 # Alternatively, you can use `mix phx.gen.release` to generate a `bin/server`
 # script that automatically sets the env var above.
@@ -84,44 +84,44 @@ http_opts =
 
 if config_env() != :test do
   if System.get_env("PHX_SERVER") do
-    config :handbeam, HandbeamWeb.Endpoint, server: true
+    config :handbean, HandbeanWeb.Endpoint, server: true
   end
 
-  config :handbeam, HandbeamWeb.Endpoint, http: http_opts
+  config :handbean, HandbeanWeb.Endpoint, http: http_opts
 end
 
 access_mode =
-  case System.get_env("HANDBEAM_ACCESS_MODE", if(public_bind?, do: "password", else: "local")) do
+  case System.get_env("HANDBEAN_ACCESS_MODE", if(public_bind?, do: "password", else: "local")) do
     "local" -> :local
     "password" -> :password
-    value -> raise "HANDBEAM_ACCESS_MODE must be 'local' or 'password', got: #{inspect(value)}"
+    value -> raise "HANDBEAN_ACCESS_MODE must be 'local' or 'password', got: #{inspect(value)}"
   end
 
-access_username = System.get_env("HANDBEAM_ACCESS_USERNAME", "handbeam")
-access_password = System.get_env("HANDBEAM_ACCESS_PASSWORD")
+access_username = System.get_env("HANDBEAN_ACCESS_USERNAME", "handbean")
+access_password = System.get_env("HANDBEAN_ACCESS_PASSWORD")
 
 if public_bind? and access_mode != :password do
   raise """
   Refusing a non-loopback bind without authentication. AMP_ORB=1 requires
-  HANDBEAM_ACCESS_MODE=password and HANDBEAM_ACCESS_PASSWORD.
+  HANDBEAN_ACCESS_MODE=password and HANDBEAN_ACCESS_PASSWORD.
   """
 end
 
 if access_mode == :password and (is_nil(access_password) or access_password == "") do
   raise """
-  HANDBEAM_ACCESS_PASSWORD is required when HANDBEAM_ACCESS_MODE=password.
+  HANDBEAN_ACCESS_PASSWORD is required when HANDBEAN_ACCESS_MODE=password.
   Use a long, randomly generated secret.
   """
 end
 
-config :handbeam, :access,
+config :handbean, :access,
   mode: access_mode,
   username: access_username,
   password: access_password
 
-config :handbeam,
+config :handbean,
   trust_project_code:
-    String.downcase(System.get_env("HANDBEAM_TRUST_PROJECT_CODE", "false")) in [
+    String.downcase(System.get_env("HANDBEAN_TRUST_PROJECT_CODE", "false")) in [
       "1",
       "true",
       "yes"
@@ -157,17 +157,17 @@ openai_config =
     do: Keyword.put(openai_config, :temperature, openai_temperature),
     else: openai_config
 
-config :handbeam, :openai, openai_config
+config :handbean, :openai, openai_config
 
 if config_env() == :prod do
   database_path =
     System.get_env("DATABASE_PATH") ||
       raise """
       environment variable DATABASE_PATH is missing.
-      For example: /etc/handbeam/handbeam.db
+      For example: /etc/handbean/handbean.db
       """
 
-  config :handbeam, Handbeam.Repo,
+  config :handbean, Handbean.Repo,
     database: database_path,
     pool_size: String.to_integer(System.get_env("POOL_SIZE") || "5")
 
@@ -185,9 +185,9 @@ if config_env() == :prod do
 
   host = System.get_env("PHX_HOST") || "example.com"
 
-  config :handbeam, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
+  config :handbean, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
-  config :handbeam, HandbeamWeb.Endpoint,
+  config :handbean, HandbeanWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],
     http: http_opts,
     secret_key_base: secret_key_base
@@ -197,7 +197,7 @@ if config_env() == :prod do
   # To get SSL working, you will need to add the `https` key
   # to your endpoint configuration:
   #
-  #     config :handbeam, HandbeamWeb.Endpoint,
+  #     config :handbean, HandbeanWeb.Endpoint,
   #       https: [
   #         ...,
   #         port: 443,
@@ -219,7 +219,7 @@ if config_env() == :prod do
   # We also recommend setting `force_ssl` in your config/prod.exs,
   # ensuring no data is ever sent via http, always redirecting to https:
   #
-  #     config :handbeam, HandbeamWeb.Endpoint,
+  #     config :handbean, HandbeanWeb.Endpoint,
   #       force_ssl: [hsts: true]
   #
   # Check `Plug.SSL` for all available options in `force_ssl`.

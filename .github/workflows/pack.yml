@@ -110,13 +110,13 @@ jobs:
       - name: Permit Bubblewrap user namespaces on the CI runner
         run: |
           # Keep Ubuntu's system-wide restriction; permit only this sandbox binary.
-          sudo tee /etc/apparmor.d/handbeam-ci-bwrap >/dev/null <<'EOF'
+          sudo tee /etc/apparmor.d/handbean-ci-bwrap >/dev/null <<'EOF'
           abi <abi/4.0>,
-          profile handbeam-ci-bwrap /usr/bin/bwrap flags=(unconfined) {
+          profile handbean-ci-bwrap /usr/bin/bwrap flags=(unconfined) {
             userns,
           }
           EOF
-          sudo apparmor_parser -r /etc/apparmor.d/handbeam-ci-bwrap
+          sudo apparmor_parser -r /etc/apparmor.d/handbean-ci-bwrap
           bwrap --unshare-user --uid 0 --gid 0 --ro-bind / / -- /usr/bin/true
 
       - uses: goto-bus-stop/setup-zig@v2
@@ -174,7 +174,7 @@ jobs:
         run: mix test --include slow --only slow
 
       - name: FakeProvider Agent end-to-end path
-        run: mix test --include e2e test/handbeam/e2e/fake_provider_e2e_test.exs
+        run: mix test --include e2e test/handbean/e2e/fake_provider_e2e_test.exs
 
       - name: Web feature paths
         run: mix test --include e2e test/feature
@@ -220,7 +220,7 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$tag" -m "Handbeam $current"
+          git tag -a "$tag" -m "Handbean $current"
           git push origin "refs/tags/$tag"
           gh workflow run pack.yml --ref dev -f publish_release=true -f release_tag="$tag"
           echo "release_build=dispatched" >> "$GITHUB_OUTPUT"
@@ -316,11 +316,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          export HANDBEAM_WEB_ROOT="$PWD/_build/prod/rel/handbeam"
+          export HANDBEAN_WEB_ROOT="$PWD/_build/prod/rel/handbean"
           bash desktop/macos/scripts/build_app.sh
 
-          app="desktop/macos/build/Handbeam.app"
-          archive="desktop/macos/build/Handbeam-macos-arm64.zip"
+          app="desktop/macos/build/Handbean.app"
+          archive="desktop/macos/build/Handbean-macos-arm64.zip"
           rm -f "$archive" "$archive.sha256"
           ditto -c -k --keepParent "$app" "$archive"
           shasum -a 256 "$archive" > "$archive.sha256"
@@ -334,24 +334,24 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: handbeam-web-${{ matrix.target }}
-          path: handbeam-web-${{ matrix.target }}.*
+          name: handbean-web-${{ matrix.target }}
+          path: handbean-web-${{ matrix.target }}.*
           if-no-files-found: error
           retention-days: 14
 
       - uses: actions/upload-artifact@v7
         if: matrix.target == 'windows-amd64'
         with:
-          name: handbeam-web-windows-amd64-toolchain
-          path: handbeam-web-windows-amd64-toolchain.*
+          name: handbean-web-windows-amd64-toolchain
+          path: handbean-web-windows-amd64-toolchain.*
           if-no-files-found: error
           retention-days: 14
 
       - uses: actions/upload-artifact@v7
         if: matrix.target == 'macos-arm64'
         with:
-          name: handbeam-macos-app-arm64
-          path: desktop/macos/build/Handbeam-macos-arm64.zip*
+          name: handbean-macos-app-arm64
+          path: desktop/macos/build/Handbean-macos-arm64.zip*
           if-no-files-found: error
           retention-days: 14
 
@@ -387,25 +387,25 @@ jobs:
 
       - uses: actions/download-artifact@v8
         with:
-          pattern: handbeam-web-*
+          pattern: handbean-web-*
           path: dist
           merge-multiple: true
 
       - uses: actions/download-artifact@v8
         if: needs.android.result == 'success'
         with:
-          name: handbeam-android-apk
+          name: handbean-android-apk
           path: dist
 
       - uses: actions/download-artifact@v8
         with:
-          name: handbeam-macos-app-arm64
+          name: handbean-macos-app-arm64
           path: dist
 
       - uses: actions/download-artifact@v8
         if: needs.ios.result == 'success'
         with:
-          name: handbeam-ios-ipa
+          name: handbean-ios-ipa
           path: dist
 
       - name: Verify complete package set
@@ -413,16 +413,16 @@ jobs:
           MOBILE_REQUIRED: ${{ needs.target.outputs.mobile_required }}
         run: |
           set -euo pipefail
-          for package in handbeam-web-linux-x86_64 handbeam-web-windows-amd64 \
-            handbeam-web-windows-amd64-toolchain handbeam-web-macos-arm64 Handbeam-macos-arm64; do
+          for package in handbean-web-linux-x86_64 handbean-web-windows-amd64 \
+            handbean-web-windows-amd64-toolchain handbean-web-macos-arm64 Handbean-macos-arm64; do
             if [[ ! -s "dist/$package.tar.gz" && ! -s "dist/$package.zip" ]]; then
               echo "Missing package: $package"
               exit 1
             fi
           done
           if [[ "$MOBILE_REQUIRED" == true ]]; then
-            for package in Handbeam-arm64-v8a.apk Handbeam-x86_64.apk \
-              Handbeam-ios-sideload.ipa Handbeam-ios-sideload.ipa.sha256; do
+            for package in Handbean-arm64-v8a.apk Handbean-x86_64.apk \
+              Handbean-ios-sideload.ipa Handbean-ios-sideload.ipa.sha256; do
               test -s "dist/$package"
             done
           fi
@@ -431,17 +431,17 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          files=(dist/handbeam-web-* dist/Handbeam-macos-* dist/*.apk dist/*.ipa dist/*.ipa.sha256)
+          files=(dist/handbean-web-* dist/Handbean-macos-* dist/*.apk dist/*.ipa dist/*.ipa.sha256)
           if [[ ${#files[@]} -eq 0 ]]; then
             echo "No packages were built"
             exit 1
           fi
           {
-            echo "Handbeam desktop, Web UI, and mobile packages."
+            echo "Handbean desktop, Web UI, and mobile packages."
             echo
-            echo "macOS desktop: unpack \`Handbeam-macos-arm64.zip\` and open \`Handbeam.app\`."
+            echo "macOS desktop: unpack \`Handbean-macos-arm64.zip\` and open \`Handbean.app\`."
             if compgen -G "dist/*.ipa" >/dev/null; then
-              echo "iOS: \`Handbeam-ios-sideload.ipa\` is ad-hoc signed and has no provisioning profile. Re-sign it with your own Apple ID in Sideloadly or AltStore, then install it. Bundle id: \`com.example.handbeam_probe\`."
+              echo "iOS: \`Handbean-ios-sideload.ipa\` is ad-hoc signed and has no provisioning profile. Re-sign it with your own Apple ID in Sideloadly or AltStore, then install it. Bundle id: \`com.example.handbean_probe\`."
             fi
             echo "Linux and macOS Web UI: unpack the platform tarball and run \`./start.sh\`."
             echo "Windows: unpack and run \`start.bat\`."
@@ -449,9 +449,9 @@ jobs:
             echo
             echo "Windows packages do not include the in-browser terminal. Ghostty has no Windows NIF."
             echo
-            echo "handbeam-web-windows-amd64.zip is the Web UI only. Elixir and Git must already be installed."
-            echo "handbeam-web-windows-amd64-toolchain.zip is experimental. It adds Elixir, Mix, Hex, Rebar3, and MinGit, and puts them first on PATH for that process. It does not include a C compiler."
-            if ! compgen -G "dist/handbeam-web-windows-arm64*" >/dev/null; then
+            echo "handbean-web-windows-amd64.zip is the Web UI only. Elixir and Git must already be installed."
+            echo "handbean-web-windows-amd64-toolchain.zip is experimental. It adds Elixir, Mix, Hex, Rebar3, and MinGit, and puts them first on PATH for that process. It does not include a C compiler."
+            if ! compgen -G "dist/handbean-web-windows-arm64*" >/dev/null; then
               echo "Windows ARM64 is omitted: OTP publishes no ARM64 installer, and GitHub-hosted ARM runners cannot install WSL."
             fi
             echo
@@ -474,7 +474,7 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          files=(dist/handbeam-web-* dist/Handbeam-macos-* dist/*.apk dist/*.ipa dist/*.ipa.sha256)
+          files=(dist/handbean-web-* dist/Handbean-macos-* dist/*.apk dist/*.ipa dist/*.ipa.sha256)
           if [[ ${#files[@]} -eq 0 ]]; then
             echo "No packages to upload"
             exit 1
@@ -488,7 +488,7 @@ jobs:
           if [[ "$tag" != web-latest ]]; then
             bash scripts/version.sh check-tag "$tag"
           fi
-          title="Handbeam ${version}"
+          title="Handbean ${version}"
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" "${files[@]}" --clobber
             gh release edit "$tag" --title "$title" --notes-file notes.md --prerelease=false --latest
@@ -600,7 +600,7 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: handbeam-android-apk
+          name: handbean-android-apk
           path: mobile/artifacts/*.apk
           if-no-files-found: error
           retention-days: 14
@@ -705,9 +705,9 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: handbeam-ios-ipa
+          name: handbean-ios-ipa
           path: |
-            mobile/artifacts/Handbeam-ios-sideload.ipa
-            mobile/artifacts/Handbeam-ios-sideload.ipa.sha256
+            mobile/artifacts/Handbean-ios-sideload.ipa
+            mobile/artifacts/Handbean-ios-sideload.ipa.sha256
           if-no-files-found: error
           retention-days: 14

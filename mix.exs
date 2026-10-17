@@ -1,4 +1,4 @@
-defmodule Handbeam.MixProject do
+defmodule Handbean.MixProject do
   use Mix.Project
 
   @version_file Path.expand("version.properties", __DIR__)
@@ -14,10 +14,10 @@ defmodule Handbeam.MixProject do
 
   def project do
     [
-      app: :handbeam,
+      app: :handbean,
       version: @version,
       elixir: ">= 1.20.0-rc.5 and < 1.21.0",
-      source_url: "https://github.com/youfun/Handbeam",
+      source_url: "https://github.com/youfun/Handbean",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
@@ -30,7 +30,7 @@ defmodule Handbeam.MixProject do
         # Hex and other source packages stay FSL. An iOS binary that
         # statically links iSH is a separate GPLv3 distribution; see LICENSE.iOS.
         licenses: ["FSL-1.1-ALv2"],
-        links: %{"GitHub" => "https://github.com/youfun/Handbeam"}
+        links: %{"GitHub" => "https://github.com/youfun/Handbean"}
       ]
     ]
   end
@@ -40,10 +40,10 @@ defmodule Handbeam.MixProject do
   # Type `mix help compile.app` for more information.
   def application do
     [
-      mod: {Handbeam.Application, []},
+      mod: {Handbean.Application, []},
       extra_applications: [:logger, :runtime_tools, :castore],
       # Mob flattens Hex apps onto `-pa`; `:castore` then is not an OTP lib
-      # and `ensure_all_started(:handbeam)` must not abort boot. Probe loads the
+      # and `ensure_all_started(:handbean)` must not abort boot. Probe loads the
       # Mozilla bundle from `priv/cacerts.pem` instead.
       optional_applications: [:castore]
     ]
@@ -121,8 +121,8 @@ defmodule Handbeam.MixProject do
       precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"],
       "test.quality": ["run test/support/credence_check.exs"],
       "assets.setup": ["cmd npm ci", "esbuild.install --if-missing"],
-      "assets.build": ["esbuild handbeam"],
-      "assets.deploy": ["esbuild handbeam --minify", "phx.digest"]
+      "assets.build": ["esbuild handbean"],
+      "assets.deploy": ["esbuild handbean --minify", "phx.digest"]
     ]
   end
 
@@ -147,7 +147,7 @@ defmodule Handbeam.MixProject do
   # Unix 包用 tar.gz，Windows 包用 zip；两边的启动脚本都打进 release。
   defp releases do
     [
-      handbeam: [
+      handbean: [
         include_erts: true,
         include_executables_for: [:unix, :windows]
       ]

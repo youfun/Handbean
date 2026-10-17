@@ -1,4 +1,4 @@
-defmodule HandbeamProbe.Repo.Migrations.CreateMobScreenStates do
+defmodule HandbeanProbe.Repo.Migrations.CreateMobScreenStates do
   use Ecto.Migration
 
   def change do

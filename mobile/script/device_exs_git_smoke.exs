@@ -1,14 +1,14 @@
 # Dist smoke: LLM writes an .exs, runs it, clones a public git repo.
 # Never prints credentials.
 
-n = :"handbeam_probe_android_nativechat@127.0.0.1"
+n = :"handbean_probe_android_nativechat@127.0.0.1"
 :pong = Node.ping(n)
 
 prompt = """
 不要解释计划，按顺序做这三件事：
 
 1. 用 write 在当前工作区根目录写 `tmp_hello.exs`，文件内容只有：
-   IO.puts("handbeam-exs-ok")
+   IO.puts("handbean-exs-ok")
    不要 Mix.install，不要其它依赖。
 2. 立刻用 run_elixir_script 运行这个 `tmp_hello.exs`。
 3. 用 git 把公开仓库 https://github.com/octocat/Hello-World.git 克隆到当前工作区的 `tmp_hello_world/`（HTTPS，不要 SSH，不要凭据）。
@@ -68,7 +68,7 @@ IO.puts("STATUS=#{status}")
 
 entries =
   if conv_id do
-    :rpc.call(n, HandbeamProbe.NativeChat, :transcript, [conv_id])
+    :rpc.call(n, HandbeanProbe.NativeChat, :transcript, [conv_id])
   else
     (a.chat && a.chat.entries) || []
   end

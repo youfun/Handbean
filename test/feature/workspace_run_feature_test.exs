@@ -1,4 +1,4 @@
-defmodule HandbeamWeb.Feature.WorkspaceRunFeatureTest do
+defmodule HandbeanWeb.Feature.WorkspaceRunFeatureTest do
   @moduledoc """
   A composer send starts a real workspace run. FakeProvider scripts the tool
   call; the read tool, transcript, and finished run are real.
@@ -6,11 +6,11 @@ defmodule HandbeamWeb.Feature.WorkspaceRunFeatureTest do
   Run: mix test --include e2e test/feature/workspace_run_feature_test.exs
   """
 
-  use HandbeamWeb.FeatureCase, async: false
+  use HandbeanWeb.FeatureCase, async: false
 
-  alias Handbeam.ConversationStore
-  alias Handbeam.PubSub.Session
-  alias Handbeam.TestSupport.E2EHarness
+  alias Handbean.ConversationStore
+  alias Handbean.PubSub.Session
+  alias Handbean.TestSupport.E2EHarness
 
   @moduletag :e2e
 
@@ -29,7 +29,7 @@ defmodule HandbeamWeb.Feature.WorkspaceRunFeatureTest do
        end}
     )
 
-    {:ok, ws} = Handbeam.WorkspaceStore.add(workspace, name: "Run fixture")
+    {:ok, ws} = Handbean.WorkspaceStore.add(workspace, name: "Run fixture")
     {:ok, conversation} = ConversationStore.create(ws["id"], title: "Run")
     id = conversation["id"]
     :ok = Session.subscribe(id)

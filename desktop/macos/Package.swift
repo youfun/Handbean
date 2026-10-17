@@ -2,20 +2,20 @@
 import PackageDescription
 
 let package = Package(
-    name: "Handbeam",
+    name: "Handbean",
     platforms: [.macOS("15.0")],
     products: [
-        .executable(name: "Handbeam", targets: ["Handbeam"])
+        .executable(name: "Handbean", targets: ["Handbean"])
     ],
     targets: [
-        .target(name: "HandbeamCore"),
+        .target(name: "HandbeanCore"),
         .executableTarget(
-            name: "Handbeam",
-            dependencies: ["HandbeamCore"]
+            name: "Handbean",
+            dependencies: ["HandbeanCore"]
         ),
         .testTarget(
-            name: "HandbeamCoreTests",
-            dependencies: ["HandbeamCore"]
+            name: "HandbeanCoreTests",
+            dependencies: ["HandbeanCore"]
         ),
     ]
 )

@@ -33,7 +33,7 @@ header = ensure(
     load("MobNode.h"),
     "@property(nonatomic) CGFloat letterSpacing;\n",
     "@property(nonatomic) CGFloat letterSpacing;\n"
-    "// Handbeam: forwarded so assistant text can render markdown. Default NO.\n"
+    "// Handbean: forwarded so assistant text can render markdown. Default NO.\n"
     "@property(nonatomic) BOOL markdown;\n"
     "@property(nonatomic) BOOL markdownStreaming;\n",
     "MobNode.h",
@@ -99,8 +99,8 @@ root_old = """                let textShouldFill = node.fillWidth || node.textAl
 root_new = """                let textShouldFill = node.fillWidth || node.textAlign == "center" || node.textAlign == "right"
                 Group {
                     if node.markdown {
-                        // Handbeam markdown. User bubbles stay on the plain Text path.
-                        HandbeamMarkdownText(
+                        // Handbean markdown. User bubbles stay on the plain Text path.
+                        HandbeanMarkdownText(
                             source: node.text ?? "",
                             streaming: node.markdownStreaming,
                             fontSize: node.textSize > 0 ? node.textSize : 14,
@@ -223,7 +223,7 @@ root = ensure(
     "            } else {\n",
     "MobRootView.swift glass",
 )
-if "HandbeamMarkdownText(" not in root:
+if "HandbeanMarkdownText(" not in root:
     if root.count(root_old) != 1:
         sys.exit(f"MobRootView.swift: expected 1 label anchor, found {root.count(root_old)}")
     root = root.replace(root_old, root_new, 1)

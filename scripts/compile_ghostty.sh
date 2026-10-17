@@ -20,9 +20,9 @@ export GHOSTTY_BUILD=1
 project_root="$(cd "$(dirname "$0")/.." && pwd)"
 # Zig 0.16 ReleaseSafe enables glibc fortify declarations that translate-c
 # cannot analyze on Debian 12. This environment applies only to Ghostty's two
-# NIFs; Handbeam and libghostty-vt are still built for release.
+# NIFs; Handbean and libghostty-vt are still built for release.
 export MIX_ENV=dev
-export MIX_BUILD_PATH="$PWD/_build/handbeam"
+export MIX_BUILD_PATH="$PWD/_build/handbean"
 export MIX_DEPS_PATH="${MIX_DEPS_PATH:-$project_root/deps}"
 compiled_lib_dir="$MIX_BUILD_PATH/lib/ghostty/priv/lib"
 compile_args=(--no-deps-check --no-archives-check --no-prune-code-paths --no-protocol-consolidation)

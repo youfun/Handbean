@@ -1,11 +1,11 @@
 ExUnit.start()
 
-defmodule HandbeamProbe.ScreenSettle do
+defmodule HandbeanProbe.ScreenSettle do
   @moduledoc """
-  Deliver the replies of `HandbeamProbe.HomeScreen` off-screen tasks to an
+  Deliver the replies of `HandbeanProbe.HomeScreen` off-screen tasks to an
   in-BEAM `Mob.ScreenCase` view.
 
-  Screen tasks run under `HandbeamProbe.TaskSupervisor` via
+  Screen tasks run under `HandbeanProbe.TaskSupervisor` via
   `Task.Supervisor.async_nolink/2`, so their `{ref, result}` replies land in
   the test process (the screen's mailbox in-BEAM). `settle/1` feeds every
   reply back through `handle_info/2` and, while any task started by this
@@ -53,37 +53,37 @@ defmodule HandbeamProbe.ScreenSettle do
   # Task.Supervisor. `:DOWN` handling above covers the exit-before-reply window.
   defp pending_task? do
     {:monitors, monitors} = Process.info(self(), :monitors)
-    children = Task.Supervisor.children(HandbeamProbe.TaskSupervisor)
+    children = Task.Supervisor.children(HandbeanProbe.TaskSupervisor)
     Enum.any?(monitors, fn {:process, pid} -> pid in children end)
   end
 end
 
 data_dir =
-  Path.join(System.tmp_dir!(), "handbeam_probe_test_#{System.unique_integer([:positive])}")
+  Path.join(System.tmp_dir!(), "handbean_probe_test_#{System.unique_integer([:positive])}")
 
 File.mkdir_p!(data_dir)
 System.put_env("MOB_DATA_DIR", data_dir)
 System.put_env("HOME", data_dir)
-Handbeam.Host.put!(%{data_dir: data_dir, shell: false, mcp: false})
+Handbean.Host.put!(%{data_dir: data_dir, shell: false, mcp: false})
 
-Application.put_env(:handbeam, Handbeam.Repo,
-  database: Path.join(data_dir, "handbeam.db"),
+Application.put_env(:handbean, Handbean.Repo,
+  database: Path.join(data_dir, "handbean.db"),
   pool_size: 5
 )
 
-HandbeamProbe.App.configure_error_tracker!()
+HandbeanProbe.App.configure_error_tracker!()
 {:ok, _} = Application.ensure_all_started(:ecto_sqlite3)
 
-Ecto.Migrator.with_repo(Handbeam.Repo, fn repo ->
-  Ecto.Migrator.run(repo, Handbeam.Paths.migrations_dir(), :up, all: true)
+Ecto.Migrator.with_repo(Handbean.Repo, fn repo ->
+  Ecto.Migrator.run(repo, Handbean.Paths.migrations_dir(), :up, all: true)
 end)
 
-{:ok, _} = HandbeamProbe.Repo.start_link()
-Ecto.Migrator.run(HandbeamProbe.Repo, :up, all: true)
+{:ok, _} = HandbeanProbe.Repo.start_link()
+Ecto.Migrator.run(HandbeanProbe.Repo, :up, all: true)
 
-{:ok, _} = Application.ensure_all_started(:handbeam)
-Ecto.Migrator.run(Handbeam.Repo, Handbeam.Paths.migrations_dir(), :up, all: true)
-:ok = HandbeamProbe.App.ensure_task_supervisor()
-:ok = HandbeamProbe.ShareIntake.Lock.ensure_started()
-:ok = HandbeamProbe.ShareCopy.ensure_started()
-:ok = HandbeamProbe.Platform.IOS.Registry.ensure_started()
+{:ok, _} = Application.ensure_all_started(:handbean)
+Ecto.Migrator.run(Handbean.Repo, Handbean.Paths.migrations_dir(), :up, all: true)
+:ok = HandbeanProbe.App.ensure_task_supervisor()
+:ok = HandbeanProbe.ShareIntake.Lock.ensure_started()
+:ok = HandbeanProbe.ShareCopy.ensure_started()
+:ok = HandbeanProbe.Platform.IOS.Registry.ensure_started()

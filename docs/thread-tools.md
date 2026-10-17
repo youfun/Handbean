@@ -38,7 +38,7 @@ persistent thread tools, and its run-scoped authorization and cleanup remain int
   current workspace. It is only needed to select a model other than the current
   thread model; the full catalog is never added to the prompt.
 
-Trajectory uses Handbeam's own execution hierarchy:
+Trajectory uses Handbean's own execution hierarchy:
 
 ```text
 thread

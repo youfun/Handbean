@@ -26,7 +26,7 @@
 | `Middleware.ToolGuard` | 判定为 `:prompt` 的调用先走 AutoReview，再进入 `:interrupted` 等人工批准 | 定时运行里照常走 AutoReview；只有本该进入人工批准的分支改成停止并说明 |
 | `Agent.Config.build_context/2` | 工具 context 里有 `conversation_id` / `workspace_id` / `run_id`，没有 `source` | 定时工具要靠 `source` 判断能不能改调度，需要补上 |
 | `TaskTracker` | 订阅 `runtime:runs`，用 `run_end` 判断运行是否结束 | 定时记录用同一个 topic 回写每次的结果 |
-| `MessageSubmission.run_opts/2` 等 | 模型、provider、OM 参数都在 `HandbeamWeb` 里拼 | runtime 不能依赖 web（`.reach.exs`），需要抽出非 web 的构造函数 |
+| `MessageSubmission.run_opts/2` 等 | 模型、provider、OM 参数都在 `HandbeanWeb` 里拼 | runtime 不能依赖 web（`.reach.exs`），需要抽出非 web 的构造函数 |
 | `mix.exs` | 没有时区库，Elixir 默认只认 UTC | 要新增依赖 |
 | `priv/repo/migrations` | SQLite，目前只有 engrams 和 ui_settings 两张表 | 新增定时任务表 |
 
@@ -81,17 +81,17 @@
 
 | 模块 | 职责 |
 | --- | --- |
-| `Handbeam.Schedule.Rule` | 纯函数：校验规则；`next_after(rule, tz, utc_dt)`；`latest_due(rule, tz, from, now)` 返回最近一个到期点和错过的个数 |
-| `Handbeam.Schedule.Store` | Ecto schema 与查询；`claim/2`、`record/3`、`pause/resume/update/delete`。所有写操作都带 `version` 条件 |
-| `Handbeam.Schedule.Clock` | 应用级 GenServer，全局只有一个写者。只负责找到到期任务并领取，派发交给 Task |
-| `Handbeam.Schedule.Dispatch` | 在 `Task.Supervisor` 下运行：检查前置条件，组装 run opts，调用 `Coordinator.add_message/3`，回写结果 |
-| `Handbeam.Schedule.Recorder` | 订阅 `runtime:runs`，按 `run_id` 把 `run_end` 的终态写回 `schedule_runs` |
-| `Handbeam.Schedule.Notice` | 往 transcript 写跳过、补跑、无合法模型等说明（`system_msg`，ID 固定） |
-| `Handbeam.Agent.RunOpts` | 从 `HandbeamWeb.*` 抽出来的、和 web 无关的 run opts 构造：模型解析、provider、推理级别、OM。LiveView 和 Dispatch 共用 |
-| `Handbeam.Agent.Channel` | `unattended?/1`、`interactive?/1`，替代散落在各处的 source 列表 |
-| `Handbeam.Tool.Builtin.Schedule` | Agent 用的 `schedule` 工具 |
+| `Handbean.Schedule.Rule` | 纯函数：校验规则；`next_after(rule, tz, utc_dt)`；`latest_due(rule, tz, from, now)` 返回最近一个到期点和错过的个数 |
+| `Handbean.Schedule.Store` | Ecto schema 与查询；`claim/2`、`record/3`、`pause/resume/update/delete`。所有写操作都带 `version` 条件 |
+| `Handbean.Schedule.Clock` | 应用级 GenServer，全局只有一个写者。只负责找到到期任务并领取，派发交给 Task |
+| `Handbean.Schedule.Dispatch` | 在 `Task.Supervisor` 下运行：检查前置条件，组装 run opts，调用 `Coordinator.add_message/3`，回写结果 |
+| `Handbean.Schedule.Recorder` | 订阅 `runtime:runs`，按 `run_id` 把 `run_end` 的终态写回 `schedule_runs` |
+| `Handbean.Schedule.Notice` | 往 transcript 写跳过、补跑、无合法模型等说明（`system_msg`，ID 固定） |
+| `Handbean.Agent.RunOpts` | 从 `HandbeanWeb.*` 抽出来的、和 web 无关的 run opts 构造：模型解析、provider、推理级别、OM。LiveView 和 Dispatch 共用 |
+| `Handbean.Agent.Channel` | `unattended?/1`、`interactive?/1`，替代散落在各处的 source 列表 |
+| `Handbean.Tool.Builtin.Schedule` | Agent 用的 `schedule` 工具 |
 
-监督树：`Clock` 和 `Recorder` 放在 `Handbeam.AgentRunSupervisor`、`Handbeam.Runtime.TaskTracker` 之后，`HandbeamWeb.Endpoint` 之前。派发用已有的 `Handbeam.AgentRunTaskSupervisor`。
+监督树：`Clock` 和 `Recorder` 放在 `Handbean.AgentRunSupervisor`、`Handbean.Runtime.TaskTracker` 之后，`HandbeanWeb.Endpoint` 之前。派发用已有的 `Handbean.AgentRunTaskSupervisor`。
 
 ## 5. 运行时流程
 
@@ -200,7 +200,7 @@
 - 每条任务最近 20 次运行（来自 `schedule_runs`）：时间、类型、状态、原因。点 `run_id` 跳到对话里对应的位置。
 - 新建：在这个对话里用一句话说何时、做什么。Agent 调用 `schedule` 落盘。批准后在同一条对话里用白话确认时区、频率、钟点、送达本聊天，以及下一次时间。
 
-UI 走 `Handbeam.Schedule.Store` 的公开函数，不直接用 `Repo`（`.reach.exs` 禁止 web 层直接访问 Repo）。
+UI 走 `Handbean.Schedule.Store` 的公开函数，不直接用 `Repo`（`.reach.exs` 禁止 web 层直接访问 Repo）。
 
 ## 8. 必须覆盖的反例
 
@@ -230,7 +230,7 @@ UI 走 `Handbeam.Schedule.Store` 的公开函数，不直接用 `Repo`（`.reach
 
 现在“对话内容同步到多个渠道”的实际范围：
 
-- 同一个 Handbeam 实例的 Web 和 native 都读同一条 transcript。
+- 同一个 Handbean 实例的 Web 和 native 都读同一条 transcript。
 - Android 的运行结束通知（`TaskTracker` → `AndroidNotify`，App 在后台时生效）。
 - `Delivery` 只在 `source` 是 `:sns` / `:webhook` / `:cli` 时调用，而且默认 adapter 是 `Noop`，仓库里没有真正的出站实现。
 

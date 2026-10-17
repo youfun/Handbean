@@ -1,4 +1,4 @@
-defmodule Handbeam.Repo.Migrations.CreateEngramsAndSynapses do
+defmodule Handbean.Repo.Migrations.CreateEngramsAndSynapses do
   use Ecto.Migration
 
   def change do

@@ -1,4 +1,4 @@
-# Unsigned Handbeam.app (system WebKit + bundled macOS web release).
+# Unsigned Handbean.app (system WebKit + bundled macOS web release).
 # Dispatch-only so main CI does not upload a large OTP artifact on every push.
 name: macOS app
 
@@ -6,13 +6,13 @@ on:
   workflow_dispatch:
     inputs:
       web_tag:
-        description: Release tag containing handbeam-web-macos-arm64.tar.gz
+        description: Release tag containing handbean-web-macos-arm64.tar.gz
         default: web-latest
         type: string
 
 jobs:
   app:
-    name: Handbeam.app
+    name: Handbean.app
     runs-on: macos-15
     timeout-minutes: 40
     steps:
@@ -32,10 +32,10 @@ jobs:
 
       - name: Zip
         working-directory: desktop/macos/build
-        run: ditto -c -k --keepParent Handbeam.app Handbeam-macos-arm64.zip
+        run: ditto -c -k --keepParent Handbean.app Handbean-macos-arm64.zip
 
       - uses: actions/upload-artifact@v7
         with:
-          name: Handbeam-macos-arm64
-          path: desktop/macos/build/Handbeam-macos-arm64.zip
+          name: Handbean-macos-arm64
+          path: desktop/macos/build/Handbean-macos-arm64.zip
           retention-days: 7

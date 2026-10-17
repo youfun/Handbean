@@ -23,5 +23,5 @@ if [[ -z "$changed_elixir" ]]; then
   exit 0
 fi
 
-git diff -U0 "$base_sha" HEAD -- $changed_elixir > /tmp/handbeam-credence-diff.txt
-HANDBEAM_CREDENCE_DIFF=/tmp/handbeam-credence-diff.txt mix run --no-start test/support/credence_check.exs
+git diff -U0 "$base_sha" HEAD -- $changed_elixir > /tmp/handbean-credence-diff.txt
+HANDBEAN_CREDENCE_DIFF=/tmp/handbean-credence-diff.txt mix run --no-start test/support/credence_check.exs

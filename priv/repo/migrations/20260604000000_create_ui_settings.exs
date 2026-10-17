@@ -1,4 +1,4 @@
-defmodule Handbeam.Repo.Migrations.CreateUISettings do
+defmodule Handbean.Repo.Migrations.CreateUISettings do
   use Ecto.Migration
 
   def change do

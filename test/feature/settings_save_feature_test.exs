@@ -1,4 +1,4 @@
-defmodule HandbeamWeb.Feature.SettingsSaveFeatureTest do
+defmodule HandbeanWeb.Feature.SettingsSaveFeatureTest do
   @moduledoc """
   Saving Git identity and a named account persists both. Reloading settings
   shows the identity and account name, never the token.
@@ -6,27 +6,27 @@ defmodule HandbeamWeb.Feature.SettingsSaveFeatureTest do
   Run: mix test --include e2e test/feature/settings_save_feature_test.exs
   """
 
-  use HandbeamWeb.FeatureCase, async: false
+  use HandbeanWeb.FeatureCase, async: false
 
-  alias Handbeam.Git.Settings
-  alias Handbeam.TestSupport.E2EHarness
+  alias Handbean.Git.Settings
+  alias Handbean.TestSupport.E2EHarness
 
   @moduletag :e2e
 
   test "saved Git identity and account survive a reload without showing the token", %{conn: conn} do
     %{home: home} = E2EHarness.isolate_home!("settings-save")
-    git_path = Path.join(home, ".handbeam/git.json")
+    git_path = Path.join(home, ".handbean/git.json")
     File.mkdir_p!(Path.dirname(git_path))
-    previous = Application.get_env(:handbeam, :git_user_config_path)
-    Application.put_env(:handbeam, :git_user_config_path, git_path)
+    previous = Application.get_env(:handbean, :git_user_config_path)
+    Application.put_env(:handbean, :git_user_config_path, git_path)
 
     ExUnit.Callbacks.on_exit(fn ->
       if previous,
-        do: Application.put_env(:handbeam, :git_user_config_path, previous),
-        else: Application.delete_env(:handbeam, :git_user_config_path)
+        do: Application.put_env(:handbean, :git_user_config_path, previous),
+        else: Application.delete_env(:handbean, :git_user_config_path)
     end)
 
-    {:ok, _workspace} = Handbeam.WorkspaceStore.ensure_default!()
+    {:ok, _workspace} = Handbean.WorkspaceStore.ensure_default!()
 
     conn
     |> visit("/settings?tab=git")

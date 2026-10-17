@@ -2,11 +2,11 @@
 #
 # Starts this project's real Endpoint + Coordinator on a dedicated port
 # (default 4017). The LLM is a local OpenAI-compatible hold server — no
-# external models, no real ~/.handbeam history, no port 4000.
+# external models, no real ~/.handbean history, no port 4000.
 #
 # Start (from `sigil/`):
 #
-#   MIX_ENV=dev HANDBEAM_FIXTURE_PORT=4017 mix run --no-start scripts/workspace_live_browser_fixture.exs
+#   MIX_ENV=dev HANDBEAN_FIXTURE_PORT=4017 mix run --no-start scripts/workspace_live_browser_fixture.exs
 #
 # Or: `scripts/workspace_live_browser_fixture.sh`
 #
@@ -17,7 +17,7 @@
 # Do not load ExUnit test modules. Pattern matches the native Bandit SSE
 # hold used in probe tests (chat/completions + chunk then wait).
 
-defmodule Handbeam.Script.WorkspaceLiveHoldPlug do
+defmodule Handbean.Script.WorkspaceLiveHoldPlug do
   @behaviour Plug
 
   def init(opts), do: opts
@@ -53,7 +53,7 @@ defmodule Handbeam.Script.WorkspaceLiveHoldPlug do
       Plug.Conn.chunk(
         conn,
         "data: " <>
-          Handbeam.JSON.encode!(%{
+          Handbean.JSON.encode!(%{
             choices: [%{delta: %{content: "Fixture hold"}, finish_reason: nil}]
           }) <> "\n\n"
       )
@@ -62,12 +62,12 @@ defmodule Handbeam.Script.WorkspaceLiveHoldPlug do
 
     reply =
       "data: " <>
-        Handbeam.JSON.encode!(%{
+        Handbean.JSON.encode!(%{
           choices: [%{delta: %{content: " done"}, finish_reason: nil}]
         }) <>
         "\n\n" <>
         "data: " <>
-        Handbeam.JSON.encode!(%{choices: [%{delta: %{}, finish_reason: "stop"}]}) <>
+        Handbean.JSON.encode!(%{choices: [%{delta: %{}, finish_reason: "stop"}]}) <>
         "\n\ndata: [DONE]\n\n"
 
     {:ok, conn} = Plug.Conn.chunk(conn, reply)
@@ -90,8 +90,8 @@ defmodule Handbeam.Script.WorkspaceLiveHoldPlug do
 end
 
 home =
-  System.get_env("HANDBEAM_FIXTURE_HOME") ||
-    Path.join(System.tmp_dir!(), "handbeam-ws-live-fixture-#{System.unique_integer([:positive])}")
+  System.get_env("HANDBEAN_FIXTURE_HOME") ||
+    Path.join(System.tmp_dir!(), "handbean-ws-live-fixture-#{System.unique_integer([:positive])}")
 
 File.mkdir_p!(home)
 workspace = Path.join(home, "workspace")
@@ -101,19 +101,19 @@ File.mkdir_p!(ctrl)
 release = Path.join(ctrl, "release")
 stop = Path.join(ctrl, "stop")
 held = Path.join(ctrl, "held")
-port = String.to_integer(System.get_env("HANDBEAM_FIXTURE_PORT") || "4017")
+port = String.to_integer(System.get_env("HANDBEAN_FIXTURE_PORT") || "4017")
 
 System.put_env("HOME", home)
-System.put_env("HANDBEAM_WORKSPACE", workspace)
-System.put_env("HANDBEAM_WORKSPACES_FILE", Path.join(home, "workspaces.json"))
-System.put_env("HANDBEAM_MODELS_FILE", Path.join(home, "models.json"))
-System.put_env("HANDBEAM_GLOBAL_SETTINGS_FILE", Path.join(home, "settings.json"))
+System.put_env("HANDBEAN_WORKSPACE", workspace)
+System.put_env("HANDBEAN_WORKSPACES_FILE", Path.join(home, "workspaces.json"))
+System.put_env("HANDBEAN_MODELS_FILE", Path.join(home, "models.json"))
+System.put_env("HANDBEAN_GLOBAL_SETTINGS_FILE", Path.join(home, "settings.json"))
 System.delete_env("PHX_SERVER")
 System.delete_env("OPENAI_API_KEY")
 
 {:ok, hold_pid} =
   Bandit.start_link(
-    plug: {Handbeam.Script.WorkspaceLiveHoldPlug, release: release, stop: stop, held: held},
+    plug: {Handbean.Script.WorkspaceLiveHoldPlug, release: release, stop: stop, held: held},
     ip: {127, 0, 0, 1},
     port: 0
   )
@@ -121,8 +121,8 @@ System.delete_env("OPENAI_API_KEY")
 {:ok, {_ip, hold_port}} = ThousandIsland.listener_info(hold_pid)
 
 File.write!(
-  System.get_env("HANDBEAM_MODELS_FILE"),
-  Handbeam.JSON.encode!(%{
+  System.get_env("HANDBEAN_MODELS_FILE"),
+  Handbean.JSON.encode!(%{
     "defaultProvider" => "fixture",
     "defaultModel" => "fixture-hold",
     "providers" => %{
@@ -140,15 +140,15 @@ File.write!(
 host = %{data_dir: home, shell: false, mcp: false, browser_backend: nil}
 
 host =
-  case Handbeam.Host.file_manager_backend() do
+  case Handbean.Host.file_manager_backend() do
     nil -> host
     backend -> Map.put(host, :file_manager_backend, backend)
   end
 
-Handbeam.Host.put!(host)
+Handbean.Host.put!(host)
 
 endpoint_cfg =
-  Application.get_env(:handbeam, HandbeamWeb.Endpoint)
+  Application.get_env(:handbean, HandbeanWeb.Endpoint)
   |> Keyword.merge(
     http: [ip: {127, 0, 0, 1}, port: port],
     url: [host: "127.0.0.1", port: port],
@@ -158,10 +158,10 @@ endpoint_cfg =
     check_origin: false
   )
 
-Application.put_env(:handbeam, HandbeamWeb.Endpoint, endpoint_cfg)
+Application.put_env(:handbean, HandbeanWeb.Endpoint, endpoint_cfg)
 
 repo_cfg =
-  Application.get_env(:handbeam, Handbeam.Repo)
+  Application.get_env(:handbean, Handbean.Repo)
   |> Keyword.merge(
     database: Path.join(home, "fixture.db"),
     pool_size: 1,
@@ -171,18 +171,18 @@ repo_cfg =
     temp_store: :memory
   )
 
-Application.put_env(:handbeam, Handbeam.Repo, repo_cfg)
-Application.put_env(:handbeam, :extension_hot_reload, false)
+Application.put_env(:handbean, Handbean.Repo, repo_cfg)
+Application.put_env(:handbean, :extension_hot_reload, false)
 
-{:ok, _} = Application.ensure_all_started(:handbeam)
+{:ok, _} = Application.ensure_all_started(:handbean)
 
 migrations = Path.join(File.cwd!(), "priv/repo/migrations")
-_ = Ecto.Migrator.run(Handbeam.Repo, migrations, :up, all: true)
+_ = Ecto.Migrator.run(Handbean.Repo, migrations, :up, all: true)
 
-{:ok, _ws} = Handbeam.WorkspaceStore.ensure_default!()
+{:ok, _ws} = Handbean.WorkspaceStore.ensure_default!()
 
 {:ok, conversation} =
-  Handbeam.ConversationStore.create("default", title: "Steer browser fixture")
+  Handbean.ConversationStore.create("default", title: "Steer browser fixture")
 
 url = "http://127.0.0.1:#{port}/w/default/c/#{conversation["id"]}"
 File.write!(Path.join(ctrl, "url"), url <> "\n")
@@ -217,5 +217,5 @@ receive do
 end
 
 _ = Supervisor.stop(hold_pid, :normal)
-:ok = Application.stop(:handbeam)
+:ok = Application.stop(:handbean)
 IO.puts("FIXTURE_STOPPED")

@@ -1,4 +1,4 @@
-defmodule HandbeamWeb.Feature.PermissionModeFeatureTest do
+defmodule HandbeanWeb.Feature.PermissionModeFeatureTest do
   @moduledoc """
   Switching the permission pill writes workspace settings, and the next run
   honors that mode: safe mode asks before a write, yolo runs it.
@@ -6,12 +6,12 @@ defmodule HandbeamWeb.Feature.PermissionModeFeatureTest do
   Run: mix test --include e2e test/feature/permission_mode_feature_test.exs
   """
 
-  use HandbeamWeb.FeatureCase, async: false
+  use HandbeanWeb.FeatureCase, async: false
 
-  alias Handbeam.ConversationStore
-  alias Handbeam.PubSub.Session
-  alias Handbeam.TestSupport.E2EHarness
-  alias Handbeam.WorkspaceSettings
+  alias Handbean.ConversationStore
+  alias Handbean.PubSub.Session
+  alias Handbean.TestSupport.E2EHarness
+  alias Handbean.WorkspaceSettings
 
   @moduletag :e2e
 
@@ -51,7 +51,7 @@ defmodule HandbeamWeb.Feature.PermissionModeFeatureTest do
        end}
     )
 
-    {:ok, ws} = Handbeam.WorkspaceStore.add(workspace, name: "Permissions")
+    {:ok, ws} = Handbean.WorkspaceStore.add(workspace, name: "Permissions")
     {:ok, first} = ConversationStore.create(ws["id"], title: "Safe")
     {:ok, second} = ConversationStore.create(ws["id"], title: "YOLO")
     :ok = Session.subscribe(first["id"])

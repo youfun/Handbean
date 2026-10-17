@@ -6,14 +6,14 @@
 - 对话、消息、运行状态、编辑器状态和 token 用量改由 SQLite 统一持久化，不再使用旧的对话索引、JSON/JSONL transcript 和 Session snapshot 文件作为在线存储。
 - 0.2.x 的旧对话不会自动迁移到 0.3.0，也不会出现在 0.3.0 的会话列表中。原有日志文件会保留在磁盘上，新版本不会读取或自动删除这些文件。
 - SQLite 数据库必须放在本机文件系统，不支持放在 NFS、iCloud Drive 或其他网络、同步目录中。
-- 新增 `mix handbeam.storage` 存储检查命令；可用 `mix handbeam.storage --backup PATH` 创建并验证在线备份，备份目标已存在时不会覆盖。
+- 新增 `mix handbean.storage` 存储检查命令；可用 `mix handbean.storage --backup PATH` 创建并验证在线备份，备份目标已存在时不会覆盖。
 
 ### 新增与改进
 - 工作区文件树支持多标签文件预览。代码文件提供语法高亮、行号和自动换行，Markdown 可以切换渲染结果与源码，并支持工作区内的相对链接和图片。
 - 文件预览采用有界读取，文本内容最多读取 128 KiB；较大的文件会标记为已截断，二进制文件交给外部方式打开，避免大文件阻塞工作区页面。
 - macOS 支持通过 `bash` 工具运行受管理的后台任务，可以持续读取输出、查询状态和停止任务。
 - 后台任务保留最近的终端记录；达到容量上限时自动淘汰最旧的已完成记录，不再阻止新任务启动。
-- 工作区可以单独启用或关闭 Handbeam 内置记忆。关闭后不会删除已有记忆，MCP 或扩展提供的外部记忆工具仍可使用；Web 与移动端均可设置。
+- 工作区可以单独启用或关闭 Handbean 内置记忆。关闭后不会删除已有记忆，MCP 或扩展提供的外部记忆工具仍可使用；Web 与移动端均可设置。
 - 创建子会话时默认继承当前会话使用的模型；需要指定其他模型时，可以通过 `list_models` 查询当前工作区允许使用的模型。
 - `yolo` 权限模式可以在明确指定的工作区外目录运行工具，同时继续拦截敏感凭据路径。
 - 一次性定时任务卡片会随创建、修改、删除和运行状态及时更新。
@@ -31,7 +31,7 @@
 - Windows 下载版改用 OTP Release 支持的 `start` 命令启动，并在打包时校验内置启动入口，避免 `start.bat` 因未知命令直接退出。
 
 ### 版本
-- Handbeam 与 Handbeam Probe 升至 `0.3.0`。
+- Handbean 与 Handbean Probe 升至 `0.3.0`。
 - 构建号升至 `20`。
 
 ## [0.2.15] - 工作区工具与对话体验
@@ -40,7 +40,7 @@
 - Web 与移动端新增工作区记忆浏览页，可以按关键词查询和查看当前工作区的持久记忆。
 - macOS 启动时捕获登录 shell 环境，并将工作区环境传递给命令、浏览器和 Agent 进程。
 - 工具记录读取默认只返回线程内容；需要调试时可显式请求工具摘要和输出。
-- 编辑和写入活动在对话中显示文件路径、文件数以及新增和删除行数；工具组摘要单独标明顾问模型调用。
+- 编辑和写入活动在对话中显示文件路径、文件数以及新增和删除行数；工具组摘要单独标明顾问 Agent 调用。
 - 向上滚动到对话顶部时自动加载更早的消息；Web 与 Android 加载后保留阅读位置。
 - 工作区文件树右键菜单支持复制绝对路径和相对路径；macOS 桌面客户端可在 Finder 中定位文件或文件夹。
 - 新增数据库结构检查工具，可列出 Ecto 仓库、表、字段、索引和外键，支持 SQLite、PostgreSQL 与 MySQL。
@@ -61,7 +61,7 @@
 - Android 在数据库迁移前初始化错误追踪配置。
 
 ### 版本
-- Handbeam 与 Handbeam Probe 升至 `0.2.15`。
+- Handbean 与 Handbean Probe 升至 `0.2.15`。
 - 构建号升至 `19`。
 
 ## [0.2.14] - 错误追踪与对话恢复
@@ -78,7 +78,7 @@
 - 移除每次供应商请求前对旧工具结果的自动替换，避免请求阶段再次改写历史上下文。
 
 ### 版本
-- Handbeam 与 Handbeam Probe 升至 `0.2.14`。
+- Handbean 与 Handbean Probe 升至 `0.2.14`。
 - 构建号升至 `18`。
 
 ## [0.2.13] - 工作区隔离与权限交互整理
@@ -89,13 +89,13 @@
 - 同步移动端 WebSocket 依赖锁定，并整理源码与测试格式。
 
 ### 修复
-- 默认工作区固定使用当前环境数据目录下的 `.handbeam/workspace`，不再被项目目录或测试夹具路径覆盖；初始化时纠正索引中已有的错误路径。
+- 默认工作区固定使用当前环境数据目录下的 `.handbean/workspace`，不再被项目目录或测试夹具路径覆盖；初始化时纠正索引中已有的错误路径。
 - 测试工作区、对话和工作区索引使用独立临时目录，避免影响真实用户数据。
 - 工作区对话列表隐藏内部子代理对话。
 - 修复发布构建的标签恢复、带标签构建触发和 iOS SDK 路径传递。
 
 ### 版本
-- Handbeam 与 Handbeam Probe 升至 `0.2.13`。
+- Handbean 与 Handbean Probe 升至 `0.2.13`。
 - 构建号升至 `17`。
 
 ## [0.2.12] - 一次性定时任务
@@ -112,7 +112,7 @@
 - 手机端统一原生颜色来源，并使历史会话、自由聊天控件和自定义提示测试与当前交互契约一致。
 
 ### 版本
-- Handbeam 与 Handbeam Probe 升至 `0.2.12`。
+- Handbean 与 Handbean Probe 升至 `0.2.12`。
 - 构建号升至 `16`。
 
 ## [0.2.11] - 上下文编辑与应用内浏览器
@@ -130,14 +130,14 @@
 - 搜索工具的游标和参数说明与实际行为一致。
 
 ### 版本
-- Handbeam 与 Handbeam Probe 升至 `0.2.11`。
+- Handbean 与 Handbean Probe 升至 `0.2.11`。
 - 构建号升至 `15`。
 
 ## [0.2.10] - 长上下文与工具加载
 
 ### 新增与改进
 - 模型可以读取并修改本次运行后续请求会发送的上下文。第一条任务消息保持不变。
-- 较早的工具结果不再整段留在发给供应商的记录里。超过 2,000 字节的内容写到工作区 `.handbeam/tool-results`，请求里只留路径和大小。最近一批工具结果保持完整。
+- 较早的工具结果不再整段留在发给供应商的记录里。超过 2,000 字节的内容写到工作区 `.handbean/tool-results`，请求里只留路径和大小。最近一批工具结果保持完整。
 - 内置工具仍随每次请求声明。MCP 工具先不放进提示，对话用 `tool_search` 找到后再声明，避免大型服务占满上下文。
 - 工作区文件树可以复制文件的相对路径。
 
@@ -146,10 +146,10 @@
 - 供应商流中途报错时保留上游原因。截断、过滤和未正常结束的流会被拒绝，不再把残缺输出当成完成。
 - 手机首次安装不再因尚未建表或缺少全文索引而白屏退出。历史列表图标与 Web 侧栏一致。
 - 手机模型设置页收起多余按钮，模型行跟在对应供应商下面。
-- 开发环境的会话和数据库改到 `~/.handbeam_dev`。用 `http://127.0.0.1` 打开时，WebSocket 来源检查不再拒绝设置页操作。
+- 开发环境的会话和数据库改到 `~/.handbean_dev`。用 `http://127.0.0.1` 打开时，WebSocket 来源检查不再拒绝设置页操作。
 
 ### 版本
-- Handbeam 与 Handbeam Probe 升至 `0.2.10`。
+- Handbean 与 Handbean Probe 升至 `0.2.10`。
 - 构建号升至 `14`。
 
 ## [0.2.9] - 界面主题与侧栏
@@ -177,7 +177,7 @@
 - 同时存在字符串键和原子键时，`false` 和空值会保留，不再被当成缺失。
 
 ### 版本
-- Handbeam 与 Handbeam Probe 升至 `0.2.9`。
+- Handbean 与 Handbean Probe 升至 `0.2.9`。
 - 构建号升至 `13`。
 
 ## [0.2.8] - 长会话与检索
@@ -192,10 +192,10 @@
 - 记忆关键词召回不再把整句做一次模糊匹配。查询会去掉标点和常见虚词，中文长词切成二字片段，再按词重叠和全文索引排序。
 - 定时任务不再用面板表单创建或修改。用户用自然语言说明时间和内容，由当前会话里的 Agent 转成规则；面板仍可暂停、恢复、删除和立即运行。`schedule` 工具返回接下来几次的本地时间。
 - 开发服务器使用 `PORT`，未设置时为 `4010`。
-- 本地启动脚本、macOS 客户端和发布包统一使用 `~/.handbeam/handbeam.db`，不再使用 `sigil.db`。
+- 本地启动脚本、macOS 客户端和发布包统一使用 `~/.handbean/handbean.db`，不再使用 `sigil.db`。
 
 ### 版本
-- Handbeam 与 Handbeam Probe 升至 `0.2.8`。
+- Handbean 与 Handbean Probe 升至 `0.2.8`。
 - 构建号升至 `12`。
 
 ## [0.2.7] - 定时任务与会话委派
@@ -211,7 +211,7 @@
 - 未闭合的 widget 代码围栏不再被当成已闭合，避免预览工具栏闪烁和 iframe 反复重载。
 
 ### 版本
-- Handbeam 与 Handbeam Probe 升至 `0.2.7`。
+- Handbean 与 Handbean Probe 升至 `0.2.7`。
 - 构建号升至 `11`。
 
 ## [0.2.6] - 模型设置与文件变更预览
@@ -230,7 +230,7 @@
 - 文件差异折叠未变更代码后，行号继续按原文件位置计算。
 
 ### 版本
-- Handbeam 与 Handbeam Probe 升至 `0.2.6`。
+- Handbean 与 Handbean Probe 升至 `0.2.6`。
 - 构建号升至 `10`。
 
 ## [0.2.5] - 模型目录拉取
@@ -240,13 +240,13 @@
 - WebUI 与 Android 模型设置增加「拉取模型」。Android 模型列表改为紧凑行，不再一模型一张大卡片。
 
 ### 版本
-- Handbeam 与 Handbeam Probe 升至 `0.2.5`。
+- Handbean 与 Handbean Probe 升至 `0.2.5`。
 - 构建号升至 `9`。
 
 ## [0.2.2] - 打包发布
 
 ### 版本
-- Handbeam 与 Handbeam Probe 升至 `0.2.2`。
+- Handbean 与 Handbean Probe 升至 `0.2.2`。
 - Android `versionCode` 升至 `6`，iOS `CFBundleVersion` 升至 `5`，macOS `CFBundleVersion` 升至 `3`。
 - 打 `v0.2.2` 标签触发 Pack。`0.2.1` 只提交到 `dev`，没有对应标签。
 
@@ -254,13 +254,13 @@
 
 ### 新增与改进
 - 新增基于系统 WebKit 的 macOS 原生客户端，内置 OTP release，使用随机 loopback 端口启动本机服务。
-- `Pack` workflow 在 macOS ARM64 构建中同时生成 Web UI tarball 与 `Handbeam-macos-arm64.zip`，并发布 SHA-256 校验文件。
+- `Pack` workflow 在 macOS ARM64 构建中同时生成 Web UI tarball 与 `Handbean-macos-arm64.zip`，并发布 SHA-256 校验文件。
 - macOS 标题栏提供原生导航、工作区面板和设置操作，Web 页面不再重复显示面板控制。
 - 启动时侧栏仅加载会话元数据，异常恢复仅检查运行中标记的会话，不再扫描全部历史 transcript。
 - 更新 Markdown、Mermaid、DOMPurify 与测试 DOM 依赖，`npm audit` 无已知漏洞。
 
 ### 版本
-- Handbeam 与 Handbeam Probe 升至 `0.2.1`。
+- Handbean 与 Handbean Probe 升至 `0.2.1`。
 - Android `versionCode` 升至 `5`，iOS `CFBundleVersion` 升至 `4`，macOS `CFBundleVersion` 升至 `2`。
 
 ## [0.2.0] - Web UI 安装包
@@ -278,12 +278,12 @@
 - 索引是独立 SQLite，不进 Memory Repo。导入/只读工作区写到 `Host.data_dir()`，不写进工作区副本。
 - 工作台底栏不再放终端入口；终端仍从右侧面板打开。
 
-## [2026-09-19] - Handbeam Android 实验版
+## [2026-09-19] - Handbean Android 实验版
 
 ### 新增与改进
-- 产品统一命名为 **Handbeam**，仓库迁至 `youfun/Handbeam`。
-- Android APK 按 ABI 分包：`Handbeam-arm64-v8a.apk`（手机）与
-  `Handbeam-x86_64.apk`（模拟器 / ChromeOS），版本 `0.1.0`、构建号 `2`。
+- 产品统一命名为 **Handbean**，仓库迁至 `youfun/Handbean`。
+- Android APK 按 ABI 分包：`Handbean-arm64-v8a.apk`（手机）与
+  `Handbean-x86_64.apk`（模拟器 / ChromeOS），版本 `0.1.0`、构建号 `2`。
 - Android 集成 ExGit `0.0.4` 的 libgit2 NIF，无需系统 Git CLI；支持本地 Git
   操作及 HTTPS clone/fetch/pull，使用应用 CA 包验证服务器证书。
 - 内置 Elixir/OTP 支持实验性的手机端脚本与纯 Elixir/Erlang Mix 项目工作流。
@@ -297,7 +297,7 @@
 - 凭据信任边界为 HTTPS 主机，不保证同主机不同端口或仓库路径隔离；
   历史已泄露凭据仍需撤销、更换。
 - 主工程 Req 升级至 `0.7.4`；mobile 仍保留自身的 `0.6.3` 锁定。
-- 修正 guest Docker 镜像的 Handbeam release 路径。
+- 修正 guest Docker 镜像的 Handbean release 路径。
 
 ### 构建与仓库整理
 - 对齐 Android 构建所需 Zig 版本与设备 Elixir `1.20.1` 工具链。
@@ -319,13 +319,13 @@
     - **完整存取 (Auto)**: 自动运行所有工具（相当于之前模式）。
     - **安全模式 (Prompt)**: 运行修改类/命令类等敏感工具前会弹出二次确认窗口。
     - **只读模式 (Deny)**: 拒绝所有写文件或命令执行工具。
-  - 权限模式的变更会自动、非破坏性地同步写入对应工作区目录下的 `.handbeam/settings.jsonc` 配置文件，完整保留用户现有的注释和格式。
+  - 权限模式的变更会自动、非破坏性地同步写入对应工作区目录下的 `.handbean/settings.jsonc` 配置文件，完整保留用户现有的注释和格式。
 
 ### 修复 (Bug Fixes)
 - **权限弹窗丢失/隐藏问题**:
-  - 修复了 `HandbeamWeb.WorkspaceLive` 中 `safe_atom/1` 在遇到 `"interrupted"` 和 `"awaiting_approval"` 状态时会被错误重置为 `:idle` 的 Bug。该修复恢复了在“安全模式”下触发敏感工具时审批确认弹窗（Tool Approval Modal）的正常呈现。
+  - 修复了 `HandbeanWeb.WorkspaceLive` 中 `safe_atom/1` 在遇到 `"interrupted"` 和 `"awaiting_approval"` 状态时会被错误重置为 `:idle` 的 Bug。该修复恢复了在“安全模式”下触发敏感工具时审批确认弹窗（Tool Approval Modal）的正常呈现。
   - 修复了在关闭其他手机弹窗/侧边面板时，没有隐藏权限切换下拉菜单的视觉问题。
 
 ### 开发与验证
-- 引入了针对 `Handbeam.WorkspaceSettings.update_default_mode/2` 修改配置文件的单元测试，确保修改符合非破坏性预期。
+- 引入了针对 `Handbean.WorkspaceSettings.update_default_mode/2` 修改配置文件的单元测试，确保修改符合非破坏性预期。
 - 引入了 LiveView 交互集成测试，覆盖了下拉菜单展开、点击切换、自动收起、UI 状态同步以及 settings.jsonc 文件的落盘更新验证。

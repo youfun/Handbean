@@ -120,7 +120,7 @@ if [[ "$skip_setup" -eq 0 ]]; then
   bash "$PROBE_ROOT/script/ci_setup_android.sh"
 fi
 
-# mob.pack_apk starts :handbeam. Clock reads schedule_runs during that start,
+# mob.pack_apk starts :handbean. Clock reads schedule_runs during that start,
 # and a fresh CI database has no schema until this runs.
 mix ecto.create --quiet
 mix ecto.migrate --quiet
@@ -132,7 +132,7 @@ fi
 mkdir -p "$artifacts_dir"
 
 for abi in "${abis[@]}"; do
-  out="$artifacts_dir/Handbeam-${abi}.apk"
+  out="$artifacts_dir/Handbean-${abi}.apk"
   echo "Packing $abi → $out"
   mix mob.pack_apk --abi "$abi" --no-install --output "$out"
   test -s "$out"
@@ -140,4 +140,4 @@ for abi in "${abis[@]}"; do
 done
 
 echo "APKs:"
-ls -lh "$artifacts_dir"/Handbeam-*.apk
+ls -lh "$artifacts_dir"/Handbean-*.apk

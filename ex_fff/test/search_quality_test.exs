@@ -15,7 +15,7 @@ defmodule ExFff.SearchQualityTest do
       "assets/js/hooks/conversation_context_menu.js.bak",
       "test/support/data_case.ex",
       "lib/data_case_helper.ex",
-      "lib/handbeam/security/path_validator.ex",
+      "lib/handbean/security/path_validator.ex",
       "docs/schedule-plan.md",
       "docs/schedule-plan.md.backup",
       "priv/repo/migrations/20260718000000_create_schedules.exs",
@@ -25,7 +25,7 @@ defmodule ExFff.SearchQualityTest do
       "desktop/linux/ConversationPanel.swift",
       "desktop/macos/Sources/WebView.swift",
       "desktop/macos/Sources/ConversationWebView.swift",
-      "lib/handbeam_web/components/sidebar_components.ex",
+      "lib/handbean_web/components/sidebar_components.ex",
       "assets/images/icon_20.png"
     ]
 
@@ -74,7 +74,7 @@ defmodule ExFff.SearchQualityTest do
     name: name
   } do
     boost(pid, "lib/data_case_helper.ex")
-    boost(pid, "lib/handbeam/security/path_validator.ex")
+    boost(pid, "lib/handbean/security/path_validator.ex")
 
     paths = search_paths(name, "data_case.ex")
 

@@ -5,17 +5,17 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>Handbeam</string>
+	<string>Handbean</string>
 	<key>CFBundleExecutable</key>
-	<string>Handbeam</string>
+	<string>Handbean</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.youfun.handbeam</string>
+	<string>com.youfun.handbean</string>
 	<key>CFBundleIconFile</key>
-	<string>Handbeam</string>
+	<string>Handbean</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>Handbeam</string>
+	<string>Handbean</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>LSMinimumSystemVersion</key>

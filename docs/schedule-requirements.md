@@ -13,7 +13,7 @@
 
 ## 不解决的事
 
-- 不把 `Handbeam.Jobs`、`device_alarm`、系统 crontab、Quantum/Oban 或某个对话的 Session 当成时钟。
+- 不把 `Handbean.Jobs`、`device_alarm`、系统 crontab、Quantum/Oban 或某个对话的 Session 当成时钟。
 - 不承诺手机进程死后仍会响。不把打开系统闹钟界面算作已调度。
 - 不承诺无人值守时用浏览器登录、搜索 Twitter 或操作桌面。取数失败是这一轮的结果，不是调度器的重试风暴。
 - 不重放错过的每一次。不把定时消息插进用户正在进行的那一轮。

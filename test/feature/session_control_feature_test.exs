@@ -1,4 +1,4 @@
-defmodule HandbeamWeb.Feature.SessionControlFeatureTest do
+defmodule HandbeanWeb.Feature.SessionControlFeatureTest do
   @moduledoc """
   While a run is open, the composer can steer the next step, queue a message
   until the run finishes, or stop the run. Each path leaves a durable transcript.
@@ -6,12 +6,12 @@ defmodule HandbeamWeb.Feature.SessionControlFeatureTest do
   Run: mix test --include e2e test/feature/session_control_feature_test.exs
   """
 
-  use HandbeamWeb.FeatureCase, async: false
+  use HandbeanWeb.FeatureCase, async: false
 
-  alias Handbeam.Agent.Message
-  alias Handbeam.ConversationStore
-  alias Handbeam.PubSub.Session
-  alias Handbeam.TestSupport.E2EHarness
+  alias Handbean.Agent.Message
+  alias Handbean.ConversationStore
+  alias Handbean.PubSub.Session
+  alias Handbean.TestSupport.E2EHarness
 
   import Phoenix.LiveViewTest, only: [render_click: 3]
 
@@ -19,7 +19,7 @@ defmodule HandbeamWeb.Feature.SessionControlFeatureTest do
 
   setup %{conn: conn} do
     %{workspace: workspace} = E2EHarness.isolate_home!("session-control")
-    {:ok, ws} = Handbeam.WorkspaceStore.add(workspace, name: "Control")
+    {:ok, ws} = Handbean.WorkspaceStore.add(workspace, name: "Control")
     {:ok, conversation} = ConversationStore.create(ws["id"], title: "Control")
     id = conversation["id"]
     :ok = Session.subscribe(id)

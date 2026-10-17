@@ -1,4 +1,4 @@
-defmodule Handbeam.Repo.Migrations.CreateConversationStorage do
+defmodule Handbean.Repo.Migrations.CreateConversationStorage do
   use Ecto.Migration
 
   def change do

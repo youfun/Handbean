@@ -3,7 +3,7 @@ defmodule Mix.Tasks.CsvProfile do
 
   use Mix.Task
 
-  alias Handbeam.CsvProfile.{Analyzer, Error, Format}
+  alias Handbean.CsvProfile.{Analyzer, Error, Format}
 
   @shortdoc "Profile a CSV file"
 
@@ -33,6 +33,6 @@ defmodule Mix.Tasks.CsvProfile do
   defp format_error(%Error{code: code, message: message, path: path}) do
     base = %{error: Atom.to_string(code), message: message}
     base = if path, do: Map.put(base, :path, path), else: base
-    Handbeam.JSON.encode!(base)
+    Handbean.JSON.encode!(base)
   end
 end

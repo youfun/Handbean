@@ -13,7 +13,7 @@ usage() {
   cat <<'EOF'
 Usage: script/pack_sideload_ipa.sh [--artifacts directory]
 
-Writes Handbeam-ios-sideload.ipa and Handbeam-ios-sideload.ipa.sha256.
+Writes Handbean-ios-sideload.ipa and Handbean-ios-sideload.ipa.sha256.
 The IPA is ad-hoc signed and contains no embedded.mobileprovision.
 EOF
 }
@@ -58,13 +58,13 @@ mix deps.get
 mix mob.write_mob_exs
 
 mkdir -p "$artifacts_dir"
-export HANDBEAM_IPA_DIR="$artifacts_dir"
+export HANDBEAN_IPA_DIR="$artifacts_dir"
 if [[ -n "${HANDREAM_ISH_LIBS:-}" ]]; then
   bash script/link_ios_ish.sh
 fi
 mix run --no-start script/pack_sideload_ipa.exs
 
-ipa="$artifacts_dir/Handbeam-ios-sideload.ipa"
+ipa="$artifacts_dir/Handbean-ios-sideload.ipa"
 if [[ ! -f "$ipa" ]]; then
   echo "IPA was not written: $ipa" >&2
   exit 1

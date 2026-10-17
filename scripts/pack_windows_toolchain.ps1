@@ -11,12 +11,12 @@ $GitUrl = "https://github.com/git-for-windows/git/releases/download/$GitTag/MinG
 $HexVersion = "2.4.1"
 
 $root = Split-Path -Parent $PSScriptRoot
-$release = Join-Path $root "_build\prod\rel\handbeam"
-if (-not (Test-Path (Join-Path $release "bin\handbeam.bat"))) {
+$release = Join-Path $root "_build\prod\rel\handbean"
+if (-not (Test-Path (Join-Path $release "bin\handbean.bat"))) {
   throw "OTP release missing at $release; run scripts/pack_webui.ps1 windows-amd64 first"
 }
 
-$work = Join-Path ([System.IO.Path]::GetTempPath()) ("handbeam-toolchain-" + [guid]::NewGuid().ToString("n"))
+$work = Join-Path ([System.IO.Path]::GetTempPath()) ("handbean-toolchain-" + [guid]::NewGuid().ToString("n"))
 $stage = Join-Path $work "stage"
 $downloads = Join-Path $work "downloads"
 New-Item -ItemType Directory -Force -Path $stage, $downloads | Out-Null
@@ -72,7 +72,7 @@ try {
 
   Copy-Item -Path (Join-Path $root "scripts\windows\shims") -Destination (Join-Path $toolchain "shims") -Recurse -Force
   @"
-Experimental Handbeam Windows package.
+Experimental Handbean Windows package.
 
 This archive adds Elixir $ElixirVersion, Mix, Hex $HexVersion, Rebar3, and MinGit to the Web UI release.
 start.bat puts those tools first on PATH for this process only. It does not change the system PATH.
@@ -81,7 +81,7 @@ No C compiler, Zig, or Node is included. Projects that compile NIFs need Visual 
 There is no in-browser terminal.
 "@ | Set-Content -Encoding utf8 (Join-Path $toolchain "README.txt")
 
-  $archive = Join-Path $root "handbeam-web-windows-amd64-toolchain.zip"
+  $archive = Join-Path $root "handbean-web-windows-amd64-toolchain.zip"
   $sum = "$archive.sha256"
   if (Test-Path $archive) { Remove-Item $archive -Force }
   if (Test-Path $sum) { Remove-Item $sum -Force }

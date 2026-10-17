@@ -5,8 +5,8 @@ defmodule Mix.Tasks.Mob.WriteMobExsTest do
     template = File.read!(Mix.Tasks.Mob.WriteMobExs.template_path())
 
     assert template =~ "import Config"
-    assert template =~ "%{module: :handbeam_notify, archs: [:android]}"
-    assert template =~ "%{module: :handbeam_browser, archs: [:android]}"
+    assert template =~ "%{module: :handbean_notify, archs: [:android]}"
+    assert template =~ "%{module: :handbean_browser, archs: [:android]}"
     refute template =~ "%{module: :sigil_share, archs: [:android]}"
     refute template =~ "API_KEY"
     refute template =~ "token"

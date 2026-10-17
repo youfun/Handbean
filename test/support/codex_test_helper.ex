@@ -1,4 +1,4 @@
-defmodule Handbeam.CodexTestHelper do
+defmodule Handbean.CodexTestHelper do
   @moduledoc false
 
   def token(account \\ "account-a") do

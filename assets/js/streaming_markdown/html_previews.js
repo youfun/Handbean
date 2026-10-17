@@ -56,7 +56,7 @@ export function handleHtmlPreviewClick(event) {
 }
 
 export function resizeHtmlPreview(root, event) {
-  if (event.data?.type !== "handbeam:preview-height" ||
+  if (event.data?.type !== "handbean:preview-height" ||
       !Number.isFinite(event.data.height)) return;
   const frame = [...root.querySelectorAll(".html-preview-frame")]
     .find((candidate) => candidate.contentWindow === event.source);
@@ -77,7 +77,7 @@ function previewDocument(source, closed) {
   const scripts = closed ? "'unsafe-inline'" : "'none'";
   const policy = `default-src 'none'; script-src ${scripts}; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'`;
   const resizeScript = closed ? `<script>(() => {
-    const report = () => parent.postMessage({type: "handbeam:preview-height", height: document.documentElement.scrollHeight}, "*");
+    const report = () => parent.postMessage({type: "handbean:preview-height", height: document.documentElement.scrollHeight}, "*");
     new ResizeObserver(report).observe(document.body);
     addEventListener("load", report);
     report();

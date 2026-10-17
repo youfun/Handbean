@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.example.handbeam_probe">
+    package="com.example.handbean_probe">
 
     <!-- Network -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -77,7 +77,7 @@
     </queries>
 
     <application
-        android:label="Handbeam"
+        android:label="Handbean"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
         android:allowBackup="false"
@@ -127,7 +127,7 @@
             android:stopWithTask="false">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Keep the on-device Handbeam BEAM running while a visible notification is shown." />
+                android:value="Keep the on-device Handbean BEAM running while a visible notification is shown." />
         </service>
 
         <!-- Scheduled local notification delivery -->

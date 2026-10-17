@@ -1,8 +1,8 @@
 # Transcript durability and SQLite storage
 
-Handbeam stores conversations, transcript entries, run usage, operation receipts,
+Handbean stores conversations, transcript entries, run usage, operation receipts,
 editor state, and reconnect snapshots in the SQLite database owned by
-`Handbeam.Repo`. The packaged host resolves it to `<data_dir>/handbeam.db` unless
+`Handbean.Repo`. The packaged host resolves it to `<data_dir>/handbean.db` unless
 an explicit Repo database is configured. SQLite is the only canonical online
 store: old conversation/session JSON and JSONL files are neither imported nor
 used as a fallback.
@@ -10,7 +10,7 @@ used as a fallback.
 The Repo is configured centrally for WAL, `synchronous = FULL`, foreign keys,
 bounded busy waiting, and automatic checkpointing. Visible assistant deltas are
 committed before delivery or Session broadcast. A database-path-specific native
-sidecar lock prevents two Handbeam runtimes from owning the same database; a
+sidecar lock prevents two Handbean runtimes from owning the same database; a
 different database in the same directory has an independent lock.
 
 SQLite WAL requires a local filesystem shared by all Repo connections. Do not
@@ -56,7 +56,7 @@ bytes.
 Run a redacted explicit diagnosis against the active Repo:
 
 ```sh
-mix handbeam.storage
+mix handbean.storage
 ```
 
 It runs `quick_check`, `foreign_key_check`, required table/index checks, reports
@@ -73,7 +73,7 @@ empty replacement.
 Create a consistent online backup with:
 
 ```sh
-mix handbeam.storage --backup /path/to/handbeam-backup.db
+mix handbean.storage --backup /path/to/handbean-backup.db
 ```
 
 The command uses `VACUUM INTO` to write a temporary snapshot, opens that snapshot
@@ -81,14 +81,14 @@ read-only, verifies quick check, foreign keys, and migration version, then
 atomically publishes it. It refuses to overwrite an existing target. Never copy
 the live database file by itself while the runtime is active.
 
-Restore only while Handbeam is stopped and no process owns the target database.
+Restore only while Handbean is stopped and no process owns the target database.
 Preserve a damaged database and its `-wal`/`-shm` companions for diagnosis.
 There is no canonical JSONL copy from which newer state can be rebuilt.
 
 ## Limits and verification
 
 Committed SQLite text survives a BEAM task or host process crash according to
-FULL WAL durability. Handbeam cannot recover bytes the disk refused to write,
+FULL WAL durability. Handbean cannot recover bytes the disk refused to write,
 an unacknowledged provider chunk, an unknown external side effect, total disk
 loss, or a damaged database without a verified backup.
 

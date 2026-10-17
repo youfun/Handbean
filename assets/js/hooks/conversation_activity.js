@@ -1,7 +1,7 @@
 const conversationColors = [
-  "#c5a552", "#d48a46", "#c96f5f", "#bd5f67",
-  "#c47d9b", "#aa679a", "#8b7ec4", "#6e94cc",
-  "#4f9670", "#7fa45b", "#a97852", "#85736e",
+  "#e4bd3f", "#ed9438", "#e66c55", "#dc5362",
+  "#d878a1", "#c75dae", "#8b79d8", "#6c9add",
+  "#3ebd79", "#89c351", "#c78049", "#af6c59",
 ];
 
 // Mix all hash bits before selecting a color, rather than just FNV's low bits.

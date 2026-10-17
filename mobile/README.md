@@ -1,8 +1,8 @@
-# Handbeam Native Chat experiment
+# Handbean Native Chat experiment
 
 Mob 0.7.39 native controls. Android renders Jetpack Compose; iOS renders
 SwiftUI. The chat and settings pages no longer embed LiveView or WebView.
-Handbeam runs on-device unchanged: Coordinator owns input, Runner owns tasks,
+Handbean runs on-device unchanged: Coordinator owns input, Runner owns tasks,
 and ConversationTranscriptStore owns history. Phoenix remains available on
 loopback for existing runtime services.
 
@@ -27,14 +27,14 @@ mix test
 
 ## Android
 
-Independent package: `com.example.handbeam_probe.nativechat` (launcher: **Handbeam**).
-Does not replace or share data with `com.example.handbeam_probe`.
-Debug node: `:"handbeam_probe_android_nativechat@127.0.0.1"`, Dist **9200**.
+Independent package: `com.example.handbean_probe.nativechat` (launcher: **Handbean**).
+Does not replace or share data with `com.example.handbean_probe`.
+Debug node: `:"handbean_probe_android_nativechat@127.0.0.1"`, Dist **9200**.
 Inspect handlers using `Mob.Test` / `:rpc`; screenshots verify layout only.
 
 ChromeOS ARC cannot `run-as`. Persist OTP with `mix mob.pack_apk --device arc:5555`,
 then force-stop **only the nativechat package** and start
-`com.example.handbeam_probe.nativechat/com.example.handbeam_probe.MainActivity`.
+`com.example.handbean_probe.nativechat/com.example.handbean_probe.MainActivity`.
 
 Pack debug APKs (one ABI per zip; same script locally and in CI):
 
@@ -47,7 +47,7 @@ bash script/pack_android_apks.sh --abi arm64-v8a  # phones
 Android Git uses ExGit's NDK CMake build (`ex_git` is a mobile Mix dependency,
 not a root production dependency). Gradle packages `libex_git_nif.so`
 with static libgit2 and Mbed TLS; no device Git CLI is required. App startup
-sets `Handbeam.Host` `:git_backend` to `Handbeam.Git.ExGit`, the installed
+sets `Handbean.Host` `:git_backend` to `Handbean.Git.ExGit`, the installed
 native-library path, and the existing CA bundle before NIF load. TLS
 certificate validation stays enabled.
 
@@ -66,9 +66,9 @@ It needs access to GitHub and `self-signed.badssl.com`.
 
 ## iOS
 
-Same Mix package (`:handbeam_probe`) and the same `HomeScreen` / Coordinator /
-Runner. Host tree is `ios/` (SwiftUI + `handbeam_ios` NIF). Bundle id:
-`com.example.handbeam_probe` (launcher: **HandbeamProbe**). Needs macOS, Xcode, and
+Same Mix package (`:handbean_probe`) and the same `HomeScreen` / Coordinator /
+Runner. Host tree is `ios/` (SwiftUI + `handbean_ios` NIF). Bundle id:
+`com.example.handbean_probe` (launcher: **HandbeanProbe**). Needs macOS, Xcode, and
 the Zig pin used by Mob native (see `.tool-versions`).
 
 ```bash
@@ -104,13 +104,13 @@ set it inside the VM, never on the process command line:
 Node.set_cookie(MobDev.DistCookie.for_project!())
 ```
 
-Node name is `:"handbeam_probe_ios_<8-char-udid>@127.0.0.1"` (first 8 hex
+Node name is `:"handbean_probe_ios_<8-char-udid>@127.0.0.1"` (first 8 hex
 chars of the UDID, lowercase, no dashes). Bare
-`:"handbeam_probe_ios@127.0.0.1"` is only the fallback when no UDID is known.
+`:"handbean_probe_ios@127.0.0.1"` is only the fallback when no UDID is known.
 `mix mob.connect` often hangs; ping from a named node instead:
 
 ```elixir
-node = :"handbeam_probe_ios_8d4e9af7@127.0.0.1"   # example; match the booted sim
+node = :"handbean_probe_ios_8d4e9af7@127.0.0.1"   # example; match the booted sim
 Node.set_cookie(MobDev.DistCookie.for_project!())
 Node.ping(node)
 Mob.Test.screen(node)
@@ -118,6 +118,6 @@ Mob.Test.assigns(node)
 ```
 
 Photo pick, export open/share, and in-app file preview run through
-`HandbeamProbe.Platform.IOS` (controlled import, snapshot registry, stock Mob
+`HandbeanProbe.Platform.IOS` (controlled import, snapshot registry, stock Mob
 nodes). Tests must not load Android NIFs; iOS NIF failures stay errors, not
 `:ok`.

@@ -1,4 +1,4 @@
-defmodule Handbeam.Repo.Migrations.AddConversationTrajectory do
+defmodule Handbean.Repo.Migrations.AddConversationTrajectory do
   use Ecto.Migration
 
   def change do

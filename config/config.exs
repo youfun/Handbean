@@ -7,37 +7,37 @@
 # General application configuration
 import Config
 
-config :handbeam,
-  ecto_repos: [Handbeam.Repo],
-  endpoint_adapter: HandbeamWeb.Endpoint,
+config :handbean,
+  ecto_repos: [Handbean.Repo],
+  endpoint_adapter: HandbeanWeb.Endpoint,
   generators: [timestamp_type: :utc_datetime],
-  session_store: Handbeam.SessionStore.SQLite,
-  telemetry_adapter: HandbeamWeb.Telemetry
+  session_store: Handbean.SessionStore.SQLite,
+  telemetry_adapter: HandbeanWeb.Telemetry
 
 config :error_tracker,
-  repo: Handbeam.Repo,
-  otp_app: :handbeam,
-  filter: Handbeam.ErrorTrackerFilter,
+  repo: Handbean.Repo,
+  otp_app: :handbean,
+  filter: Handbean.ErrorTrackerFilter,
   enabled: true
 
 # IANA zones ship inside Tz. No network and no disk writes at runtime.
 config :elixir, :time_zone_database, Tz.TimeZoneDatabase
 
 # Configure the endpoint
-config :handbeam, HandbeamWeb.Endpoint,
+config :handbean, HandbeanWeb.Endpoint,
   url: [host: "localhost"],
   adapter: Bandit.PhoenixAdapter,
   render_errors: [
-    formats: [html: HandbeamWeb.ErrorHTML, json: HandbeamWeb.ErrorJSON],
+    formats: [html: HandbeanWeb.ErrorHTML, json: HandbeanWeb.ErrorJSON],
     layout: false
   ],
-  pubsub_server: Handbeam.PubSub,
+  pubsub_server: Handbean.PubSub,
   live_view: [signing_salt: "Wkzn+39Y"]
 
 # Keep the existing stylesheet order in the layout; build each source separately.
 config :esbuild,
   version: "0.25.12",
-  handbeam: [
+  handbean: [
     args:
       ~w(js/app.js js/webgpu_probe_worker.js css/app.css css/theme-system.css css/theme-light.css css/theme-dark.css css/workspace.css css/composer.css css/motion.css default.css --bundle --target=es2020 --outbase=. --outdir=../priv/static/assets --external:/fonts/* --external:/images/*),
     cd: Path.expand("../assets", __DIR__),
@@ -49,11 +49,11 @@ config :logger, :default_formatter,
   format: "$time $metadata[$level] $message\n",
   metadata: [:request_id]
 
-# Use Erlang/OTP's built-in JSON implementation through Handbeam's Phoenix adapter.
-config :phoenix, :json_library, Handbeam.JSON
+# Use Erlang/OTP's built-in JSON implementation through Handbean's Phoenix adapter.
+config :phoenix, :json_library, Handbean.JSON
 
 # ── Gettext i18n 配置 ──
-config :handbeam, Handbeam.Gettext,
+config :handbean, Handbean.Gettext,
   default_locale: "zh_CN",
   locales: ~w(zh_CN en)
 

@@ -1,6 +1,6 @@
-# Handbeam Mobile Host
+# Handbean Mobile Host
 
-`mobile/` 是 Handbeam 的 Android/iOS native host。它复用根项目的业务与 Agent
+`mobile/` 是 Handbean 的 Android/iOS native host。它复用根项目的业务与 Agent
 runtime，不维护另一套产品逻辑。
 
 当前功能、模块、版本、节点、端口和设备命令以源码、锁文件、测试、脚本和文档为
@@ -23,11 +23,11 @@ runtime，不维护另一套产品逻辑。
 - 离屏异步结果必须可关联、可过期。用户切换 workspace、conversation、页面或
   draft 后，旧结果不得合并进新状态。
 - 系统 chooser/viewer 已打开只表示界面呈现，不代表文件已送达或分享完成。
-- 移动业务代码沿用根项目的 `Handbeam.JSON` 约束。
+- 移动业务代码沿用根项目的 `Handbean.JSON` 约束。
 
 ## 验证约束
 
-修改移动代码时加载 `verifying-handbeam-mobile` 技能。完整设备矩阵、风险控制和
+修改移动代码时加载 `verifying-handbean-mobile` 技能。完整设备矩阵、风险控制和
 证据格式见 `../docs/mobile-device-verification.md`；Mob 工具行为以仓库锁定版本的
 文档和本目录下的 `mix help` 为准。
 

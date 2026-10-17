@@ -41,10 +41,10 @@ for key, value in {"window_id": args.window, "observation_id": args.receipt,
     if value is not None:
         input_data[key] = value
 request = {"id": str(uuid.uuid4()), "session": args.session,
-           "token": credentials["HANDBEAM_COMPUTER_TOKEN"],
+           "token": credentials["HANDBEAN_COMPUTER_TOKEN"],
            "deadline_ms": int(time.time() * 1000) + args.deadline_ms,
            "input": input_data}
-with socket.create_connection(("127.0.0.1", int(credentials["HANDBEAM_COMPUTER_PORT"])), timeout=65) as client:
+with socket.create_connection(("127.0.0.1", int(credentials["HANDBEAN_COMPUTER_PORT"])), timeout=65) as client:
     client.sendall(json.dumps(request).encode() + b"\n")
     if args.disconnect_after is not None:
         time.sleep(args.disconnect_after)

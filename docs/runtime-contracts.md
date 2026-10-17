@@ -84,10 +84,10 @@ durable transcript ID 的气泡，不再额外生成一条重复的 streaming ro
 ## 回归与设备验证
 
 ```sh
-mix test --include e2e test/handbeam/e2e/run_admission_test.exs test/handbeam/e2e/extension_contract_test.exs
-mix test test/feature/runtime_projection_feature_test.exs test/handbeam/pubsub/projection_test.exs
+mix test --include e2e test/handbean/e2e/run_admission_test.exs test/handbean/e2e/extension_contract_test.exs
+mix test test/feature/runtime_projection_feature_test.exs test/handbean/pubsub/projection_test.exs
 # mobile/ 中执行；正常依赖锁同步后不需要 --no-deps-check
-mix test test/handbeam_probe/native_chat_test.exs test/handbeam_probe/home_screen_test.exs
+mix test test/handbean_probe/native_chat_test.exs test/handbean_probe/home_screen_test.exs
 ```
 
 Mob.ScreenCase 只能证明宿主侧消息处理、节点树和 transcript，不是手机验收。

@@ -9,10 +9,10 @@ defmodule Mix.Tasks.Mob.PackApk do
 
   One APK holds one OTP zip, so arm64 and x86_64 are separate builds:
 
-      mix mob.pack_apk --abi arm64-v8a --no-install --output handbeam_probe-arm64.apk
-      mix mob.pack_apk --abi x86_64 --no-install --output handbeam_probe-x86_64.apk
+      mix mob.pack_apk --abi arm64-v8a --no-install --output handbean_probe-arm64.apk
+      mix mob.pack_apk --abi x86_64 --no-install --output handbean_probe-x86_64.apk
 
-  Default packaging stays `com.example.handbeam_probe.nativechat`. Pass
+  Default packaging stays `com.example.handbean_probe.nativechat`. Pass
   `--foundation-test-app` to forward Gradle `-PfoundationTestApp` (isolated
   `foundationtest` applicationId + dist 9300):
 
@@ -23,7 +23,7 @@ defmodule Mix.Tasks.Mob.PackApk do
       mix mob.pack_apk --abi arm64-v8a --no-install --models-seed PATH
 
   Or place `config/foundation_test_models.seed.json` (gitignored) / set
-  `HANDBEAM_FOUNDATION_MODELS_SEED` for foundation-test packs only. Nativechat
+  `HANDBEAN_FOUNDATION_MODELS_SEED` for foundation-test packs only. Nativechat
   requires an explicit --models-seed path. First boot copies the seed only
   when models.json is missing. Embedded keys are extractable; use revocable
   test credentials. Do not commit keys.
@@ -31,7 +31,7 @@ defmodule Mix.Tasks.Mob.PackApk do
 
   use Mix.Task
 
-  @activity "com.example.handbeam_probe.nativechat/com.example.handbeam_probe.MainActivity"
+  @activity "com.example.handbean_probe.nativechat/com.example.handbean_probe.MainActivity"
 
   @impl Mix.Task
   def run(args) do
@@ -49,13 +49,13 @@ defmodule Mix.Tasks.Mob.PackApk do
       )
 
     Mix.Task.run("compile")
-    Mix.Task.run("handbeam.pack_mix_toolchain")
+    Mix.Task.run("handbean.pack_mix_toolchain")
     # mob.exs is gitignored; pack from a fresh tree must install the
     # checked-in static_nifs template or Zig omits project C NIFs.
     Mix.Task.run("mob.write_mob_exs")
     # The Zig link can succeed with a stale table while project NIFs fail to load.
     Mix.Task.run("mob.regen_driver_tab")
-    ensure_handbeam_assets!()
+    ensure_handbean_assets!()
 
     abi = opts[:abi] || detect_abi(opts[:device])
     slim? = Keyword.get(opts, :slim, true)
@@ -182,9 +182,9 @@ defmodule Mix.Tasks.Mob.PackApk do
 
   defp zip_path, do: Path.expand("android/app/src/debug/assets/otp.zip")
 
-  defp ensure_handbeam_assets! do
+  defp ensure_handbean_assets! do
     sigil = Path.expand("..", File.cwd!())
-    Mix.shell().info("  building Handbeam assets…")
+    Mix.shell().info("  building Handbean assets…")
 
     case System.cmd("mix", ["assets.build"], cd: sigil, stderr_to_stdout: true) do
       {_, 0} -> :ok
@@ -230,7 +230,7 @@ defmodule Mix.Tasks.Mob.PackApk do
 
   defp shared_runtime_beam_dirs(build_path) do
     lib_path = Path.join(build_path, "lib")
-    collect_runtime_apps(lib_path, ["handbeam"], MapSet.new(), [])
+    collect_runtime_apps(lib_path, ["handbean"], MapSet.new(), [])
   end
 
   defp collect_runtime_apps(_lib_path, [], _seen, dirs), do: Enum.reverse(dirs)
@@ -334,7 +334,7 @@ defmodule Mix.Tasks.Mob.PackApk do
 
   def resolve_models_seed(opts \\ []) do
     foundation? = Keyword.get(opts, :foundation_test_app, false)
-    requested = opts[:models_seed] || System.get_env("HANDBEAM_FOUNDATION_MODELS_SEED")
+    requested = opts[:models_seed] || System.get_env("HANDBEAN_FOUNDATION_MODELS_SEED")
     default = Path.join(File.cwd!(), "config/foundation_test_models.seed.json")
 
     path =
