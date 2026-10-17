@@ -41,7 +41,8 @@
 
       /* ── Sheet list items ── */
       .sheet-section-title { padding: 14px 20px 6px; font-size: 13px; font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--sig-text-secondary); }
-      .sheet-section-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding-right: 14px; }
+      .sheet-section-header { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding-right: 14px; }
+      .sheet-section-header:has(.sheet-new-conv-btn.is-open) { z-index: 50; }
       .sheet-section-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
       .sheet-section-sub { font-size: 10px; font-weight: 400; color: var(--sig-text-tertiary); }
       .sheet-section-toggle { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; border: none; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; padding: 0; min-height: 44px; }
