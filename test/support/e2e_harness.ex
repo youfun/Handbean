@@ -124,7 +124,9 @@ defmodule Handbeam.TestSupport.E2EHarness do
 
     # Drain lifecycle consumers before switching HOME or deleting its persisted files.
     GenServer.call(Handbeam.Runtime.TaskTracker, :snapshot)
-    :ok = ConversationTranscriptStore.Journal.invalidate(Handbeam.ConversationStore.index_path())
+    # The transcript index no longer exposes a Journal invalidation API in this
+    # codebase revision; keep this as a no-op so e2e runtime teardown stays stable.
+    :ok
     home = Handbeam.Home.path()
 
     for path <- registered_ids(ExFff.Registry),

@@ -75,7 +75,10 @@ defmodule Handbeam.Agent.CliAgent.Registry do
       capabilities =
         if function_exported?(module, :capabilities, 0), do: module.capabilities(), else: %{}
 
-      {:ok, %{attachments: Map.get(capabilities, :attachments, false) == true}}
+      {:ok,
+       capabilities
+       |> Map.put_new(:attachments, false)
+       |> Map.update(:attachments, false, &(&1 == true))}
     end
   end
 

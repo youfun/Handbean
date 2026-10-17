@@ -29,6 +29,7 @@ defmodule Handbeam.Agent.CliAgent.Event do
           {:turn_end, %{optional(:stop_reason) => term(), optional(:session_id) => String.t()}}
   @type error :: {:error, term()}
 
+  @type status :: {:status, %{optional(:state) => String.t() | atom()}}
   @type t ::
           text_delta()
           | tool_start()
@@ -36,6 +37,7 @@ defmodule Handbeam.Agent.CliAgent.Event do
           | permission_request()
           | ask_user()
           | usage()
+          | status()
           | turn_end()
           | error()
 
@@ -49,6 +51,7 @@ defmodule Handbeam.Agent.CliAgent.Event do
       :permission_request,
       :ask_user,
       :usage,
+      :status,
       :turn_end,
       :error
     ]
@@ -60,7 +63,8 @@ defmodule Handbeam.Agent.CliAgent.Event do
     is_binary(payload) or is_atom(payload) or is_map(payload)
   end
 
-  def normalized?({tag, payload}) when tag in [:tool_start, :tool_end, :usage, :turn_end] do
+  def normalized?({tag, payload})
+      when tag in [:tool_start, :tool_end, :usage, :status, :turn_end] do
     is_map(payload) and not wire?(payload)
   end
 

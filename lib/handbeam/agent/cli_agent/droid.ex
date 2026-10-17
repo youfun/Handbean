@@ -31,6 +31,22 @@ defmodule Handbeam.Agent.CliAgent.Droid do
   end
 
   @impl true
+  def capabilities do
+    %{
+      attachments: false,
+      session_resume: :strong,
+      native_turn_ids: :strong,
+      interrupt: true,
+      steering: false,
+      model_change: :mid_session_ready,
+      approval_survives_restart: false,
+      structured_questions: true,
+      mcp_tools: true,
+      policy_executor: :native
+    }
+  end
+
+  @impl true
   def list_models(opts \\ []) when is_list(opts) do
     with :ok <- ensure_available(opts),
          {:ok, session} <- Session.start(list_models_opts(opts)) do

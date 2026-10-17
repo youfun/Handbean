@@ -508,7 +508,11 @@ defmodule Handbeam.Agent.CliAgent.Droid.Session do
   end
 
   defp public_tool(%{"toolUse" => tool}) when is_map(tool) do
-    %{name: tool["name"], id: tool["id"]}
+    %{
+      name: tool["title"] || tool["name"] || "unknown",
+      id: tool["id"],
+      input: tool["input"] || %{}
+    }
   end
 
   defp public_tool(_), do: %{name: "unknown", id: nil}

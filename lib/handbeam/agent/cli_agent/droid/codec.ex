@@ -206,7 +206,7 @@ defmodule Handbeam.Agent.CliAgent.Droid.Codec do
   end
 
   defp classify_working_state(state, _message, turn) when is_binary(state) and state != "idle" do
-    {:ignore, :working, %{turn | seen_work: true}}
+    {{:event, {:status, %{state: state}}}, state, %{turn | seen_work: true}}
   end
 
   defp classify_working_state("idle", message, %{seen_work: true} = turn) do
@@ -222,7 +222,7 @@ defmodule Handbeam.Agent.CliAgent.Droid.Codec do
 
   defp tool_start(tool_use) do
     %{
-      name: tool_use["name"] || "unknown",
+      name: tool_use["title"] || tool_use["name"] || "unknown",
       id: tool_use["id"] || "tool",
       input: tool_use["input"] || %{}
     }
@@ -258,17 +258,36 @@ defmodule Handbeam.Agent.CliAgent.Droid.Codec do
     }
   end
 
-  defp render_output(content) when is_binary(content), do: content
+  defp render_output(content) when is_binary(content), do: clean_terminal(content)
 
   defp render_output(content) when is_list(content) do
-    Enum.map_join(content, "", fn
-      %{"text" => text} when is_binary(text) -> text
+    content
+    |> Enum.map_join("\n", fn
+      %{"text" => text} when is_binary(text) -> clean_terminal(text)
       other -> inspect(other)
     end)
+    |> clean_terminal()
   end
 
   defp render_output(nil), do: ""
-  defp render_output(other), do: inspect(other)
+
+  defp render_output(other), do: other |> inspect() |> clean_terminal()
+
+  @max_rendered_output 4_000
+
+  defp clean_terminal(text) when is_binary(text) do
+    cleaned =
+      text
+      |> String.replace(~r/\e\[[0-9;?]*[ -\/]*[@-~]/, "")
+      |> String.replace(~r/\r\n?/, "\n")
+
+    if byte_size(cleaned) > @max_rendered_output do
+      String.slice(cleaned, 0, @max_rendered_output) <>
+        "\n... (#{byte_size(cleaned) - @max_rendered_output} bytes hidden)"
+    else
+      cleaned
+    end
+  end
 
   defp request?(message, method) do
     message["method"] == method and message["id"] != nil and message["type"] in ["request", nil]

@@ -29,6 +29,22 @@ defmodule Handbeam.Agent.CliAgent.Grok do
   end
 
   @impl true
+  def capabilities do
+    %{
+      attachments: false,
+      session_resume: :strong,
+      native_turn_ids: :strong,
+      interrupt: true,
+      steering: false,
+      model_change: :next_start,
+      approval_survives_restart: false,
+      structured_questions: false,
+      mcp_tools: false,
+      policy_executor: :native
+    }
+  end
+
+  @impl true
   def list_models(opts \\ []) when is_list(opts) do
     with :ok <- ensure_available(opts),
          {:ok, text} <- Transport.models(opts) do
