@@ -92,12 +92,7 @@ defmodule Handbean.ConversationCollaborationTest do
     }
 
     on_exit(fn ->
-      # Cancelling a request owner can wake its peer with the terminal notification.
-      # A second pass closes those newly started report-only runs causally.
-      for _pass <- 1..2 do
-        for metadata <- ConversationStore.list_metadata("ws"),
-            do: cancel_and_wait(metadata["id"])
-      end
+      settle_runtime!("ws")
 
       for {key, value} <- env,
           do: if(value, do: System.put_env(key, value), else: System.delete_env(key))
@@ -581,6 +576,10 @@ defmodule Handbean.ConversationCollaborationTest do
         selected_reasoning_level: "high"
       )
 
+    source_compaction = fn _event -> :source_compaction end
+    source_compaction_complete = fn _event -> :source_compaction_complete end
+    source_advisor = %{status: :source_only}
+
     source_opts =
       c.context.conversation_run_opts
       |> Keyword.merge(
@@ -593,7 +592,16 @@ defmodule Handbean.ConversationCollaborationTest do
         context: %{source_only_identity: true},
         allowed_tools: [],
         system_prompt: "SOURCE-ONLY SYSTEM PROMPT",
-        task_instructions: "SOURCE-ONLY TASK INSTRUCTIONS"
+        task_instructions: "SOURCE-ONLY TASK INSTRUCTIONS",
+        max_tokens: 1_111,
+        max_messages: 2,
+        compaction: [reserve_tokens: 7, keep_recent_tokens: 3],
+        on_compaction: source_compaction,
+        on_compaction_complete: source_compaction_complete,
+        until_tool: "source-only-tool",
+        skill_paths: ["/source-only-skill"],
+        advisor: source_advisor,
+        builtin_memory_enabled: false
       )
 
     source_context = %{
@@ -629,9 +637,55 @@ defmodule Handbean.ConversationCollaborationTest do
     refute target_opts[:allowed_tools] == []
     refute target_opts[:system_prompt] == source_opts[:system_prompt]
     refute target_opts[:task_instructions]
+    refute target_opts[:max_tokens] == 1_111
+    refute target_opts[:max_messages] == 2
+    refute target_opts[:compaction] == source_opts[:compaction]
+    refute target_opts[:on_compaction] == source_compaction
+    refute target_opts[:on_compaction_complete] == source_compaction_complete
+    refute target_opts[:until_tool] == "source-only-tool"
+    refute target_opts[:skill_paths] == ["/source-only-skill"]
+    refute target_opts[:advisor] == source_advisor
+    refute target_opts[:builtin_memory_enabled] == false
     assert target_opts[:working_directory] == canonical_target_checkout
     assert target_opts[:model] == "other-model"
     assert target_opts[:provider_config][:provider_key] == "other"
+  end
+
+  test "working_directory-only callers resolve models without overriding the target checkout",
+       c do
+    target_checkout =
+      Path.join(c.context.conversation_run_opts[:workspace_path], "wd-only-target")
+
+    File.mkdir_p!(target_checkout)
+    {_, 0} = System.cmd("git", ["init", "-q", target_checkout])
+
+    {:ok, target} =
+      ConversationStore.create("ws",
+        checkout_path: target_checkout,
+        selected_model: "fake/fake-model"
+      )
+
+    run_opts =
+      c.context.conversation_run_opts
+      |> Keyword.delete(:workspace_path)
+      |> Keyword.put(:working_directory, c.context.conversation_run_opts[:workspace_path])
+
+    context = %{c.context | conversation_run_opts: run_opts}
+
+    assert {:ok, %{delivery: "started"}} =
+             Collaboration.send_message(
+               %{
+                 "conversation" => target["id"],
+                 "message" => "Resolve from working directory",
+                 "request_id" => "working-directory-only"
+               },
+               context
+             )
+
+    assert_receive {:held, _, config}, 2_000
+    assert {:ok, target_meta} = ConversationStore.get_metadata(target["id"])
+    assert config.model == "fake-model"
+    assert config.working_directory == target_meta["checkout_path"]
   end
 
   test "progress does not fulfill a request and repeated completion is idempotent", c do
@@ -931,6 +985,75 @@ defmodule Handbean.ConversationCollaborationTest do
     refute reservation["automatic_report"]
   end
 
+  test "an unavailable report peer does not delay the source conversation's next run", c do
+    assert {:ok, receipt} =
+             Collaboration.send_message(
+               %{
+                 "conversation" => c.target,
+                 "message" => "Finish despite unavailable peer",
+                 "request_id" => "unavailable-report-peer"
+               },
+               c.context
+             )
+
+    assert_receive {:held, provider, _config}, 2_000
+    assert {:ok, status} = Handbean.Agent.Runner.status(receipt.conversation)
+    supervisor_ref = Process.monitor(status.run_supervisor)
+    assert {:ok, _} = ConversationStore.update_meta(c.source, visibility: "internal")
+    send(provider, :release)
+    assert_receive {:DOWN, ^supervisor_ref, :process, _, _}, 1_000
+
+    assert {:ok, %{action: :started}} =
+             Handbean.Agent.Coordinator.add_message(c.target, "next run", c.opts)
+
+    assert_receive {:held, _, _}, 2_000
+  end
+
+  test "timeout report reaches its peer only after the old source run exits", c do
+    assert {:ok, request} =
+             Collaboration.send_message(
+               %{
+                 "conversation" => c.target,
+                 "message" => "Timeout ordering task",
+                 "request_id" => "timeout-ordering"
+               },
+               c.context
+             )
+
+    assert_receive {:held, _, _}, 2_000
+    {:ok, status} = Handbean.Agent.Runner.status(c.target)
+    old_run_id = status.run_id
+    supervisor_ref = Process.monitor(status.run_supervisor)
+
+    # The timer message is the narrowest available test entry point for timeout.
+    state = :sys.get_state(status.run_pid)
+    send(status.run_pid, {:run_inactivity, state.deadline})
+
+    assert_receive {:held, _, %{conversation_id: conversation_id}}, 2_000
+    assert conversation_id == c.source
+    assert_receive {:DOWN, ^supervisor_ref, :process, _, _}, 0
+    assert {:ok, %{running?: false}} = Handbean.Agent.Coordinator.status(c.target)
+
+    assert {:ok, %{delivery: "started"}} =
+             Collaboration.send_message(
+               %{
+                 "conversation" => c.target,
+                 "message" => "Immediate follow-up",
+                 "request_id" => "after-timeout",
+                 "handoff_id" => request.handoff_id,
+                 "purpose" => "request"
+               },
+               c.context
+             )
+
+    assert {:ok, %{run_id: new_run_id, running?: true}} =
+             Handbean.Agent.Coordinator.status(c.target)
+
+    assert new_run_id != old_run_id
+    assert_receive {:held, _, %{conversation_id: target_id}}, 2_000
+    assert target_id == c.target
+  end
+
   test "cancel, timeout and abnormal stop report sanitized status without duplicate task reports",
        c do
     {:ok, timeout_target} = ConversationStore.create("ws", selected_model: "fake/fake-model")
@@ -1089,20 +1212,71 @@ defmodule Handbean.ConversationCollaborationTest do
     refute report["content"] =~ "PRIVATE UNPARTITIONED FINAL"
   end
 
-  defp cancel_and_wait(id) do
+  defp settle_runtime!(workspace_id) do
+    deadline = System.monotonic_time(:millisecond) + 10_000
+    do_settle_runtime!(workspace_id, deadline)
+  end
+
+  defp do_settle_runtime!(workspace_id, deadline) do
+    ids =
+      ConversationStore.list(include_internal?: true)
+      |> Enum.filter(&(&1["workspace_id"] == workspace_id))
+      |> Enum.map(& &1["id"])
+
+    Enum.each(ids, &cancel_and_wait(&1, deadline))
+    await_runtime_tasks!(deadline)
+
+    running = Enum.filter(ids, &running?/1)
+    callbacks = Task.Supervisor.children(Handbean.AgentRunTaskSupervisor)
+
+    cond do
+      running == [] and callbacks == [] ->
+        :ok
+
+      System.monotonic_time(:millisecond) >= deadline ->
+        raise "runtime cleanup did not converge: running=#{inspect(running)} callbacks=#{inspect(callbacks)}"
+
+      true ->
+        do_settle_runtime!(workspace_id, deadline)
+    end
+  end
+
+  defp await_runtime_tasks!(deadline) do
+    case Task.Supervisor.children(Handbean.AgentRunTaskSupervisor) do
+      [] ->
+        :ok
+
+      tasks ->
+        Enum.each(tasks, &await_process!(&1, deadline, :terminal_callback))
+        await_runtime_tasks!(deadline)
+    end
+  end
+
+  defp cancel_and_wait(id, deadline) do
     case Handbean.Agent.Runner.status(id) do
       {:ok, %{run_supervisor: supervisor} = status} when is_pid(supervisor) ->
-        ref = Process.monitor(supervisor)
-        if status.running?, do: Handbean.Agent.Coordinator.cancel(id)
-
-        receive do
-          {:DOWN, ^ref, :process, ^supervisor, _reason} -> :ok
-        after
-          2_000 -> Process.demonitor(ref, [:flush])
-        end
+        if status.running?, do: Handbean.Agent.Runner.cancel(id)
+        await_process!(supervisor, deadline, {:run_supervisor, id})
 
       _ ->
         :ok
+    end
+  end
+
+  defp running?(id) do
+    match?({:ok, %{running?: true}}, Handbean.Agent.Runner.status(id))
+  end
+
+  defp await_process!(pid, deadline, label) do
+    ref = Process.monitor(pid)
+    timeout = max(deadline - System.monotonic_time(:millisecond), 0)
+
+    receive do
+      {:DOWN, ^ref, :process, ^pid, _reason} -> :ok
+    after
+      timeout ->
+        Process.demonitor(ref, [:flush])
+        raise "runtime cleanup timed out waiting for #{inspect(label)} pid=#{inspect(pid)}"
     end
   end
 

@@ -476,7 +476,18 @@ defmodule Handbean.Conversations.Collaboration do
   end
 
   defp pinned_run_opts(target, context) do
-    base = (context[:conversation_run_opts] || []) |> Keyword.take(@dispatch_run_opts)
+    path = workspace_path(context)
+    run_opts = context[:conversation_run_opts] || []
+
+    base =
+      run_opts
+      |> Keyword.take(@dispatch_run_opts)
+      |> then(fn opts ->
+        if is_binary(path) and path != "",
+          do: Keyword.put(opts, :workspace_path, path),
+          else: opts
+      end)
+
     model_ref = target_model_ref(target, base)
 
     if is_binary(model_ref) do

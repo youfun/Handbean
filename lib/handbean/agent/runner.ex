@@ -499,10 +499,10 @@ defmodule Handbean.Agent.Runner do
     }
 
     persist_terminal_event(state, payload)
-    schedule_terminal_callback(state, %{status: :timeout})
+    Handbean.Agent.CandidateQueue.seal(state.queue_pid)
     Session.broadcast_event(state.conversation_id, :run_end, payload)
     Session.mark_run_finished(state.conversation_id, state.opts[:run_id])
-    Handbean.Agent.CandidateQueue.seal(state.queue_pid)
+    schedule_terminal_callback(state, %{status: :timeout})
     stop_run_supervisor(state)
 
     {:stop, :shutdown, %{state | status: :timeout, task: nil, deadline_timer: nil}}
@@ -530,10 +530,10 @@ defmodule Handbean.Agent.Runner do
     }
 
     persist_terminal_event(state, payload)
-    schedule_terminal_callback(state, %{status: :timeout})
+    Handbean.Agent.CandidateQueue.seal(state.queue_pid)
     Session.broadcast_event(state.conversation_id, :run_end, payload)
     Session.mark_run_finished(state.conversation_id, state.opts[:run_id])
-    Handbean.Agent.CandidateQueue.seal(state.queue_pid)
+    schedule_terminal_callback(state, %{status: :timeout})
     stop_run_supervisor(state)
 
     {:stop, :shutdown, %{state | status: :timeout, task: nil, deadline_timer: nil}}
@@ -551,7 +551,6 @@ defmodule Handbean.Agent.Runner do
   def abort_unreplayable(state, reason) do
     report_error(reason, state, failure_class: :run_tree_exit)
     shutdown_run_tasks(state, state.task)
-    Handbean.Agent.CandidateQueue.seal(state.queue_pid)
 
     payload = %{
       status: "error",
@@ -563,9 +562,10 @@ defmodule Handbean.Agent.Runner do
     }
 
     persist_terminal_event(state, payload)
-    schedule_terminal_callback(state, %{status: :error})
+    Handbean.Agent.CandidateQueue.seal(state.queue_pid)
     Session.broadcast_event(state.conversation_id, :run_end, payload)
     Session.mark_run_finished(state.conversation_id, state.opts[:run_id])
+    schedule_terminal_callback(state, %{status: :error})
     Logger.error("[Runner] run aborted without replay: #{inspect(reason)}")
     stop_run_supervisor(state)
     {:stop, :normal, %{state | status: :error, error: reason, task: nil}}
@@ -576,23 +576,46 @@ defmodule Handbean.Agent.Runner do
     Handbean.Agent.CandidateQueue.seal(state.queue_pid)
     Session.mark_run_finished(state.conversation_id, state.opts[:run_id])
 
-    schedule_terminal_callback(state, result)
+    schedule_terminal_callback(state, %{status: status})
 
     stop_run_supervisor(state)
     {:noreply, %{state | status: status, result: result, task: nil}}
   end
 
   defp schedule_terminal_callback(state, result) do
-    task =
-      Task.Supervisor.async_nolink(Handbean.AgentRunTaskSupervisor, fn ->
-        Handbean.Conversations.Collaboration.completed(state.conversation_id, result, state.opts)
-      end)
+    source_run_owner =
+      case state.opts[:run_supervisor] do
+        supervisor when is_pid(supervisor) -> supervisor
+        _missing -> self()
+      end
 
-    case Task.yield(task, 5_000) || Task.shutdown(task, :brutal_kill) do
-      {:ok, :ok} -> :ok
-      {:ok, other} -> Logger.warning("[Runner] terminal callback returned #{inspect(other)}")
-      nil -> Logger.warning("[Runner] terminal callback timed out")
-      {:exit, reason} -> Logger.warning("[Runner] terminal callback failed: #{inspect(reason)}")
+    case Task.Supervisor.start_child(Handbean.AgentRunTaskSupervisor, fn ->
+           with :ok <- await_process_exit(source_run_owner) do
+             Handbean.Conversations.Collaboration.completed(
+               state.conversation_id,
+               result,
+               state.opts
+             )
+           end
+         end) do
+      {:ok, _pid} ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning("[Runner] terminal callback unavailable: #{inspect(reason)}")
+    end
+  end
+
+  defp await_process_exit(pid) when is_pid(pid) do
+    ref = Process.monitor(pid)
+
+    receive do
+      {:DOWN, ^ref, :process, ^pid, _reason} -> :ok
+    after
+      5_000 ->
+        Process.demonitor(ref, [:flush])
+        Logger.warning("[Runner] terminal callback abandoned before source run exited")
+        {:error, :source_run_exit_timeout}
     end
   end
 
@@ -746,7 +769,6 @@ defmodule Handbean.Agent.Runner do
   defp finish_error(state, reason) do
     report_error(reason, state)
     message = inspect(reason)
-    Handbean.Agent.CandidateQueue.seal(state.queue_pid)
 
     payload = %{
       status: "error",
@@ -756,10 +778,11 @@ defmodule Handbean.Agent.Runner do
     }
 
     persist_terminal_event(state, payload)
-    schedule_terminal_callback(state, %{status: :error})
+    Handbean.Agent.CandidateQueue.seal(state.queue_pid)
     Session.broadcast_event(state.conversation_id, :run_end, payload)
 
     Session.mark_run_finished(state.conversation_id, state.opts[:run_id])
+    schedule_terminal_callback(state, %{status: :error})
     Logger.error("[Runner] Agent run failed: #{message}")
     stop_run_supervisor(state)
     {:noreply, %{state | status: :error, error: reason, task: nil}}

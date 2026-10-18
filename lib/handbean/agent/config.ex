@@ -342,11 +342,12 @@ defmodule Handbean.Agent.Config do
 
         `created_by_conversation_id`, when present, records which conversation created this
         conversation. It is provenance, not an automatic reply target. An active origin
-        identifies the conversation whose message started this run; each consumed request
-        receives an automatic terminal report unless this run already sent it a
-        `purpose: result`. Use `send_conversation_message` with an explicit target and the
-        runtime-issued handoff ID for deliberate messages. `purpose: request` creates
-        report responsibility; `purpose: result` fulfills currently consumed requests;
+        identifies the conversation whose message started this run. Each consumed request
+        receives an automatic terminal report unless a `purpose: result` covered that exact
+        request when the result was sent; later consumed follow-ups remain outstanding. Use
+        `send_conversation_message` with an explicit target and the runtime-issued handoff ID
+        for deliberate messages. `purpose: request` creates report responsibility;
+        `purpose: result` fulfills matching requests already consumed by the current run;
         `progress` and `notification` do neither. Defaults follow the original handoff
         roles only, so reverse questions and answers must set purpose explicitly.
         Automatic reports never require another report.
