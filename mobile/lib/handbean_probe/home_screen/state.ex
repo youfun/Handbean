@@ -101,7 +101,7 @@ defmodule HandbeanProbe.HomeScreen.State do
 
     # ── subagent navigation ──
     expanded_handoffs: nil,
-    thread_stack: []
+    conversation_stack: []
   ]
 
   @type t :: %__MODULE__{}
@@ -157,7 +157,7 @@ defmodule HandbeanProbe.HomeScreen.State do
         feedback: nil
       },
       expanded_handoffs: MapSet.new(),
-      thread_stack: []
+      conversation_stack: []
     ]
   end
 

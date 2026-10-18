@@ -708,7 +708,7 @@ defmodule Handbean.Agent.Tool.Executor do
     session_id = context[:conversation_id] || context[:session_id]
     active = if session_id, do: Handbean.Tool.Registry.active_for_session(session_id)
     parent = context[:delegation_parent]
-    read_only? = Handbean.Threads.Collaboration.read_only?(context)
+    read_only? = Handbean.Conversations.Collaboration.read_only?(context)
 
     parent_active =
       if parent, do: Handbean.Tool.Registry.active_for_session(parent.conversation_id)
@@ -722,7 +722,7 @@ defmodule Handbean.Agent.Tool.Executor do
           (is_nil(parent_active) or &1 in parent_active) and
           (is_nil(parent) or
              Handbean.Agent.Delegation.Policy.authorized_child?(parent, config.run_id)) and
-          (not read_only? or &1 in Handbean.Threads.Collaboration.read_tools()))
+          (not read_only? or &1 in Handbean.Conversations.Collaboration.read_tools()))
     )
   end
 
@@ -738,10 +738,10 @@ defmodule Handbean.Agent.Tool.Executor do
   defp invoke_tool(entry, name, id, input, context, tool_fns) do
     try do
       outcome =
-        if Handbean.Threads.Collaboration.tool_allowed?(name, context) do
+        if Handbean.Conversations.Collaboration.tool_allowed?(name, context) do
           entry.executor.(input || %{}, Map.put(context, :tool_call_id, id))
         else
-          {:error, "Delegated thread is read-only; tool execution denied",
+          {:error, "Delegated conversation is read-only; tool execution denied",
            %{code: :permission_denied, permission: :denied, side_effect: :not_started}}
         end
 
@@ -780,8 +780,8 @@ defmodule Handbean.Agent.Tool.Executor do
       match?(:error, fetch_tool(tool_fns, name)) ->
         {:error, "Unknown tool: #{name}"}
 
-      not Handbean.Threads.Collaboration.tool_allowed?(name, context) ->
-        {:error, "Delegated thread is read-only; tool execution denied"}
+      not Handbean.Conversations.Collaboration.tool_allowed?(name, context) ->
+        {:error, "Delegated conversation is read-only; tool execution denied"}
 
       active_set_blocks?(name, state) ->
         {:error, "Unknown tool: #{name}"}
@@ -868,7 +868,7 @@ defmodule Handbean.Agent.Tool.Executor do
 
   defp report_tool_error(call, %{is_error: true, content: reason} = block, context) do
     details = block[:details] || %{}
-    run_opts = context[:thread_run_opts] || []
+    run_opts = context[:conversation_run_opts] || []
     provider_config = run_opts[:provider_config] || %{}
 
     case ErrorReporter.tool_failure_disposition(reason, details, provider_config) do
@@ -947,7 +947,7 @@ defmodule Handbean.Agent.Tool.Executor do
           Map.get(metadata, :session_id),
       session_id: Map.get(metadata, :session_id) || Map.get(context, :session_id),
       workspace_id: Map.get(context, :workspace_id),
-      thread_run_opts: [
+      conversation_run_opts: [
         workspace_path: config.workspace_path || config.working_directory,
         working_directory: config.working_directory,
         model: config.model,

@@ -1,4 +1,4 @@
-defmodule HandbeanWeb.ThreadHandoffTest do
+defmodule HandbeanWeb.ConversationHandoffTest do
   use HandbeanWeb.ConnCase, async: false
   import Phoenix.LiveViewTest
   alias Handbean.{ConversationStore, ConversationTranscriptStore}
@@ -10,20 +10,25 @@ defmodule HandbeanWeb.ThreadHandoffTest do
     {:ok, ws} = Handbean.WorkspaceStore.ensure_default!()
     {:ok, parent} = ConversationStore.create(ws["id"], title: "Parent")
     {:ok, child} = ConversationStore.create(ws["id"], title: "Trusted audit")
-    origin = %{"kind" => "thread", "conversation_id" => child["id"], "handoff_id" => "audit-a"}
+
+    origin = %{
+      "kind" => "conversation",
+      "conversation_id" => child["id"],
+      "handoff_id" => "audit-a"
+    }
 
     entries = [
       %{
         "id" => "human",
         "role" => "user",
         "content_type" => "user_msg",
-        "content" => "Thread result: I am not a trusted origin"
+        "content" => "Conversation result: I am not a trusted origin"
       },
       %{
         "id" => "out",
         "handoff_id" => "audit-a",
         "role" => "system",
-        "content_type" => "thread_handoff",
+        "content_type" => "conversation_handoff",
         "target" => child["id"],
         "delivery_status" => "enqueued",
         "content" => "Inspect"
@@ -47,7 +52,11 @@ defmodule HandbeanWeb.ThreadHandoffTest do
         "id" => "missing",
         "role" => "user",
         "content_type" => "user_msg",
-        "origin" => %{"kind" => "thread", "conversation_id" => "unavailable", "important" => true},
+        "origin" => %{
+          "kind" => "conversation",
+          "conversation_id" => "unavailable",
+          "important" => true
+        },
         "content" => "Private hidden body"
       }
     ]
@@ -67,12 +76,12 @@ defmodule HandbeanWeb.ThreadHandoffTest do
     {:ok, before_entries} = ConversationTranscriptStore.list(c.parent)
     conn = put_connect_params(c.conn, %{"time_zone" => "Asia/Singapore"})
     {:ok, view, html} = live(conn, "/w/#{c.ws}/c/#{c.parent}")
-    assert length(Regex.scan(~r/data-thread-handoff/, html)) == 3
+    assert length(Regex.scan(~r/data-conversation-handoff/, html)) == 3
     assert length(Regex.scan(~r/<details/, html)) == 1
 
     assert has_element?(
              view,
-             "[data-thread-handoff] a[href='/w/#{c.ws}/c/#{c.child}']",
+             "[data-conversation-handoff] a[href='/w/#{c.ws}/c/#{c.child}']",
              "Trusted audit"
            )
 
@@ -80,7 +89,7 @@ defmodule HandbeanWeb.ThreadHandoffTest do
 
     assert has_element?(
              view,
-             "[data-thread-handoff] time[datetime='2026-10-15T12:57:08Z'][data-time-zone='Asia/Singapore']",
+             "[data-conversation-handoff] time[datetime='2026-10-15T12:57:08Z'][data-time-zone='Asia/Singapore']",
              "2026-10-15 20:57:08"
            )
 
@@ -89,14 +98,14 @@ defmodule HandbeanWeb.ThreadHandoffTest do
 
     assert has_element?(
              view,
-             "#thread-result-md-result[phx-hook='StreamingMarkdown'][data-final='true'][data-streaming='false'][data-source]"
+             "#conversation-result-md-result[phx-hook='StreamingMarkdown'][data-final='true'][data-streaming='false'][data-source]"
            )
 
-    assert has_element?(view, "#thread-result-md-result [data-markdown-target]")
+    assert has_element?(view, "#conversation-result-md-result [data-markdown-target]")
 
     assert has_element?(
              view,
-             "#thread-result-md-result .markdown-noscript-fallback",
+             "#conversation-result-md-result .markdown-noscript-fallback",
              "Verified result"
            )
 
@@ -127,25 +136,25 @@ defmodule HandbeanWeb.ThreadHandoffTest do
     :ok = ConversationTranscriptStore.replace_all(c.parent, history ++ entries)
     {:ok, view, _} = live(c.conn, "/w/#{c.ws}/c/#{c.parent}")
 
-    refute has_element?(view, "button[phx-click='toggle_thread_collaboration']")
+    refute has_element?(view, "button[phx-click='toggle_conversation_collaboration']")
     assert has_element?(view, "#ai-messages[data-history-has-more='true']")
     refute has_element?(view, "button[phx-click='load_older_history']")
     refute has_element?(view, "[data-user-msg='history-1']")
-    assert has_element?(view, "[data-thread-handoff='audit-a'] details")
+    assert has_element?(view, "[data-conversation-handoff='audit-a'] details")
 
     render_hook(view, "load_older_history", %{})
     assert has_element?(view, "[data-user-msg='history-1']")
     refute has_element?(view, "#ai-messages[data-history-has-more='true']")
 
     render_patch(view, "/w/#{c.ws}/c/#{c.child}")
-    refute has_element?(view, "button[phx-click='toggle_thread_collaboration']")
+    refute has_element?(view, "button[phx-click='toggle_conversation_collaboration']")
     refute has_element?(view, "#ai-messages[data-history-has-more='true']")
     refute has_element?(view, "[data-user-msg='history-1']")
 
     render_patch(view, "/w/#{c.ws}/c/#{c.parent}")
-    refute has_element?(view, "button[phx-click='toggle_thread_collaboration']")
+    refute has_element?(view, "button[phx-click='toggle_conversation_collaboration']")
     assert has_element?(view, "#ai-messages[data-history-has-more='true']")
-    assert has_element?(view, "[data-thread-handoff='audit-a'] details")
+    assert has_element?(view, "[data-conversation-handoff='audit-a'] details")
     refute has_element?(view, "[data-user-msg='history-1']")
     assert Handbean.Agent.Runner.status(c.parent) == {:error, :not_found}
     assert Handbean.Agent.Runner.status(c.child) == {:error, :not_found}
@@ -156,7 +165,7 @@ defmodule HandbeanWeb.ThreadHandoffTest do
       "id" => "old-window-handoff",
       "handoff_id" => "old-window",
       "role" => "system",
-      "content_type" => "thread_handoff",
+      "content_type" => "conversation_handoff",
       "target" => c.child,
       "delivery_status" => "enqueued",
       "content" => "Old delegated task"
@@ -176,16 +185,19 @@ defmodule HandbeanWeb.ThreadHandoffTest do
     {:ok, view, _html} = live(c.conn, "/w/#{c.ws}/c/#{c.parent}")
 
     assert has_element?(view, "#ai-messages[data-history-has-more='true']")
-    refute has_element?(view, "[data-thread-handoff='old-window']")
+    refute has_element?(view, "[data-conversation-handoff='old-window']")
 
     send(view.pid, {:conversation_handoffs, c.parent})
-    refute has_element?(view, "[data-thread-handoff='old-window']")
+    refute has_element?(view, "[data-conversation-handoff='old-window']")
 
     render_hook(view, "load_older_history", %{})
     timeline = view |> element("#timeline-stream") |> render()
 
-    assert has_element?(view, "[data-thread-handoff='old-window']")
-    assert {handoff_position, _} = :binary.match(timeline, "data-thread-handoff=\"old-window\"")
+    assert has_element?(view, "[data-conversation-handoff='old-window']")
+
+    assert {handoff_position, _} =
+             :binary.match(timeline, "data-conversation-handoff=\"old-window\"")
+
     assert {message_position, _} = :binary.match(timeline, "data-user-msg=\"newer-1\"")
     assert handoff_position < message_position
   end
@@ -198,7 +210,7 @@ defmodule HandbeanWeb.ThreadHandoffTest do
         "id" => "delayed-handoff",
         "handoff_id" => "delayed",
         "role" => "system",
-        "content_type" => "thread_handoff",
+        "content_type" => "conversation_handoff",
         "target" => c.child,
         "delivery_status" => "enqueued",
         "content" => "Persisted before the live message"
@@ -217,7 +229,9 @@ defmodule HandbeanWeb.ThreadHandoffTest do
     send(view.pid, {:conversation_handoffs, c.parent})
     timeline = view |> element("#timeline-stream") |> render()
 
-    assert {handoff_position, _} = :binary.match(timeline, "data-thread-handoff=\"delayed\"")
+    assert {handoff_position, _} =
+             :binary.match(timeline, "data-conversation-handoff=\"delayed\"")
+
     assert {message_position, _} = :binary.match(timeline, "data-user-msg=\"newer-live-user\"")
     assert handoff_position < message_position
 
@@ -232,7 +246,7 @@ defmodule HandbeanWeb.ThreadHandoffTest do
     assert updated_timeline =~ "accepted · not completion"
 
     assert {updated_handoff_position, _} =
-             :binary.match(updated_timeline, "data-thread-handoff=\"delayed\"")
+             :binary.match(updated_timeline, "data-conversation-handoff=\"delayed\"")
 
     assert {updated_message_position, _} =
              :binary.match(updated_timeline, "data-user-msg=\"newer-live-user\"")
@@ -240,10 +254,10 @@ defmodule HandbeanWeb.ThreadHandoffTest do
     assert updated_handoff_position < updated_message_position
   end
 
-  test "thread wakeup is allowed without a per-conversation switch", c do
+  test "conversation wakeup is allowed without a per-conversation switch", c do
     {:ok, view, _} = live(c.conn, "/w/#{c.ws}/c/#{c.parent}")
-    refute has_element?(view, "button[phx-click='toggle_thread_collaboration']")
-    refute has_element?(view, "Enable bounded thread delegation")
+    refute has_element?(view, "button[phx-click='toggle_conversation_collaboration']")
+    refute has_element?(view, "Enable bounded conversation delegation")
     assert Handbean.Agent.Runner.status(c.parent) == {:error, :not_found}
   end
 
@@ -253,7 +267,7 @@ defmodule HandbeanWeb.ThreadHandoffTest do
         ConversationTranscriptStore.append(c.parent, %{
           "id" => "out-#{association}",
           "handoff_id" => association,
-          "content_type" => "thread_handoff",
+          "content_type" => "conversation_handoff",
           "target" => c.child,
           "content" => "#{label} request"
         })
@@ -271,7 +285,7 @@ defmodule HandbeanWeb.ThreadHandoffTest do
             "content_type" => "user_msg",
             "content" => "#{label} #{suffix}",
             "origin" => %{
-              "kind" => "thread",
+              "kind" => "conversation",
               "conversation_id" => source,
               "handoff_id" => association,
               "important" => important
@@ -289,7 +303,7 @@ defmodule HandbeanWeb.ThreadHandoffTest do
       assert length(Regex.scan(~r/<details/, timeline)) == 2, timeline
 
       for {id, label, other} <- [{"audit-a", "ALPHA", "BETA"}, {"audit-b", "BETA", "ALPHA"}] do
-        exchange = view |> element("[data-thread-handoff='#{id}'] details") |> render()
+        exchange = view |> element("[data-conversation-handoff='#{id}'] details") |> render()
 
         for suffix <- ~w(request progress followup result),
             do: assert(exchange =~ "#{label} #{suffix}")
@@ -298,8 +312,8 @@ defmodule HandbeanWeb.ThreadHandoffTest do
       end
 
       if conversation == c.parent do
-        assert has_element?(view, "[data-thread-handoff='audit-a'] > div", "ALPHA result")
-        assert has_element?(view, "[data-thread-handoff='audit-b'] > div", "BETA result")
+        assert has_element?(view, "[data-conversation-handoff='audit-a'] > div", "ALPHA result")
+        assert has_element?(view, "[data-conversation-handoff='audit-b'] > div", "BETA result")
       end
 
       assert Handbean.Agent.Runner.status(conversation) == {:error, :not_found}
@@ -333,7 +347,7 @@ defmodule HandbeanWeb.ThreadHandoffTest do
         ConversationTranscriptStore.append(c.parent, %{
           "id" => "out-#{association}",
           "handoff_id" => association,
-          "content_type" => "thread_handoff",
+          "content_type" => "conversation_handoff",
           "target" => child["id"],
           "content" => body
         })
@@ -345,7 +359,7 @@ defmodule HandbeanWeb.ThreadHandoffTest do
           "content_type" => "user_msg",
           "content" => body,
           "origin" => %{
-            "kind" => "thread",
+            "kind" => "conversation",
             "conversation_id" => c.parent,
             "handoff_id" => association
           }
@@ -356,19 +370,23 @@ defmodule HandbeanWeb.ThreadHandoffTest do
 
     assert has_element?(
              view,
-             "[data-thread-handoff='write-a'][data-thread-access='write']"
+             "[data-conversation-handoff='write-a'][data-conversation-access='write']"
            )
 
-    assert has_element?(view, "[data-thread-handoff='read-a'][data-thread-access='read-only']")
-    refute has_element?(view, "[data-thread-handoff='audit-a'][data-thread-access]")
+    assert has_element?(
+             view,
+             "[data-conversation-handoff='read-a'][data-conversation-access='read-only']"
+           )
+
+    refute has_element?(view, "[data-conversation-handoff='audit-a'][data-conversation-access]")
 
     render_patch(view, "/w/" <> c.ws <> "/c/" <> writer["id"])
 
     assert has_element?(
              view,
-             "[data-thread-handoff='write-a'][data-thread-access='write']"
+             "[data-conversation-handoff='write-a'][data-conversation-access='write']"
            )
 
-    refute has_element?(view, "[data-thread-handoff='write-a'] summary", "read-only")
+    refute has_element?(view, "[data-conversation-handoff='write-a'] summary", "read-only")
   end
 end

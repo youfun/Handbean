@@ -63,7 +63,7 @@ defmodule Handbean.Agent.Subagent.ProfileTest do
                md("""
                name: curious
                description: looks around
-               tools: [read, task, advisor, task_status, create_thread]
+               tools: [read, task, advisor, task_status, create_conversation]
                """)
              )
 

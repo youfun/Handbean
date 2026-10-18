@@ -13,7 +13,7 @@ defmodule Handbean.GuardTest do
   alias Handbean.Tool.Registry
 
   @delivery_tools MapSet.new(~w(open_url open_file share_file device_calendar device_alarm))
-  @runtime_tools ~w(task task_status advisor list_models create_thread list_threads find_thread read_thread get_thread_status get_thread_trajectory send_thread_message reply_to_parent_thread publish_media mem_recall mem_learn)
+  @runtime_tools ~w(task task_status advisor list_models create_conversation list_conversations find_conversation read_conversation get_conversation_status get_conversation_trajectory send_conversation_message reply_to_parent_conversation publish_media mem_recall mem_learn)
 
   setup do
     previous = Application.get_env(:handbean, :host)

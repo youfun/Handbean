@@ -4,7 +4,7 @@ defmodule Handbean.Tool.Builtin.ListModels do
   @behaviour Handbean.Agent.Tool
 
   alias Handbean.Agent.ModelConfig
-  alias Handbean.Threads
+  alias Handbean.Conversations
 
   @max_limit 20
 
@@ -13,7 +13,7 @@ defmodule Handbean.Tool.Builtin.ListModels do
 
   @impl true
   def description do
-    "Search workspace-allowed models when you need create_thread to use a model other than current. Results are bounded and paginated; pass a returned complete id as create_thread.model."
+    "Search workspace-allowed models when you need create_conversation to use a model other than current. Results are bounded and paginated; pass a returned complete id as create_conversation.model."
   end
 
   @impl true
@@ -38,7 +38,7 @@ defmodule Handbean.Tool.Builtin.ListModels do
 
   @impl true
   def execute(input, context) when is_map(input) and is_map(context) do
-    with :ok <- Threads.validate(input, ~w(query offset limit)),
+    with :ok <- Conversations.validate(input, ~w(query offset limit)),
          {:ok, query} <- query(input),
          {:ok, offset} <- integer(input, "offset", 0, 0, :infinity),
          {:ok, limit} <- integer(input, "limit", 10, 1, @max_limit),
@@ -82,7 +82,7 @@ defmodule Handbean.Tool.Builtin.ListModels do
   end
 
   defp workspace_path(context) do
-    opts = context[:thread_run_opts] || []
+    opts = context[:conversation_run_opts] || []
     context[:workspace_path] || Keyword.get(opts, :workspace_path)
   end
 
@@ -97,7 +97,7 @@ defmodule Handbean.Tool.Builtin.ListModels do
   end
 
   defp current_model(models, context) do
-    opts = context[:thread_run_opts] || []
+    opts = context[:conversation_run_opts] || []
     model_id = Keyword.get(opts, :model)
     provider_config = Keyword.get(opts, :provider_config, %{})
     provider_id = provider_config[:provider_key] || provider_config["provider_key"]

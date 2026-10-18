@@ -119,7 +119,7 @@ defmodule Handbean.Agent.ErrorReporterTest do
   end
 
   test "separates tool reason categories while grouping dynamic details" do
-    context = %{"source" => "agent_tool", "tool" => "read_thread"}
+    context = %{"source" => "agent_tool", "tool" => "read_conversation"}
 
     assert :ok = ErrorReporter.report(:not_accessible, context, failure_class: :tool_error)
 
@@ -153,8 +153,8 @@ defmodule Handbean.Agent.ErrorReporterTest do
     errors = Repo.all(from(error in Error, order_by: error.source_line))
 
     assert Enum.map(errors, & &1.source_line) == [
-             "agent://agent_tool/read_thread/not_accessible:0",
-             "agent://agent_tool/read_thread/stale_or_invalid_cursor:0",
+             "agent://agent_tool/read_conversation/not_accessible:0",
+             "agent://agent_tool/read_conversation/stale_or_invalid_cursor:0",
              "agent://agent_tool/task_status/subagent_not_found:0",
              "agent://agent_tool/web_fetch/http_status_404:0",
              "agent://agent_tool/web_fetch/http_status_429:0"

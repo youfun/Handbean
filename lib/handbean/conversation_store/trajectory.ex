@@ -10,7 +10,7 @@ defmodule Handbean.ConversationStore.Trajectory do
   @max_runs 100
   @max_turns 200
 
-  def list_thread_summaries(workspace_id) when is_binary(workspace_id) do
+  def list_conversation_summaries(workspace_id) when is_binary(workspace_id) do
     workspace_conversations =
       from conversation in Conversation,
         where:
@@ -273,7 +273,7 @@ defmodule Handbean.ConversationStore.Trajectory do
             {entries, entries_have_more?} = entries(conversation_id, opts)
 
             %{
-              thread: thread_map(conversation, stats.messages),
+              conversation: conversation_map(conversation, stats.messages),
               stats: Map.drop(stats, [:messages]),
               runs: runs,
               runs_truncated?: runs_truncated?,
@@ -665,7 +665,7 @@ defmodule Handbean.ConversationStore.Trajectory do
     }
   end
 
-  defp thread_map(conversation, message_count) do
+  defp conversation_map(conversation, message_count) do
     %{
       id: conversation.id,
       title: conversation.title,

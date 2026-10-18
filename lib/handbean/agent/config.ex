@@ -256,9 +256,8 @@ defmodule Handbean.Agent.Config do
       run_id: Keyword.get(opts, :run_id),
       source: Keyword.get(opts, :source),
       user_time_zone: Keyword.get(opts, :user_time_zone),
-      thread_origin_conversation_id:
-        get_in(Keyword.get(opts, :origin) || %{}, ["conversation_id"]),
-      thread_handoff_id: get_in(Keyword.get(opts, :origin) || %{}, ["handoff_id"]),
+      origin_conversation_id: get_in(Keyword.get(opts, :origin) || %{}, ["conversation_id"]),
+      handoff_id: get_in(Keyword.get(opts, :origin) || %{}, ["handoff_id"]),
       delegated_read_only: Keyword.get(opts, :delegated_read_only, false),
       delegated_approval: Keyword.get(opts, :delegated_approval),
       browser_runner: Keyword.get(opts, :browser_runner),
@@ -304,7 +303,7 @@ defmodule Handbean.Agent.Config do
       end)
 
     base
-    |> maybe_inject_thread_context(opts)
+    |> maybe_inject_conversation_context(opts)
     |> maybe_inject_advisor(opts)
     |> maybe_inject_workspace_contract(opts)
     |> maybe_inject_project_context(opts)
@@ -316,7 +315,7 @@ defmodule Handbean.Agent.Config do
     |> append_prompt_section(Handbean.Agent.HostEnvironment.describe())
   end
 
-  defp maybe_inject_thread_context(system_prompt, opts) do
+  defp maybe_inject_conversation_context(system_prompt, opts) do
     conversation_id = Keyword.get(opts, :conversation_id)
     created_by = Keyword.get(opts, :created_by_conversation_id)
     origin = get_in(Keyword.get(opts, :origin) || %{}, ["conversation_id"])
@@ -337,17 +336,20 @@ defmodule Handbean.Agent.Config do
         system_prompt,
         """
 
-        ## Current thread
+        ## Current conversation
 
         #{details}
 
-        `created_by_conversation_id`, when present, records which thread created this
-        thread. It is provenance, not an automatic reply target. An active origin,
-        when present, identifies the thread that sent the message which started this
-        run; it also does not require a reply. This thread runs independently. To
-        message any authorized thread whose id you know, call `send_thread_message`
-        with that explicit thread id. Finishing this run does not send a message
-        automatically.
+        `created_by_conversation_id`, when present, records which conversation created this
+        conversation. It is provenance, not an automatic reply target. An active origin
+        identifies the conversation whose message started this run; each consumed request
+        receives an automatic terminal report unless this run already sent it a
+        `purpose: result`. Use `send_conversation_message` with an explicit target and the
+        runtime-issued handoff ID for deliberate messages. `purpose: request` creates
+        report responsibility; `purpose: result` fulfills currently consumed requests;
+        `progress` and `notification` do neither. Defaults follow the original handoff
+        roles only, so reverse questions and answers must set purpose explicitly.
+        Automatic reports never require another report.
         """
       )
     else

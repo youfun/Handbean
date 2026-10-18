@@ -945,7 +945,7 @@ defmodule Handbean.Agent.Delegation do
   end
 
   defp wake_opts(context) do
-    case context[:thread_run_opts] do
+    case context[:conversation_run_opts] do
       opts when is_list(opts) and opts != [] ->
         Keyword.merge(opts,
           workspace_id: context[:workspace_id],

@@ -84,9 +84,9 @@ defmodule Handbean.ConversationStore do
     |> Enum.map(&metadata_map/1)
   end
 
-  @doc "List thread summaries with aggregate transcript/run counts in one query."
-  def list_thread_summaries(workspace_id) when is_binary(workspace_id) do
-    Handbean.ConversationStore.Trajectory.list_thread_summaries(workspace_id)
+  @doc "List conversation summaries with aggregate transcript/run counts in one query."
+  def list_conversation_summaries(workspace_id) when is_binary(workspace_id) do
+    Handbean.ConversationStore.Trajectory.list_conversation_summaries(workspace_id)
   end
 
   @doc false
@@ -105,7 +105,7 @@ defmodule Handbean.ConversationStore do
   def record_turn_end(conversation_id, attrs),
     do: Handbean.ConversationStore.Trajectory.record_turn_end(conversation_id, attrs)
 
-  @doc "Read one consistent durable trajectory page. Authorization belongs to Handbean.Threads."
+  @doc "Read one consistent durable trajectory page. Authorization belongs to Handbean.Conversations."
   def trajectory_snapshot(conversation_id, opts),
     do: Handbean.ConversationStore.Trajectory.snapshot(conversation_id, opts)
 

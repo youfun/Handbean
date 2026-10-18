@@ -174,7 +174,7 @@ defmodule HandbeanProbe.HomeScreen do
   defp dispatch({:submit, :send} = msg, socket), do: Chat.handle(msg, socket)
   defp dispatch({:top_reached, :load_older_history} = msg, socket), do: Chat.handle(msg, socket)
 
-  defp dispatch({:tap, {:toggle_thread_handoff, handoff_id}}, socket)
+  defp dispatch({:tap, {:toggle_conversation_handoff, handoff_id}}, socket)
        when is_binary(handoff_id) do
     expanded = socket.assigns.expanded_handoffs || MapSet.new()
 
@@ -194,15 +194,15 @@ defmodule HandbeanProbe.HomeScreen do
     |> Notice.clear()
   end
 
-  defp dispatch({:tap, {:open_subagent_thread, conversation_id, agent_id}}, socket) do
+  defp dispatch({:tap, {:open_subagent_conversation, conversation_id, agent_id}}, socket) do
     case resolve_subagent_conversation(socket, conversation_id, agent_id) do
       {:ok, child_id} ->
         parent_id = Nav.current_conversation_id(socket)
-        stack = socket.assigns.thread_stack || []
+        stack = socket.assigns.conversation_stack || []
         next = Nav.handle({:tap, {:conversation, child_id}}, socket)
 
         if Nav.current_conversation_id(next) == child_id and is_binary(parent_id) do
-          Mob.Socket.assign(next, :thread_stack, [parent_id | stack])
+          Mob.Socket.assign(next, :conversation_stack, [parent_id | stack])
         else
           next
         end
@@ -212,11 +212,11 @@ defmodule HandbeanProbe.HomeScreen do
     end
   end
 
-  defp dispatch({:tap, :close_subagent_thread}, socket) do
-    case socket.assigns.thread_stack || [] do
+  defp dispatch({:tap, :close_subagent_conversation}, socket) do
+    case socket.assigns.conversation_stack || [] do
       [parent_id | rest] ->
         socket = Nav.handle({:tap, {:conversation, parent_id}}, socket)
-        Mob.Socket.assign(socket, :thread_stack, rest)
+        Mob.Socket.assign(socket, :conversation_stack, rest)
 
       [] ->
         socket
@@ -581,12 +581,12 @@ defmodule HandbeanProbe.HomeScreen do
            Enum.find(children, &(child_ref in [&1.child_conversation_id, &1.subagent_type])) do
       {:ok, child.child_conversation_id}
     else
-      _ -> {:error, "Subagent thread is no longer available."}
+      _ -> {:error, "Subagent conversation is no longer available."}
     end
   end
 
   defp resolve_subagent_conversation(_socket, _conversation_id, _agent_id),
-    do: {:error, "Subagent thread is unavailable."}
+    do: {:error, "Subagent conversation is unavailable."}
 
   defp workspace_path(%{"path" => path}) when is_binary(path), do: path
   defp workspace_path(%{path: path}) when is_binary(path), do: path

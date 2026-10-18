@@ -1,4 +1,4 @@
-defmodule HandbeanWeb.ThreadHandoff do
+defmodule HandbeanWeb.ConversationHandoff do
   @moduledoc "Read-only projection of persisted handoffs. Rendering never dispatches work."
   use HandbeanWeb, :html
 
@@ -13,7 +13,7 @@ defmodule HandbeanWeb.ThreadHandoff do
     target_id = assigns.entry["target"] || origin["conversation_id"]
 
     target =
-      case Handbean.Threads.authorize(context, target_id) do
+      case Handbean.Conversations.authorize(context, target_id) do
         {:ok, target} -> target
         _ -> nil
       end
@@ -25,7 +25,7 @@ defmodule HandbeanWeb.ThreadHandoff do
           case Handbean.ConversationTranscriptStore.list(id) do
             {:ok, entries} ->
               Enum.filter(entries, fn e ->
-                get_in(e, ["origin", "kind"]) == "thread" and
+                get_in(e, ["origin", "kind"]) == "conversation" and
                   get_in(e, ["origin", "conversation_id"]) in [assigns.conversation_id, target_id] and
                   association(e) == association(assigns.entry)
               end)
@@ -57,23 +57,57 @@ defmodule HandbeanWeb.ThreadHandoff do
     ~H"""
     <section
       class="rounded-lg border border-base-300 bg-base-200/50 p-3 text-sm"
-      data-thread-handoff={@handoff_id}
-      data-thread-access={@access_label}
+      data-conversation-handoff={@handoff_id}
+      data-conversation-access={@access_label}
     >
       <div class="flex flex-wrap items-center gap-2 text-xs opacity-80">
-        <span>↗ {if @important, do: "Thread result", else: "Thread handoff"}</span>
+        <span>↗ {if @important, do: "Conversation result", else: "Conversation handoff"}</span>
         <a
           :if={@target}
           class="underline font-medium"
           href={"/w/#{URI.encode_www_form(@workspace_id)}/c/#{URI.encode_www_form(@target["id"])}"}
         >
-          {String.slice(@target["title"] || "Thread", 0, 200)}
+          {String.slice(@target["title"] || "Conversation", 0, 200)}
         </a>
         <span :if={!@target}>Source unavailable</span>
         <span :if={@entry["delivery_status"]}>{@entry["delivery_status"]} · not completion</span>
       </div>
       <div :if={@important && @target} class="mt-2 break-words">
-        <p class="whitespace-pre-wrap">{@entry["content"]}</p>
+        <div
+          id={"conversation-result-md-#{@entry["id"]}"}
+          data-entry-id={@entry["id"]}
+          data-source={@entry["content"] || ""}
+          data-final="true"
+          data-streaming="false"
+          class="msg-markdown-wrapper"
+          phx-hook="StreamingMarkdown"
+        >
+          <button class="msg-copy-btn" title="Copy" aria-label="Copy">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2 2v1"></path>
+            </svg>
+          </button>
+          <div
+            id={"conversation-result-md-content-#{@entry["id"]}"}
+            data-markdown-target
+            phx-update="ignore"
+            class="markdown-body prose prose-sm max-w-none break-words"
+          >
+            <div class="markdown-noscript-fallback">{@entry["content"]}</div>
+            <noscript>{@entry["content"]}</noscript>
+          </div>
+        </div>
       </div>
       <details :if={@target && !@important} class="mt-2">
         <summary class="thread-handoff-summary disclosure-summary cursor-pointer">
@@ -81,7 +115,7 @@ defmodule HandbeanWeb.ThreadHandoff do
           <span class="disclosure-chevron" aria-hidden="true">⌄</span>
         </summary>
         <p class="mt-2 text-xs opacity-60">
-          Latest 20 reports. Open the task thread to read all messages or give instructions.
+          Latest 20 reports. Open the conversation to read all messages or give instructions.
         </p>
         <p :if={@messages == []} class="mt-2 whitespace-pre-wrap break-words">
           {@entry["content"] || "No confirmed delivery yet."}
@@ -151,17 +185,18 @@ defmodule HandbeanWeb.ThreadHandoff do
     text = message["content"] || ""
 
     String.slice(text, 0, 2000) <>
-      if(String.length(text) > 2000, do: "… (open thread for full message)", else: "")
+      if(String.length(text) > 2000, do: "… (open conversation for full message)", else: "")
   end
 
   def show?(entry, timeline) do
     origin = entry["origin"] || %{}
     peer = entry["target"] || origin["conversation_id"]
-    handoff? = entry["content_type"] == "thread_handoff" or origin["kind"] == "thread"
+    handoff? = entry["content_type"] == "conversation_handoff" or origin["kind"] == "conversation"
 
     first =
       Enum.find(timeline, fn item ->
-        (item["content_type"] == "thread_handoff" or get_in(item, ["origin", "kind"]) == "thread") and
+        (item["content_type"] == "conversation_handoff" or
+           get_in(item, ["origin", "kind"]) == "conversation") and
           (item["target"] == peer or get_in(item, ["origin", "conversation_id"]) == peer) and
           association(item) == association(entry)
       end)

@@ -54,7 +54,7 @@ defmodule HandbeanProbe.HomeScreen.Render do
     back_target =
       cond do
         a.page != :chat -> inspect({:page, :chat})
-        (a.thread_stack || []) != [] -> inspect(:close_subagent_thread)
+        (a.conversation_stack || []) != [] -> inspect(:close_subagent_conversation)
         true -> nil
       end
 
@@ -79,11 +79,11 @@ defmodule HandbeanProbe.HomeScreen.Render do
     )
   end
 
-  defp header(%{page: :chat, thread_stack: [_ | _]} = a) do
+  defp header(%{page: :chat, conversation_stack: [_ | _]} = a) do
     row([
-      icon("back", :close_subagent_thread),
+      icon("back", :close_subagent_conversation),
       text(chat_title(a), text_size: 13, font_weight: "bold", weight: 1),
-      text(gettext("Child thread"), text_size: 10, text_color: color(:hint))
+      text(gettext("Child conversation"), text_size: 10, text_color: color(:hint))
     ])
   end
 

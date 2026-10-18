@@ -194,15 +194,15 @@ defmodule HandbeanProbe.HomeScreenTest do
     view =
       info(
         view,
-        {:tap, {:open_subagent_thread, child["id"], "researcher"}}
+        {:tap, {:open_subagent_conversation, child["id"], "researcher"}}
       )
 
     assert assigns(view).chat.conversation["id"] == child["id"]
-    assert assigns(view).thread_stack == [parent["id"]]
+    assert assigns(view).conversation_stack == [parent["id"]]
 
-    view = info(view, {:tap, :close_subagent_thread})
+    view = info(view, {:tap, :close_subagent_conversation})
     assert assigns(view).chat.conversation["id"] == parent["id"]
-    assert assigns(view).thread_stack == []
+    assert assigns(view).conversation_stack == []
   end
 
   test "handoff Message action prefills an exact subagent mention", %{view: view} do

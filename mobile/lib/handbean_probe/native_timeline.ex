@@ -133,7 +133,7 @@ defmodule HandbeanProbe.NativeTimeline do
     Map.put(entry, "file_diff_open", open?)
   end
 
-  defp entry(%{"content_type" => "thread_handoff"} = entry, chat) do
+  defp entry(%{"content_type" => "conversation_handoff"} = entry, chat) do
     content = entry["content"] || %{}
     data = content["data"] || %{}
     handoff_id = content["handoff_id"] || entry["id"] || "handoff"
@@ -162,8 +162,8 @@ defmodule HandbeanProbe.NativeTimeline do
         if(is_binary(conversation_id) or is_binary(agent_id),
           do:
             button(
-              gettext("Open thread"),
-              {:open_subagent_thread, conversation_id, agent_id},
+              gettext("Open conversation"),
+              {:open_subagent_conversation, conversation_id, agent_id},
               text_size: 10,
               padding: 5
             )
@@ -188,7 +188,7 @@ defmodule HandbeanProbe.NativeTimeline do
         corner_radius: 8
       ],
       [
-        button("#{marker}  #{label}  #{summary}", {:toggle_thread_handoff, handoff_id},
+        button("#{marker}  #{label}  #{summary}", {:toggle_conversation_handoff, handoff_id},
           style: :plain,
           size: :small,
           text_size: 10,

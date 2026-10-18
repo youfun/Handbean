@@ -43,7 +43,7 @@ defmodule Handbean.Tool.Builtin.ListModelsTest do
     context = %{
       workspace_path: home,
       working_directory: home,
-      thread_run_opts: [
+      conversation_run_opts: [
         workspace_path: home,
         model: "coder",
         provider_config: %{provider_key: "beta"}

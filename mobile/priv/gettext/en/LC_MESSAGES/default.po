@@ -2677,3 +2677,11 @@ msgstr "Could not save workspace memory setting"
 #: lib/handbean_probe/model_settings/render.ex
 msgid "Built-in memory is enabled per workspace in Workspace Memory settings."
 msgstr "Built-in memory is enabled per workspace in Workspace Memory settings."
+
+#: lib/handbean_probe/native_timeline.ex:165
+msgid "Open conversation"
+msgstr "Open conversation"
+
+#: lib/handbean_probe/home_screen/render.ex:86
+msgid "Child conversation"
+msgstr "Child conversation"

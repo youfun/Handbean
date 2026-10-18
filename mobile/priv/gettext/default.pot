@@ -2657,3 +2657,11 @@ msgstr ""
 #: lib/handbean_probe/home_screen/workspace_memory.ex:76
 msgid "Memory content copied"
 msgstr ""
+
+#: lib/handbean_probe/native_timeline.ex:165
+msgid "Open conversation"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/render.ex:86
+msgid "Child conversation"
+msgstr ""

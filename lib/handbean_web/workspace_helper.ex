@@ -83,7 +83,8 @@ defmodule HandbeanWeb.WorkspaceHelper do
   def timeline_summary(entries) when is_list(entries) do
     entries
     |> Enum.reject(
-      &(get_in(&1, ["origin", "kind"]) == "thread" or &1["content_type"] == "thread_handoff" or
+      &(get_in(&1, ["origin", "kind"]) == "conversation" or
+          &1["content_type"] == "conversation_handoff" or
           delegation_reports(&1) != [])
     )
     |> Enum.find_value(fn entry ->
@@ -138,7 +139,7 @@ defmodule HandbeanWeb.WorkspaceHelper do
 
   defp user_msg_entry?(entry) when is_map(entry) do
     (Map.get(entry, "content_type") == "user_msg" or Map.get(entry, :content_type) == "user_msg") and
-      get_in(entry, ["origin", "kind"]) != "thread" and delegation_reports(entry) == []
+      get_in(entry, ["origin", "kind"]) != "conversation" and delegation_reports(entry) == []
   end
 
   defp user_msg_entry?(_entry), do: false

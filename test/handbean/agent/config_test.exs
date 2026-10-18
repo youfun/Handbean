@@ -235,7 +235,7 @@ defmodule Handbean.Agent.ConfigTest do
 
         assert config.working_directory == workspace
         assert config.system_prompt =~ "Current checkout: #{workspace}"
-        assert config.system_prompt =~ "## Current thread"
+        assert config.system_prompt =~ "## Current conversation"
         assert config.system_prompt =~ "conversation_id: root-thread"
         refute config.system_prompt =~ "created_by_conversation_id:"
         assert config.system_prompt =~ "Prefer checkout-relative file paths"

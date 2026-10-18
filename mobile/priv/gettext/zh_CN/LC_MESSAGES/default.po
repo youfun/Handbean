@@ -2692,3 +2692,11 @@ msgstr "无法保存工作区记忆设置"
 #: lib/handbean_probe/model_settings/render.ex
 msgid "Built-in memory is enabled per workspace in Workspace Memory settings."
 msgstr "内置记忆在工作区记忆设置中按工作区启用。"
+
+#: lib/handbean_probe/native_timeline.ex:165
+msgid "Open conversation"
+msgstr "打开对话"
+
+#: lib/handbean_probe/home_screen/render.ex:86
+msgid "Child conversation"
+msgstr "子对话"

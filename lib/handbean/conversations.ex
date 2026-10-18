@@ -1,6 +1,6 @@
-defmodule Handbean.Threads do
+defmodule Handbean.Conversations do
   @moduledoc """
-  Authorized projections of durable conversations. No runtime is owned here.
+  Authorized projections of workspace conversations. No runtime is owned here.
 
   Cursors expire after one hour and bind the caller, query and complete projected
   snapshot. Any append, edit or deletion invalidates pagination: restart explicitly.
@@ -64,18 +64,18 @@ defmodule Handbean.Threads do
     end
   end
 
-  def trajectory(input, context), do: Handbean.Threads.Trajectory.get(input, context)
+  def trajectory(input, context), do: Handbean.Conversations.Trajectory.get(input, context)
 
   defp discover(source, context, input, kind, query, archived, after_time, limit) do
     entries =
       source["workspace_id"]
-      |> ConversationStore.list_thread_summaries()
+      |> ConversationStore.list_conversation_summaries()
       |> Enum.filter(fn summary ->
         archived_match?(summary["archived_at"], archived) and
           title_match?(summary["title"], query) and
           updated_since?(summary["updated_at"], after_time)
       end)
-      |> Enum.map(&project_thread_summary/1)
+      |> Enum.map(&project_conversation_summary/1)
 
     binding = binding(kind, context, input, entries)
 
@@ -84,13 +84,13 @@ defmodule Handbean.Threads do
 
       {:ok,
        %{
-         threads: Enum.slice(entries, offset, limit),
+         conversations: Enum.slice(entries, offset, limit),
          next_cursor: cursor(next < length(entries), binding, next)
        }}
     end
   end
 
-  defp project_thread_summary(summary) do
+  defp project_conversation_summary(summary) do
     title = summary["title"] || ""
 
     summary
@@ -120,13 +120,16 @@ defmodule Handbean.Threads do
 
   def read(input, context) do
     with :ok <-
-           validate(input, ~w(thread start_message end_message max_chars include_tools cursor)),
+           validate(
+             input,
+             ~w(conversation start_message end_message max_chars include_tools cursor)
+           ),
          true <- is_boolean(Map.get(input, "include_tools", false)),
-         {:ok, _} <- authorize(context, input["thread"]),
+         {:ok, _} <- authorize(context, input["conversation"]),
          {:ok, first} <- integer(input, "start_message", 0, 0, 1_000_000),
          {:ok, last} <- integer(input, "end_message", 1_000_000, first, 1_000_000),
          {:ok, max} <- integer(input, "max_chars", 8000, 1, 16_000),
-         {:ok, entries} <- ConversationTranscriptStore.list(input["thread"]) do
+         {:ok, entries} <- ConversationTranscriptStore.list(input["conversation"]) do
       include_tools? = Map.get(input, "include_tools", false)
 
       messages =
@@ -154,8 +157,8 @@ defmodule Handbean.Threads do
   end
 
   def status(input, context) do
-    with :ok <- validate(input, ["thread"]),
-         {:ok, meta} <- authorize(context, input["thread"]) do
+    with :ok <- validate(input, ["conversation"]),
+         {:ok, meta} <- authorize(context, input["conversation"]) do
       runtime =
         case Handbean.Agent.Coordinator.status(meta["id"]) do
           {:ok, value} -> value
@@ -311,7 +314,7 @@ defmodule Handbean.Threads do
   defp position(cursor, _binding) when cursor in [nil, ""], do: {:ok, 0}
 
   defp position(token, binding) when is_binary(token) and byte_size(token) <= 2048 do
-    case Handbean.EndpointAdapter.verify("thread-page", token, max_age: 3600) do
+    case Handbean.EndpointAdapter.verify("conversation-page", token, max_age: 3600) do
       {:ok, {^binding, offset}} when is_integer(offset) and offset >= 0 -> {:ok, offset}
       _ -> {:error, :stale_or_invalid_cursor}
     end
@@ -321,7 +324,7 @@ defmodule Handbean.Threads do
   defp cursor(false, _, _), do: nil
 
   defp cursor(true, binding, offset),
-    do: Handbean.EndpointAdapter.sign("thread-page", {binding, offset})
+    do: Handbean.EndpointAdapter.sign("conversation-page", {binding, offset})
 
   defp slice_messages(messages, offset, budget) do
     {parts, _, _left, consumed, remaining} =

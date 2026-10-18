@@ -3,7 +3,7 @@ defmodule Handbean.Tool.Builtin.Schedule do
   Create and inspect schedules bound to the current conversation.
 
   Identity comes from the run context. A scheduled run, a delegated run, and a
-  thread handoff cannot change a schedule.
+  conversation handoff cannot change a schedule.
   """
 
   @behaviour Handbean.Agent.Tool
@@ -301,7 +301,7 @@ defmodule Handbean.Tool.Builtin.Schedule do
         {:ok, explicit}
 
       true ->
-        opts = context[:thread_run_opts] || []
+        opts = context[:conversation_run_opts] || []
         model = opts[:model]
 
         provider =
@@ -331,7 +331,7 @@ defmodule Handbean.Tool.Builtin.Schedule do
   defp write_allowed?(action, context) when action in @write_actions do
     source = context[:source] || config_source(context)
     delegated? = get_in(context, [:delegation_config, Access.key(:delegated?)]) == true
-    handoff = context[:thread_handoff_id]
+    handoff = context[:handoff_id]
 
     if Channel.interactive?(source) and not delegated? and is_nil(handoff) do
       :ok

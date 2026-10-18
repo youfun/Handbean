@@ -33,7 +33,7 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
 
   def reconcile_handoffs(socket, entries) when is_list(entries) do
     entries
-    |> Enum.filter(&thread_entry?/1)
+    |> Enum.filter(&conversation_entry?/1)
     |> Enum.filter(&entry_in_loaded_window?(socket, &1))
     |> Enum.reject(&timeline_entry_unchanged?(socket.assigns.timeline, &1))
     |> Enum.reduce(socket, fn entry, acc -> timeline_insert(acc, entry) end)
@@ -310,11 +310,11 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
   end
 
   defp stream_related_handoffs(socket, timeline, inserted, true) do
-    if thread_entry?(inserted) do
+    if conversation_entry?(inserted) do
       association = handoff_association(inserted)
 
       Enum.reduce(timeline, socket, fn entry, acc ->
-        if Map.get(entry, "id") != Map.get(inserted, "id") and thread_entry?(entry) and
+        if Map.get(entry, "id") != Map.get(inserted, "id") and conversation_entry?(entry) and
              handoff_association(entry) == association,
            do: stream_insert(acc, :timeline, entry),
            else: acc
@@ -356,9 +356,9 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
     |> Enum.min(fn -> nil end)
   end
 
-  defp thread_entry?(entry) do
-    Map.get(entry, "content_type") == "thread_handoff" or
-      get_in(entry, ["origin", "kind"]) == "thread"
+  defp conversation_entry?(entry) do
+    Map.get(entry, "content_type") == "conversation_handoff" or
+      get_in(entry, ["origin", "kind"]) == "conversation"
   end
 
   defp handoff_association(entry) do

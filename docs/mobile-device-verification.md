@@ -1,6 +1,6 @@
 # Android / iOS 真机验收流程
 
-本流程用于本地线程验收 `dev` 的移动宿主兼容性，**不是**已完成的验收报告。
+本流程用于本地对话验收 `dev` 的移动宿主兼容性，**不是**已完成的验收报告。
 
 编写时参考版本：[21d0627](https://github.com/youfun/Handbean/commit/21d062706fd749e873138e73bf147261f36b3f77)。执行时冻结实际待验收 SHA；后续修改必须记录新 SHA 并重测受影响项目。
 
@@ -16,11 +16,11 @@
 ## 1. 范围、授权与证据
 
 - Android 实体 ARM64 手机、iOS 实体 iPhone **分别出结论**。
-- 原生页面是 Compose / SwiftUI，不是 WorkspaceLive。Web 的历史分页、线程交接卡片、模型继承行为不得直接当作原生功能要求。
+- 原生页面是 Compose / SwiftUI，不是 WorkspaceLive。Web 的历史分页、Conversation Handoff 卡片、模型继承行为不得直接当作原生功能要求。
 - 不做公网部署、TLS/proxy 部署验证，不发布商店、不 push/merge。安装覆盖、强制退出、故障注入只在用户确认的测试设备和可丢弃数据中执行。
 - 先确认现有安装是否有真实数据；不要卸载、清数据或导入真实凭据来“修好”测试。SQLite 全量切换需要明确授权后 clear-data/卸载重装；升级前用受支持命令建立并校验备份，禁止盲目降级。
 - 默认先用受控 Provider / 直接 runtime 探针，不消耗模型费用。真实模型用例需确认测试账号、模型及费用上限；未获授权标记未执行。
-- 一台设备只由一个线程操作。不得为连接方便开放公网 Dist、关闭认证或放宽路径权限。
+- 一台设备只由一个对话操作。不得为连接方便开放公网 Dist、关闭认证或放宽路径权限。
 - 功能证据优先：设备上 `Mob.Test` 的限定状态、Runner/Session、transcript API、产物内容。截图只证明外观，必须打开检查后附报告。不要输出完整 assigns、环境、API key、cookie、真实对话或私人路径。
 
 结果统一为 `PASS / FAIL / BLOCKED / NOT_RUN / N/A`：
@@ -119,7 +119,7 @@ bundle id 为 `com.example.handbean_probe`。记录实际签名产物及其哈�
 
 | ID | 操作 | 判定标准 |
 | --- | --- | --- |
-| H1 能力门控 | 检查 Host、Registry、原生导航；如测试设备宿主的 Web 入口也被使用，再检查其窄屏入口与事件处理 | shell/terminal/beam_eval 关闭；`browser_backend` 为 `:webview`；无 bash；文件、grep、task 与线程工具仍注册。不能以“手机是 Linux”开启 shell。Web 伪造 open-terminal 事件也不能启动终端 |
+| H1 能力门控 | 检查 Host、Registry、原生导航；如测试设备宿主的 Web 入口也被使用，再检查其窄屏入口与事件处理 | shell/terminal/beam_eval 关闭；`browser_backend` 为 `:webview`；无 bash；文件、grep、task 与 Conversation 工具仍注册。不能以“手机是 Linux”开启 shell。Web 伪造 open-terminal 事件也不能启动终端 |
 | C1 聊天恢复 | 发送中文、emoji、多行/代码回复；中途切换会话再返回，完成后冷启动 | 可见文本与 transcript 一致，无重复 delta、乱码或历史消失；复制保留完整文本 |
 | C2 输入与审批 | 受控长工具执行中 Send/IME、显式排队；触发一次审批，关闭对话框、切换会话后返回，再批准/拒绝 | 默认 steer，显式 follow_up；pending 按 ID 消退；dismiss 不执行工具，仍 awaiting_approval；只执行获准调用一次 |
 | C3 取消 | Stop 当前 run，并观察已启动 job 与 descendant 退出 | Runner 真终态、工具正确收尾，无残留执行；审批中断不是终态，不提前关闭 job scope |
@@ -146,9 +146,9 @@ J1/J2 建议先用 runtime 工具调用和受控阻塞/释放信号验证，再�
 6. **锁释放边界**：owner 退出后资源释放且不遗留写入；全应用退出后冷启动可重新取得锁。两个 Elixir 进程不是两个 OS 实例；真机无法启动共享目录的第二 VM 时，跨实例互斥明确 NOT_RUN，并单列桌面覆盖，不能借用作真机结论。
 7. **拒写与重试**：仅在可恢复 fixture 注入写失败，区分 intent 已拥有数据与 intent 未落盘；恢复可写后核对 drain 无丢失/重复。不填满手机磁盘、不 chmod 用户目录。无法安全注入则列未覆盖，不宣称可恢复磁盘拒绝写入的字节。
 
-## 6. 线程通讯与 Web 专属投影
+## 6. Conversation 协作与 Web 专属投影
 
-- 原生页面当前没有等同 Web 的线程通讯启用/交接展开控件；不要把缺此控件判成已有功能回归，也不要临时新增它来验收。
+- 原生页面当前没有等同 Web 的 Conversation 协作/交接展开控件；不要把缺此控件判成已有功能回归，也不要临时新增它来验收。
 - 设备 runtime 的受控测试可以验证 human enable 前拒绝、enable 后 create/read/send/reply、同 child 的两个 handoff 隔离、readonly 拒绝修改、run/reservation 上限和 internal 读权限。必须沿可信授权入口，不能直接改私有状态制造通过。
 - 原生无法提供人类启用入口时，该原生端到端链路标 N/A/受限；如经现有 Web 入口启用，报告明确是“设备 runtime + Web 控制”，不是原生 UI 验收。
 - 有 Web 入口才检查：100 条初始历史→加载更早→交接 details 仍在；切换会话时分页 cursor 与 collaboration 状态同时隔离。没有该入口不要求开放公网服务。

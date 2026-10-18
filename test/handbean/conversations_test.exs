@@ -1,12 +1,12 @@
-defmodule Handbean.ThreadsTest do
+defmodule Handbean.ConversationsTest do
   use Handbean.DataCase, async: false
   alias Handbean.Agent.TranscriptPersistence
-  alias Handbean.{ConversationStore, ConversationTranscriptStore, Threads}
-  alias Handbean.Threads.Collaboration
+  alias Handbean.{ConversationStore, ConversationTranscriptStore, Conversations}
+  alias Handbean.Conversations.Collaboration
 
   setup do
     old = System.get_env("HOME")
-    home = Path.join(System.tmp_dir!(), "threads-#{Ecto.UUID.generate()}")
+    home = Path.join(System.tmp_dir!(), "conversations-#{Ecto.UUID.generate()}")
     File.mkdir_p!(home)
     System.put_env("HOME", home)
 
@@ -31,38 +31,42 @@ defmodule Handbean.ThreadsTest do
 
   test "metadata-only discovery, authorization and guessed IDs", c do
     {:ok, _} = ConversationStore.update_meta(c.target, visibility: "internal")
-    assert {:ok, %{threads: [%{"id" => id}]}} = Threads.list(%{}, c.context)
+    assert {:ok, %{conversations: [%{"id" => id}]}} = Conversations.list(%{}, c.context)
     assert id == c.source
-    assert {:error, :invalid_input} = Threads.find(%{}, c.context)
+    assert {:error, :invalid_input} = Conversations.find(%{}, c.context)
 
     for id <- [c.target, c.foreign, "../index", "", nil] do
-      assert {:error, :not_accessible} = Threads.read(%{"thread" => id}, c.context)
-      assert {:error, :not_accessible} = Threads.status(%{"thread" => id}, c.context)
+      assert {:error, :not_accessible} = Conversations.read(%{"conversation" => id}, c.context)
+      assert {:error, :not_accessible} = Conversations.status(%{"conversation" => id}, c.context)
     end
 
-    assert {:error, :unauthorized} = Threads.list(%{}, %{})
-    assert {:error, :unauthorized} = Threads.list(%{}, %{c.context | workspace_id: "other"})
-    assert {:error, :invalid_input} = Threads.list(%{"workspace_id" => "other"}, c.context)
-    assert {:error, :unauthorized} = Threads.list(%{}, %{c.context | conversation_id: c.target})
+    assert {:error, :unauthorized} = Conversations.list(%{}, %{})
+    assert {:error, :unauthorized} = Conversations.list(%{}, %{c.context | workspace_id: "other"})
+    assert {:error, :invalid_input} = Conversations.list(%{"workspace_id" => "other"}, c.context)
+
+    assert {:error, :unauthorized} =
+             Conversations.list(%{}, %{c.context | conversation_id: c.target})
   end
 
   test "same-time pagination binds query, caller and updates", c do
     for id <- [c.source, c.target], do: ConversationStore.update_meta(id, updated_at: "same")
     input = %{"limit" => 1}
-    assert {:ok, %{threads: [a], next_cursor: cursor}} = Threads.list(input, c.context)
 
-    assert {:ok, %{threads: [^a], next_cursor: empty_cursor}} =
-             Threads.list(Map.put(input, "cursor", ""), c.context)
+    assert {:ok, %{conversations: [a], next_cursor: cursor}} =
+             Conversations.list(input, c.context)
+
+    assert {:ok, %{conversations: [^a], next_cursor: empty_cursor}} =
+             Conversations.list(Map.put(input, "cursor", ""), c.context)
 
     assert is_binary(empty_cursor)
 
-    assert {:ok, %{threads: [b], next_cursor: nil}} =
-             Threads.list(Map.put(input, "cursor", cursor), c.context)
+    assert {:ok, %{conversations: [b], next_cursor: nil}} =
+             Conversations.list(Map.put(input, "cursor", cursor), c.context)
 
     assert a["id"] != b["id"]
 
     assert {:error, :stale_or_invalid_cursor} =
-             Threads.list(
+             Conversations.list(
                %{"limit" => 1, "archived" => "all", "cursor" => cursor},
                c.context
              )
@@ -70,7 +74,7 @@ defmodule Handbean.ThreadsTest do
     ConversationStore.update_meta(c.target, title: "Changed")
 
     assert {:error, :stale_or_invalid_cursor} =
-             Threads.list(Map.put(input, "cursor", cursor), c.context)
+             Conversations.list(Map.put(input, "cursor", cursor), c.context)
   end
 
   test "list and find have distinct discovery semantics and shared aggregate summaries", c do
@@ -112,20 +116,23 @@ defmodule Handbean.ThreadsTest do
                turns: 1
              })
 
-    assert {:ok, %{threads: listed}} = Threads.list(%{"archived" => "all"}, c.context)
+    assert {:ok, %{conversations: listed}} = Conversations.list(%{"archived" => "all"}, c.context)
     target = Enum.find(listed, &(&1["id"] == c.target))
     assert target["message_count"] == 2
     assert target["tool_call_count"] == 1
     assert target["run_count"] == 1
 
-    assert {:ok, %{threads: [found]}} =
-             Threads.find(%{"query" => "目标", "archived" => "all"}, c.context)
+    assert {:ok, %{conversations: [found]}} =
+             Conversations.find(%{"query" => "目标", "archived" => "all"}, c.context)
 
     assert found == target
     assert {:ok, _} = ConversationStore.archive(c.target)
-    assert {:ok, %{threads: active}} = Threads.list(%{}, c.context)
+    assert {:ok, %{conversations: active}} = Conversations.list(%{}, c.context)
     refute Enum.any?(active, &(&1["id"] == c.target))
-    assert {:ok, %{threads: archived}} = Threads.list(%{"archived" => "archived"}, c.context)
+
+    assert {:ok, %{conversations: archived}} =
+             Conversations.list(%{"archived" => "archived"}, c.context)
+
     assert Enum.any?(archived, &(&1["id"] == c.target))
   end
 
@@ -202,8 +209,8 @@ defmodule Handbean.ThreadsTest do
              )
 
     assert {:ok, summary} =
-             Threads.trajectory(
-               %{"thread" => c.target, "detail_level" => "summary", "max_chars" => 16_000},
+             Conversations.trajectory(
+               %{"conversation" => c.target, "detail_level" => "summary", "max_chars" => 16_000},
                c.context
              )
 
@@ -216,8 +223,8 @@ defmodule Handbean.ThreadsTest do
     assert summary.fidelity.level == "complete"
 
     assert {:ok, compact} =
-             Threads.trajectory(
-               %{"thread" => c.target, "detail_level" => "compact", "max_chars" => 16_000},
+             Conversations.trajectory(
+               %{"conversation" => c.target, "detail_level" => "compact", "max_chars" => 16_000},
                c.context
              )
 
@@ -228,8 +235,8 @@ defmodule Handbean.ThreadsTest do
     refute Map.has_key?(tool, :output)
 
     assert {:ok, small_page} =
-             Threads.trajectory(
-               %{"thread" => c.target, "detail_level" => "compact", "max_chars" => 2_000},
+             Conversations.trajectory(
+               %{"conversation" => c.target, "detail_level" => "compact", "max_chars" => 2_000},
                c.context
              )
 
@@ -237,8 +244,8 @@ defmodule Handbean.ThreadsTest do
     assert String.length(Handbean.JSON.encode!(small_page)) <= 2_000
 
     assert {:ok, full} =
-             Threads.trajectory(
-               %{"thread" => c.target, "detail_level" => "full", "max_chars" => 16_000},
+             Conversations.trajectory(
+               %{"conversation" => c.target, "detail_level" => "full", "max_chars" => 16_000},
                c.context
              )
 
@@ -249,10 +256,10 @@ defmodule Handbean.ThreadsTest do
     refute encoded =~ "sub-token-value"
 
     assert {:error, :not_accessible} =
-             Threads.trajectory(%{"thread" => c.foreign}, c.context)
+             Conversations.trajectory(%{"conversation" => c.foreign}, c.context)
 
     assert {:error, :invalid_input} =
-             Threads.trajectory(%{"thread" => c.target, "turn" => 1}, c.context)
+             Conversations.trajectory(%{"conversation" => c.target, "turn" => 1}, c.context)
   end
 
   test "trajectory cursor is bound to the durable snapshot", c do
@@ -266,19 +273,19 @@ defmodule Handbean.ThreadsTest do
     end
 
     input = %{
-      "thread" => c.target,
+      "conversation" => c.target,
       "detail_level" => "compact",
       "limit" => 1,
       "max_chars" => 4_000
     }
 
     assert {:ok, %{records: [first], next_cursor: cursor, truncated: true}} =
-             Threads.trajectory(input, c.context)
+             Conversations.trajectory(input, c.context)
 
     assert is_binary(cursor)
 
     assert {:ok, %{records: [second]}} =
-             Threads.trajectory(Map.put(input, "cursor", cursor), c.context)
+             Conversations.trajectory(Map.put(input, "cursor", cursor), c.context)
 
     assert first.sequence < second.sequence
 
@@ -286,7 +293,7 @@ defmodule Handbean.ThreadsTest do
              ConversationTranscriptStore.update(c.target, first.id, %{"content" => "changed"})
 
     assert {:error, :stale_or_invalid_cursor} =
-             Threads.trajectory(Map.put(input, "cursor", cursor), c.context)
+             Conversations.trajectory(Map.put(input, "cursor", cursor), c.context)
   end
 
   test "trajectory redacts run errors and recovers lifecycle rows without streaming entries", c do
@@ -318,9 +325,9 @@ defmodule Handbean.ThreadsTest do
            )
 
     assert {:ok, trajectory} =
-             Threads.trajectory(
+             Conversations.trajectory(
                %{
-                 "thread" => c.target,
+                 "conversation" => c.target,
                  "run_id" => "orphan-run",
                  "detail_level" => "summary",
                  "max_chars" => 4_000
@@ -344,13 +351,13 @@ defmodule Handbean.ThreadsTest do
         "details" => %{secret: "hidden"}
       })
 
-    input = %{"thread" => c.target, "max_chars" => 2}
-    {:ok, p1} = Threads.read(input, c.context)
-    {:ok, p1_empty} = Threads.read(Map.put(input, "cursor", ""), c.context)
+    input = %{"conversation" => c.target, "max_chars" => 2}
+    {:ok, p1} = Conversations.read(input, c.context)
+    {:ok, p1_empty} = Conversations.read(Map.put(input, "cursor", ""), c.context)
     assert p1_empty.messages == p1.messages
     assert p1_empty.truncated == p1.truncated
-    {:ok, p2} = Threads.read(Map.put(input, "cursor", p1_empty.next_cursor), c.context)
-    {:ok, p3} = Threads.read(Map.put(input, "cursor", p2.next_cursor), c.context)
+    {:ok, p2} = Conversations.read(Map.put(input, "cursor", p1_empty.next_cursor), c.context)
+    {:ok, p3} = Conversations.read(Map.put(input, "cursor", p2.next_cursor), c.context)
     assert Enum.map_join(p1.messages ++ p2.messages ++ p3.messages, & &1["content"]) == body
     assert Enum.map(p1.messages ++ p2.messages ++ p3.messages, & &1["offset"]) == [0, 2, 4]
     assert Enum.all?(p1.messages ++ p2.messages ++ p3.messages, &(&1["id"] == "stable"))
@@ -361,13 +368,13 @@ defmodule Handbean.ThreadsTest do
       ConversationTranscriptStore.append(c.target, %{"id" => "new", "content" => "append"})
 
     assert {:error, :stale_or_invalid_cursor} =
-             Threads.read(Map.put(input, "cursor", p1.next_cursor), c.context)
+             Conversations.read(Map.put(input, "cursor", p1.next_cursor), c.context)
 
-    {:ok, fresh} = Threads.read(input, c.context)
+    {:ok, fresh} = Conversations.read(input, c.context)
     ConversationTranscriptStore.update(c.target, "stable", %{"content" => "edited"})
 
     assert {:error, :stale_or_invalid_cursor} =
-             Threads.read(Map.put(input, "cursor", fresh.next_cursor), c.context)
+             Conversations.read(Map.put(input, "cursor", fresh.next_cursor), c.context)
   end
 
   test "reads text messages by default and includes tool summaries/outputs when opted in", c do
@@ -396,11 +403,13 @@ defmodule Handbean.ThreadsTest do
         "content" => "Done"
       })
 
-    assert {:ok, %{messages: text_only}} = Threads.read(%{"thread" => c.target}, c.context)
+    assert {:ok, %{messages: text_only}} =
+             Conversations.read(%{"conversation" => c.target}, c.context)
+
     assert Enum.map(text_only, & &1["id"]) == ["user-1", "assistant-1"]
 
     assert {:ok, %{messages: [_, msg, _]}} =
-             Threads.read(%{"thread" => c.target, "include_tools" => true}, c.context)
+             Conversations.read(%{"conversation" => c.target, "include_tools" => true}, c.context)
 
     assert msg["id"] == "tool-call-1"
     assert msg["role"] == "tool"
@@ -413,53 +422,62 @@ defmodule Handbean.ThreadsTest do
     refute msg["content"] =~ "sub-token-value"
 
     assert {:error, :invalid_input} =
-             Threads.read(%{"thread" => c.target, "include_tools" => "yes"}, c.context)
+             Conversations.read(
+               %{"conversation" => c.target, "include_tools" => "yes"},
+               c.context
+             )
   end
 
   test "historical status is idle without inventing success", c do
     assert {:ok, %{state: "idle", current_run: nil, last_result: nil}} =
-             Threads.status(%{"thread" => c.target}, c.context)
+             Conversations.status(%{"conversation" => c.target}, c.context)
   end
 
   test "date filtering normalizes offsets and rejects malformed input", c do
-    {:ok, %{threads: []}} =
-      Threads.list(%{"updated_after" => "2999-01-01T00:00:00+08:00"}, c.context)
+    {:ok, %{conversations: []}} =
+      Conversations.list(%{"updated_after" => "2999-01-01T00:00:00+08:00"}, c.context)
 
-    {:ok, %{threads: threads}} =
-      Threads.list(%{"updated_after" => "2000-01-01T00:00:00+08:00"}, c.context)
+    {:ok, %{conversations: conversations}} =
+      Conversations.list(%{"updated_after" => "2000-01-01T00:00:00+08:00"}, c.context)
 
-    assert length(threads) == 2
+    assert length(conversations) == 2
 
     assert {:error, :invalid_input} =
-             Threads.list(%{"updated_after" => "nonsense"}, c.context)
+             Conversations.list(%{"updated_after" => "nonsense"}, c.context)
   end
 
   test "fragment count bounds empty messages and deletion invalidates continuation", c do
     for i <- 1..51,
         do: ConversationTranscriptStore.append(c.target, %{"id" => "m#{i}", "content" => ""})
 
-    {:ok, page} = Threads.read(%{"thread" => c.target}, c.context)
+    {:ok, page} = Conversations.read(%{"conversation" => c.target}, c.context)
     assert length(page.messages) == 50
-    {:ok, tail} = Threads.read(%{"thread" => c.target, "cursor" => page.next_cursor}, c.context)
+
+    {:ok, tail} =
+      Conversations.read(%{"conversation" => c.target, "cursor" => page.next_cursor}, c.context)
+
     assert [%{"id" => "m51"}] = tail.messages
     assert tail.next_cursor == nil
     ConversationTranscriptStore.delete(c.target, "m1")
 
     assert {:error, :stale_or_invalid_cursor} =
-             Threads.read(%{"thread" => c.target, "cursor" => page.next_cursor}, c.context)
+             Conversations.read(
+               %{"conversation" => c.target, "cursor" => page.next_cursor},
+               c.context
+             )
   end
 
   test "cross-workspace send rejects before persistence; same-workspace send needs no opt-in",
        c do
-    input = %{"thread" => c.foreign, "message" => "x", "request_id" => "x"}
+    input = %{"conversation" => c.foreign, "message" => "x", "request_id" => "x"}
     assert {:error, :not_accessible} = Collaboration.send_message(input, c.context)
     assert {:ok, []} = ConversationTranscriptStore.list(c.source)
 
-    assert {:ok, _} = Collaboration.send_message(%{input | "thread" => c.target}, c.context)
+    assert {:ok, _} = Collaboration.send_message(%{input | "conversation" => c.target}, c.context)
   end
 
   test "concurrent identical sends reserve only once; uncertain delivery is not retried", c do
-    input = %{"thread" => c.target, "message" => "Report", "request_id" => "request"}
+    input = %{"conversation" => c.target, "message" => "Report", "request_id" => "request"}
 
     results =
       1..8
@@ -480,25 +498,25 @@ defmodule Handbean.ThreadsTest do
     assert {:ok, []} = ConversationTranscriptStore.list(c.target)
   end
 
-  test "a root thread creates any number of read-only children", c do
+  test "a root conversation creates any number of read-only children", c do
     input = %{"title" => "Audit", "message" => "Inspect", "request_id" => "child"}
     refute Collaboration.create(input, c.context) == {:error, :delegation_not_permitted}
     {:ok, receipt} = Collaboration.create(input, c.context)
     {:ok, same} = Collaboration.create(input, c.context)
-    assert same.thread == receipt.thread
-    child_context = %{c.context | conversation_id: receipt.thread}
+    assert same.conversation == receipt.conversation
+    child_context = %{c.context | conversation_id: receipt.conversation}
 
     for name <-
-          ~w(read grep file_search code_search web_fetch mem_recall skill tool_search send_thread_message) do
+          ~w(read grep file_search code_search web_fetch mem_recall skill tool_search send_conversation_message) do
       assert Collaboration.tool_allowed?(name, child_context)
     end
 
-    for name <- ~w(write edit bash browser task create_thread mem_learn) do
+    for name <- ~w(write edit bash browser task create_conversation mem_learn) do
       refute Collaboration.tool_allowed?(name, child_context)
     end
 
     ConversationStore.upsert(%{
-      "id" => receipt.thread,
+      "id" => receipt.conversation,
       "workspace_id" => "ws",
       "title" => "UI save",
       "timeline" => []
@@ -508,11 +526,11 @@ defmodule Handbean.ThreadsTest do
 
     assert {:error, :invalid_input} =
              Collaboration.reply(
-               %{"thread" => c.foreign, "message" => "x", "request_id" => "reply"},
+               %{"conversation" => c.foreign, "message" => "x", "request_id" => "reply"},
                child_context
              )
 
-    assert {:ok, %{thread: parent}} =
+    assert {:ok, %{conversation: parent}} =
              Collaboration.reply(%{"message" => "Result", "request_id" => "reply"}, child_context)
 
     assert parent == c.source
@@ -523,7 +541,7 @@ defmodule Handbean.ThreadsTest do
     assert {:ok, _} =
              Collaboration.send_message(
                %{
-                 "thread" => sibling.thread,
+                 "conversation" => sibling.conversation,
                  "message" => "from sibling",
                  "request_id" => "sib-msg"
                },
@@ -539,13 +557,13 @@ defmodule Handbean.ThreadsTest do
     for i <- 1..12 do
       assert {:ok, _} =
                Collaboration.send_message(
-                 %{"thread" => c.target, "message" => "x", "request_id" => "#{i}"},
+                 %{"conversation" => c.target, "message" => "x", "request_id" => "#{i}"},
                  c.context
                )
     end
 
     {:ok, entries} = ConversationTranscriptStore.list(c.source)
-    assert Enum.count(entries, &(&1["content_type"] == "thread_handoff")) == 12
+    assert Enum.count(entries, &(&1["content_type"] == "conversation_handoff")) == 12
   end
 
   test "registered tools use executor-owned context and deny writes in delegated runs", c do
@@ -553,32 +571,32 @@ defmodule Handbean.ThreadsTest do
     names = Enum.map(modules, & &1.name())
 
     for name <-
-          ~w(list_threads find_thread read_thread get_thread_status get_thread_trajectory send_thread_message reply_to_parent_thread create_thread),
+          ~w(list_conversations find_conversation read_conversation get_conversation_status get_conversation_trajectory send_conversation_message reply_to_parent_conversation create_conversation),
         do: assert(name in names)
 
     Enum.each(modules, &Handbean.Tool.Registry.register/1)
 
     declared = Handbean.Tool.Registry.tool_defs() |> Enum.map(& &1.name)
-    refute "get_thread_trajectory" in declared
+    refute "get_conversation_trajectory" in declared
 
     config =
       Handbean.Agent.Config.from_opts(
         conversation_id: c.source,
         workspace_id: "ws",
         working_directory: c.home,
-        context: %{thread_run_opts: [forged: true]}
+        context: %{conversation_run_opts: [forged: true]}
       )
 
     state = Handbean.Agent.State.init(config, "test")
 
     assert {:ok, _, [block]} =
              Handbean.Agent.Tool.Executor.execute_all_with_details(
-               [%{id: "list", name: "list_threads", input: %{}}],
+               [%{id: "list", name: "list_conversations", input: %{}}],
                state
              )
 
     refute block.is_error
-    assert Jason.decode!(block.content)["threads"] |> length() == 2
+    assert Jason.decode!(block.content)["conversations"] |> length() == 2
     ConversationStore.update_meta(c.source, collaboration: %{"read_only" => true})
     authorized = Handbean.Agent.Tool.Executor.authorized_tools(config)
     assert "web_fetch" in authorized

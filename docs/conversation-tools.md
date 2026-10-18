@@ -1,30 +1,31 @@
-# Persistent thread tools
+# Persistent conversation tools
 
-Threads are existing durable conversations, not internal tasks or a second runtime.
+These tools operate on existing durable conversations; they do not introduce a
+second persistent entity or runtime.
 The runtime supplies caller conversation/workspace/run identity. Tool arguments
 cannot supply identity or a cross-workspace grant. Path-unsafe IDs, missing identity,
 and metadata marked `visibility: internal` or `task` are rejected. The bounded
 internal `task` tool remains separate: its conversations are excluded from these
-persistent thread tools, and its run-scoped authorization and cleanup remain intact.
+persistent conversation tools, and its run-scoped authorization and cleanup remain intact.
 
 ## Discovery and inspection
 
-- `list_threads`: browse recent durable threads without a search term. It accepts
+- `list_conversations`: browse recent durable conversations without a search term. It accepts
   `archived: active | archived | all`, an inclusive ISO-8601 `updated_after`, and
   a maximum of 20 results. Each summary includes persistent message/run/tool counts
   and the last persisted run result; it never probes runtime processes.
-- `find_thread`: search titles using a required non-empty substring. It uses the
-  same filters, pagination, and summary schema as `list_threads`. Search remains
+- `find_conversation`: search titles using a required non-empty substring. It uses the
+  same filters, pagination, and summary schema as `list_conversations`. Search remains
   metadata-only: it does not search or load transcript bodies.
-- `read_thread`: inclusive zero-based message range; at most 16,000 Unicode
+- `read_conversation`: inclusive zero-based message range; at most 16,000 Unicode
   codepoints and 50 message fragments per page. Stable message IDs and character
   offsets allow long single messages to continue without silently dropping tails.
   It returns visible text by default; `include_tools: true` adds bounded, redacted
   persisted tool summaries and outputs.
-- `get_thread_status`: idle/running/awaiting_approval and available last result.
+- `get_conversation_status`: idle/running/awaiting_approval and available last result.
   No Session is required. Idle is not proof of successful completion.
-- `get_thread_trajectory`: a versioned observability projection over persistent
-  thread facts. `summary` returns aggregate stats plus bounded run/turn summaries;
+- `get_conversation_trajectory`: a versioned observability projection over persistent
+  conversation facts. `summary` returns aggregate stats plus bounded run/turn summaries;
   `compact` additionally returns record metadata; `full` adds redacted persisted
   content and tool input/output. Full means the complete persisted projection
   available on that page, never unbounded raw output. Record pages are limited to
@@ -36,12 +37,12 @@ persistent thread tools, and its run-scoped authorization and cleanup remain int
   the entry/run/turn revision snapshot and the last consumed record sequence.
 - `list_models`: bounded, paginated id/name search over models allowed by the
   current workspace. It is only needed to select a model other than the current
-  thread model; the full catalog is never added to the prompt.
+  conversation model; the full catalog is never added to the prompt.
 
 Trajectory uses Handbean's own execution hierarchy:
 
 ```text
-thread
+conversation
   └── run       one admitted user request and its complete execution
        └── turn one provider completion attempt inside the native loop
             └── durable user / assistant / tool / system records
@@ -57,23 +58,23 @@ turn boundaries or exact timings.
 ## Handoffs and delegation
 
 Any visible conversation may message another visible conversation in the same
-workspace; there is no per-conversation opt-in. Threads may exchange any number
-of handoffs (for example one thread develops while another verifies), and a
+workspace; there is no per-conversation opt-in. Conversations may exchange any number
+of handoffs (for example one conversation develops while another verifies), and a
 woken run gets no extra turn or token cap; its length is up to the model. Wakeups
-are paid runs. Created children keep a persisted parent route and
-cannot delegate further or message arbitrary peers. `reply_to_parent_thread`
-takes no target.
+are paid runs. Created children keep a persisted parent route for the
+`reply_to_parent_conversation` convenience, but may also message any authorized visible
+peer. Creator is provenance, not a fixed completion route.
 
-`send_thread_message` always uses Coordinator; running conversations default to
-`steer`, with `follow_up` only by explicit input. `create_thread` inherits the
+`send_conversation_message` always uses Coordinator; running conversations default to
+`steer`, with `follow_up` only by explicit input. `create_conversation` inherits the
 caller's current model when `model` is omitted or is `current`. To select another
 model, use the complete workspace-allowed id returned by `list_models`. The child
 resolves that model's provider config itself; it does not copy the caller's
 provider module or provider config. Later wakes of a pinned child keep that model.
 
-`create_thread` defaults to a persistent read-only child in the same shared
-directory, **not an isolated checkout or sandbox**. The child is its own
-session and uses this workspace's permission mode (safe / smart review / yolo);
+`create_conversation` defaults to a persistent read-only child in the same shared
+directory, **not an isolated checkout or sandbox**. The child is a separate
+persistent conversation and uses this workspace's permission mode (safe / smart review / yolo);
 it does not take a separate approval. `mode: write` removes the read-only
 allowlist so the child can edit this workspace. A runtime execution allowlist
 still rejects mutating, shell, browser, extension and unknown tools on
@@ -86,28 +87,45 @@ Messages are capped at 8,000 characters.
 Every send requires a caller-scoped `request_id`; identical retries return the
 existing receipt and different content/target under that key is rejected.
 Each independent send/delegation creates a runtime-owned `handoff_id`, returned
-in the receipt and visible in `read_thread`. Continue an exchange by passing that
-ID to `send_thread_message` or `reply_to_parent_thread`; it must already belong to
-the authorized source/target pair. Omitting it on send starts a new exchange,
-not a continuation based on peer identity. Retries keep the same request and
-association. Both the source reservation and recipient's trusted origin retain
-the association. Replies inherit the initiating run's association (or original
-child delegation); replies to a different queued task must select its ID
-explicitly. Terminal reports retain the initiating association too.
-When multiple associations were consumed in one run, its unpartitioned assistant
-text is not copied into a task-specific terminal report: only a run-status notice
-is returned. Explicitly associated replies carry the individual results.
+in the receipt and visible in `read_conversation`. Continue an exchange by passing that
+ID to `send_conversation_message` or `reply_to_parent_conversation`; it must already belong to
+the authorized source/target pair. Omitting it starts a new exchange. Every new
+origin also persists a `purpose` and trusted `expect_report` fact:
+
+- `request` expects a terminal report.
+- `result` fulfills only matching requests already consumed by the sender's current run.
+- `progress` and `notification` neither create nor fulfill report responsibility.
+
+When omitted, `purpose` defaults to `request` for a new handoff and for messages
+from its original initiator, and to `result` for messages from its original
+responder. Those are compatibility defaults, not inferred local roles: reverse
+questions and their answers in a multi-round handoff must set `purpose` explicitly.
+Changing purpose under the same `request_id` is an idempotency conflict.
+
+A result reservation records the exact covered inbound IDs before dispatch while
+holding the source workspace lock. A later request consumed in the same run is not
+covered by an earlier result. Historical entries without purpose are not guessed
+into new responsibility. Automatic reports carry a runtime-only trusted marker and
+never create another report, preventing acknowledgment loops.
 The source transcript holds a durable dispatch reservation before Coordinator is
 called. This is **at-most-once dispatch**, not exactly-once delivery: a crash or
 failure after reservation returns/leaves `delivery_unknown` and is never replayed
-automatically. A human should inspect the task thread before deciding what to do.
+automatically. A human should inspect the task conversation before deciding what to do.
 No claim of consumption or completion follows from a started/enqueued receipt.
 Target transcript `consumption` records actual runtime injection separately.
 
-On normal Runner completion, a child sends a bounded final report unless that run
-already explicitly replied. This callback is supervised but not a durable retry
-worker: a host crash before the callback may require manual inspection. No
-automatic acknowledgment is sent.
+On normal Runner completion, each consumed request group that has not been
+fulfilled receives one deterministic terminal report. The bounded final body is
+included only when every external or conversation-origin `user_msg` consumed by that run belongs
+to that same peer and handoff; mixed user input, purpose, peer, or handoff yields
+only an objective run-status notice. Every non-`completed` terminal status (including
+error, timeout, cancellation, halt, stall, budget, or turn-limit endings) sends
+a separate sanitized status event to every request group consumed by that run,
+even if a result was sent earlier. Approval wait is not terminal. Repeated terminal
+callbacks reuse the same reservation. This callback is supervised but not a
+durable retry worker: a host crash before it runs may require manual inspection.
+A `delivery_unknown` reservation is an already-attempted send and is never replaced
+with a second automatic attempt. Run completion is not task acceptance.
 
 ## UI
 

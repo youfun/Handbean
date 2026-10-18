@@ -1,18 +1,18 @@
-defmodule Handbean.Tool.Builtin.ReadThread do
-  @moduledoc "Read authorized transcript messages from a thread."
+defmodule Handbean.Tool.Builtin.ReadConversation do
+  @moduledoc "Read authorized transcript messages from a conversation."
 
-  use Handbean.Tool.ThreadTool,
-    name: "read_thread",
-    module: Handbean.Threads,
+  use Handbean.Tool.ConversationTool,
+    name: "read_conversation",
+    module: Handbean.Conversations,
     action: :read,
     description:
       "Read authorized transcript messages, with stable IDs and Unicode character offsets. Defaults to text messages only; set include_tools: true to include tool call summaries and outputs. Zero-based inclusive message range. Follow next_cursor with identical inputs to read long messages fully. Any snapshot change requires restarting.",
     schema: %{
       type: "object",
       additionalProperties: false,
-      required: ["thread"],
+      required: ["conversation"],
       properties: %{
-        thread: %{
+        conversation: %{
           type: "string",
           description: "Conversation id in the same workspace. Not a title."
         },

@@ -1,33 +1,33 @@
-defmodule Handbean.Threads.Trajectory do
+defmodule Handbean.Conversations.Trajectory do
   @moduledoc false
 
-  alias Handbean.{ConversationStore, Threads}
+  alias Handbean.{ConversationStore, Conversations}
 
   @detail_levels ~w(summary compact full)
   @record_kinds ~w(user assistant tool system)
-  @cursor_salt "thread-trajectory-page"
+  @cursor_salt "conversation-trajectory-page"
 
   def get(input, context) do
     with :ok <-
-           Threads.validate(
+           Conversations.validate(
              input,
-             ~w(thread run_id turn detail_level kinds errors_only limit max_chars cursor)
+             ~w(conversation run_id turn detail_level kinds errors_only limit max_chars cursor)
            ),
-         {:ok, thread_id} <- Threads.text(input, "thread", nil, 256),
-         {:ok, _meta} <- Threads.authorize(context, thread_id),
+         {:ok, conversation_id} <- Conversations.text(input, "conversation", nil, 256),
+         {:ok, _meta} <- Conversations.authorize(context, conversation_id),
          {:ok, run_id} <- optional_text(input, "run_id", 256),
          {:ok, turn_number} <- optional_integer(input, "turn", 1, 1_000_000),
          true <- is_nil(turn_number) or is_binary(run_id),
          {:ok, detail_level} <- detail_level(input),
          {:ok, kinds} <- kinds(input),
          true <- is_boolean(Map.get(input, "errors_only", false)),
-         {:ok, limit} <- Threads.integer(input, "limit", 50, 1, 50),
-         {:ok, max_chars} <- Threads.integer(input, "max_chars", 8_000, 2_000, 16_000),
+         {:ok, limit} <- Conversations.integer(input, "limit", 50, 1, 50),
+         {:ok, max_chars} <- Conversations.integer(input, "max_chars", 8_000, 2_000, 16_000),
          binding <- binding(context, input),
          {:ok, page} <- cursor_position(input["cursor"], binding),
          {:ok, snapshot} <-
            ConversationStore.trajectory_snapshot(
-             thread_id,
+             conversation_id,
              run_id: run_id,
              turn_number: turn_number,
              kinds: kinds,
@@ -70,8 +70,8 @@ defmodule Handbean.Threads.Trajectory do
       schema_version: 1,
       detail_level: detail_level,
       generated_at: generated_at,
-      snapshot_id: snapshot_id(snapshot.thread.id, snapshot.snapshot_version),
-      thread: snapshot.thread,
+      snapshot_id: snapshot_id(snapshot.conversation.id, snapshot.snapshot_version),
+      conversation: snapshot.conversation,
       stats: snapshot.stats,
       fidelity: snapshot.fidelity,
       filters: %{
@@ -385,7 +385,7 @@ defmodule Handbean.Threads.Trajectory do
     case Map.get(input, key) do
       nil -> {:ok, nil}
       "" -> {:ok, nil}
-      _value -> Threads.text(input, key, nil, max)
+      _value -> Conversations.text(input, key, nil, max)
     end
   end
 
@@ -442,8 +442,8 @@ defmodule Handbean.Threads.Trajectory do
 
   defp cursor_position(_cursor, _binding), do: {:error, :stale_or_invalid_cursor}
 
-  defp snapshot_id(thread_id, version) do
-    :crypto.hash(:sha256, :erlang.term_to_binary({thread_id, version}))
+  defp snapshot_id(conversation_id, version) do
+    :crypto.hash(:sha256, :erlang.term_to_binary({conversation_id, version}))
     |> Base.url_encode64(padding: false)
     |> binary_part(0, 22)
   end

@@ -243,7 +243,8 @@ defmodule Handbean.Tool.RegistryTest do
       assert "share_file" in names
       assert "run_elixir_script" in names
 
-      for tool <- ~w(web_fetch skill task job_status job_cancel create_thread send_thread_message),
+      for tool <-
+            ~w(web_fetch skill task job_status job_cancel create_conversation send_conversation_message),
           do: assert(tool in names)
 
       assert "mix_project" in names

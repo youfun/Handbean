@@ -463,7 +463,7 @@ defmodule HandbeanProbe.NativeTimelineTest do
     refute render_sent_card(chat, nil)
   end
 
-  test "thread handoffs render compact controls for details, navigation and direct messages" do
+  test "conversation handoffs render compact controls for details, navigation and direct messages" do
     parent_id = Ecto.UUID.generate()
     child_id = Ecto.UUID.generate()
 
@@ -474,9 +474,9 @@ defmodule HandbeanProbe.NativeTimelineTest do
       entries: [
         %{
           "id" => "handoff-entry",
-          "content_type" => "thread_handoff",
+          "content_type" => "conversation_handoff",
           "content" => %{
-            "type" => "thread_handoff",
+            "type" => "conversation_handoff",
             "handoff_id" => "handoff-1",
             "event" => "received",
             "data" => %{
@@ -499,8 +499,8 @@ defmodule HandbeanProbe.NativeTimelineTest do
 
     assert encoded =~ "Reply from researcher"
     assert encoded =~ "The mobile audit is complete."
-    assert encoded =~ ":toggle_thread_handoff"
-    assert encoded =~ ":open_subagent_thread"
+    assert encoded =~ ":toggle_conversation_handoff"
+    assert encoded =~ ":open_subagent_conversation"
     assert encoded =~ child_id
     assert encoded =~ ":prefill_subagent_message"
   end

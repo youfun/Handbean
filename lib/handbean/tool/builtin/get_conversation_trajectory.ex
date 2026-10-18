@@ -1,18 +1,18 @@
-defmodule Handbean.Tool.Builtin.GetThreadTrajectory do
-  @moduledoc "Read a durable thread's structured execution trajectory."
+defmodule Handbean.Tool.Builtin.GetConversationTrajectory do
+  @moduledoc "Read a durable conversation's structured execution trajectory."
 
-  use Handbean.Tool.ThreadTool,
-    name: "get_thread_trajectory",
-    module: Handbean.Threads,
+  use Handbean.Tool.ConversationTool,
+    name: "get_conversation_trajectory",
+    module: Handbean.Conversations,
     action: :trajectory,
     description:
-      "Read a versioned, structured execution trajectory for an authorized durable thread. Use summary for runs/turns, compact for bounded record metadata, and full only when redacted persisted inputs/outputs are needed. Full never means unbounded raw output. Record pages are capped at 50 records and 16,000 characters; any source change invalidates the cursor.",
+      "Read a versioned, structured execution trajectory for an authorized durable conversation. Use summary for runs/turns, compact for bounded record metadata, and full only when redacted persisted inputs/outputs are needed. Full never means unbounded raw output. Record pages are capped at 50 records and 16,000 characters; any source change invalidates the cursor.",
     schema: %{
       type: "object",
       additionalProperties: false,
-      required: ["thread"],
+      required: ["conversation"],
       properties: %{
-        thread: %{
+        conversation: %{
           type: "string",
           description: "Conversation id in the same workspace. Not a title."
         },

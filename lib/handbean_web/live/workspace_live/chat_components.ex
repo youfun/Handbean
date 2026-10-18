@@ -548,8 +548,8 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
           >
             <div :for={{dom_id, entry} <- @streams.timeline} id={dom_id} data-run-id={entry["run_id"]}>
               <% reports = delegation_reports(entry) %>
-              <HandbeanWeb.ThreadHandoff.card
-                :if={HandbeanWeb.ThreadHandoff.show?(entry, @timeline)}
+              <HandbeanWeb.ConversationHandoff.card
+                :if={HandbeanWeb.ConversationHandoff.show?(entry, @timeline)}
                 entry={entry}
                 conversation_id={@current_conversation_id}
                 workspace_id={@current_workspace_id}
@@ -563,7 +563,7 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
               <div
                 :if={
                   entry["content_type"] == "user_msg" and
-                    get_in(entry, ["origin", "kind"]) != "thread" and reports == []
+                    get_in(entry, ["origin", "kind"]) != "conversation" and reports == []
                 }
                 class="msg-row flex w-full msg-user justify-end"
                 data-user-msg={entry["id"]}

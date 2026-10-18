@@ -1,9 +1,9 @@
-defmodule Handbean.E2E.ThreadMessageTest do
+defmodule Handbean.E2E.ConversationMessageTest do
   @moduledoc """
-  A parent run calls `create_thread`. The child conversation is created in the
+  A parent run calls `create_conversation`. The child conversation is created in the
   same workspace and its transcript contains the delegated message.
 
-  Run: mix test --include e2e test/handbean/e2e/thread_message_test.exs
+  Run: mix test --include e2e test/handbean/e2e/conversation_message_test.exs
   """
 
   use ExUnit.Case, async: false
@@ -21,9 +21,9 @@ defmodule Handbean.E2E.ThreadMessageTest do
     :ok
   end
 
-  test "create_thread delivers the task into the child transcript" do
-    %{workspace: workspace} = E2EHarness.isolate_home!("thread-message")
-    {:ok, ws} = Handbean.WorkspaceStore.add(workspace, name: "Threads")
+  test "create_conversation delivers the task into the child transcript" do
+    %{workspace: workspace} = E2EHarness.isolate_home!("conversation-message")
+    {:ok, ws} = Handbean.WorkspaceStore.add(workspace, name: "Conversations")
     {:ok, parent} = ConversationStore.create(ws["id"], title: "Parent")
     :ok = Session.subscribe(parent["id"])
 
@@ -36,11 +36,11 @@ defmodule Handbean.E2E.ThreadMessageTest do
         {:tools,
          [
            %{
-             name: "create_thread",
+             name: "create_conversation",
              input: %{
                "title" => "Audit",
                "message" => "Inspect the marker ORCHID-4401",
-               "request_id" => "req-thread-e2e"
+               "request_id" => "req-conversation-e2e"
              }
            }
          ]}
@@ -65,7 +65,7 @@ defmodule Handbean.E2E.ThreadMessageTest do
     parent_entries = E2EHarness.transcript(parent["id"])
 
     handoff =
-      Enum.find(parent_entries, &(&1["content_type"] == "thread_handoff")) ||
+      Enum.find(parent_entries, &(&1["content_type"] == "conversation_handoff")) ||
         flunk("missing handoff: #{inspect(parent_entries)}")
 
     child_id = handoff["target"]

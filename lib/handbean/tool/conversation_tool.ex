@@ -1,4 +1,4 @@
-defmodule Handbean.Tool.ThreadTool do
+defmodule Handbean.Tool.ConversationTool do
   @moduledoc false
 
   defmacro __using__(opts) do
@@ -13,7 +13,7 @@ defmodule Handbean.Tool.ThreadTool do
       @impl true
       def execute(input, context) do
         unquote(opts[:module]).unquote(opts[:action])(input, context)
-        |> Handbean.Tool.ThreadTool.result()
+        |> Handbean.Tool.ConversationTool.result()
       end
     end
   end
@@ -21,5 +21,5 @@ defmodule Handbean.Tool.ThreadTool do
   def result({:ok, value}), do: {:ok, Handbean.JSON.encode!(value)}
   def result({:error, reason}) when is_atom(reason), do: {:error, Atom.to_string(reason)}
   def result({:error, reason}) when is_binary(reason), do: {:error, reason}
-  def result(_), do: {:error, "thread operation failed"}
+  def result(_), do: {:error, "conversation operation failed"}
 end

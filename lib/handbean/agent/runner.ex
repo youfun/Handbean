@@ -340,6 +340,7 @@ defmodule Handbean.Agent.Runner do
       # Teardown may terminate this Runner immediately; acknowledge after all
       # run-owned tasks are down and before launching tree teardown.
       GenServer.reply(from, :ok)
+      schedule_terminal_callback(state, %{status: :cancelled})
       stop_run_supervisor(state)
       {:noreply, %{state | status: :cancelled, task: nil, interrupted_state: nil}}
     else
@@ -498,6 +499,7 @@ defmodule Handbean.Agent.Runner do
     }
 
     persist_terminal_event(state, payload)
+    schedule_terminal_callback(state, %{status: :timeout})
     Session.broadcast_event(state.conversation_id, :run_end, payload)
     Session.mark_run_finished(state.conversation_id, state.opts[:run_id])
     Handbean.Agent.CandidateQueue.seal(state.queue_pid)
@@ -528,6 +530,7 @@ defmodule Handbean.Agent.Runner do
     }
 
     persist_terminal_event(state, payload)
+    schedule_terminal_callback(state, %{status: :timeout})
     Session.broadcast_event(state.conversation_id, :run_end, payload)
     Session.mark_run_finished(state.conversation_id, state.opts[:run_id])
     Handbean.Agent.CandidateQueue.seal(state.queue_pid)
@@ -560,6 +563,7 @@ defmodule Handbean.Agent.Runner do
     }
 
     persist_terminal_event(state, payload)
+    schedule_terminal_callback(state, %{status: :error})
     Session.broadcast_event(state.conversation_id, :run_end, payload)
     Session.mark_run_finished(state.conversation_id, state.opts[:run_id])
     Logger.error("[Runner] run aborted without replay: #{inspect(reason)}")
@@ -572,12 +576,24 @@ defmodule Handbean.Agent.Runner do
     Handbean.Agent.CandidateQueue.seal(state.queue_pid)
     Session.mark_run_finished(state.conversation_id, state.opts[:run_id])
 
-    Task.Supervisor.start_child(Handbean.AgentRunTaskSupervisor, fn ->
-      Handbean.Threads.Collaboration.completed(state.conversation_id, result, state.opts)
-    end)
+    schedule_terminal_callback(state, result)
 
     stop_run_supervisor(state)
     {:noreply, %{state | status: status, result: result, task: nil}}
+  end
+
+  defp schedule_terminal_callback(state, result) do
+    task =
+      Task.Supervisor.async_nolink(Handbean.AgentRunTaskSupervisor, fn ->
+        Handbean.Conversations.Collaboration.completed(state.conversation_id, result, state.opts)
+      end)
+
+    case Task.yield(task, 5_000) || Task.shutdown(task, :brutal_kill) do
+      {:ok, :ok} -> :ok
+      {:ok, other} -> Logger.warning("[Runner] terminal callback returned #{inspect(other)}")
+      nil -> Logger.warning("[Runner] terminal callback timed out")
+      {:exit, reason} -> Logger.warning("[Runner] terminal callback failed: #{inspect(reason)}")
+    end
   end
 
   defp interrupt_type(%{status: :awaiting_approval, interrupted_state: %{interrupt_data: data}})
@@ -740,6 +756,7 @@ defmodule Handbean.Agent.Runner do
     }
 
     persist_terminal_event(state, payload)
+    schedule_terminal_callback(state, %{status: :error})
     Session.broadcast_event(state.conversation_id, :run_end, payload)
 
     Session.mark_run_finished(state.conversation_id, state.opts[:run_id])
