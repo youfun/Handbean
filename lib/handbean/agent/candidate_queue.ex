@@ -39,6 +39,13 @@ defmodule Handbean.Agent.CandidateQueue do
   def delete_message(server, message_id),
     do: GenServer.call(server, {:delete_message, message_id})
 
+  def promote_message(server, message_id) do
+    GenServer.call(server, {:promote_message, message_id})
+  catch
+    :exit, {reason, _call} when reason in [:noproc, :normal, :shutdown] ->
+      {:error, :not_found}
+  end
+
   defp unique_id(prefix) do
     "#{prefix}-#{Ecto.UUID.generate()}"
   end
@@ -161,6 +168,46 @@ defmodule Handbean.Agent.CandidateQueue do
     {:reply, messages, state}
   end
 
+  def handle_call({:promote_message, _message_id}, _from, %{sealed?: true} = state) do
+    {:reply, {:error, :not_found}, state}
+  end
+
+  def handle_call({:promote_message, message_id}, _from, state) do
+    steer_list = :queue.to_list(state.steer)
+    follow_up_list = :queue.to_list(state.follow_up)
+
+    cond do
+      Enum.any?(steer_list, &(&1.message.id == message_id)) ->
+        {:reply, {:ok, %{deliver_as: :steer}}, state}
+
+      true ->
+        {promoted, remaining} = Enum.split_with(follow_up_list, &(&1.message.id == message_id))
+
+        if promoted == [] do
+          {:reply, {:error, :not_found}, state}
+        else
+          case persist_promotion(state.session_id, promoted) do
+            :ok ->
+              promoted =
+                Enum.map(promoted, fn item ->
+                  put_in(item.metadata.deliver_as, :steer)
+                end)
+
+              new_state = %{
+                state
+                | steer: Enum.reduce(promoted, state.steer, &:queue.in/2),
+                  follow_up: :queue.from_list(remaining)
+              }
+
+              {:reply, {:ok, %{deliver_as: :steer}}, new_state}
+
+            {:error, reason} ->
+              {:reply, {:error, reason}, state}
+          end
+        end
+    end
+  end
+
   def handle_call({:delete_message, message_id}, _from, state) do
     steer_list = :queue.to_list(state.steer)
     follow_up_list = :queue.to_list(state.follow_up)
@@ -211,6 +258,20 @@ defmodule Handbean.Agent.CandidateQueue do
     end
   end
 
+  defp persist_promotion(session_id, items) do
+    if Enum.any?(items, &Map.get(&1.metadata, :persisted?, false)) do
+      case Handbean.ConversationTranscriptStore.update(session_id, hd(items).message.id, %{
+             "delivery" => "steer",
+             "interrupts_work" => true
+           }) do
+        {:ok, _entry} -> :ok
+        {:error, reason} -> {:error, reason}
+      end
+    else
+      :ok
+    end
+  end
+
   defp put_persisted_id(item, %{"id" => id}) when is_binary(id),
     do: %{item | message: %{item.message | id: id}}
 
@@ -235,7 +296,8 @@ defmodule Handbean.Agent.CandidateQueue do
     %{
       source: Keyword.get(opts, :source, :user),
       deliver_as: deliver_as,
-      inserted_at: DateTime.utc_now()
+      inserted_at: DateTime.utc_now(),
+      persisted?: Keyword.get(opts, :persist_candidate?, false)
     }
   end
 end

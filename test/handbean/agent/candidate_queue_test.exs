@@ -16,6 +16,46 @@ defmodule Handbean.Agent.CandidateQueueTest do
       assert CandidateQueue.drain_steer(queue) == []
     end
 
+    test "promotes one follow-up message to the steer queue without changing its id" do
+      {:ok, queue} = CandidateQueue.start_link(session_id: "cq-promote", owner: self())
+
+      assert :ok =
+               CandidateQueue.enqueue(queue, "send now",
+                 deliver_as: :follow_up,
+                 message_id: "promote-me"
+               )
+
+      assert {:ok, %{deliver_as: :steer}} =
+               CandidateQueue.promote_message(queue, "promote-me")
+
+      assert [] = CandidateQueue.drain_follow_up(queue)
+
+      assert [%Message{id: "promote-me", content: "send now"}] =
+               CandidateQueue.drain_steer(queue)
+    end
+
+    test "does not promote messages after the queue is sealed" do
+      {:ok, queue} = CandidateQueue.start_link(session_id: "cq-promote-sealed", owner: self())
+
+      assert :ok =
+               CandidateQueue.enqueue(queue, "too late",
+                 deliver_as: :follow_up,
+                 message_id: "sealed-message"
+               )
+
+      assert :ok = CandidateQueue.seal(queue)
+      assert {:error, :not_found} = CandidateQueue.promote_message(queue, "sealed-message")
+      assert [%Message{id: "sealed-message"}] = CandidateQueue.drain_follow_up(queue)
+    end
+
+    test "treats a stopped queue as a message that can no longer be promoted" do
+      queue = spawn(fn -> :ok end)
+      ref = Process.monitor(queue)
+      assert_receive {:DOWN, ^ref, :process, ^queue, :normal}
+
+      assert {:error, :not_found} = CandidateQueue.promote_message(queue, "gone")
+    end
+
     test "keeps steer and follow_up in separate FIFO queues" do
       {:ok, queue} = CandidateQueue.start_link(session_id: "cq-kinds", owner: self())
 

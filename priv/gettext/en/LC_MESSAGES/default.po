@@ -356,6 +356,11 @@ msgstr "Stop"
 msgid "Send"
 msgstr "Send"
 
+#: lib/handbean_web/live/workspace_live/chat_components.ex:615
+#, elixir-autogen, elixir-format
+msgid "Send now"
+msgstr "Send now"
+
 #: lib/handbean_web/live/workspace_live/chat_components.ex:1185
 #, elixir-autogen
 msgid "附件"
@@ -1070,7 +1075,12 @@ msgstr "Agent stopped in %{title}."
 msgid "All workspaces, including future workspaces"
 msgstr "All workspaces, including future workspaces"
 
-#: lib/handbean_web/live/workspace_live/message_submission.ex:118
+#: lib/handbean_web/live/workspace_live/message_submission.ex:120
+#, elixir-autogen, elixir-format
+msgid "Already inserted; cannot send now."
+msgstr "Already inserted; cannot send now."
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:158
 #, elixir-autogen, elixir-format
 msgid "Already inserted; cannot undo."
 msgstr "Already inserted; cannot undo."
@@ -1204,7 +1214,12 @@ msgstr "Could not save theme preference."
 msgid "Could not save theme preference."
 msgstr "Could not save theme preference."
 
-#: lib/handbean_web/live/workspace_live/message_submission.ex:121
+#: lib/handbean_web/live/workspace_live/message_submission.ex:123
+#, elixir-autogen, elixir-format
+msgid "Could not send that message now."
+msgstr "Could not send that message now."
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:161
 #, elixir-autogen, elixir-format
 msgid "Could not undo that message."
 msgstr "Could not undo that message."

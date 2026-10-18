@@ -606,6 +606,15 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
                         end}
                       </span>
                       <button
+                        :if={item[:status] == :queued and item[:deliver_as] == :follow_up}
+                        type="button"
+                        phx-click="send_pending_now"
+                        phx-value-id={entry["id"]}
+                        class="underline"
+                      >
+                        {gettext("Send now")}
+                      </button>
+                      <button
                         :if={item[:status] == :queued}
                         type="button"
                         phx-click="cancel_pending"

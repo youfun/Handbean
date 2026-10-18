@@ -302,6 +302,32 @@ defmodule Handbean.Agent.CoordinatorTest do
     assert {:error, :not_found} = Coordinator.delete_pending_message(sid, "pending-delete")
   end
 
+  test "promoting a follow-up preserves the message and updates its durable delivery" do
+    sid = "coord-promote-#{System.unique_integer([:positive])}"
+    {:ok, _} = Handbean.ConversationStore.create("default", id: sid)
+    {:ok, _session} = Session.start_or_get(session_id: sid, model: "fake")
+    queue = start_supervised!({Handbean.Agent.CandidateQueue, session_id: sid, owner: self()})
+    :ok = Session.attach_run(sid, self(), queue)
+
+    assert {:ok, _} =
+             Coordinator.add_message(
+               sid,
+               "send this now",
+               opts(message_id: "pending-promote", deliver_as: :follow_up)
+             )
+
+    assert :ok = Coordinator.promote_pending_message(sid, "pending-promote")
+    assert [] = Handbean.Agent.CandidateQueue.drain_follow_up(queue)
+
+    assert [%Handbean.Agent.Message{id: "pending-promote", content: "send this now"}] =
+             Handbean.Agent.CandidateQueue.drain_steer(queue)
+
+    assert {:ok, [entry]} = Handbean.ConversationTranscriptStore.list(sid)
+    assert entry["id"] == "pending-promote"
+    assert entry["delivery"] == "steer"
+    assert entry["interrupts_work"] == true
+  end
+
   test "add_message starts a supervised run when session is idle" do
     sid = "coord-idle-#{System.unique_integer([:positive])}"
     {:ok, _} = Handbean.ConversationStore.create("default", id: sid)

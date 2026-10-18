@@ -556,6 +556,10 @@ defmodule HandbeanWeb.WorkspaceLive do
     do: MessageSubmission.queue_message(socket, params)
 
   @impl true
+  def handle_event("send_pending_now", %{"id" => id}, socket),
+    do: MessageSubmission.send_pending_now(socket, id)
+
+  @impl true
   def handle_event("cancel_pending", %{"id" => id}, socket),
     do: MessageSubmission.cancel_pending(socket, id)
 

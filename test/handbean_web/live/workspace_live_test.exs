@@ -1455,7 +1455,7 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
       assert [] = Handbean.Agent.CandidateQueue.drain_follow_up(queue)
     end
 
-    test "running queue button enqueues follow_up", %{conn: conn} do
+    test "queued follow-up can be sent immediately", %{conn: conn} do
       configure_test_models!()
 
       {:ok, view, _html} = live(conn, "/")
@@ -1479,11 +1479,22 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
 
       assert render(view) =~ "when finished"
       assert render(view) =~ "Queued"
+      assert has_element?(view, "button[phx-click='send_pending_now']", "Send now")
+
+      assert [%{message: %{content: "when finished"}, metadata: %{deliver_as: :follow_up}}] =
+               Handbean.Agent.CandidateQueue.get_messages(queue)
+
+      view
+      |> element("button[phx-click='send_pending_now']")
+      |> render_click()
+
+      refute has_element?(view, "button[phx-click='send_pending_now']")
+      assert render(view) =~ "Waiting to insert"
 
       assert [%Handbean.Agent.Message{role: :user, content: "when finished"}] =
-               Handbean.Agent.CandidateQueue.drain_follow_up(queue)
+               Handbean.Agent.CandidateQueue.drain_steer(queue)
 
-      assert [] = Handbean.Agent.CandidateQueue.drain_steer(queue)
+      assert [] = Handbean.Agent.CandidateQueue.drain_follow_up(queue)
     end
 
     test "idle queue_message starts a new run instead of erroring", %{conn: conn} do

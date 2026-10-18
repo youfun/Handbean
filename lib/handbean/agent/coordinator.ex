@@ -398,6 +398,17 @@ defmodule Handbean.Agent.Coordinator do
     end
   end
 
+  @spec promote_pending_message(String.t(), String.t()) :: :ok | {:error, term()}
+  def promote_pending_message(conversation_id, message_id)
+      when is_binary(conversation_id) and is_binary(message_id) do
+    with {:ok, _info} <- Session.promote_pending_message(conversation_id, message_id) do
+      maybe_resume_stall(conversation_id)
+      :ok
+    end
+  catch
+    :exit, reason -> {:error, reason}
+  end
+
   @spec delete_pending_message(String.t(), String.t()) :: :ok | {:error, term()}
   def delete_pending_message(conversation_id, message_id)
       when is_binary(conversation_id) and is_binary(message_id) do

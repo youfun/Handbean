@@ -87,6 +87,50 @@ defmodule HandbeanWeb.WorkspaceLive.MessageSubmission do
     end
   end
 
+  def send_pending_now(socket, id) do
+    item = Map.get(socket.assigns.pending_messages, id)
+    conv_id = socket.assigns.current_conversation_id
+
+    cond do
+      is_nil(item) or item[:status] != :queued or item[:deliver_as] != :follow_up ->
+        {:noreply, socket}
+
+      cli_run_active?(conv_id) ->
+        reject_cli_active(socket)
+
+      true ->
+        case Handbean.Agent.Coordinator.promote_pending_message(conv_id, id) do
+          :ok ->
+            pending =
+              Handbean.Agent.PendingMessages.put_queued(
+                socket.assigns.pending_messages,
+                id,
+                :steer
+              )
+
+            {:noreply,
+             socket
+             |> assign_pending_messages(pending)
+             |> assign(:composer_error, nil)}
+
+          {:error, :not_found} ->
+            {:noreply,
+             socket
+             |> assign_pending_messages(
+               Handbean.Agent.PendingMessages.drop(socket.assigns.pending_messages, id)
+             )
+             |> ConversationState.sync_conv_state(
+               Keyword.merge(ModelSelection.state_opts(), reload?: true)
+             )
+             |> assign(:composer_error, gettext("Already inserted; cannot send now."))}
+
+          {:error, _reason} ->
+            {:noreply,
+             assign(socket, :composer_error, gettext("Could not send that message now."))}
+        end
+    end
+  end
+
   def cancel_pending(socket, id) do
     conv_id = socket.assigns.current_conversation_id
     item = Map.get(socket.assigns.pending_messages, id)

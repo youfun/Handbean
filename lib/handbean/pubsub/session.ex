@@ -168,6 +168,15 @@ defmodule Handbean.PubSub.Session do
     end
   end
 
+  @doc "Promote a pending follow-up message to the active run's steer queue."
+  @spec promote_pending_message(String.t(), String.t()) :: {:ok, map()} | {:error, term()}
+  def promote_pending_message(session_id, message_id) do
+    case whereis(session_id) do
+      nil -> {:error, :not_found}
+      pid -> GenServer.call(pid, {:promote_pending_message, message_id})
+    end
+  end
+
   @doc "Delete a pending message from candidate queue or next turn."
   @spec delete_pending_message(String.t(), String.t()) :: {:ok, map()} | {:error, term()}
   def delete_pending_message(session_id, message_id) do
@@ -392,6 +401,28 @@ defmodule Handbean.PubSub.Session do
       end)
 
     {:reply, queue_msgs ++ next_turn_msgs, state}
+  end
+
+  def handle_call({:promote_pending_message, message_id}, _from, state) do
+    case state.queue_pid do
+      nil ->
+        {:reply, {:error, :not_found}, state}
+
+      queue_pid ->
+        case Handbean.Agent.CandidateQueue.promote_message(queue_pid, message_id) do
+          {:ok, info} ->
+            broadcast_event(state.session_id, :candidate_message_injected, %{
+              message_id: message_id,
+              deliver_as: :steer,
+              run_id: state.meta.run_id
+            })
+
+            {:reply, {:ok, info}, state}
+
+          {:error, reason} ->
+            {:reply, {:error, reason}, state}
+        end
+    end
   end
 
   def handle_call({:delete_pending_message, message_id}, _from, state) do
