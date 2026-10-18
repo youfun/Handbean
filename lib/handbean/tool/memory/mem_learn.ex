@@ -8,6 +8,7 @@ defmodule Handbean.Tool.Memory.MemLearn do
   @behaviour Handbean.Agent.Tool
 
   alias Handbean.Memory.Policy
+  alias Handbean.Tool.Memory.Scope
 
   @impl true
   def name, do: "mem_learn"
@@ -41,17 +42,16 @@ defmodule Handbean.Tool.Memory.MemLearn do
   def execute(%{"content" => content, "kind" => kind_str} = input, context) do
     with {:ok, kind} <- parse_kind(kind_str),
          {:ok, safe_content} <- Policy.validate_candidate_memory(content) do
-      short_term = Map.get(input, "short_term", true)
+      opts =
+        Scope.options(context) ++
+          [short_term: Map.get(input, "short_term", true), metadata: %{source: "agent_tool"}]
 
-      case Handbean.Memory.MemoryStore.learn(safe_content, kind,
-             short_term: short_term,
-             metadata: scope_metadata(context)
-           ) do
+      case Handbean.Memory.MemoryStore.learn(safe_content, kind, opts) do
         {:ok, engram} ->
           {:ok, "Learned: [#{engram.kind}] #{engram.content}", %{id: engram.id, kind: kind_str}}
 
-        {:error, changeset} ->
-          {:error, "Failed to learn: #{inspect(changeset.errors)}"}
+        {:error, reason} ->
+          {:error, Scope.error_message(reason)}
       end
     else
       {:error, :invalid_kind} ->
@@ -77,30 +77,4 @@ defmodule Handbean.Tool.Memory.MemLearn do
   end
 
   defp parse_kind(_kind_str), do: {:error, :invalid_kind}
-
-  defp scope_metadata(context) when is_map(context) do
-    memory_scope = context_value(context, :memory_scope)
-    workspace_id = context_value(context, :workspace_id)
-    privacy_mode = context_value(context, :privacy_mode)
-
-    scope =
-      case memory_scope do
-        scope when scope in [:global, "global"] -> "global"
-        _ when is_binary(workspace_id) -> "workspace"
-        _ -> nil
-      end
-
-    %{}
-    |> put_if_present("scope", scope)
-    |> put_if_present("workspace_id", if(scope == "workspace", do: workspace_id, else: nil))
-    |> put_if_present("privacy_mode", privacy_mode && to_string(privacy_mode))
-  end
-
-  defp scope_metadata(_context), do: %{}
-
-  defp context_value(context, key),
-    do: Map.get(context, key) || Map.get(context, Atom.to_string(key))
-
-  defp put_if_present(map, _key, nil), do: map
-  defp put_if_present(map, key, value), do: Map.put(map, key, value)
 end

@@ -10,8 +10,7 @@ defmodule Handbean.Settings.ModelAISettings do
 
   @fields ~w(
     default_model reasoning om_model om_reasoning
-    om_memory_scope om_privacy_mode om_max_recent_context
-    om_message_tokens om_buffer_tokens om_observation_tokens
+    om_memory_scope om_privacy_mode om_reflector_enabled
   )a
 
   @atom_keys Map.new(@fields, &{Atom.to_string(&1), &1})
@@ -23,10 +22,7 @@ defmodule Handbean.Settings.ModelAISettings do
     om_reasoning: nil,
     om_memory_scope: "workspace",
     om_privacy_mode: "standard",
-    om_max_recent_context: 5,
-    om_message_tokens: 30_000,
-    om_buffer_tokens: 10_000,
-    om_observation_tokens: 40_000,
+    om_reflector_enabled: false,
     # Advisor is not part of @fields. Generic diff/merge would turn a custom
     # model equal to the global value back into inherit, and has no disabled carrier.
     advisor_mode: :inherit,
@@ -41,10 +37,7 @@ defmodule Handbean.Settings.ModelAISettings do
           om_reasoning: String.t() | nil,
           om_memory_scope: String.t(),
           om_privacy_mode: String.t(),
-          om_max_recent_context: non_neg_integer(),
-          om_message_tokens: pos_integer(),
-          om_buffer_tokens: pos_integer(),
-          om_observation_tokens: pos_integer(),
+          om_reflector_enabled: boolean(),
           advisor_mode: :inherit | :custom | :disabled,
           advisor_model: String.t() | nil,
           advisor_reasoning: String.t() | nil
@@ -107,20 +100,8 @@ defmodule Handbean.Settings.ModelAISettings do
       raw_string(om_map, "privacy_mode") || raw_string(map, "om_privacy_mode")
     )
     |> maybe_put(
-      :om_max_recent_context,
-      raw_int(om_map, "max_recent_context") || raw_int(map, "om_max_recent_context")
-    )
-    |> maybe_put(
-      :om_message_tokens,
-      raw_int(om_map, "message_tokens") || raw_int(map, "om_message_tokens")
-    )
-    |> maybe_put(
-      :om_buffer_tokens,
-      raw_int(om_map, "buffer_tokens") || raw_int(map, "om_buffer_tokens")
-    )
-    |> maybe_put(
-      :om_observation_tokens,
-      raw_int(om_map, "observation_tokens") || raw_int(map, "om_observation_tokens")
+      :om_reflector_enabled,
+      raw_boolean(om_map, "reflector_enabled", raw_boolean(map, "om_reflector_enabled", nil))
     )
   end
 
@@ -142,10 +123,7 @@ defmodule Handbean.Settings.ModelAISettings do
       reasoning: settings.om_reasoning,
       memory_scope: settings.om_memory_scope,
       privacy_mode: settings.om_privacy_mode,
-      max_recent_context: settings.om_max_recent_context,
-      message_tokens: settings.om_message_tokens,
-      buffer_tokens: settings.om_buffer_tokens,
-      observation_tokens: settings.om_observation_tokens
+      reflector_enabled: settings.om_reflector_enabled
     }
 
     opts = Keyword.put(opts, :om, om_map)
@@ -267,10 +245,7 @@ defmodule Handbean.Settings.ModelAISettings do
     om_map = put_if_present(om_map, override, :om_reasoning, "reasoning")
     om_map = put_if_present(om_map, override, :om_memory_scope, "memory_scope")
     om_map = put_if_present(om_map, override, :om_privacy_mode, "privacy_mode")
-    om_map = put_if_present(om_map, override, :om_max_recent_context, "max_recent_context")
-    om_map = put_if_present(om_map, override, :om_message_tokens, "message_tokens")
-    om_map = put_if_present(om_map, override, :om_buffer_tokens, "buffer_tokens")
-    om_map = put_if_present(om_map, override, :om_observation_tokens, "observation_tokens")
+    om_map = put_if_present(om_map, override, :om_reflector_enabled, "reflector_enabled")
 
     map = if map_size(om_map) > 0, do: Map.put(map, "observational_memory", om_map), else: map
     put_advisor_json(map, override)
@@ -307,8 +282,7 @@ defmodule Handbean.Settings.ModelAISettings do
   def validate(%{} = map) do
     with :ok <- validate_privacy_mode(map),
          :ok <- validate_memory_scope(map),
-         :ok <- validate_max_recent_context(map),
-         :ok <- validate_token_thresholds(map) do
+         :ok <- validate_reflector_enabled(map) do
       validate_advisor(map)
     end
   end
@@ -487,10 +461,10 @@ defmodule Handbean.Settings.ModelAISettings do
     end
   end
 
-  defp raw_int(map, key) do
+  defp raw_boolean(map, key, fallback) do
     case get_key(map, key) do
-      v when is_integer(v) -> v
-      _ -> nil
+      value when is_boolean(value) -> value
+      _ -> fallback
     end
   end
 
@@ -541,29 +515,16 @@ defmodule Handbean.Settings.ModelAISettings do
       else: {:error, "om_memory_scope must be 'workspace', 'global', or 'both'"}
   end
 
-  defp validate_max_recent_context(map) do
-    val = get_key(map, "om_max_recent_context") || nested_om_value(map, "max_recent_context")
+  defp validate_reflector_enabled(map) do
+    value =
+      case fetch_key(map, "om_reflector_enabled") do
+        {:ok, value} -> value
+        :error -> nested_om_value(map, "reflector_enabled")
+      end
 
-    if is_nil(val) || (is_integer(val) && val >= 0),
+    if is_nil(value) || is_boolean(value),
       do: :ok,
-      else: {:error, "om_max_recent_context must be >= 0"}
-  end
-
-  defp validate_token_thresholds(map) do
-    for {flat_key, nested_key, label} <- [
-          {"om_message_tokens", "message_tokens", "om_message_tokens"},
-          {"om_buffer_tokens", "buffer_tokens", "om_buffer_tokens"},
-          {"om_observation_tokens", "observation_tokens", "om_observation_tokens"}
-        ] do
-      val = get_key(map, flat_key) || nested_om_value(map, nested_key)
-
-      if not is_nil(val) and (not is_integer(val) || val <= 0),
-        do: throw({:error, "#{label} must be > 0"})
-    end
-
-    :ok
-  catch
-    {:error, reason} -> {:error, reason}
+      else: {:error, "om_reflector_enabled must be a boolean"}
   end
 
   defp nested_om_value(map, key) do

@@ -9,7 +9,7 @@ defmodule HandbeanProbe.NativeTimeline do
   def project(chat, groups, segments, outputs) do
     entries =
       if chat,
-        do: Enum.reject(chat.entries, &(&1["content_type"] == "model_compaction")),
+        do: Handbean.PubSub.Projection.visible_entries(chat.entries),
         else: []
 
     entries =

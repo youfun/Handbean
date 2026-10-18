@@ -62,14 +62,11 @@ defmodule Handbean.PathsTest do
     refute "ext__beam__sql" in names
   end
 
-  test "event observations and auth artifacts resolve under Host.data_dir" do
+  test "event and auth artifacts resolve under Host.data_dir" do
     Handbean.Host.put!(%{data_dir: "/tmp/mob-data"})
 
     assert Handbean.EventRecorder.event_path("s1") ==
              "/tmp/mob-data/.handbean/events/s1.jsonl"
-
-    assert Handbean.Memory.ObservationStore.base_dir() ==
-             "/tmp/mob-data/.handbean/observations"
 
     assert Handbean.Agent.Auth.Storage.file_path() ==
              "/tmp/mob-data/.handbean/auth.json"

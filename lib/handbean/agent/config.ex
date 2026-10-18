@@ -112,8 +112,6 @@ defmodule Handbean.Agent.Config do
           provider_config[:provider]
         )
 
-    observational = observational_config(opts)
-
     %__MODULE__{
       provider: provider,
       allowed_tools: Keyword.get(opts, :allowed_tools),
@@ -141,8 +139,8 @@ defmodule Handbean.Agent.Config do
           Handbean.Settings.ModelAISettings.defaults().reasoning
         ),
       memory: Keyword.get(opts, :memory),
-      context: build_context(opts, observational),
-      middleware: Keyword.get(opts, :middleware, default_middleware(observational)),
+      context: build_context(opts),
+      middleware: Keyword.get(opts, :middleware, default_middleware(builtin_memory_enabled)),
       provider_config: provider_config,
       max_messages: Keyword.get(opts, :max_messages, @default_max_messages),
       max_tokens: context_window(opts, provider_config),
@@ -230,19 +228,6 @@ defmodule Handbean.Agent.Config do
 
   def resolve_provider_from_api(_api, _model, _provider), do: Handbean.Agent.Provider.OpenAICompat
 
-  defp observational_config(opts) do
-    enabled = Keyword.fetch!(opts, :builtin_memory_enabled)
-
-    om =
-      opts
-      |> Keyword.get(:om, %{})
-      |> then(&if(is_map(&1), do: &1, else: %{}))
-      |> Map.delete("enabled")
-      |> Map.put(:enabled, enabled)
-
-    Handbean.Memory.ObservationalConfig.from_runtime(om)
-  end
-
   defp builtin_memory_enabled(opts) do
     case Keyword.fetch(opts, :builtin_memory_enabled) do
       {:ok, enabled} when is_boolean(enabled) ->
@@ -257,7 +242,7 @@ defmodule Handbean.Agent.Config do
     end
   end
 
-  defp build_context(opts, observational) do
+  defp build_context(opts) do
     om = if is_map(Keyword.get(opts, :om)), do: Keyword.get(opts, :om), else: %{}
 
     opts
@@ -277,12 +262,21 @@ defmodule Handbean.Agent.Config do
       delegated_read_only: Keyword.get(opts, :delegated_read_only, false),
       delegated_approval: Keyword.get(opts, :delegated_approval),
       browser_runner: Keyword.get(opts, :browser_runner),
-      memory_scope: om_value(om, :memory_scope),
-      privacy_mode: om_value(om, :privacy_mode),
-      observational: observational
+      memory_scope: effective_memory_scope(opts, om),
+      privacy_mode: om_value(om, :privacy_mode)
     })
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
     |> Map.new()
+  end
+
+  defp effective_memory_scope(opts, om) do
+    privacy_mode = om_value(om, :privacy_mode)
+
+    cond do
+      Keyword.get(opts, :chat_scope) != :free -> om_value(om, :memory_scope)
+      privacy_mode in [:local_only, "local_only"] -> :workspace
+      true -> :global
+    end
   end
 
   defp om_value(om, key), do: Map.get(om, key, Map.get(om, Atom.to_string(key)))
@@ -623,14 +617,18 @@ defmodule Handbean.Agent.Config do
     """ <> memory_section
   end
 
-  defp default_middleware(observational) do
-    base = [
-      Handbean.Agent.Middleware.Logger,
-      Handbean.Agent.Middleware.Security,
-      Handbean.Agent.Middleware.ToolGuard,
-      Handbean.Agent.Middleware.ProgressGuard
-    ]
+  defp default_middleware(builtin_memory_enabled) do
+    memory =
+      if builtin_memory_enabled,
+        do: [Handbean.Agent.Middleware.MemoryProjection],
+        else: []
 
-    Handbean.Memory.ObservationalConfig.middleware_modules(observational) ++ base
+    memory ++
+      [
+        Handbean.Agent.Middleware.Logger,
+        Handbean.Agent.Middleware.Security,
+        Handbean.Agent.Middleware.ToolGuard,
+        Handbean.Agent.Middleware.ProgressGuard
+      ]
   end
 end

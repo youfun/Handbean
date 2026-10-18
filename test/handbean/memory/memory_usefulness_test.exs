@@ -2,95 +2,181 @@ defmodule Handbean.Memory.MemoryUsefulnessTest do
   use Handbean.DataCase
 
   alias Handbean.Agent.{Config, Message, State}
-  alias Handbean.Agent.Middleware.ObservationalSessionStart
+  alias Handbean.Agent.Middleware.MemoryProjection
   alias Handbean.Memory.MemoryStore
 
-  setup do
-    previous = Application.get_env(:handbean, :observational_memory)
-
-    Application.put_env(:handbean, :observational_memory,
-      enabled: true,
-      observation: [max_recent_context: 5]
-    )
-
-    on_exit(fn ->
-      case previous do
-        nil -> Application.delete_env(:handbean, :observational_memory)
-        value -> Application.put_env(:handbean, :observational_memory, value)
-      end
-    end)
-
-    :ok
-  end
-
-  describe "automatic scoped memory injection" do
-    test "injects relevant current-workspace long-term memory into the system prompt" do
+  describe "scoped memory projection" do
+    test "injects long-term rules without a keyword match" do
       {:ok, _} =
-        MemoryStore.learn("To run tests use mise exec -- mix test", :fact,
-          short_term: false,
-          metadata: %{scope: "workspace", workspace_id: "useful-workspace"}
-        )
-
-      state =
-        build_state("How should I run tests?",
+        learn_scoped("Always run the focused test before editing unrelated files", :rule,
           workspace_id: "useful-workspace",
-          memory_scope: "workspace",
-          privacy_mode: "standard"
+          short_term: false
         )
 
-      result = ObservationalSessionStart.call(:session_start, state)
+      state = build_state("Fix the failure", workspace_id: "useful-workspace")
+      result = MemoryProjection.call(:session_start, state)
 
-      assert result.config.system_prompt =~ "## Relevant Memory"
+      assert result.config.system_prompt =~ "## Memory Context"
+      assert result.config.system_prompt =~ "### Persistent Rules & Preferences"
+      assert result.config.system_prompt =~ "Always run the focused test"
+    end
+
+    test "injects query-relevant facts but not unrelated facts" do
+      {:ok, _} =
+        learn_scoped("Run tests with mise exec -- mix test", :fact,
+          workspace_id: "useful-workspace",
+          short_term: false
+        )
+
+      {:ok, _} =
+        learn_scoped("Deployment region is eu-west", :fact,
+          workspace_id: "useful-workspace",
+          short_term: false
+        )
+
+      result =
+        "How should I run tests?"
+        |> build_state(workspace_id: "useful-workspace")
+        |> then(&MemoryProjection.call(:session_start, &1))
+
+      assert result.config.system_prompt =~ "### Relevant Memory"
       assert result.config.system_prompt =~ "mise exec -- mix test"
+      refute result.config.system_prompt =~ "Deployment region"
+    end
+
+    test "query recall keeps short-term preferences discoverable" do
+      {:ok, _} =
+        learn_scoped("For release notes use British spelling", :preference,
+          workspace_id: "useful-workspace",
+          short_term: true
+        )
+
+      result =
+        "Write release notes with British spelling"
+        |> build_state(workspace_id: "useful-workspace")
+        |> then(&MemoryProjection.call(:session_start, &1))
+
+      assert result.config.system_prompt =~ "### Relevant Memory"
+      assert result.config.system_prompt =~ "British spelling"
+      refute result.config.system_prompt =~ "### Persistent Rules & Preferences"
+    end
+
+    test "does not duplicate a persistent memory in query recall" do
+      {:ok, memory} =
+        learn_scoped("Always use mise for test commands", :rule,
+          workspace_id: "useful-workspace",
+          short_term: false
+        )
+
+      result =
+        "Which mise test command should I use?"
+        |> build_state(workspace_id: "useful-workspace")
+        |> then(&MemoryProjection.call(:session_start, &1))
+
+      assert result.config.system_prompt
+             |> String.split("##{memory.id}")
+             |> length() == 2
+    end
+
+    test "bounds persistent memories and prioritizes workspace over global" do
+      for index <- 1..9 do
+        {:ok, _} =
+          learn_scoped("Workspace persistent rule number #{index}", :rule,
+            workspace_id: "useful-workspace",
+            short_term: false
+          )
+      end
+
+      {:ok, _} =
+        MemoryStore.learn(
+          "Global persistent preference that should exceed the budget",
+          :preference,
+          short_term: false,
+          memory_scope: :global,
+          privacy_mode: :standard
+        )
+
+      result =
+        "Unrelated request"
+        |> build_state(workspace_id: "useful-workspace", memory_scope: "both")
+        |> then(&MemoryProjection.call(:session_start, &1))
+
+      assert length(
+               Regex.scan(~r/\[workspace:(?:rule|preference):#\d+\]/, result.config.system_prompt)
+             ) ==
+               8
+
+      refute result.config.system_prompt =~ "Global persistent preference"
     end
 
     test "does not inject memories from another workspace" do
       {:ok, _} =
-        MemoryStore.learn("To run tests use forbidden workspace command", :fact,
-          short_term: false,
-          metadata: %{scope: "workspace", workspace_id: "other-workspace"}
+        learn_scoped("Forbidden workspace rule", :rule,
+          workspace_id: "other-workspace",
+          short_term: false
         )
 
-      state =
-        build_state("How should I run tests?",
-          workspace_id: "current-workspace",
-          memory_scope: "workspace",
-          privacy_mode: "standard"
-        )
+      result =
+        "Fix the failure"
+        |> build_state(workspace_id: "current-workspace")
+        |> then(&MemoryProjection.call(:session_start, &1))
 
-      result = ObservationalSessionStart.call(:session_start, state)
-
-      refute result.config.system_prompt =~ "forbidden workspace command"
+      refute result.config.system_prompt =~ "Forbidden workspace rule"
     end
 
-    test "local_only does not inject global memory even when memory_scope is both" do
+    test "local_only excludes global memory" do
       {:ok, _} =
-        MemoryStore.learn("To run tests use global cloud memory", :fact,
+        MemoryStore.learn("Global response preference", :preference,
           short_term: false,
-          metadata: %{scope: "global"}
+          memory_scope: :global,
+          privacy_mode: :standard
         )
 
       {:ok, _} =
-        MemoryStore.learn("To run tests use private workspace memory", :fact,
-          short_term: false,
-          metadata: %{scope: "workspace", workspace_id: "private-workspace"}
+        learn_scoped("Private workspace response preference", :preference,
+          workspace_id: "private-workspace",
+          short_term: false
         )
 
-      state =
-        build_state("How should I run tests?",
+      result =
+        "Answer this"
+        |> build_state(
           workspace_id: "private-workspace",
           memory_scope: "both",
           privacy_mode: "local_only"
         )
+        |> then(&MemoryProjection.call(:session_start, &1))
 
-      result = ObservationalSessionStart.call(:session_start, state)
+      assert result.config.system_prompt =~ "Private workspace response preference"
+      refute result.config.system_prompt =~ "Global response preference"
+    end
 
-      assert result.config.system_prompt =~ "private workspace memory"
-      refute result.config.system_prompt =~ "global cloud memory"
+    test "does nothing when built-in memory is disabled" do
+      state = build_state("Fix the failure", workspace_id: "useful-workspace")
+      state = %{state | config: %{state.config | builtin_memory_enabled: false}}
+
+      assert MemoryProjection.call(:session_start, state) == state
     end
   end
 
+  defp learn_scoped(content, kind, opts) do
+    workspace_id = Keyword.fetch!(opts, :workspace_id)
+
+    MemoryStore.learn(content, kind,
+      short_term: Keyword.get(opts, :short_term, true),
+      memory_scope: :workspace,
+      workspace_id: workspace_id,
+      privacy_mode: :standard
+    )
+  end
+
   defp build_state(user_prompt, opts) do
+    context = %{
+      workspace_id: Keyword.fetch!(opts, :workspace_id),
+      memory_scope: Keyword.get(opts, :memory_scope, "workspace"),
+      privacy_mode: Keyword.get(opts, :privacy_mode, "standard")
+    }
+
     config = %Config{
       provider: nil,
       system_prompt: "Base system prompt",
@@ -103,13 +189,14 @@ defmodule Handbean.Memory.MemoryUsefulnessTest do
       until_tool: nil,
       reasoning_level: "off",
       memory: nil,
-      context: Map.new(opts),
+      context: context,
       middleware: nil,
       provider_config: %{},
       max_messages: 200,
       max_tokens: 200_000,
       compaction: %{reserve_tokens: 16_384, keep_recent_tokens: 20_000, fallback: :truncate},
-      on_compaction: nil
+      on_compaction: nil,
+      builtin_memory_enabled: true
     }
 
     %State{

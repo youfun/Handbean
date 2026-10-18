@@ -1,13 +1,10 @@
 defmodule HandbeanProbe.ModelSettings.Memory do
   @moduledoc """
-  Observational memory processing fields of the Model/AI form (models, scope,
-  privacy, recent-context limit). Saves through
+  Memory reflection settings in the native Model/AI form. Saves through
   `HandbeanProbe.ModelSettings.Defaults`, so scope rules apply unchanged.
   """
 
-  use Gettext, backend: HandbeanProbe.Gettext
   alias HandbeanProbe.ModelSettings.Defaults
-  alias HandbeanProbe.SettingsSupport
 
   def set_model(state, model, workspace) do
     Defaults.save_field(state, workspace, :om_model, Defaults.blank_to_nil(model))
@@ -21,17 +18,8 @@ defmodule HandbeanProbe.ModelSettings.Memory do
     Defaults.save_field(state, workspace, :om_privacy_mode, mode)
   end
 
-  @doc "Validate the recent-context limit typed into the form, then save the form."
+  @doc "Save memory reflection details from the current scope's form."
   def save_details(state, workspace) do
-    case SettingsSupport.parse_non_negative(to_string(state.defaults.om_max_recent_context)) do
-      {:ok, :omit} ->
-        Defaults.save_form(state, workspace, state.defaults)
-
-      {:ok, n} ->
-        Defaults.save_form(state, workspace, %{state.defaults | om_max_recent_context: n})
-
-      {:error, _} ->
-        %{state | notice: gettext("Recent context limit must be zero or a positive integer")}
-    end
+    Defaults.save_form(state, workspace, state.defaults)
   end
 end

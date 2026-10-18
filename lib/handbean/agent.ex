@@ -228,9 +228,11 @@ defmodule Handbean.Agent do
       Handbean.Tool.Builtin.Browser,
       Handbean.Tool.Builtin.OpenUrl,
       Handbean.Tool.Memory.MemAssociate,
+      Handbean.Tool.Memory.MemForget,
       Handbean.Tool.Memory.MemLearn,
       Handbean.Tool.Memory.MemRecall,
-      Handbean.Tool.Memory.MemReinforce
+      Handbean.Tool.Memory.MemReinforce,
+      Handbean.Tool.Memory.MemUpdate
     ]
 
     if Handbean.Host.artifact_delivery_backend() do

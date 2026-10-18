@@ -37,22 +37,37 @@ defmodule Handbean.ConfigInspectionTest do
 
   test "settings values and winning sources use defaults < global < workspace", %{root: root} do
     write(root, "global.json", %{
-      "model_ai" => %{"om_message_tokens" => 7001}
+      "model_ai" => %{
+        "observational_memory" => %{
+          "reflector_enabled" => false,
+          "message_tokens" => 7001
+        }
+      }
     })
 
     write(root, ".handbean/settings.jsonc", %{
       "memory" => %{"builtin_enabled" => false},
-      "model_ai" => %{"om_message_tokens" => 8003}
+      "model_ai" => %{
+        "observational_memory" => %{
+          "reflector_enabled" => true,
+          "buffer_tokens" => 8003
+        }
+      }
     })
 
     report = ConfigInspection.report(workspace: root)
     assert report.memory == %{builtin_enabled: false, source: :workspace_settings}
-    refute Map.has_key?(report.model_ai, :om_enabled)
-    assert report.model_ai.om_message_tokens == %{value: 8003, source: :workspace_settings}
-    assert report.model_ai.om_buffer_tokens == %{value: 10_000, source: :model_ai_defaults}
+    assert report.model_ai.om_reflector_enabled == %{value: true, source: :workspace_settings}
     assert report.model_ai.reasoning == %{value: "medium", source: :model_ai_defaults}
+
+    for removed <- ~w(
+          om_max_recent_context om_message_tokens om_buffer_tokens om_observation_tokens
+        )a do
+      refute Map.has_key?(report.model_ai, removed)
+      refute Map.has_key?(Map.from_struct(Settings.effective_model_ai(root)), removed)
+    end
+
     refute Handbean.WorkspaceSettings.builtin_memory_enabled(root)
-    assert Settings.effective_model_ai(root).om_message_tokens == 8003
   end
 
   test "malformed settings and invalid approval mode report denial without exception data", %{

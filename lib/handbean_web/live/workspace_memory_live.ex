@@ -27,6 +27,9 @@ defmodule HandbeanWeb.WorkspaceMemoryLive do
       |> assign(:lifecycle_filter, :active)
       |> assign(:kind_filter, :all)
       |> assign(:search_query, "")
+      |> assign(:editing_id, nil)
+      |> assign(:deleting_id, nil)
+      |> assign(:mutation_error, nil)
       |> load_memory_setting()
       |> load_memories()
 
@@ -117,6 +120,52 @@ defmodule HandbeanWeb.WorkspaceMemoryLive do
      |> load_memories()}
   end
 
+  def handle_event("promote", %{"id" => id}, socket) do
+    mutate_memory(socket, id, &MemoryStore.reinforce/2)
+  end
+
+  def handle_event("edit", %{"id" => id}, socket) do
+    case visible_memory(socket, id) do
+      nil -> {:noreply, mutation_failed(socket)}
+      engram -> {:noreply, assign(socket, editing_id: engram.id, mutation_error: nil)}
+    end
+  end
+
+  def handle_event("cancel_edit", _params, socket) do
+    {:noreply, assign(socket, editing_id: nil, mutation_error: nil)}
+  end
+
+  def handle_event("save_edit", %{"_id" => id, "memory" => attrs}, socket) do
+    with {:ok, id} <- parse_id(id),
+         true <- socket.assigns.editing_id == id,
+         {:ok, kind} <- parse_kind(Map.get(attrs, "kind")) do
+      update_attrs = %{content: Map.get(attrs, "content", ""), kind: kind}
+      mutate_memory(socket, id, &MemoryStore.update(&1, update_attrs, &2))
+    else
+      _ -> {:noreply, mutation_failed(socket)}
+    end
+  end
+
+  def handle_event("confirm_delete", %{"id" => id}, socket) do
+    case visible_memory(socket, id) do
+      nil -> {:noreply, mutation_failed(socket)}
+      engram -> {:noreply, assign(socket, deleting_id: engram.id, mutation_error: nil)}
+    end
+  end
+
+  def handle_event("cancel_delete", _params, socket) do
+    {:noreply, assign(socket, deleting_id: nil, mutation_error: nil)}
+  end
+
+  def handle_event("delete", %{"id" => id}, socket) do
+    with {:ok, id} <- parse_id(id),
+         true <- socket.assigns.deleting_id == id do
+      mutate_memory(socket, id, &MemoryStore.delete/2)
+    else
+      _ -> {:noreply, mutation_failed(socket)}
+    end
+  end
+
   def kind_filters, do: [:all | @kinds]
 
   def kind_label(:all), do: gettext("全部")
@@ -162,6 +211,20 @@ defmodule HandbeanWeb.WorkspaceMemoryLive do
   def expired?(_engram, _now), do: false
 
   def global?(engram), do: SafeMap.get(engram.metadata || %{}, "scope") == "global"
+
+  def scope_label(engram) do
+    if global?(engram), do: gettext("全局范围"), else: gettext("工作区范围")
+  end
+
+  def source_label(engram) do
+    case SafeMap.get(engram.metadata || %{}, "source") do
+      nil -> gettext("未知来源")
+      "" -> gettext("未知来源")
+      source when is_binary(source) -> source
+      source when is_atom(source) -> Atom.to_string(source)
+      source -> inspect(source)
+    end
+  end
 
   def format_date(%DateTime{} = datetime), do: Calendar.strftime(datetime, "%Y-%m-%d")
   def format_date(%NaiveDateTime{} = datetime), do: Calendar.strftime(datetime, "%Y-%m-%d")
@@ -232,6 +295,74 @@ defmodule HandbeanWeb.WorkspaceMemoryLive do
       now: DateTime.utc_now()
     )
   end
+
+  defp mutate_memory(socket, id, operation) do
+    with {:ok, id} <- parse_id(id),
+         opts = mutation_opts(socket, id),
+         result <- operation.(id, opts),
+         true <- mutation_succeeded?(result) do
+      {:noreply,
+       socket
+       |> assign(editing_id: nil, deleting_id: nil, mutation_error: nil)
+       |> load_memories()}
+    else
+      _ -> {:noreply, mutation_failed(socket)}
+    end
+  end
+
+  defp mutation_succeeded?(:ok), do: true
+  defp mutation_succeeded?({:ok, _engram}), do: true
+  defp mutation_succeeded?(_result), do: false
+
+  defp mutation_failed(socket) do
+    assign(socket, :mutation_error, gettext("无法更新这条记忆。请刷新后重试。"))
+  end
+
+  defp mutation_opts(socket, id) do
+    memory_scope =
+      case Enum.find(socket.assigns.memories, &(&1.id == id)) do
+        nil -> page_mutation_scope(socket)
+        engram -> if(global?(engram), do: :global, else: :workspace)
+      end
+
+    [
+      workspace_id: socket.assigns.workspace_id,
+      memory_scope: memory_scope,
+      privacy_mode: :standard
+    ]
+  end
+
+  defp page_mutation_scope(%{assigns: %{workspace_id: nil}}), do: :global
+  defp page_mutation_scope(%{assigns: %{scope_filter: :global}}), do: :global
+  defp page_mutation_scope(_socket), do: :workspace
+
+  defp visible_memory(socket, id) do
+    with {:ok, id} <- parse_id(id) do
+      Enum.find(socket.assigns.memories, &(&1.id == id))
+    else
+      _ -> nil
+    end
+  end
+
+  defp parse_id(id) when is_integer(id) and id > 0, do: {:ok, id}
+
+  defp parse_id(id) when is_binary(id) do
+    case Integer.parse(id) do
+      {parsed, ""} when parsed > 0 -> {:ok, parsed}
+      _ -> :error
+    end
+  end
+
+  defp parse_id(_id), do: :error
+
+  defp parse_kind(kind) when is_binary(kind) do
+    case Enum.find(@kinds, &(Atom.to_string(&1) == kind)) do
+      nil -> :error
+      parsed -> {:ok, parsed}
+    end
+  end
+
+  defp parse_kind(_kind), do: :error
 
   defp maybe_put_kind(opts, :all), do: opts
   defp maybe_put_kind(opts, kind), do: Keyword.put(opts, :kind, kind)

@@ -180,8 +180,9 @@ defmodule HandbeanWeb.SettingsLiveTest do
       assert html =~ "思考等级"
       assert html =~ "记忆模型"
       assert html =~ "顾问 Agent 使用的思考等级。"
-      assert html =~ "处理记忆时使用的思考等级。"
-      assert html =~ "用于观察对话和整合记忆。"
+      assert html =~ "记忆反思使用的思考等级。"
+      assert html =~ "记忆反思"
+      assert html =~ "用于从压缩后的对话生成可审核的记忆候选。"
       refute html =~ "Think level"
       refute html =~ "Reasoning level used"
 
@@ -437,25 +438,32 @@ defmodule HandbeanWeb.SettingsLiveTest do
       {:ok, long_term} =
         Handbean.Memory.MemoryStore.learn("Current workspace durable rule", :rule,
           short_term: false,
-          metadata: %{scope: "workspace", workspace_id: workspace_id}
+          workspace_id: workspace_id,
+          memory_scope: :workspace,
+          privacy_mode: :standard
         )
 
       {:ok, short_term} =
         Handbean.Memory.MemoryStore.learn("Current workspace searchable pattern", :pattern,
           short_term: true,
-          metadata: %{scope: "workspace", workspace_id: workspace_id}
+          workspace_id: workspace_id,
+          memory_scope: :workspace,
+          privacy_mode: :standard
         )
 
       {:ok, _other_workspace} =
         Handbean.Memory.MemoryStore.learn("Other workspace must stay private", :fact,
           short_term: false,
-          metadata: %{scope: "workspace", workspace_id: "other-workspace"}
+          workspace_id: "other-workspace",
+          memory_scope: :workspace,
+          privacy_mode: :standard
         )
 
       {:ok, global} =
         Handbean.Memory.MemoryStore.learn("Shared global preference", :preference,
           short_term: false,
-          metadata: %{scope: "global"}
+          memory_scope: :global,
+          privacy_mode: :standard
         )
 
       expired_at =
@@ -522,13 +530,171 @@ defmodule HandbeanWeb.SettingsLiveTest do
       assert render(memory) =~ "Expired workspace context"
     end
 
+    test "promotes a visible memory and preserves the active filters", %{conn: conn} do
+      {:ok, workspace} = Handbean.WorkspaceStore.ensure_default!()
+      workspace_id = workspace["id"]
+
+      {:ok, memory} =
+        Handbean.Memory.MemoryStore.learn("Promote this exact memory", :fact,
+          short_term: true,
+          workspace_id: workspace_id,
+          memory_scope: :workspace,
+          privacy_mode: :standard,
+          metadata: %{scope: "workspace", workspace_id: workspace_id, source: "manual"}
+        )
+
+      {:ok, view, _html} =
+        live(conn, "/settings?tab=workspace_memory&workspace_id=#{workspace_id}")
+
+      child = find_live_child(view, "settings-workspace-memory")
+
+      render_change(element(child, "#memory-filter-form"), %{
+        "filters" => %{"query" => "##{memory.id}", "scope" => "workspace"}
+      })
+
+      render_click(element(child, "#memory-lifecycle-short_term"))
+      assert has_element?(child, "#memory-engram-#{memory.id}")
+      assert has_element?(child, "#memory-engram-#{memory.id} .memory-source", "manual")
+      assert has_element?(child, "#memory-engram-#{memory.id} .memory-scope", "工作区范围")
+
+      render_click(element(child, "#memory-promote-#{memory.id}"))
+
+      refute has_element?(child, "#memory-engram-#{memory.id}")
+      assert has_element?(child, ~s|#memory-search[value="##{memory.id}"]|)
+      assert has_element?(child, "#memory-lifecycle-short_term.active")
+
+      assert [%{id: id, short_term: false}] =
+               Handbean.Memory.MemoryStore.list_engrams(
+                 workspace_id: workspace_id,
+                 scope: :workspace,
+                 lifecycle: :long_term,
+                 query: "##{memory.id}"
+               )
+
+      assert id == memory.id
+    end
+
+    test "edits memory content and kind through the scoped store", %{conn: conn} do
+      {:ok, workspace} = Handbean.WorkspaceStore.ensure_default!()
+      workspace_id = workspace["id"]
+
+      {:ok, memory} =
+        Handbean.Memory.MemoryStore.learn("Content before editing", :fact,
+          short_term: false,
+          workspace_id: workspace_id,
+          memory_scope: :workspace,
+          privacy_mode: :standard,
+          metadata: %{scope: "workspace", workspace_id: workspace_id, source: "reflection"}
+        )
+
+      {:ok, view, _html} =
+        live(conn, "/settings?tab=workspace_memory&workspace_id=#{workspace_id}")
+
+      child = find_live_child(view, "settings-workspace-memory")
+      render_click(element(child, "#memory-edit-#{memory.id}"))
+      assert has_element?(child, "#memory-edit-form-#{memory.id}")
+
+      child
+      |> form("#memory-edit-form-#{memory.id}", %{
+        "memory" => %{"content" => "Content after editing", "kind" => "preference"}
+      })
+      |> render_submit()
+
+      assert has_element?(child, "#memory-engram-#{memory.id}", "Content after editing")
+      assert has_element?(child, "#memory-engram-#{memory.id} .memory-kind", "偏好")
+
+      assert [%{content: "Content after editing", kind: :preference}] =
+               Handbean.Memory.MemoryStore.list_engrams(
+                 workspace_id: workspace_id,
+                 scope: :workspace,
+                 lifecycle: :active,
+                 query: "##{memory.id}"
+               )
+    end
+
+    test "requires confirmation and deletes memory through the scoped store", %{conn: conn} do
+      {:ok, workspace} = Handbean.WorkspaceStore.ensure_default!()
+      workspace_id = workspace["id"]
+
+      {:ok, memory} =
+        Handbean.Memory.MemoryStore.learn("Delete this exact memory", :rule,
+          short_term: false,
+          workspace_id: workspace_id,
+          memory_scope: :workspace,
+          privacy_mode: :standard,
+          metadata: %{scope: "workspace", workspace_id: workspace_id, source: "manual"}
+        )
+
+      {:ok, view, _html} =
+        live(conn, "/settings?tab=workspace_memory&workspace_id=#{workspace_id}")
+
+      child = find_live_child(view, "settings-workspace-memory")
+      render_click(element(child, "#memory-delete-#{memory.id}"))
+
+      assert has_element?(child, "#memory-delete-confirm-#{memory.id}")
+      assert has_element?(child, "#memory-engram-#{memory.id}")
+
+      render_click(element(child, "#memory-delete-confirm-#{memory.id} button[phx-click=delete]"))
+
+      refute has_element?(child, "#memory-engram-#{memory.id}")
+
+      assert [] ==
+               Handbean.Memory.MemoryStore.list_engrams(
+                 workspace_id: workspace_id,
+                 scope: :workspace,
+                 lifecycle: :all,
+                 query: "##{memory.id}"
+               )
+    end
+
+    test "refuses a forged mutation from another workspace and shows an error", %{conn: conn} do
+      {:ok, workspace} = Handbean.WorkspaceStore.ensure_default!()
+      workspace_id = workspace["id"]
+      other_workspace_id = "other-workspace"
+
+      {:ok, other_memory} =
+        Handbean.Memory.MemoryStore.learn("Other workspace mutation target", :fact,
+          short_term: true,
+          workspace_id: other_workspace_id,
+          memory_scope: :workspace,
+          privacy_mode: :standard,
+          metadata: %{
+            scope: "workspace",
+            workspace_id: other_workspace_id,
+            source: "manual"
+          }
+        )
+
+      {:ok, view, _html} =
+        live(conn, "/settings?tab=workspace_memory&workspace_id=#{workspace_id}")
+
+      child = find_live_child(view, "settings-workspace-memory")
+      refute has_element?(child, "#memory-engram-#{other_memory.id}")
+
+      render_click(child, "promote", %{"id" => Integer.to_string(other_memory.id)})
+
+      assert has_element?(child, "#memory-mutation-error[role=alert]")
+
+      assert [%{id: id, short_term: true}] =
+               Handbean.Memory.MemoryStore.list_engrams(
+                 workspace_id: other_workspace_id,
+                 scope: :workspace,
+                 lifecycle: :short_term,
+                 query: "##{other_memory.id}"
+               )
+
+      assert id == other_memory.id
+    end
+
     test "Chinese memory browser shows localized kinds and workspace scope", %{conn: conn} do
       {:ok, workspace} = Handbean.WorkspaceStore.ensure_default!()
 
       {:ok, memory} =
         Handbean.Memory.MemoryStore.learn("Chinese memory display regression", :fact,
           short_term: false,
-          metadata: %{scope: "workspace", workspace_id: workspace["id"]}
+          workspace_id: workspace["id"],
+          memory_scope: :workspace,
+          privacy_mode: :standard
         )
 
       {:ok, view, _html} =

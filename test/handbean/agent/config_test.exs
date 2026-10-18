@@ -126,7 +126,27 @@ defmodule Handbean.Agent.ConfigTest do
     end
   end
 
-  test "workspace memory switch controls prompt, observation, and built-in memory tools" do
+  test "free chat uses global memory unless privacy is local-only" do
+    standard =
+      Config.from_opts(
+        chat_scope: :free,
+        om: %{memory_scope: "workspace", privacy_mode: "standard"}
+      )
+
+    assert standard.context.memory_scope == :global
+
+    local_only =
+      Config.from_opts(
+        chat_scope: :free,
+        om: %{memory_scope: "both", privacy_mode: "local_only"}
+      )
+
+    assert local_only.context.memory_scope == :workspace
+    assert local_only.context.privacy_mode == "local_only"
+    refute Map.has_key?(local_only.context, :workspace_id)
+  end
+
+  test "workspace memory switch controls prompt, projection, and built-in memory tools" do
     workspace =
       Path.join(System.tmp_dir!(), "handbean-config-memory-#{System.unique_integer([:positive])}")
 
@@ -138,11 +158,14 @@ defmodule Handbean.Agent.ConfigTest do
       disabled = Config.from_opts(working_directory: workspace)
       refute disabled.builtin_memory_enabled
       refute disabled.system_prompt =~ "mem_recall"
-      refute Handbean.Agent.Middleware.ObservationalSessionStart in disabled.middleware
+      refute Handbean.Agent.Middleware.MemoryProjection in disabled.middleware
 
       authorized = Executor.authorized_tools(disabled)
       refute "mem_recall" in authorized
       refute "mem_learn" in authorized
+      refute "mem_update" in authorized
+      refute "mem_forget" in authorized
+      refute "mem_reflect" in authorized
       assert "read" in authorized
 
       assert :ok = Handbean.WorkspaceSettings.update_builtin_memory_enabled(workspace, true)
@@ -150,8 +173,9 @@ defmodule Handbean.Agent.ConfigTest do
       enabled = Config.from_opts(working_directory: workspace)
       assert enabled.builtin_memory_enabled
       assert enabled.system_prompt =~ "mem_recall"
-      assert Handbean.Agent.Middleware.ObservationalSessionStart in enabled.middleware
+      assert Handbean.Agent.Middleware.MemoryProjection in enabled.middleware
       assert "mem_recall" in Executor.authorized_tools(enabled)
+      assert "mem_reflect" in Executor.authorized_tools(enabled)
     after
       File.rm_rf(workspace)
     end

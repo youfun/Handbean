@@ -18,7 +18,7 @@ defmodule Handbean.Agent.Tool.Executor do
 
   @default_max_result_chars 50_000
   @spill_head_chars 2_000
-  @builtin_memory_tools ~w(mem_associate mem_learn mem_recall mem_reinforce)
+  @builtin_memory_tools ~w(mem_associate mem_forget mem_learn mem_recall mem_reflect mem_reinforce mem_update)
 
   @doc """
   Execute all tool calls and return a result message or halt signal.

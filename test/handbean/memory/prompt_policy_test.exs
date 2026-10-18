@@ -3,10 +3,10 @@ defmodule Handbean.Memory.PromptPolicyTest do
   Tests for Handbean.Memory.PromptPolicy — system prompt section generation.
 
   Covers:
-    - balanced profile prompt contains all four memory tool names
+    - balanced profile prompt contains all seven memory tool names
     - strict profile emphasizes security / forbids auto-saving sensitive info
     - minimal profile is shorter but still contains recall/learn basics
-    - invalid profile returns error or fallback, behavior is fixed
+    - invalid profile raises a clear contract error
     - generated prompt does NOT contain real secrets
   """
 
@@ -15,7 +15,7 @@ defmodule Handbean.Memory.PromptPolicyTest do
   alias Handbean.Memory.{Policy, PromptPolicy}
 
   describe "generate/1 — balanced profile" do
-    test "contains all four memory tool names" do
+    test "contains all seven memory tool names" do
       {:ok, policy} = Policy.new(profile: :balanced)
       prompt = PromptPolicy.generate(policy)
 
@@ -23,6 +23,9 @@ defmodule Handbean.Memory.PromptPolicyTest do
       assert prompt =~ "mem_learn"
       assert prompt =~ "mem_reinforce"
       assert prompt =~ "mem_associate"
+      assert prompt =~ "mem_update"
+      assert prompt =~ "mem_forget"
+      assert prompt =~ "mem_reflect"
     end
 
     test "includes guidance on when to recall" do
@@ -76,7 +79,7 @@ defmodule Handbean.Memory.PromptPolicyTest do
       assert prompt =~ "never" or prompt =~ "do not" or prompt =~ "forbid"
     end
 
-    test "still contains all four memory tool names" do
+    test "still contains all seven memory tool names" do
       {:ok, policy} = Policy.new(profile: :strict)
       prompt = PromptPolicy.generate(policy)
 
@@ -84,6 +87,9 @@ defmodule Handbean.Memory.PromptPolicyTest do
       assert prompt =~ "mem_learn"
       assert prompt =~ "mem_reinforce"
       assert prompt =~ "mem_associate"
+      assert prompt =~ "mem_update"
+      assert prompt =~ "mem_forget"
+      assert prompt =~ "mem_reflect"
     end
 
     test "explicitly forbids storing secrets or credentials" do
@@ -123,24 +129,12 @@ defmodule Handbean.Memory.PromptPolicyTest do
   end
 
   describe "generate/1 — invalid profile fallback" do
-    test "invalid profile struct raises or returns fallback" do
-      # If someone constructs a policy with an invalid profile atom
-      # bypassing new/1, the generate function should handle it gracefully
-
-      # Create a struct directly with invalid profile
+    test "invalid profile struct raises" do
       invalid_policy = %Policy{profile: :nonexistent}
 
-      # Should either raise (contract violation) or return a fallback prompt
-      result =
-        try do
-          {:ok, PromptPolicy.generate(invalid_policy)}
-        rescue
-          _ -> :raised
-        end
-
-      # Both outcomes are acceptable — as long as behavior is fixed
-      assert result == :raised or
-               (is_binary(elem(result, 1)) and String.length(elem(result, 1)) > 0)
+      assert_raise ArgumentError, ~r/Unknown memory policy profile/, fn ->
+        PromptPolicy.generate(invalid_policy)
+      end
     end
   end
 

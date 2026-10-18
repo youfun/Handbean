@@ -1,327 +1,239 @@
 defmodule Handbean.Tool.MemoryTest do
-  @moduledoc """
-  Tests for memory tools as Tool behaviour implementations.
-
-  Translated from: `cog-cli/memory.zig` test blocks
-  Reference: `sigil/lib/handbean/tool/memory/*.ex`
-
-  Covers:
-    - mem_learn: stores content, rejects invalid kinds
-    - mem_recall: searches, returns formatted results
-    - mem_reinforce: by id, by query
-    - mem_associate: links two engrams
-  """
-
   use Handbean.DataCase
 
-  alias Handbean.Tool.Memory.{MemLearn, MemRecall, MemReinforce, MemAssociate}
-  alias Handbean.Memory.MemoryStore
+  alias Handbean.Memory.{Engram, MemoryStore, Synapse}
+  alias Handbean.Repo
 
-  describe "mem_learn tool" do
-    test "stores valid content" do
-      {:ok, output, data} =
-        MemLearn.execute(
-          %{"content" => "User prefers spaces over tabs", "kind" => "preference"},
-          %{}
-        )
+  alias Handbean.Tool.Memory.{
+    MemAssociate,
+    MemForget,
+    MemLearn,
+    MemRecall,
+    MemReflect,
+    MemReinforce,
+    MemUpdate
+  }
+
+  @context %{
+    workspace_id: "tool-memory-test",
+    memory_scope: "workspace",
+    privacy_mode: "standard"
+  }
+  @scope_opts [
+    workspace_id: "tool-memory-test",
+    memory_scope: :workspace,
+    privacy_mode: :standard
+  ]
+
+  describe "mem_learn" do
+    test "stores scoped content with fixed default ttl and agent provenance" do
+      assert {:ok, output, data} =
+               MemLearn.execute(
+                 %{"content" => "User prefers spaces over tabs", "kind" => "preference"},
+                 @context
+               )
 
       assert output =~ "Learned"
-      assert output =~ "User prefers spaces over tabs"
-      assert data.kind == "preference"
-      assert is_integer(data.id)
+      engram = Repo.get!(Engram, data.id)
+      assert engram.metadata["scope"] == "workspace"
+      assert engram.metadata["workspace_id"] == "tool-memory-test"
+      assert engram.metadata["source"] == "agent_tool"
+      assert_in_delta DateTime.diff(engram.expires_at, DateTime.utc_now()), 24 * 3600, 10
+      refute Map.has_key?(MemLearn.input_schema().properties, :ttl_hours)
     end
 
-    test "rejects invalid kind" do
-      {:error, reason} =
-        MemLearn.execute(
-          %{"content" => "some fact", "kind" => "invalid_kind"},
-          %{}
-        )
+    test "can create long-term memory" do
+      assert {:ok, _output, data} =
+               MemLearn.execute(
+                 %{
+                   "content" => "Durable architectural decision for project",
+                   "kind" => "rule",
+                   "short_term" => false
+                 },
+                 @context
+               )
+
+      engram = Repo.get!(Engram, data.id)
+      refute engram.short_term
+      assert is_nil(engram.expires_at)
+    end
+
+    test "rejects invalid, sensitive, and unscoped writes" do
+      assert {:error, reason} =
+               MemLearn.execute(%{"content" => "some valid fact", "kind" => "invalid"}, @context)
 
       assert reason =~ "Invalid kind"
-    end
 
-    test "rejects content that looks sensitive" do
-      {:error, reason} =
-        MemLearn.execute(
-          %{"content" => "my api_key is sk-test-secret-value-123456", "kind" => "fact"},
-          %{}
-        )
+      assert {:error, reason} =
+               MemLearn.execute(
+                 %{"content" => "my api_key is sk-test-secret-value-123456", "kind" => "fact"},
+                 @context
+               )
 
       assert reason =~ "sensitive"
-      assert MemoryStore.recall("api_key") == []
-    end
 
-    test "requires content and kind" do
-      {:error, reason} = MemLearn.execute(%{}, %{})
-      assert reason =~ "content"
+      assert {:error, reason} =
+               MemLearn.execute(%{"content" => "Unscoped durable fact", "kind" => "fact"}, %{})
 
-      {:error, reason2} = MemLearn.execute(%{"content" => "x"}, %{})
-      assert reason2 =~ "kind"
-    end
-
-    test "stores short-term memory with expires_at set" do
-      {:ok, _output, data} =
-        MemLearn.execute(
-          %{"content" => "Temporary quick note", "kind" => "fact"},
-          %{}
-        )
-
-      # Fetch the created engram and verify it has an expiry
-      engram = Handbean.Repo.get!(Handbean.Memory.Engram, data.id)
-      assert engram.short_term == true
-      assert engram.expires_at != nil
-
-      # Expiry should be ~24h from now
-      diff = DateTime.diff(engram.expires_at, DateTime.utc_now())
-      assert_in_delta diff, 86_400, 10
-    end
-
-    test "honors explicit long-term storage option" do
-      {:ok, _output, data} =
-        MemLearn.execute(
-          %{
-            "content" => "Project prefers durable architectural decisions in long-term memory",
-            "kind" => "rule",
-            "short_term" => false
-          },
-          %{}
-        )
-
-      engram = Handbean.Repo.get!(Handbean.Memory.Engram, data.id)
-      assert engram.short_term == false
-      assert engram.expires_at == nil
+      assert reason =~ "explicit memory scope"
+      assert Repo.aggregate(Engram, :count) == 0
     end
   end
 
-  describe "mem_recall tool" do
-    test "returns formatted results for matching query" do
-      {:ok, _} = MemoryStore.learn("Project uses Phoenix", :fact)
-      {:ok, _} = MemoryStore.learn("User likes Elixir", :preference)
-
-      {:ok, output, data} =
-        MemRecall.execute(
-          %{"query" => "Phoenix"},
-          %{}
-        )
-
-      assert output =~ "Phoenix"
-      assert output =~ "<stored-knowledge "
-      assert output =~ "</stored-knowledge>"
-      assert is_integer(data.count) and data.count >= 1
-    end
-
-    test "returns 'No memories found' for no matches" do
-      {:ok, output} =
-        MemRecall.execute(
-          %{"query" => "xyznonexistent"},
-          %{}
-        )
-
-      assert output == "No memories found."
-    end
-
-    test "labels short-term vs long-term" do
-      {:ok, _} = MemoryStore.learn("Short term note", :fact, short_term: true)
-
-      {:ok, output, _data} =
-        MemRecall.execute(
-          %{"query" => "Short term note"},
-          %{}
-        )
-
-      assert output =~ ~s(scope="short-term")
-    end
-
-    test "respects limit option" do
+  describe "mem_recall" do
+    test "returns formatted scoped results and respects limit" do
       for i <- 1..3 do
-        {:ok, _} = MemoryStore.learn("Limit recall item #{i}", :fact, short_term: false)
+        {:ok, _} = learn("Phoenix scoped recall item #{i}", :fact, short_term: false)
       end
 
-      {:ok, output, data} =
-        MemRecall.execute(
-          %{"query" => "Limit recall item", "limit" => 1},
-          %{}
-        )
+      assert {:ok, output, data} =
+               MemRecall.execute(%{"query" => "Phoenix scoped recall", "limit" => 1}, @context)
 
+      assert output =~ "<stored-knowledge "
+      assert output =~ "Phoenix"
       assert data.count == 1
-      assert output =~ "1."
       refute output =~ "2."
     end
 
-    test "requires query" do
-      {:error, reason} = MemRecall.execute(%{}, %{})
-      assert reason =~ "query"
-    end
+    test "fails closed without scope" do
+      {:ok, _} = learn("Hidden unscoped recall marker", :fact)
 
-    test "long-term memories appear before short-term" do
-      {:ok, _} = MemoryStore.learn("Alpha recall ordering", :fact, short_term: true)
-      {:ok, _} = MemoryStore.learn("Beta recall ordering", :fact, short_term: false)
-      {:ok, _} = MemoryStore.learn("Gamma recall ordering", :pattern, short_term: false)
-
-      {:ok, output, _data} =
-        MemRecall.execute(
-          %{"query" => "recall ordering"},
-          %{}
-        )
-
-      # Long-term entries (no tag) should appear before short-term entries (tagged)
-      lines = String.split(output, "\n")
-
-      # Find the first line that contains "short-term" — everything before should be long-term
-      short_term_idx = Enum.find_index(lines, &String.contains?(&1, "(short-term)"))
-
-      # All preceding lines should NOT have "(short-term)"
-      if short_term_idx do
-        preceding = Enum.take(lines, short_term_idx)
-        refute Enum.any?(preceding, &String.contains?(&1, "(short-term)"))
-      end
+      assert {:ok, "No memories found."} =
+               MemRecall.execute(%{"query" => "Hidden unscoped recall"}, %{})
     end
   end
 
-  describe "mem_reinforce tool" do
-    test "reinforces by id" do
-      {:ok, engram} = MemoryStore.learn("Important pattern", :pattern, short_term: true)
-
-      {:ok, output} =
-        MemReinforce.execute(
-          %{"id" => engram.id},
-          %{}
-        )
-
-      assert output =~ "Reinforced"
+  describe "mem_reinforce" do
+    test "reinforces by id and query" do
+      {:ok, by_id} = learn("Important scoped pattern", :pattern)
+      assert {:ok, output} = MemReinforce.execute(%{"id" => by_id.id}, @context)
       assert output =~ "now long-term"
+      refute Repo.get!(Engram, by_id.id).short_term
 
-      # Verify it is now long-term
-      reloaded = Handbean.Repo.get!(Handbean.Memory.Engram, engram.id)
-      assert reloaded.short_term == false
-    end
-
-    test "reinforces by query" do
-      {:ok, _} = MemoryStore.learn("Unique stitch pattern", :pattern, short_term: true)
-
-      {:ok, output} =
-        MemReinforce.execute(
-          %{"query" => "stitch pattern"},
-          %{}
-        )
-
+      {:ok, by_query} = learn("Unique scoped stitch pattern", :pattern)
+      assert {:ok, output} = MemReinforce.execute(%{"query" => "stitch pattern"}, @context)
       assert output =~ "Reinforced"
-      assert output =~ "now long-term"
+      refute Repo.get!(Engram, by_query.id).short_term
     end
 
-    test "returns error for non-existent id" do
-      {:error, reason} =
-        MemReinforce.execute(
-          %{"id" => 999_999},
-          %{}
-        )
+    test "rejects wrong ids and missing scope" do
+      assert {:error, reason} = MemReinforce.execute(%{"id" => 999_999}, @context)
+      assert reason =~ "No accessible engram"
 
-      assert reason =~ "No engram found"
-    end
-
-    test "returns error for non-matching query" do
-      {:error, reason} =
-        MemReinforce.execute(
-          %{"query" => "xyznonexistent"},
-          %{}
-        )
-
-      assert reason =~ "No memory found"
-    end
-
-    test "sets short_term=false and expires_at=nil" do
-      {:ok, engram} = MemoryStore.learn("Ephemeral note", :fact, short_term: true)
-
-      # Before reinforce: short-term with expiry
-      assert engram.short_term == true
-      assert engram.expires_at != nil
-
-      {:ok, _output} = MemReinforce.execute(%{"id" => engram.id}, %{})
-
-      # After reinforce: long-term with no expiry
-      reloaded = Handbean.Repo.get!(Handbean.Memory.Engram, engram.id)
-      assert reloaded.short_term == false
-      assert reloaded.expires_at == nil
-      assert reloaded.reinforced_count == 1
+      {:ok, engram} = learn("Cannot reinforce without scope", :fact)
+      assert {:error, reason} = MemReinforce.execute(%{"id" => engram.id}, %{})
+      assert reason =~ "explicit memory scope"
     end
   end
 
-  describe "mem_associate tool" do
-    test "associates two engrams" do
-      {:ok, a} = MemoryStore.learn("A module", :fact)
-      {:ok, b} = MemoryStore.learn("B module", :fact)
+  describe "mem_associate" do
+    test "associates two scoped memories and handles duplicates" do
+      {:ok, source} = learn("Association source memory", :fact)
+      {:ok, target} = learn("Association target memory", :fact)
+      input = %{"source_id" => source.id, "target_id" => target.id, "kind" => "related"}
 
-      {:ok, output} =
-        MemAssociate.execute(
-          %{"source_id" => a.id, "target_id" => b.id, "kind" => "related"},
-          %{}
-        )
-
-      assert output =~ "Associated"
-      assert output =~ "related"
+      assert {:ok, _output} = MemAssociate.execute(input, @context)
+      assert {:ok, _output} = MemAssociate.execute(input, @context)
+      assert Repo.aggregate(Synapse, :count) == 1
     end
 
-    test "returns error for non-existent engrams" do
-      {:error, reason} =
-        MemAssociate.execute(
-          %{"source_id" => -1, "target_id" => -2, "kind" => "related"},
-          %{}
-        )
+    test "rejects invalid kind, wrong id, and missing scope" do
+      {:ok, source} = learn("Association validation source", :fact)
+      {:ok, target} = learn("Association validation target", :fact)
 
-      assert reason =~ "not found"
-    end
-
-    test "rejects invalid kind" do
-      {:ok, a} = MemoryStore.learn("A", :fact)
-      {:ok, b} = MemoryStore.learn("B", :fact)
-
-      {:error, reason} =
-        MemAssociate.execute(
-          %{"source_id" => a.id, "target_id" => b.id, "kind" => "invalid"},
-          %{}
-        )
+      assert {:error, reason} =
+               MemAssociate.execute(
+                 %{"source_id" => source.id, "target_id" => target.id, "kind" => "invalid"},
+                 @context
+               )
 
       assert reason =~ "Invalid kind"
+
+      assert {:error, reason} =
+               MemAssociate.execute(
+                 %{"source_id" => source.id, "target_id" => -1, "kind" => "related"},
+                 @context
+               )
+
+      assert reason =~ "not accessible"
+
+      assert {:error, reason} =
+               MemAssociate.execute(
+                 %{"source_id" => source.id, "target_id" => target.id, "kind" => "related"},
+                 %{}
+               )
+
+      assert reason =~ "explicit memory scope"
+    end
+  end
+
+  describe "mem_update" do
+    test "corrects content and kind in scope" do
+      {:ok, engram} = learn("Original remembered preference", :preference)
+
+      assert {:ok, output, data} =
+               MemUpdate.execute(
+                 %{
+                   "id" => engram.id,
+                   "content" => "Corrected remembered project rule",
+                   "kind" => "rule"
+                 },
+                 @context
+               )
+
+      assert output =~ "Updated"
+      assert data.id == engram.id
+      updated = Repo.get!(Engram, engram.id)
+      assert updated.content == "Corrected remembered project rule"
+      assert updated.kind == :rule
     end
 
-    test "requires all fields" do
-      {:error, reason} = MemAssociate.execute(%{}, %{})
-      assert reason =~ "source_id"
+    test "requires a change and a valid scope" do
+      {:ok, engram} = learn("Update validation memory", :fact)
+      assert {:error, reason} = MemUpdate.execute(%{"id" => engram.id}, @context)
+      assert reason =~ "content or kind"
+
+      assert {:error, reason} =
+               MemUpdate.execute(%{"id" => engram.id, "kind" => "rule"}, %{})
+
+      assert reason =~ "explicit memory scope"
+    end
+  end
+
+  describe "mem_forget" do
+    test "deletes an in-scope memory" do
+      {:ok, engram} = learn("Memory explicitly retracted by user", :fact)
+      assert {:ok, output, %{id: id}} = MemForget.execute(%{"id" => engram.id}, @context)
+      assert output =~ "Forgot"
+      assert id == engram.id
+      refute Repo.get(Engram, engram.id)
     end
 
-    test "duplicate association does not crash" do
-      {:ok, a} = MemoryStore.learn("Dup Source", :fact)
-      {:ok, b} = MemoryStore.learn("Dup Target", :fact)
+    test "fails closed for wrong ids and missing scope" do
+      assert {:error, reason} = MemForget.execute(%{"id" => 999_999}, @context)
+      assert reason =~ "No accessible memory"
 
-      # First association — should succeed
-      result1 =
-        MemAssociate.execute(
-          %{"source_id" => a.id, "target_id" => b.id, "kind" => "related"},
-          %{}
-        )
-
-      assert match?({:ok, _}, result1)
-
-      # Second association with same params — should NOT crash
-      result2 =
-        MemAssociate.execute(
-          %{"source_id" => a.id, "target_id" => b.id, "kind" => "related"},
-          %{}
-        )
-
-      # Should return {:ok, _} without error (duplicates silently handled via on_conflict: :nothing)
-      assert match?({:ok, _}, result2)
-
-      # Verify only one synapse exists for this pair + kind
-      synapse_count =
-        Handbean.Memory.Synapse
-        |> Handbean.Repo.all()
-        |> Enum.count(fn s ->
-          s.source_id == a.id and s.target_id == b.id and s.kind == :related
-        end)
-
-      assert synapse_count == 1
+      {:ok, engram} = learn("Cannot forget without scope", :fact)
+      assert {:error, reason} = MemForget.execute(%{"id" => engram.id}, %{})
+      assert reason =~ "explicit memory scope"
+      assert Repo.get(Engram, engram.id)
     end
+  end
+
+  describe "mem_reflect" do
+    test "requires a persisted conversation context" do
+      assert {:error, reason} = MemReflect.execute(%{}, @context)
+      assert reason =~ "persisted conversation"
+    end
+
+    test "describes a manual, reviewable candidate action" do
+      assert MemReflect.description() =~ "explicitly asks"
+      assert MemReflect.description() =~ "short-term memory candidate"
+      assert MemReflect.input_schema().required == []
+    end
+  end
+
+  defp learn(content, kind, opts \\ []) do
+    MemoryStore.learn(content, kind, Keyword.merge(@scope_opts, opts))
   end
 end

@@ -300,6 +300,18 @@ defmodule Handbean.Agent.Runner do
         state.opts
       )
 
+    case reply do
+      {:ok, checkpoint} ->
+        Handbean.Memory.Reflector.maybe_trigger(
+          state.conversation_id,
+          checkpoint,
+          reflection_opts(state.opts)
+        )
+
+      _other ->
+        :ok
+    end
+
     {:reply, reply, state}
   end
 
@@ -869,6 +881,20 @@ defmodule Handbean.Agent.Runner do
 
       GenServer.call(runner, {:persist_compaction, event}, 30_000)
     end)
+  end
+
+  defp reflection_opts(opts) do
+    Keyword.take(opts, [
+      :builtin_memory_enabled,
+      :workspace_id,
+      :workspace_path,
+      :working_directory,
+      :model,
+      :reasoning_level,
+      :provider_config,
+      :om,
+      :transcript_store
+    ])
   end
 
   defp persist_and_callback(conversation_id, event, opts, user_on_event) do

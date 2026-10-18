@@ -184,6 +184,7 @@ defmodule Handbean.E2E.FakeProviderEndToEndTest do
           provider: Handbean.TestSupport.FakeProvider,
           model: "fake",
           provider_config: %{scenario: :memory_learn_and_recall},
+          om: %{memory_scope: "global", privacy_mode: "standard"},
           working_directory: @working_dir,
           max_turns: 50
         )
@@ -233,6 +234,7 @@ defmodule Handbean.E2E.FakeProviderEndToEndTest do
           provider: Handbean.TestSupport.FakeProvider,
           model: "fake",
           provider_config: %{scenario: :memory_learn_and_recall},
+          om: %{memory_scope: "global", privacy_mode: "standard"},
           working_directory: @working_dir,
           max_turns: 50
         )
@@ -255,6 +257,7 @@ defmodule Handbean.E2E.FakeProviderEndToEndTest do
           provider: Handbean.TestSupport.FakeProvider,
           model: "fake",
           provider_config: %{scenario: :memory_learn_and_recall},
+          om: %{memory_scope: "global", privacy_mode: "standard"},
           working_directory: @working_dir,
           max_turns: 50
         )
@@ -270,7 +273,9 @@ defmodule Handbean.E2E.FakeProviderEndToEndTest do
     end
 
     test "repeated mem_reinforce calls persist promotion and report database activity" do
-      {:ok, engram} = Handbean.Memory.MemoryStore.learn("Durable agent memory", :fact)
+      {:ok, engram} =
+        Handbean.Memory.MemoryStore.learn("Durable agent memory", :fact, memory_scope: :global)
+
       metric = [:handbean, :repo, :query, :total_time]
       before_count = HandbeanWeb.Telemetry.Reporter.snapshot()[metric].count
 
@@ -289,6 +294,7 @@ defmodule Handbean.E2E.FakeProviderEndToEndTest do
           provider: Handbean.TestSupport.FakeProvider,
           model: "fake",
           provider_config: %{scenario: {:script, script}},
+          om: %{memory_scope: "global", privacy_mode: "standard"},
           working_directory: @working_dir,
           max_turns: 5
         )
@@ -315,6 +321,7 @@ defmodule Handbean.E2E.FakeProviderEndToEndTest do
           provider: Handbean.TestSupport.FakeProvider,
           model: "fake",
           provider_config: %{scenario: :memory_learn_and_recall},
+          om: %{memory_scope: "global", privacy_mode: "standard"},
           working_directory: @working_dir,
           max_turns: 50
         )
@@ -344,6 +351,7 @@ defmodule Handbean.E2E.FakeProviderEndToEndTest do
           provider: Handbean.TestSupport.FakeProvider,
           model: "fake",
           provider_config: %{scenario: :memory_learn_and_recall},
+          om: %{memory_scope: "global", privacy_mode: "standard"},
           working_directory: @working_dir,
           max_turns: 50
         )
@@ -381,6 +389,7 @@ defmodule Handbean.E2E.FakeProviderEndToEndTest do
           provider: Handbean.TestSupport.FakeProvider,
           model: "fake",
           provider_config: %{scenario: :memory_learn_and_recall},
+          om: %{memory_scope: "global", privacy_mode: "standard"},
           working_directory: @working_dir,
           max_turns: 50
         )

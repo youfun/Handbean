@@ -29,7 +29,7 @@ defmodule Handbean.Memory.Engram do
   end
 
   @doc false
-  def changeset(engram, attrs) do
+  def changeset(engram, attrs, opts \\ []) do
     engram
     |> cast(attrs, [
       :content,
@@ -41,17 +41,33 @@ defmodule Handbean.Memory.Engram do
       :metadata
     ])
     |> validate_required([:content, :kind])
-    |> put_expiry()
+    |> put_expiry(Keyword.get(opts, :ttl_hours, 24))
   end
 
-  defp put_expiry(changeset) do
-    if get_field(changeset, :short_term) do
-      expires_at =
-        DateTime.utc_now() |> DateTime.add(24 * 3600, :second) |> DateTime.truncate(:second)
+  defp put_expiry(changeset, ttl_hours) do
+    cond do
+      not get_field(changeset, :short_term) ->
+        put_change(changeset, :expires_at, nil)
 
-      put_change(changeset, :expires_at, expires_at)
-    else
-      put_change(changeset, :expires_at, nil)
+      not (is_integer(ttl_hours) and ttl_hours > 0) ->
+        add_error(changeset, :expires_at, "ttl_hours must be a positive integer")
+
+      expiry_required?(changeset) ->
+        expires_at =
+          DateTime.utc_now()
+          |> DateTime.add(ttl_hours * 3600, :second)
+          |> DateTime.truncate(:second)
+
+        put_change(changeset, :expires_at, expires_at)
+
+      true ->
+        changeset
     end
+  end
+
+  defp expiry_required?(changeset) do
+    Ecto.get_meta(changeset.data, :state) == :built or
+      match?({:ok, true}, fetch_change(changeset, :short_term)) or
+      is_nil(get_field(changeset, :expires_at))
   end
 end

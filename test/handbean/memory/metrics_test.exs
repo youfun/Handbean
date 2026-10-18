@@ -5,9 +5,23 @@ defmodule Handbean.Memory.MetricsTest do
 
   describe "recall_quality/3" do
     test "computes useful, stale, contradiction and token-cost rates" do
-      {:ok, useful} = MemoryStore.learn("Useful metric marker", :fact, short_term: false)
-      {:ok, stale} = MemoryStore.learn("Stale metric marker", :fact, short_term: false)
-      {:ok, bad} = MemoryStore.learn("Contradictory metric marker", :fact, short_term: false)
+      {:ok, useful} =
+        MemoryStore.learn("Useful metric marker", :fact,
+          short_term: false,
+          memory_scope: :global
+        )
+
+      {:ok, stale} =
+        MemoryStore.learn("Stale metric marker", :fact,
+          short_term: false,
+          memory_scope: :global
+        )
+
+      {:ok, bad} =
+        MemoryStore.learn("Contradictory metric marker", :fact,
+          short_term: false,
+          memory_scope: :global
+        )
 
       metrics =
         Metrics.recall_quality(
@@ -32,12 +46,14 @@ defmodule Handbean.Memory.MetricsTest do
     test "reports cross-workspace leakage rate" do
       {:ok, current} =
         MemoryStore.learn("Current workspace metric", :fact,
-          metadata: %{scope: "workspace", workspace_id: "metrics-a"}
+          memory_scope: :workspace,
+          workspace_id: "metrics-a"
         )
 
       {:ok, other} =
         MemoryStore.learn("Other workspace metric", :fact,
-          metadata: %{scope: "workspace", workspace_id: "metrics-b"}
+          memory_scope: :workspace,
+          workspace_id: "metrics-b"
         )
 
       metrics = Metrics.isolation_quality([current, other], "metrics-a")

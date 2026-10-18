@@ -7,6 +7,9 @@ defmodule Handbean.Tool.Memory.MemReinforce do
 
   @behaviour Handbean.Agent.Tool
 
+  alias Handbean.Memory.MemoryStore
+  alias Handbean.Tool.Memory.Scope
+
   @impl true
   def name, do: "mem_reinforce"
 
@@ -39,96 +42,33 @@ defmodule Handbean.Tool.Memory.MemReinforce do
 
   @impl true
   def execute(%{"id" => id}, context) do
-    case Handbean.Repo.get(Handbean.Memory.Engram, id) do
-      nil ->
-        {:error, "No engram found with id #{id}"}
-
-      engram ->
-        if accessible?(engram, context) do
-          reinforce_accessible(engram)
-        else
-          {:error, "No accessible engram found with id #{id}"}
-        end
-    end
+    reinforce(id, Scope.options(context))
   end
 
   def execute(%{"query" => query}, context) do
-    case Handbean.Memory.MemoryStore.recall(query, recall_opts(context, 1)) do
-      [engram | _] ->
-        reinforce_accessible(engram)
+    opts = Scope.options(context)
 
-      [] ->
-        {:error, "No memory found matching '#{query}'"}
+    with :ok <- MemoryStore.validate_scope(opts),
+         [engram | _] <- MemoryStore.recall(query, [limit: 1] ++ opts) do
+      reinforce(engram.id, opts)
+    else
+      [] -> {:error, "No memory found matching '#{query}'"}
+      {:error, reason} -> {:error, Scope.error_message(reason)}
     end
   end
 
   def execute(_input, _context), do: {:error, "Provide id or query of the memory to reinforce"}
 
-  defp reinforce_accessible(engram) do
-    case Handbean.Memory.MemoryStore.reinforce(engram) do
+  defp reinforce(id, opts) do
+    case MemoryStore.reinforce(id, opts) do
       {:ok, reinforced} ->
         {:ok, "Reinforced: [#{reinforced.kind}] #{reinforced.content} (now long-term)"}
 
-      {:error, _} ->
-        {:error, "Failed to reinforce engram #{engram.id}"}
+      {:error, :not_found} ->
+        {:error, "No accessible engram found with id #{id}"}
+
+      {:error, reason} ->
+        {:error, Scope.error_message(reason)}
     end
   end
-
-  defp accessible?(engram, context) do
-    scope = metadata_value(engram, "scope")
-    engram_workspace_id = metadata_value(engram, "workspace_id")
-    workspace_id = context_value(context, :workspace_id)
-    memory_scope = normalize_scope(context_value(context, :memory_scope))
-    privacy_mode = normalize_privacy_mode(context_value(context, :privacy_mode))
-
-    cond do
-      privacy_mode == :local_only and is_binary(workspace_id) ->
-        scope == "workspace" and engram_workspace_id == workspace_id
-
-      memory_scope == :workspace and is_binary(workspace_id) ->
-        scope == "workspace" and engram_workspace_id == workspace_id
-
-      memory_scope == :global ->
-        scope == "global"
-
-      memory_scope == :both and is_binary(workspace_id) ->
-        scope == "global" or (scope == "workspace" and engram_workspace_id == workspace_id)
-
-      true ->
-        true
-    end
-  end
-
-  defp recall_opts(context, limit) when is_map(context) do
-    [
-      limit: limit,
-      workspace_id: context_value(context, :workspace_id),
-      memory_scope: context_value(context, :memory_scope),
-      privacy_mode: context_value(context, :privacy_mode)
-    ]
-    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
-  end
-
-  defp recall_opts(_context, limit), do: [limit: limit]
-
-  defp context_value(context, key) when is_map(context),
-    do: Map.get(context, key) || Map.get(context, Atom.to_string(key))
-
-  defp context_value(_context, _key), do: nil
-
-  defp metadata_value(%{metadata: metadata}, key) when is_map(metadata),
-    do: Handbean.Utils.SafeMap.get(metadata, key)
-
-  defp metadata_value(_, _), do: nil
-
-  defp normalize_scope(scope) when scope in [:global, :workspace, :both], do: scope
-  defp normalize_scope("global"), do: :global
-  defp normalize_scope("workspace"), do: :workspace
-  defp normalize_scope("both"), do: :both
-  defp normalize_scope(_), do: nil
-
-  defp normalize_privacy_mode(mode) when mode in [:standard, :local_only], do: mode
-  defp normalize_privacy_mode("standard"), do: :standard
-  defp normalize_privacy_mode("local_only"), do: :local_only
-  defp normalize_privacy_mode(_), do: nil
 end

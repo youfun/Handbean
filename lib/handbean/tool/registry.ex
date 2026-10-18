@@ -220,9 +220,12 @@ defmodule Handbean.Tool.Registry do
       Handbean.Tool.Builtin.Schedule,
       Handbean.Tool.Builtin.ErrorTracker,
       Handbean.Tool.Memory.MemAssociate,
+      Handbean.Tool.Memory.MemForget,
       Handbean.Tool.Memory.MemLearn,
       Handbean.Tool.Memory.MemRecall,
+      Handbean.Tool.Memory.MemReflect,
       Handbean.Tool.Memory.MemReinforce,
+      Handbean.Tool.Memory.MemUpdate,
       Handbean.Tool.Extension.MountApply,
       Handbean.Tool.Extension.MountDrop
     ]

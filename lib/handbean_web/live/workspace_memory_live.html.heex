@@ -133,6 +133,15 @@
       </div>
     </div>
 
+    <div
+      :if={@mutation_error}
+      id="memory-mutation-error"
+      class="memory-mutation-error"
+      role="alert"
+    >
+      {@mutation_error}
+    </div>
+
     <div :if={@memories == []} id="memory-empty" class="memory-empty">
       <div class="text-xl mb-1" aria-hidden="true">◌</div>
       <div>{gettext("没有符合当前筛选条件的记忆")}</div>
@@ -148,7 +157,12 @@
           <span class="memory-id">#{engram.id}</span>
           <span class="memory-badge memory-kind">{kind_label(engram.kind)}</span>
           <span class="memory-badge">{lifecycle_text(engram, @now)}</span>
-          <span :if={global?(engram)} class="memory-badge memory-global">{gettext("全局")}</span>
+          <span class={["memory-badge memory-scope", global?(engram) && "memory-global"]}>
+            {scope_label(engram)}
+          </span>
+          <span class="memory-source" title={source_label(engram)}>
+            {gettext("来源：%{source}", source: source_label(engram))}
+          </span>
           <time
             class="memory-date"
             datetime={format_iso(engram.updated_at || engram.inserted_at)}
@@ -157,7 +171,44 @@
           </time>
         </header>
 
-        <div class="memory-content">{engram.content}</div>
+        <form
+          :if={@editing_id == engram.id}
+          id={"memory-edit-form-#{engram.id}"}
+          class="memory-edit-form"
+          phx-submit="save_edit"
+        >
+          <input type="hidden" name="_id" value={engram.id} />
+          <label for={"memory-edit-content-#{engram.id}"}>{gettext("记忆内容")}</label>
+          <textarea
+            id={"memory-edit-content-#{engram.id}"}
+            class="settings-input memory-edit-content"
+            name="memory[content]"
+            required
+          >{engram.content}</textarea>
+          <label for={"memory-edit-kind-#{engram.id}"}>{gettext("记忆类型")}</label>
+          <select
+            id={"memory-edit-kind-#{engram.id}"}
+            class="settings-input"
+            name="memory[kind]"
+          >
+            <option
+              :for={kind <- kind_filters() |> Enum.reject(&(&1 == :all))}
+              value={kind}
+              selected={engram.kind == kind}
+            >
+              {kind_label(kind)}
+            </option>
+          </select>
+          <div class="memory-edit-actions">
+            <button type="submit" class="memory-action memory-action-primary">
+              {gettext("保存")}
+            </button>
+            <button type="button" class="memory-action" phx-click="cancel_edit">
+              {gettext("取消")}
+            </button>
+          </div>
+        </form>
+        <div :if={@editing_id != engram.id} class="memory-content">{engram.content}</div>
 
         <footer class="memory-footer">
           <div class="memory-links">
@@ -173,6 +224,27 @@
             </button>
           </div>
           <div class="memory-actions">
+            <button
+              :if={engram.short_term}
+              id={"memory-promote-#{engram.id}"}
+              type="button"
+              class="memory-action memory-action-primary"
+              phx-click="promote"
+              phx-value-id={engram.id}
+              aria-label={gettext("提升记忆 #%{id} 为长期记忆", id: engram.id)}
+            >
+              {gettext("提升为长期")}
+            </button>
+            <button
+              id={"memory-edit-#{engram.id}"}
+              type="button"
+              class="memory-action"
+              phx-click="edit"
+              phx-value-id={engram.id}
+              aria-label={gettext("编辑记忆 #%{id}", id: engram.id)}
+            >
+              {gettext("编辑")}
+            </button>
             <button
               id={"memory-copy-id-#{engram.id}"}
               type="button"
@@ -191,6 +263,37 @@
             >
               {gettext("复制内容")}
             </button>
+            <button
+              :if={@deleting_id != engram.id}
+              id={"memory-delete-#{engram.id}"}
+              type="button"
+              class="memory-action memory-action-danger"
+              phx-click="confirm_delete"
+              phx-value-id={engram.id}
+              aria-label={gettext("删除记忆 #%{id}", id: engram.id)}
+            >
+              {gettext("删除")}
+            </button>
+            <div
+              :if={@deleting_id == engram.id}
+              id={"memory-delete-confirm-#{engram.id}"}
+              class="memory-delete-confirm"
+              role="group"
+              aria-label={gettext("确认删除记忆 #%{id}", id: engram.id)}
+            >
+              <span>{gettext("确定永久删除？")}</span>
+              <button
+                type="button"
+                class="memory-action memory-action-danger"
+                phx-click="delete"
+                phx-value-id={engram.id}
+              >
+                {gettext("确认删除")}
+              </button>
+              <button type="button" class="memory-action" phx-click="cancel_delete">
+                {gettext("取消")}
+              </button>
+            </div>
           </div>
         </footer>
       </article>

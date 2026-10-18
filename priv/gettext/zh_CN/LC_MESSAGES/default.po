@@ -2631,3 +2631,23 @@ msgstr "选择项目"
 #: lib/handbean_web/live/workspace_live/sidebar_components.ex
 msgid "添加工作区"
 msgstr "添加工作区"
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex
+msgid "Memory Reflection"
+msgstr "记忆反思"
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex
+msgid "Enable memory reflection"
+msgstr "启用记忆反思"
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex
+msgid "Compaction produces reviewable memory candidates when enabled."
+msgstr "启用后，从压缩摘要生成可审核的记忆候选。"
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex
+msgid "Used to generate reviewable memory candidates from compacted conversations."
+msgstr "用于从压缩后的对话生成可审核的记忆候选。"
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex
+msgid "Reasoning level used for memory reflection."
+msgstr "记忆反思使用的思考等级。"

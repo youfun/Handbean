@@ -143,9 +143,11 @@ defmodule HandbeanProbe.ModelSettings.Render do
     [
       card(
         [
-          text(gettext("Observational memory"), text_size: 16),
+          text(gettext("Memory Reflection"), text_size: 16),
           text(
-            gettext("Built-in memory is enabled per workspace in Workspace Memory settings."),
+            gettext(
+              "Compaction can produce reviewable memory candidates using the settings below."
+            ),
             text_size: 12,
             text_color: color(:hint),
             padding_top: 4,
@@ -160,6 +162,18 @@ defmodule HandbeanProbe.ModelSettings.Render do
     d = state.defaults
 
     [
+      node(:toggle,
+        id: "toggle-memory-reflection",
+        label: gettext("Enable memory reflection"),
+        value: d.om_reflector_enabled,
+        on_change: {self(), {:model_field, :om_reflector_enabled}}
+      ),
+      text(
+        gettext("When enabled, compaction generates reviewable memory candidates."),
+        text_size: 12,
+        text_color: color(:hint),
+        padding_bottom: 8
+      ),
       text(gettext("Memory model"), text_size: 13, padding_top: 12),
       settings_select(
         Labels.follow(d.om_model, gettext("Follow default model")),
@@ -181,7 +195,7 @@ defmodule HandbeanProbe.ModelSettings.Render do
         :privacy,
         gettext("Standard may use the same remote models as chat."),
         gettext(
-          "Data isolated keeps observer and reflector on the device-local path. It does not mean the app never uses the network."
+          "Data isolated keeps memory reflection on the device-local path. It does not mean the app never uses the network."
         )
       ),
       settings_select(
@@ -200,13 +214,9 @@ defmodule HandbeanProbe.ModelSettings.Render do
         ],
         "select-privacy"
       ),
-      field(
-        gettext("Recent context limit"),
-        to_string(d.om_max_recent_context),
-        {:model_field, :om_max_recent_context},
-        keyboard: "number"
-      ),
-      secondary_button(gettext("Save memory details"), :save_memory_details, fill_width: true)
+      secondary_button(gettext("Save memory reflection settings"), :save_memory_details,
+        fill_width: true
+      )
     ]
   end
 

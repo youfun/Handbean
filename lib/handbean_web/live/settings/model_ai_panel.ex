@@ -186,14 +186,46 @@ defmodule HandbeanWeb.Live.Settings.ModelAIPanel do
 
       <section class="settings-model-section">
         <h4 class="settings-model-section-title">
-          {gettext("Observational Memory")}
+          {gettext("Memory Reflection")}
         </h4>
         <div class="settings-card settings-card-has-model-picker">
           <div class="settings-field-row">
             <div class="settings-field-copy">
+              <label
+                id="memory-reflection-toggle-label"
+                for="memory-reflection-toggle"
+                class="settings-field-title"
+              >
+                {gettext("Enable memory reflection")}
+              </label>
+              <div id="memory-reflection-toggle-desc" class="settings-field-desc">
+                {gettext("Compaction produces reviewable memory candidates when enabled.")}
+              </div>
+            </div>
+            <div class="settings-field-control">
+              <label class="relative inline-flex items-center cursor-pointer h-4 shrink-0">
+                <input
+                  id="memory-reflection-toggle"
+                  type="checkbox"
+                  checked={@form.om_reflector_enabled}
+                  phx-click="toggle_reflector"
+                  aria-labelledby="memory-reflection-toggle-label"
+                  aria-describedby="memory-reflection-toggle-desc"
+                  class="sr-only peer"
+                />
+                <span class="settings-toggle-track">
+                  <span class="settings-toggle-thumb"></span>
+                </span>
+              </label>
+            </div>
+          </div>
+          <div class="settings-field-row">
+            <div class="settings-field-copy">
               <div class="settings-field-title">{gettext("Memory model")}</div>
               <div class="settings-field-desc">
-                {gettext("Used for both observing conversations and consolidating memories.")}
+                {gettext(
+                  "Used to generate reviewable memory candidates from compacted conversations."
+                )}
               </div>
             </div>
             <div class="settings-field-control">
@@ -218,7 +250,7 @@ defmodule HandbeanWeb.Live.Settings.ModelAIPanel do
             <div class="settings-field-copy">
               <div class="settings-field-title">{gettext("Think level")}</div>
               <div class="settings-field-desc">
-                {gettext("Reasoning level used for memory processing.")}
+                {gettext("Reasoning level used for memory reflection.")}
               </div>
             </div>
             <div class="settings-field-control">
@@ -302,26 +334,6 @@ defmodule HandbeanWeb.Live.Settings.ModelAIPanel do
                   {gettext("Data isolated")}
                 </option>
               </select>
-            </div>
-          </div>
-
-          <div class="settings-field-row">
-            <div class="settings-field-copy">
-              <div class="settings-field-title">{gettext("Recent context limit")}</div>
-              <div class="settings-field-desc">
-                {gettext("How many recent turns the observer may read.")}
-              </div>
-            </div>
-            <div class="settings-field-control">
-              <input
-                type="number"
-                name="om_max_recent_context"
-                phx-change="update_field"
-                value={@form.om_max_recent_context}
-                min="0"
-                max="20"
-                class="settings-input"
-              />
             </div>
           </div>
         </div>

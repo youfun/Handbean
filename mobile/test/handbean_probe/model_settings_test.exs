@@ -208,18 +208,38 @@ defmodule HandbeanProbe.ModelSettingsTest do
     assert Handbean.Settings.effective_model_ai(ws_a["path"]).reasoning == "high"
   end
 
-  test "memory details enter runtime opts without a global enable switch", %{ws_a: ws} do
+  test "memory reflection toggle persists and enters runtime opts", %{ws_a: ws} do
     save_named(ws, "alpha", "one")
     state = ModelSettings.action({:scope, :global}, ModelSettings.load(ws), ws)
     state = ModelSettings.action({:om_model, "alpha/one"}, state, ws)
-    state = ModelSettings.change(state, :om_max_recent_context, "3")
+
+    tree = ModelSettings.render(state)
+    blob = flatten_text(tree)
+    assert blob =~ gettext("Memory Reflection")
+    assert blob =~ gettext("Compaction can produce reviewable memory candidates")
+    refute blob =~ "Observational memory"
+    refute blob =~ "Recent context limit"
+
+    toggle = find_type(tree, :toggle, "toggle-memory-reflection")
+    assert toggle.props.label == gettext("Enable memory reflection")
+    refute toggle.props.value
+    assert tap_change?(tree, {:model_field, :om_reflector_enabled})
+
+    state = ModelSettings.change(state, :om_reflector_enabled, true)
     state = ModelSettings.action(:save_memory_details, state, ws)
 
     settings = Handbean.Settings.effective_model_ai(ws["path"])
     opts = ModelAISettings.to_runtime_opts(settings)
-    refute Map.has_key?(opts[:om], :enabled)
+    assert opts[:om][:reflector_enabled]
     assert opts[:om][:model] == "alpha/one"
-    assert opts[:om][:max_recent_context] == 3
+    refute Map.has_key?(opts[:om], :enabled)
+
+    for removed <- ~w(max_recent_context message_tokens buffer_tokens observation_tokens)a do
+      refute Map.has_key?(opts[:om], removed)
+    end
+
+    {:ok, global} = Handbean.Settings.load_global()
+    assert get_in(global, ["model_ai", "observational_memory", "reflector_enabled"]) == true
     refute inspect(opts) =~ "Follow"
   end
 

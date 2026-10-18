@@ -6,7 +6,7 @@ defmodule Handbean.Memory.PromptPolicy do
   that can be injected into the agent's system prompt.
 
   Profiles:
-    - `:balanced` (default) — full workflow with all four tools and security guidance
+    - `:balanced` (default) — full workflow with all seven tools and security guidance
     - `:strict`   — emphasizes security constraints and forbids auto-saving sensitive info
     - `:minimal`  — brief recall/learn rules only
   """
@@ -47,7 +47,8 @@ defmodule Handbean.Memory.PromptPolicy do
     ## Memory
 
     You have access to memory tools: mem_recall, mem_learn, mem_reinforce,
-    and mem_associate. Use them as a deterministic workflow, not an optional hint.
+    mem_associate, mem_update, mem_forget, and mem_reflect. Use them as a deterministic
+    workflow, not an optional hint.
 
     ### When to recall
     - Before starting a task, call mem_recall to check if prior knowledge exists.
@@ -69,6 +70,14 @@ defmodule Handbean.Memory.PromptPolicy do
     - Use strong predicates (requires, depends_on, implements) over weak ones
       (related_to) for better recall.
 
+    ### When to correct or forget
+    - When the user corrects remembered information, call mem_update.
+    - When the user explicitly retracts remembered information, call mem_forget.
+
+    ### When to reflect
+    - Call mem_reflect only when the user explicitly asks to organize compacted
+      conversation context into a reviewable memory candidate.
+
     ### Constraints
     - Never store secrets, credentials, tokens, API keys, or PII.
     - Do not store transient command output or log noise.
@@ -83,7 +92,8 @@ defmodule Handbean.Memory.PromptPolicy do
     ## Memory (Strict Policy)
 
     You have access to memory tools: mem_recall, mem_learn, mem_reinforce,
-    and mem_associate. Follow these rules strictly — do not deviate.
+    mem_associate, mem_update, mem_forget, and mem_reflect. Follow these rules strictly —
+    do not deviate.
 
     ### When to recall
     - You MUST call mem_recall before starting any task that may involve
@@ -100,6 +110,14 @@ defmodule Handbean.Memory.PromptPolicy do
 
     ### When to associate
     - Call mem_associate to link related concepts using strong predicates.
+
+    ### When to correct or forget
+    - Call mem_update only to apply an explicit correction to a memory.
+    - Call mem_forget only when remembered information is explicitly retracted.
+
+    ### When to reflect
+    - Call mem_reflect only after an explicit user request. Reflection creates a
+      short-term candidate; it never directly creates long-term memory.
 
     ### Hard constraints — NEVER violate these
     - NEVER store secrets, credentials, tokens, API keys, passwords, or PII.

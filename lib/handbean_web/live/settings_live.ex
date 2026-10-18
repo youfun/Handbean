@@ -147,6 +147,16 @@ defmodule HandbeanWeb.SettingsLive do
     {:noreply, socket |> assign(:form, form) |> assign(:errors, errors)}
   end
 
+  def handle_event("toggle_reflector", _params, socket) do
+    form = %{
+      socket.assigns.form
+      | om_reflector_enabled: !socket.assigns.form.om_reflector_enabled
+    }
+
+    errors = validate_form(form)
+    {:noreply, socket |> assign(:form, form) |> assign(:errors, errors)}
+  end
+
   def handle_event("save_settings", _params, socket) do
     form = socket.assigns.form
     errors = validate_form(form)
@@ -159,8 +169,10 @@ defmodule HandbeanWeb.SettingsLive do
       json = ModelAISettings.snapshot_model_ai(defaults, form, :global)
       {:ok, existing} = Settings.load_global()
       current = Map.get(existing, "model_ai", %{})
+      current_memory = Map.get(current, "observational_memory", %{})
 
-      if json != %{} or Map.has_key?(current, "advisor") do
+      if json != %{} or Map.has_key?(current, "advisor") or
+           Map.has_key?(current_memory, "reflector_enabled") do
         Settings.save_global(json)
       end
 
@@ -466,46 +478,16 @@ defmodule HandbeanWeb.SettingsLive do
     struct!(form, om_privacy_mode: value)
   end
 
-  defp update_form_field(form, "om_max_recent_context", value) do
-    struct!(form, om_max_recent_context: parse_int(value, 5))
-  end
-
-  defp update_form_field(form, "om_message_tokens", value) do
-    struct!(form, om_message_tokens: parse_int(value, 30_000))
-  end
-
-  defp update_form_field(form, "om_buffer_tokens", value) do
-    struct!(form, om_buffer_tokens: parse_int(value, 10_000))
-  end
-
-  defp update_form_field(form, "om_observation_tokens", value) do
-    struct!(form, om_observation_tokens: parse_int(value, 40_000))
-  end
-
   defp update_form_field(form, _field, _value), do: form
 
   defp blank_to_nil(""), do: nil
   defp blank_to_nil(v), do: v
 
-  defp parse_int(v, _default) when is_integer(v), do: v
-
-  defp parse_int(v, default) when is_binary(v) do
-    case Integer.parse(v) do
-      {n, _} -> n
-      :error -> default
-    end
-  end
-
-  defp parse_int(_, default), do: default
-
   defp validate_form(form) do
     map = %{
       om_privacy_mode: form.om_privacy_mode,
       om_memory_scope: form.om_memory_scope,
-      om_max_recent_context: form.om_max_recent_context,
-      om_message_tokens: form.om_message_tokens,
-      om_buffer_tokens: form.om_buffer_tokens,
-      om_observation_tokens: form.om_observation_tokens
+      om_reflector_enabled: form.om_reflector_enabled
     }
 
     case ModelAISettings.validate(map) do

@@ -55,9 +55,13 @@ defmodule Handbean.PubSub.Projection do
     history_page(id, max(count, 100), nil, [])
   end
 
+  @internal_content_types MapSet.new(["model_compaction", "memory_reflection"])
+
   @doc "Hide internal transcript records from user-facing projections."
   def visible_entries(entries) when is_list(entries) do
-    Enum.reject(entries, &(&1["content_type"] == "model_compaction"))
+    Enum.reject(entries, fn entry ->
+      MapSet.member?(@internal_content_types, entry["content_type"] || entry[:content_type])
+    end)
   end
 
   defp history_page(id, count, before, newer) do

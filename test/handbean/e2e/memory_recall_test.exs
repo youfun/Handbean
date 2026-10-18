@@ -8,9 +8,8 @@ defmodule Handbean.E2E.MemoryRecallTest do
   use Handbean.DataCase, async: false
 
   alias Handbean.Agent.{Config, Coordinator, Message, State}
-  alias Handbean.Agent.Middleware.ObservationalSessionStart
+  alias Handbean.Agent.Middleware.MemoryProjection
   alias Handbean.ConversationStore
-  alias Handbean.Memory.ObservationalConfig
   alias Handbean.PubSub.Session
   alias Handbean.TestSupport.E2EHarness
 
@@ -43,6 +42,7 @@ defmodule Handbean.E2E.MemoryRecallTest do
                model: "fake-model",
                provider: Handbean.TestSupport.FakeProvider,
                provider_config: %{scenario: {:script, learn_script}},
+               om: %{memory_scope: "workspace", privacy_mode: "standard"},
                tools: Handbean.Agent.default_tools(),
                source: :cli,
                max_turns: 4,
@@ -80,6 +80,7 @@ defmodule Handbean.E2E.MemoryRecallTest do
                model: "fake-model",
                provider: Handbean.TestSupport.FakeProvider,
                provider_config: %{scenario: {:script, recall_script}},
+               om: %{memory_scope: "workspace", privacy_mode: "standard"},
                tools: Handbean.Agent.default_tools(),
                source: :cli,
                max_turns: 10,
@@ -112,8 +113,8 @@ defmodule Handbean.E2E.MemoryRecallTest do
     # Session-start injection is the middleware, not another Coordinator run.
     # A function-word message must not pull the learned engram into the prompt.
     # A no-space Chinese phrase that overlaps the engram still does.
-    refute injected?("What should we do with this?")
-    assert injected?("定时任务预览怎么做")
+    refute injected?("What should we do with this?", "memory-recall")
+    assert injected?("定时任务预览怎么做", "memory-recall")
   end
 
   test "Repo.init keeps the configured database unless the host injects data_dir" do
@@ -134,21 +135,26 @@ defmodule Handbean.E2E.MemoryRecallTest do
 
     :ok = Handbean.Host.put!(%{data_dir: "/tmp/explicit-data-dir"})
 
-    assert {:ok, overridden} = Handbean.Repo.init(:runtime, database: "/x/y.db")
-    assert overridden[:database] == "/tmp/explicit-data-dir/handbean.db"
+    assert {:ok, still_explicit} = Handbean.Repo.init(:runtime, database: "/x/y.db")
+    assert still_explicit[:database] == "/x/y.db"
   end
 
-  defp injected?(user_text) do
+  defp injected?(user_text, workspace_id) do
     state = %State{
       config: %Config{
         system_prompt: "Base system prompt",
-        context: %{observational: %ObservationalConfig{enabled: true}}
+        builtin_memory_enabled: true,
+        context: %{
+          workspace_id: workspace_id,
+          memory_scope: "workspace",
+          privacy_mode: "standard"
+        }
       },
       messages: [Message.user(user_text)],
       run_metadata: %{session_id: "memory-recall-injection"}
     }
 
-    result = ObservationalSessionStart.call(:session_start, state)
+    result = MemoryProjection.call(:session_start, state)
     result.config.system_prompt =~ @learned
   end
 

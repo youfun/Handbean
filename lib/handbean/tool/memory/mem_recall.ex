@@ -7,6 +7,8 @@ defmodule Handbean.Tool.Memory.MemRecall do
 
   @behaviour Handbean.Agent.Tool
 
+  alias Handbean.Tool.Memory.Scope
+
   @impl true
   def name, do: "mem_recall"
 
@@ -41,8 +43,8 @@ defmodule Handbean.Tool.Memory.MemRecall do
 
   @impl true
   def execute(%{"query" => query} = input, context) do
-    limit = Map.get(input, "limit", 10)
-    results = Handbean.Memory.MemoryStore.recall(query, recall_opts(context, limit))
+    opts = [limit: Map.get(input, "limit", 10)] ++ Scope.options(context)
+    results = Handbean.Memory.MemoryStore.recall(query, opts)
 
     if results == [] do
       {:ok, "No memories found."}
@@ -71,19 +73,4 @@ defmodule Handbean.Tool.Memory.MemRecall do
   end
 
   defp scope(_engram), do: "long-term"
-
-  defp recall_opts(context, limit) when is_map(context) do
-    [
-      limit: limit,
-      workspace_id: context_value(context, :workspace_id),
-      memory_scope: context_value(context, :memory_scope),
-      privacy_mode: context_value(context, :privacy_mode)
-    ]
-    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
-  end
-
-  defp recall_opts(_context, limit), do: [limit: limit]
-
-  defp context_value(context, key),
-    do: Map.get(context, key) || Map.get(context, Atom.to_string(key))
 end

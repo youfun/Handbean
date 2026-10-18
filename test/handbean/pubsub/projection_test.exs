@@ -52,6 +52,16 @@ defmodule Handbean.PubSub.ProjectionTest do
     assert new["content"] == "α"
   end
 
+  test "user-facing history hides compaction and memory reflection records" do
+    visible = %{"id" => "user-1", "content_type" => "user_msg"}
+
+    assert Projection.visible_entries([
+             %{"id" => "checkpoint", "content_type" => "model_compaction"},
+             visible,
+             %{id: "reflection", content_type: "memory_reflection"}
+           ]) == [visible]
+  end
+
   test "terminal status excludes approval waits and unknown status values" do
     for status <- [
           :interrupted,

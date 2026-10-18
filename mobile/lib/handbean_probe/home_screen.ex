@@ -374,8 +374,21 @@ defmodule HandbeanProbe.HomeScreen do
   defp dispatch({:directory_picker, _} = msg, socket), do: FileNav.handle(msg, socket)
 
   # workspace memory settings
-  defp dispatch({:change, :memory_query, _} = msg, %{assigns: %{page: :memory}} = socket),
+  defp dispatch({:change, field, _} = msg, %{assigns: %{page: :memory}} = socket)
+       when field in [:memory_query, :memory_edit_content],
+       do: WorkspaceMemory.handle(msg, socket)
+
+  defp dispatch({:dismiss, :memory_dismiss_confirm} = msg, %{assigns: %{page: :memory}} = socket),
     do: WorkspaceMemory.handle(msg, socket)
+
+  defp dispatch({:tap, action} = msg, %{assigns: %{page: :memory}} = socket)
+       when action in [
+              :memory_save_edit,
+              :memory_cancel_edit,
+              :memory_delete,
+              :memory_dismiss_confirm
+            ],
+       do: WorkspaceMemory.handle(msg, socket)
 
   defp dispatch({:tap, {action, _}} = msg, %{assigns: %{page: :memory}} = socket)
        when action in [
@@ -383,7 +396,11 @@ defmodule HandbeanProbe.HomeScreen do
               :memory_scope,
               :memory_lifecycle,
               :memory_kind,
-              :memory_related
+              :memory_related,
+              :memory_edit_kind,
+              :memory_promote,
+              :memory_edit,
+              :memory_ask_delete
             ],
        do: WorkspaceMemory.handle(msg, socket)
 
@@ -506,6 +523,9 @@ defmodule HandbeanProbe.HomeScreen do
 
   defp async_result(:workspace_memory_loaded, result, socket),
     do: WorkspaceMemory.result(result, socket)
+
+  defp async_result(:workspace_memory_mutated, result, socket),
+    do: WorkspaceMemory.mutation_result(result, socket)
 
   defp async_result(:models_fetched, result, socket),
     do: Settings.handle_subscription(:models_fetched, result, socket)

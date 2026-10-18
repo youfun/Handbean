@@ -13,10 +13,13 @@ defmodule Handbean.Settings.ModelAISettingsTest do
       assert defaults.om_reasoning == nil
       assert defaults.om_memory_scope == "workspace"
       assert defaults.om_privacy_mode == "standard"
-      assert defaults.om_max_recent_context == 5
-      assert defaults.om_message_tokens == 30_000
-      assert defaults.om_buffer_tokens == 10_000
-      assert defaults.om_observation_tokens == 40_000
+      refute defaults.om_reflector_enabled
+
+      for removed <- ~w(
+            om_max_recent_context om_message_tokens om_buffer_tokens om_observation_tokens
+          )a do
+        refute Map.has_key?(Map.from_struct(defaults), removed)
+      end
     end
   end
 
@@ -52,7 +55,7 @@ defmodule Handbean.Settings.ModelAISettingsTest do
           "default_model" => "claude-sonnet-4",
           "reasoning" => "high",
           "observational_memory" => %{
-            "enabled" => true,
+            "reflector_enabled" => true,
             "model" => "claude-opus",
             "reasoning" => "low",
             "memory_scope" => "global"
@@ -65,20 +68,38 @@ defmodule Handbean.Settings.ModelAISettingsTest do
       assert settings.om_model == "claude-opus"
       assert settings.om_reasoning == "low"
       assert settings.om_memory_scope == "global"
+      assert settings.om_reflector_enabled
       assert settings.advisor_model == "anthropic/claude-opus"
       assert settings.advisor_reasoning == "high"
     end
 
-    test "does not read removed observer and reflector model fields" do
-      settings =
-        ModelAISettings.new(%{
-          "observational_memory" => %{
-            "observer_model" => "old/observer",
-            "reflector_model" => "old/reflector"
-          }
-        })
+    test "does not read removed memory processing fields" do
+      raw = %{
+        "om_max_recent_context" => 9,
+        "om_message_tokens" => 1,
+        "om_buffer_tokens" => 2,
+        "om_observation_tokens" => 3,
+        "observational_memory" => %{
+          "observer_model" => "old/observer",
+          "reflector_model" => "old/reflector",
+          "max_recent_context" => 9,
+          "message_tokens" => 1,
+          "buffer_tokens" => 2,
+          "observation_tokens" => 3
+        }
+      }
+
+      settings = ModelAISettings.new(raw)
+      normalized = ModelAISettings.normalize_override(raw)
 
       assert settings.om_model == nil
+
+      for removed <- ~w(
+            om_max_recent_context om_message_tokens om_buffer_tokens om_observation_tokens
+          )a do
+        refute Map.has_key?(Map.from_struct(settings), removed)
+        refute Map.has_key?(normalized, removed)
+      end
     end
   end
 
@@ -105,7 +126,7 @@ defmodule Handbean.Settings.ModelAISettingsTest do
           "default_model" => "stepfun/step-router-v1",
           "reasoning" => "medium",
           "observational_memory" => %{
-            "enabled" => true,
+            "reflector_enabled" => true,
             "model" => "anthropic/claude-opus",
             "reasoning" => "high"
           }
@@ -118,6 +139,7 @@ defmodule Handbean.Settings.ModelAISettingsTest do
 
       om = Keyword.get(opts, :om)
       refute Map.has_key?(om, :enabled)
+      assert om[:reflector_enabled]
       assert om[:model] == "anthropic/claude-opus"
       assert om[:reasoning] == "high"
     end
@@ -130,6 +152,7 @@ defmodule Handbean.Settings.ModelAISettingsTest do
 
       om = settings |> ModelAISettings.to_runtime_opts() |> Keyword.fetch!(:om)
       refute Map.has_key?(om, :enabled)
+      refute om.reflector_enabled
       assert om.model == "memory/model"
       refute get_in(ModelAISettings.to_json_map(settings), ["observational_memory", "enabled"])
     end
@@ -167,7 +190,7 @@ defmodule Handbean.Settings.ModelAISettingsTest do
           "default_model" => "claude-sonnet-4",
           "reasoning" => "medium",
           "observational_memory" => %{
-            "enabled" => true,
+            "reflector_enabled" => true,
             "model" => "anthropic/claude-haiku",
             "reasoning" => "low"
           },
@@ -181,6 +204,7 @@ defmodule Handbean.Settings.ModelAISettingsTest do
       assert reloaded.reasoning == original.reasoning
       assert reloaded.om_model == original.om_model
       assert reloaded.om_reasoning == original.om_reasoning
+      assert reloaded.om_reflector_enabled == original.om_reflector_enabled
       assert reloaded.advisor_model == original.advisor_model
       assert reloaded.advisor_reasoning == original.advisor_reasoning
     end
@@ -191,6 +215,15 @@ defmodule Handbean.Settings.ModelAISettingsTest do
 
       refute Map.has_key?(json_map, "default_model")
       refute Map.has_key?(Map.get(json_map, "observational_memory", %{}), "model")
+    end
+
+    test "persists reflection enablement in the observational memory object" do
+      settings = %{ModelAISettings.defaults() | om_reflector_enabled: true}
+
+      assert get_in(ModelAISettings.to_json_map(settings), [
+               "observational_memory",
+               "reflector_enabled"
+             ]) == true
     end
   end
 
@@ -258,26 +291,31 @@ defmodule Handbean.Settings.ModelAISettingsTest do
       assert ModelAISettings.validate(%{"om_memory_scope" => "both"}) == :ok
     end
 
-    test "rejects negative max_recent_context" do
-      assert ModelAISettings.validate(%{"om_max_recent_context" => -1}) ==
-               {:error, "om_max_recent_context must be >= 0"}
-    end
+    test "validates reflection enablement and ignores retired numeric fields" do
+      assert ModelAISettings.validate(%{"om_reflector_enabled" => true}) == :ok
+      assert ModelAISettings.validate(%{om_reflector_enabled: false}) == :ok
 
-    test "rejects non-positive token thresholds" do
-      assert ModelAISettings.validate(%{"om_message_tokens" => 0}) ==
-               {:error, "om_message_tokens must be > 0"}
+      assert ModelAISettings.validate(%{
+               "observational_memory" => %{"reflector_enabled" => "yes"}
+             }) == {:error, "om_reflector_enabled must be a boolean"}
+
+      assert ModelAISettings.validate(%{
+               "om_max_recent_context" => -1,
+               "om_message_tokens" => 0,
+               "om_buffer_tokens" => 0,
+               "om_observation_tokens" => 0
+             }) == :ok
     end
 
     test "accepts valid full config" do
       assert ModelAISettings.validate(%{
                "default_model" => "claude-sonnet-4",
                "observational_memory" => %{
-                 "enabled" => true,
+                 "reflector_enabled" => true,
                  "model" => "anthropic/claude-haiku",
                  "reasoning" => "medium",
                  "memory_scope" => "workspace",
-                 "privacy_mode" => "standard",
-                 "max_recent_context" => 5
+                 "privacy_mode" => "standard"
                }
              }) == :ok
     end

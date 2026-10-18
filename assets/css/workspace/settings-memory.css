@@ -124,10 +124,19 @@
   outline-offset: 1px;
 }
 
-.workspace-memory .memory-setting-error {
+.workspace-memory .memory-setting-error,
+.workspace-memory .memory-mutation-error {
   margin: -8px 0 18px;
   color: var(--sig-error);
   font-size: 12px;
+}
+
+.workspace-memory .memory-mutation-error {
+  margin: 0 0 12px;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, var(--sig-error) 35%, transparent);
+  border-radius: var(--sig-radius-lg);
+  background: color-mix(in srgb, var(--sig-error) 8%, transparent);
 }
 
 .workspace-memory .memory-stats {
@@ -295,6 +304,15 @@
   color: var(--sig-success);
 }
 
+.workspace-memory .memory-source {
+  max-width: 180px;
+  color: var(--sig-text-tertiary);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .workspace-memory .memory-date {
   margin-left: auto;
   color: var(--sig-text-tertiary);
@@ -308,6 +326,49 @@
   line-height: 1.62;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+
+.workspace-memory .memory-edit-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(140px, 190px);
+  gap: 7px 10px;
+  margin: 13px 0 14px;
+}
+
+.workspace-memory .memory-edit-form label {
+  color: var(--sig-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.workspace-memory .memory-edit-content {
+  min-height: 92px;
+  resize: vertical;
+}
+
+.workspace-memory .memory-edit-form label:first-child,
+.workspace-memory .memory-edit-content,
+.workspace-memory .memory-edit-actions {
+  grid-column: 1;
+}
+
+.workspace-memory .memory-edit-form label:nth-of-type(2),
+.workspace-memory .memory-edit-form select {
+  grid-column: 2;
+}
+
+.workspace-memory .memory-edit-form label:nth-of-type(2) {
+  grid-row: 1;
+}
+
+.workspace-memory .memory-edit-form select {
+  grid-row: 2;
+  align-self: start;
+}
+
+.workspace-memory .memory-edit-actions {
+  display: flex;
+  gap: 6px;
 }
 
 .workspace-memory .memory-footer {
@@ -345,6 +406,25 @@
 
 .workspace-memory .memory-link {
   color: var(--memory-accent);
+}
+
+.workspace-memory .memory-action-primary {
+  color: var(--memory-accent);
+  font-weight: 600;
+}
+
+.workspace-memory .memory-action-danger {
+  color: var(--sig-error);
+}
+
+.workspace-memory .memory-delete-confirm {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  gap: 2px;
+  padding-left: 6px;
+  color: var(--sig-text-secondary);
+  font-size: 11px;
 }
 
 .workspace-memory .memory-action:hover {
@@ -396,6 +476,28 @@
   .workspace-memory .memory-link,
   .workspace-memory .memory-action {
     min-height: 44px;
+  }
+
+  .workspace-memory .memory-edit-form {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-memory .memory-edit-form label,
+  .workspace-memory .memory-edit-content,
+  .workspace-memory .memory-edit-form label:nth-of-type(2),
+  .workspace-memory .memory-edit-form select,
+  .workspace-memory .memory-edit-actions {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .workspace-memory .memory-edit-actions .memory-action,
+  .workspace-memory .memory-delete-confirm .memory-action {
+    min-height: 44px;
+  }
+
+  .workspace-memory .memory-delete-confirm {
+    flex-wrap: wrap;
   }
 
   .workspace-memory .memory-footer {

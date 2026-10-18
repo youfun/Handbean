@@ -35,7 +35,7 @@ defmodule HandbeanProbe.WorkspaceMemoryTest do
       kind: :preference,
       short_term: false,
       reinforced_count: 2,
-      metadata: %{"scope" => "global"},
+      metadata: %{"scope" => "global", "source" => "agent"},
       source_synapses: [%Synapse{target_id: 20, kind: :context_for}],
       target_synapses: [],
       inserted_at: inserted_at,
@@ -77,9 +77,12 @@ defmodule HandbeanProbe.WorkspaceMemoryTest do
     assert blob =~ "preference · Preference"
     assert blob =~ "Long-term · reinforced ×2"
     assert blob =~ "Remember the mobile memory browser"
-    assert blob =~ "Global"
+    assert blob =~ "Scope: Global · Source: Agent"
     assert blob =~ "↳ context_for #20"
     assert tap?(tree, {:memory_related, 20})
+    assert tap?(tree, {:memory_edit, 42})
+    assert tap?(tree, {:memory_ask_delete, 42})
+    refute tap?(tree, {:memory_promote, 42})
     assert tap?(tree, {:memory_copy, :id, 42})
     assert tap?(tree, {:memory_copy, :content, 42})
   end
@@ -161,6 +164,137 @@ defmodule HandbeanProbe.WorkspaceMemoryTest do
     assert WorkspaceMemory.copy_value(state, 50, :content) == :error
   end
 
+  test "edit and delete state only opens for projected memories" do
+    state = %{
+      WorkspaceMemory.new()
+      | items: [
+          %Engram{
+            id: 49,
+            content: "Scoped content",
+            kind: :fact,
+            metadata: %{},
+            source_synapses: [],
+            target_synapses: []
+          },
+          %Engram{
+            id: 50,
+            content: "Reflected content",
+            kind: :context,
+            metadata: %{"scope" => "workspace", "source" => "reflection"},
+            source_synapses: [],
+            target_synapses: []
+          }
+        ]
+    }
+
+    assert WorkspaceMemory.memory_scope(hd(state.items)) == :workspace
+    assert WorkspaceMemory.memory_source(hd(state.items)) == "Legacy"
+    assert WorkspaceMemory.memory_source(List.last(state.items)) == "Reflection"
+
+    editing = WorkspaceMemory.edit(state, 49)
+    assert editing.editing == %{id: 49, content: "Scoped content", kind: :fact}
+    assert WorkspaceMemory.edit(state, 500).editing == nil
+    assert WorkspaceMemory.confirm_delete(state, 49).confirming_delete == 49
+    assert WorkspaceMemory.confirm_delete(state, 500).confirming_delete == nil
+
+    local_only = %{state | privacy_mode: :local_only, scope: :global}
+    local_only = WorkspaceMemory.set_scope(local_only, :both)
+    assert local_only.scope == :workspace
+    assert WorkspaceMemory.locate(local_only, 50).scope == :workspace
+
+    tree =
+      WorkspaceMemory.render(local_only, %{
+        "id" => "workspace-a",
+        "name" => "Handbean",
+        "path" => "/tmp/handbean"
+      })
+
+    assert tap?(tree, {:memory_scope, :workspace})
+    refute tap?(tree, {:memory_scope, :both})
+    refute tap?(tree, {:memory_scope, :global})
+  end
+
+  test "HomeScreen promotes, edits, and deletes through scoped memory events" do
+    suffix = System.unique_integer([:positive])
+    workspace_id = "mobile-memory-curation-#{suffix}"
+    other_workspace_id = "mobile-memory-curation-other-#{suffix}"
+
+    {:ok, memory} =
+      MemoryStore.learn("Curate this mobile memory #{suffix}", :fact,
+        short_term: true,
+        memory_scope: :workspace,
+        workspace_id: workspace_id,
+        metadata: %{"source" => "agent"}
+      )
+
+    {:ok, other} =
+      MemoryStore.learn("Do not curate this other memory #{suffix}", :rule,
+        short_term: true,
+        memory_scope: :workspace,
+        workspace_id: other_workspace_id,
+        metadata: %{"source" => "agent"}
+      )
+
+    ids = [memory.id, other.id]
+
+    on_exit(fn ->
+      Handbean.Repo.delete_all(from(e in Engram, where: e.id in ^ids))
+    end)
+
+    workspace = %{"id" => workspace_id, "name" => "Mobile", "path" => "/tmp/mobile"}
+    socket = %Mob.Socket{assigns: State.new(page: :chat, workspace: workspace)}
+    view = socket |> event({:tap, {:page, :memory}}) |> settle()
+
+    tree = HomeScreen.render(view.socket.assigns)
+    assert flatten_text(tree) =~ "Scope: Workspace · Source: Agent"
+    assert tap?(tree, {:memory_promote, memory.id})
+
+    view = view |> event({:tap, {:memory_promote, other.id}}) |> settle()
+    assert Handbean.Repo.get!(Engram, other.id).short_term
+    assert view.socket.assigns.workspace_memory.error == ":not_found"
+
+    view = view |> event({:tap, {:memory_promote, memory.id}}) |> settle()
+    promoted = Handbean.Repo.get!(Engram, memory.id)
+    refute promoted.short_term
+    assert promoted.reinforced_count == 1
+
+    view = event(view, {:tap, {:memory_edit, memory.id}})
+    assert view.socket.assigns.workspace_memory.editing.id == memory.id
+    assert flatten_text(HomeScreen.render(view.socket.assigns)) =~ "Edit memory ##{memory.id}"
+
+    view = event(view, {:change, :memory_edit_content, ""})
+    view = view |> event({:tap, :memory_save_edit}) |> settle()
+    assert view.socket.assigns.workspace_memory.error == "Memory content and type are required"
+    assert Handbean.Repo.get!(Engram, memory.id).content == memory.content
+
+    view = event(view, {:change, :memory_edit_content, "Corrected mobile memory #{suffix}"})
+    view = event(view, {:tap, {:memory_edit_kind, :preference}})
+    view = view |> event({:tap, :memory_save_edit}) |> settle()
+
+    updated = Handbean.Repo.get!(Engram, memory.id)
+    assert updated.content == "Corrected mobile memory #{suffix}"
+    assert updated.kind == :preference
+    assert view.socket.assigns.workspace_memory.editing == nil
+
+    view = event(view, {:tap, {:memory_ask_delete, memory.id}})
+    tree = HomeScreen.render(view.socket.assigns)
+
+    assert Enum.any?(
+             walk(tree),
+             &(&1.type == :sheet and &1.props[:id] == "memory-delete-confirm")
+           )
+
+    assert tap?(tree, :memory_delete)
+
+    view = event(view, {:dismiss, :memory_dismiss_confirm})
+    assert view.socket.assigns.workspace_memory.confirming_delete == nil
+
+    view = event(view, {:tap, {:memory_ask_delete, memory.id}})
+    view = view |> event({:tap, :memory_delete}) |> settle()
+    assert Handbean.Repo.get(Engram, memory.id) == nil
+    assert view.socket.assigns.workspace_memory.confirming_delete == nil
+  end
+
   test "HomeScreen loads and filters the current workspace without leaking another workspace" do
     suffix = System.unique_integer([:positive])
     workspace_id = "mobile-memory-#{suffix}"
@@ -169,25 +303,32 @@ defmodule HandbeanProbe.WorkspaceMemoryTest do
     {:ok, long_term} =
       MemoryStore.learn("Mobile memory long term #{suffix}", :fact,
         short_term: false,
-        metadata: %{scope: "workspace", workspace_id: workspace_id}
+        memory_scope: :workspace,
+        workspace_id: workspace_id,
+        metadata: %{"source" => "agent"}
       )
 
     {:ok, short_term} =
       MemoryStore.learn("Mobile memory short term #{suffix}", :pattern,
         short_term: true,
-        metadata: %{scope: "workspace", workspace_id: workspace_id}
+        memory_scope: :workspace,
+        workspace_id: workspace_id,
+        metadata: %{"source" => "agent"}
       )
 
     {:ok, other} =
       MemoryStore.learn("Other workspace memory #{suffix}", :rule,
         short_term: false,
-        metadata: %{scope: "workspace", workspace_id: other_workspace_id}
+        memory_scope: :workspace,
+        workspace_id: other_workspace_id,
+        metadata: %{"source" => "agent"}
       )
 
     {:ok, global} =
       MemoryStore.learn("Global mobile memory #{suffix}", :preference,
         short_term: false,
-        metadata: %{scope: "global"}
+        memory_scope: :global,
+        metadata: %{"source" => "user"}
       )
 
     expired_at = DateTime.add(DateTime.utc_now(), -60, :second) |> DateTime.truncate(:second)

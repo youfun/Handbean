@@ -5,7 +5,7 @@ defmodule HandbeanProbe.ModelSettings do
   Facade for `HandbeanProbe.HomeScreen`: owns the state shape, `load/2`, and the
   `action/3` dispatch. Logic lives in `HandbeanProbe.ModelSettings.Providers`
   (catalog CRUD and delete), `.Defaults` (scope, default model, reasoning),
-  `.Memory` (observational memory fields), `.Policy` (workspace allowlist);
+  `.Memory` (memory reflection settings), `.Policy` (workspace allowlist);
   nodes come from `.Render`, `.RenderForms`, `.RenderConfirm`.
 
   `load/2` and the reference scan read several files. `load_async/3` and
@@ -133,7 +133,7 @@ defmodule HandbeanProbe.ModelSettings do
         form = Map.put(state.form, field, value)
         %{state | form: Forms.hydrate(form, field, value)}
 
-      field in [:om_max_recent_context] ->
+      field in [:om_reflector_enabled] ->
         %{state | defaults: Map.put(state.defaults, field, value)}
 
       true ->

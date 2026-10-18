@@ -9,7 +9,7 @@ defmodule HandbeanProbe.NativeTimelineTest do
               207, 192, 240, 31, 0, 5, 0, 1, 253, 46, 43, 34, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66,
               96, 130>>
 
-  test "internal model compaction checkpoints are not rendered" do
+  test "internal compaction and memory reflection entries are not rendered" do
     chat = %{
       entries: [
         %{
@@ -17,6 +17,12 @@ defmodule HandbeanProbe.NativeTimelineTest do
           "content_type" => "model_compaction",
           "role" => "internal",
           "summary" => "PRIVATE-COMPACTION-SUMMARY"
+        },
+        %{
+          "id" => "memory-reflection-compaction-1",
+          "content_type" => "memory_reflection",
+          "role" => "internal",
+          "content" => "PRIVATE-REFLECTION-CANDIDATE"
         },
         %{"id" => "user-1", "role" => "user", "content" => "visible user message"}
       ],
@@ -27,6 +33,7 @@ defmodule HandbeanProbe.NativeTimelineTest do
     rendered = inspect(render(chat, MapSet.new()), limit: :infinity)
     assert rendered =~ "visible user message"
     refute rendered =~ "PRIVATE-COMPACTION-SUMMARY"
+    refute rendered =~ "PRIVATE-REFLECTION-CANDIDATE"
     refute rendered =~ "compaction-1"
   end
 
