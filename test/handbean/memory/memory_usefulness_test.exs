@@ -78,6 +78,26 @@ defmodule Handbean.Memory.MemoryUsefulnessTest do
       assert result.config.system_prompt =~ "Run tests with mise exec mix test"
     end
 
+    test "automatic recall bounds oversized relevant memory content" do
+      oversized = "Relevant budget anchor " <> String.duplicate("x", 4_000) <> "UNBOUNDED_TAIL"
+
+      {:ok, _} =
+        learn_scoped(oversized, :fact,
+          workspace_id: "useful-workspace",
+          short_term: true
+        )
+
+      result =
+        "Recall the relevant budget anchor"
+        |> build_state(workspace_id: "useful-workspace")
+        |> then(&MemoryProjection.call(:session_start, &1))
+
+      assert result.config.system_prompt =~ "Relevant budget anchor"
+      assert result.config.system_prompt =~ "… [truncated]"
+      refute result.config.system_prompt =~ "UNBOUNDED_TAIL"
+      assert String.length(result.config.system_prompt) < 3_000
+    end
+
     test "query recall keeps short-term preferences discoverable" do
       {:ok, _} =
         learn_scoped("For release notes use British spelling", :preference,

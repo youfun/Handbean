@@ -15,6 +15,8 @@ defmodule Handbean.Agent.Middleware.MemoryProjection do
   @max_persistent_memories 8
   @max_persistent_chars 2_400
   @max_relevant_memories 5
+  @max_relevant_chars 2_400
+  @truncated_suffix "… [truncated]"
 
   @impl true
   def call(:session_start, %State{config: %{builtin_memory_enabled: true}} = state) do
@@ -61,7 +63,7 @@ defmodule Handbean.Agent.Middleware.MemoryProjection do
           )
         )
         |> Enum.reject(&MapSet.member?(persistent_ids, &1.id))
-        |> Enum.take(@max_relevant_memories)
+        |> take_with_budget(@max_relevant_memories, @max_relevant_chars)
 
       _ ->
         []
@@ -103,7 +105,7 @@ defmodule Handbean.Agent.Middleware.MemoryProjection do
           {:halt, {kept, chars}}
 
         kept == [] and size > max_chars ->
-          truncated = %{memory | content: String.slice(memory.content || "", 0, max_chars)}
+          truncated = %{memory | content: truncate_content(memory.content || "", max_chars)}
           {:halt, {[truncated], max_chars}}
 
         chars + size > max_chars ->
@@ -115,6 +117,14 @@ defmodule Handbean.Agent.Middleware.MemoryProjection do
     end)
     |> elem(0)
     |> Enum.reverse()
+  end
+
+  defp truncate_content(content, max_chars) do
+    suffix_size = String.length(@truncated_suffix)
+    head_size = max(max_chars - suffix_size, 0)
+
+    String.slice(content, 0, head_size) <>
+      String.slice(@truncated_suffix, 0, max_chars - head_size)
   end
 
   defp persistent_sort_key(memory) do

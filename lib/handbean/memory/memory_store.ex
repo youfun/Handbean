@@ -565,7 +565,7 @@ defmodule Handbean.Memory.MemoryStore do
     long_tokens = Enum.filter(tokens, &(String.length(&1) >= 3))
     short_tokens = Enum.filter(tokens, &(String.length(&1) == 2))
     bm25 = fts_bm25(long_tokens)
-    ids = Enum.uniq(Map.keys(bm25) ++ short_token_ids(short_tokens))
+    ids = Enum.uniq(Map.keys(bm25) ++ short_token_ids(short_tokens, opts))
 
     if ids == [] do
       []
@@ -603,13 +603,20 @@ defmodule Handbean.Memory.MemoryStore do
     end)
   end
 
-  defp short_token_ids([]), do: []
+  defp short_token_ids([], _opts), do: []
 
-  defp short_token_ids(tokens) do
-    clauses = Enum.map(tokens, fn _token -> "instr(lower(content), ?) > 0" end)
-    sql = "SELECT id FROM engrams WHERE " <> Enum.join(clauses, " OR ")
-    %{rows: rows} = Repo.query!(sql, tokens)
-    Enum.map(rows, fn [id] -> id end)
+  defp short_token_ids(tokens, opts) do
+    condition =
+      Enum.reduce(tokens, dynamic(false), fn token, condition ->
+        dynamic([e], ^condition or fragment("instr(lower(?), ?) > 0", e.content, ^token))
+      end)
+
+    Engram
+    |> where(^condition)
+    |> where([e], is_nil(e.expires_at) or e.expires_at > ^DateTime.utc_now())
+    |> apply_scope_filter(opts)
+    |> select([e], e.id)
+    |> Repo.all()
   end
 
   defp required_matches(tokens, opts) do
