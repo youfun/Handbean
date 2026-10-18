@@ -212,6 +212,7 @@ defmodule Handbean.Tool.Registry do
       Handbean.Tool.Builtin.Write,
       Handbean.Tool.Builtin.ListConversations,
       Handbean.Tool.Builtin.FindConversation,
+      Handbean.Tool.Builtin.SearchConversations,
       Handbean.Tool.Builtin.ReadConversation,
       Handbean.Tool.Builtin.GetConversationStatus,
       Handbean.Tool.Builtin.GetConversationTrajectory,

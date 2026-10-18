@@ -327,6 +327,35 @@ defmodule Handbean.Tool.RegistryTest do
     end
   end
 
+  describe "search_conversations registration" do
+    test "registers the search as deferred, discoverable, and read-only safe" do
+      assert :ok = Registry.register(Handbean.Tool.Builtin.SearchConversations)
+      assert Handbean.Tool.Builtin.SearchConversations in Registry.host_tool_modules()
+
+      assert {:ok, entry} = Registry.get("search_conversations")
+      assert entry.module == Handbean.Tool.Builtin.SearchConversations
+      assert entry.deferred?
+      assert entry.max_result_chars == 20_000
+
+      refute Enum.any?(Registry.tool_defs(), &(&1.name == "search_conversations"))
+      refute Registry.prompt_snippets() =~ "search_conversations"
+
+      assert Enum.any?(Registry.deferred_catalog(), fn candidate ->
+               candidate.name == "search_conversations"
+             end)
+
+      assert Enum.any?(
+               Handbean.Tool.Deferred.search(
+                 "persisted message search",
+                 Registry.deferred_catalog()
+               ),
+               &(&1.name == "search_conversations")
+             )
+
+      assert "search_conversations" in Handbean.Conversations.Collaboration.read_tools()
+    end
+  end
+
   describe "tool_fns/0" do
     test "returns function lookup map" do
       Registry.register(Handbean.Tool.Builtin.Read)

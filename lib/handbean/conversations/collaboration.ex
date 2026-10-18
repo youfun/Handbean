@@ -13,50 +13,13 @@ defmodule Handbean.Conversations.Collaboration do
   # further-delegation tools stay off this list.
   @read_tools ~w(
     read file_search grep code_search web_fetch skill tool_search mem_recall
-    list_models list_conversations find_conversation read_conversation get_conversation_status
-    get_conversation_trajectory reply_to_parent_conversation send_conversation_message
+    list_models list_conversations find_conversation search_conversations read_conversation
+    get_conversation_status get_conversation_trajectory reply_to_parent_conversation
+    send_conversation_message
   )
 
   @purposes ~w(request progress result notification)
-  @source_run_opts [
-    :allowed_tools,
-    :candidate_queue,
-    :checkout_path,
-    :context,
-    :conversation_id,
-    :created_by_conversation_id,
-    :delegated?,
-    :delegated_approval,
-    :delegated_read_only,
-    :delegation_owner,
-    :deliver_as,
-    :expected_run_id,
-    :history_messages,
-    :inbound_id,
-    :max_budget_cents,
-    :max_turns,
-    :memory,
-    :message_id,
-    :middleware,
-    :model,
-    :origin,
-    :persist_candidate?,
-    :persist_inbound?,
-    :provider,
-    :provider_config,
-    :reasoning_level,
-    :request_id,
-    :require_idle?,
-    :require_running?,
-    :run_id,
-    :runner_pid,
-    :session_id,
-    :system_prompt,
-    :task_instructions,
-    :timeout_ms,
-    :transcript_id,
-    :working_directory
-  ]
+  @dispatch_run_opts ~w(workspace_path transcript_store)a
 
   def completed(id, result, opts) do
     status = if is_map(result), do: Map.get(result, :status, :error), else: :error
@@ -513,7 +476,7 @@ defmodule Handbean.Conversations.Collaboration do
   end
 
   defp pinned_run_opts(target, context) do
-    base = (context[:conversation_run_opts] || []) |> Keyword.drop(@source_run_opts)
+    base = (context[:conversation_run_opts] || []) |> Keyword.take(@dispatch_run_opts)
     model_ref = target_model_ref(target, base)
 
     if is_binary(model_ref) do

@@ -109,6 +109,10 @@ defmodule Handbean.ConversationStore do
   def trajectory_snapshot(conversation_id, opts),
     do: Handbean.ConversationStore.Trajectory.snapshot(conversation_id, opts)
 
+  @doc "Search settled public entries in one authorized workspace query."
+  def search_entries(workspace_id, opts),
+    do: Handbean.ConversationStore.EntrySearch.search(workspace_id, opts)
+
   def list_free_metadata do
     Conversation
     |> where([conversation], conversation.status == "active")

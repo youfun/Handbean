@@ -32,7 +32,7 @@ defmodule Handbean.Conversations do
     end
   end
 
-  def visible?(meta), do: meta["visibility"] not in ["internal", "task"]
+  def visible?(meta), do: meta["visibility"] == "user"
 
   defp free_chat?(meta), do: meta["scope"] == "free"
 
@@ -65,6 +65,14 @@ defmodule Handbean.Conversations do
   end
 
   def trajectory(input, context), do: Handbean.Conversations.Trajectory.get(input, context)
+
+  @doc """
+  Search settled public entries visible to the caller.
+
+  Returns `{:error, :search_too_broad}` when the SQL prefilter produces more than
+  5,000 candidates; callers should add a conversation, run, kind, tool or time filter.
+  """
+  def search_entries(input, context), do: Handbean.Conversations.Search.search(input, context)
 
   defp discover(source, context, input, kind, query, archived, after_time, limit) do
     entries =

@@ -17,6 +17,16 @@ persistent conversation tools, and its run-scoped authorization and cleanup rema
 - `find_conversation`: search titles using a required non-empty substring. It uses the
   same filters, pagination, and summary schema as `list_conversations`. Search remains
   metadata-only: it does not search or load transcript bodies.
+- `search_conversations`: literal body search over redacted persisted messages and tool
+  records across authorized durable conversations. It returns bounded snippets plus
+  stable conversation, run, turn, record-sequence, and entry anchors so a caller can
+  inspect the surrounding evidence with `read_conversation` or
+  `get_conversation_trajectory`. Unlike `find_conversation`, it locates transcript and
+  execution content rather than titles. Redaction happens before matching, so secret
+  source values cannot be recovered by searching for them. Free chats and internal task
+  conversations are excluded. The archive filter defaults to `all`, and results omit a
+  total count rather than performing an unbounded scan. This deferred tool is loaded
+  through `tool_search` when cross-conversation execution search is needed.
 - `read_conversation`: inclusive zero-based message range; at most 16,000 Unicode
   codepoints and 50 message fragments per page. Stable message IDs and character
   offsets allow long single messages to continue without silently dropping tails.
@@ -33,8 +43,9 @@ persistent conversation tools, and its run-scoped authorization and cleanup rema
   `tool_search` when execution-history inspection is needed.
 - Discovery/read cursors bind the caller, target/query, and projected snapshot and
   expire after one hour. Changes invalidate the cursor; callers restart rather
-  than silently skipping or repeating data. Trajectory cursors additionally bind
-  the entry/run/turn revision snapshot and the last consumed record sequence.
+  than silently skipping or repeating data. Search cursors likewise become stale
+  when any searched source changes. Trajectory cursors additionally bind the
+  entry/run/turn revision snapshot and the last consumed record sequence.
 - `list_models`: bounded, paginated id/name search over models allowed by the
   current workspace. It is only needed to select a model other than the current
   conversation model; the full catalog is never added to the prompt.
@@ -54,6 +65,9 @@ the individual invocation boundary rather than copying batch duration. Historica
 entries created before trajectory capture remain readable but report
 `fidelity: partial` with explicit missing dimensions; the projection never invents
 turn boundaries or exact timings.
+
+Search matches are evidence locators, not semantic memory or inferred facts. Use their
+stable anchors with the follow-up readers to inspect context before drawing conclusions.
 
 ## Handoffs and delegation
 

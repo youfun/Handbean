@@ -136,6 +136,422 @@ defmodule Handbean.ConversationsTest do
     assert Enum.any?(archived, &(&1["id"] == c.target))
   end
 
+  test "entry search authenticates first and scopes targets fail closed", c do
+    {:ok, free} = ConversationStore.create_free(title: "Free")
+    {:ok, internal} = ConversationStore.create("ws", title: "Internal", visibility: "internal")
+    {:ok, pending} = ConversationStore.create("ws", title: "Pending")
+
+    for id <- [c.source, c.target, c.foreign, free["id"], internal["id"], pending["id"]] do
+      assert {:ok, _} =
+               ConversationTranscriptStore.append(id, %{
+                 "id" => "scope-#{id}",
+                 "role" => "assistant",
+                 "content" => "scope sentinel"
+               })
+    end
+
+    pending
+    |> then(&Handbean.Repo.get!(Handbean.Storage.Conversation, &1["id"]))
+    |> Ecto.Changeset.change(status: "pending_delete")
+    |> Handbean.Repo.update!()
+
+    assert {:ok, result} = Conversations.search_entries(%{"query" => "scope sentinel"}, c.context)
+    assert result.schema_version == 1
+    assert result.filters.archived == "all"
+
+    assert Enum.sort(Enum.map(result.matches, & &1.conversation_id)) ==
+             Enum.sort([c.source, c.target])
+
+    refute Map.has_key?(result, :total)
+    refute Map.has_key?(result, :forbidden)
+
+    assert {:ok, _} = ConversationStore.archive(c.target)
+
+    assert {:ok, %{matches: active_matches}} =
+             Conversations.search_entries(
+               %{"query" => "scope sentinel", "archived" => "active"},
+               c.context
+             )
+
+    assert Enum.map(active_matches, & &1.conversation_id) == [c.source]
+
+    assert {:ok, %{matches: [%{conversation_id: archived_id, archived: true}]}} =
+             Conversations.search_entries(
+               %{"query" => "scope sentinel", "archived" => "archived"},
+               c.context
+             )
+
+    assert archived_id == c.target
+
+    for context <- [
+          %{},
+          %{conversation_id: free["id"], workspace_id: "ws"},
+          %{conversation_id: internal["id"], workspace_id: "ws"},
+          %{c.context | workspace_id: "other"}
+        ] do
+      assert {:error, :unauthorized} =
+               Conversations.search_entries(%{"query" => "scope sentinel"}, context)
+    end
+
+    for id <- [c.foreign, free["id"], internal["id"], pending["id"]] do
+      assert {:error, :not_accessible} =
+               Conversations.search_entries(
+                 %{"query" => "scope sentinel", "conversation" => id},
+                 c.context
+               )
+    end
+  end
+
+  test "entry search projects settled redacted records and applies filters", c do
+    timestamp = "2026-10-16T10:00:00.000000Z"
+
+    entries = [
+      %{
+        "id" => "search-user",
+        "role" => "user",
+        "run_id" => "search-run",
+        "turn_number" => 1,
+        "content" => "Literal %_ ' / path and Unicode 目标🙂",
+        "updated_at" => timestamp
+      },
+      %{
+        "id" => "search-assistant",
+        "role" => "assistant",
+        "run_id" => "search-run",
+        "turn_number" => 1,
+        "status" => "completed",
+        "content" => "CASE-insensitive evidence",
+        "updated_at" => timestamp
+      },
+      %{
+        "id" => "search-system",
+        "role" => "system",
+        "content_type" => "system_msg",
+        "content" => "system evidence",
+        "updated_at" => timestamp
+      },
+      %{
+        "id" => "search-tool",
+        "role" => "tool",
+        "content_type" => "tool",
+        "run_id" => "search-run",
+        "turn_number" => 1,
+        "tool_name" => "read",
+        "tool_status" => "error",
+        "input" => %{
+          "file_path" => "lib/Search_Path.ex",
+          "api_key" => "secret-only-needle"
+        },
+        "output" => "visible tool evidence Authorization: Bearer output-secret",
+        "tool_error" => "tool failure evidence",
+        "updated_at" => timestamp
+      },
+      %{
+        "id" => "search-running",
+        "role" => "assistant",
+        "status" => "streaming",
+        "content" => "streaming sentinel"
+      },
+      %{
+        "id" => "search-audit",
+        "role" => "system",
+        "message_type" => "internal",
+        "content_type" => "memory_reflection",
+        "content" => "audit sentinel"
+      },
+      %{
+        "id" => "search-arbitrary",
+        "role" => "assistant",
+        "content" => "public text",
+        "unselected_payload" => "arbitrary sentinel"
+      },
+      %{
+        "id" => "search-legacy-error",
+        "role" => "assistant",
+        "content" => "legacy public evidence",
+        "error" => "legacy failure evidence"
+      },
+      %{
+        "id" => "search-failed-status",
+        "role" => "assistant",
+        "status" => "failed",
+        "content" => "failed status evidence"
+      },
+      %{
+        "id" => "search-false-error",
+        "role" => "assistant",
+        "content" => "false error evidence",
+        "error" => false
+      },
+      %{
+        "id" => "search-non-tool-name",
+        "role" => "assistant",
+        "content" => "non-tool tool-name sentinel",
+        "tool_name" => "read"
+      },
+      %{
+        "id" => "search-unicode-fold",
+        "role" => "assistant",
+        "content" => String.duplicate("İ", 120) <> " unicode-fold-anchor"
+      }
+    ]
+
+    for entry <- entries do
+      assert {:ok, _} = ConversationTranscriptStore.append(c.target, entry)
+    end
+
+    assert {:ok, %{matches: [literal]}} =
+             Conversations.search_entries(
+               %{"query" => "%_ ' / path and Unicode 目标🙂", "conversation" => c.target},
+               c.context
+             )
+
+    assert literal.entry_id == "search-user"
+    assert literal.kind == "user"
+    assert literal.run_id == "search-run"
+    assert literal.turn == 1
+    assert literal.sequence > 0
+    assert literal.revision == 1
+    assert String.length(literal.snippet) <= 300
+
+    assert {:ok, %{matches: [%{entry_id: "search-assistant", status: "complete"}]}} =
+             Conversations.search_entries(
+               %{
+                 "query" => "case-INSENSITIVE",
+                 "conversation" => c.target,
+                 "run_id" => "search-run",
+                 "kinds" => ["assistant"]
+               },
+               c.context
+             )
+
+    assert {:ok, %{matches: [tool]}} =
+             Conversations.search_entries(
+               %{
+                 "query" => "tool evidence",
+                 "conversation" => c.target,
+                 "kinds" => ["tool"],
+                 "tool_name" => "read",
+                 "file_path" => "search_path.EX",
+                 "errors_only" => true,
+                 "updated_after" => "2026-10-16T17:59:59+08:00"
+               },
+               c.context
+             )
+
+    assert tool.entry_id == "search-tool"
+    assert tool.kind == "tool"
+    assert tool.status == "error"
+    assert tool.tool_name == "read"
+    assert tool.file_path == "lib/Search_Path.ex"
+    refute Handbean.JSON.encode!(tool) =~ "output-secret"
+
+    assert {:ok, %{matches: [%{entry_id: "search-legacy-error"}]}} =
+             Conversations.search_entries(
+               %{
+                 "query" => "legacy failure evidence",
+                 "conversation" => c.target,
+                 "errors_only" => true
+               },
+               c.context
+             )
+
+    assert {:ok, %{matches: [%{entry_id: "search-failed-status", status: "error"}]}} =
+             Conversations.search_entries(
+               %{
+                 "query" => "failed status evidence",
+                 "conversation" => c.target,
+                 "errors_only" => true
+               },
+               c.context
+             )
+
+    assert {:ok, %{matches: []}} =
+             Conversations.search_entries(
+               %{
+                 "query" => "false error evidence",
+                 "conversation" => c.target,
+                 "errors_only" => true
+               },
+               c.context
+             )
+
+    assert {:ok, %{matches: []}} =
+             Conversations.search_entries(
+               %{
+                 "query" => "non-tool tool-name sentinel",
+                 "conversation" => c.target,
+                 "tool_name" => "read"
+               },
+               c.context
+             )
+
+    assert {:ok, %{matches: [%{entry_id: "search-unicode-fold", snippet: unicode_snippet}]}} =
+             Conversations.search_entries(
+               %{"query" => "unicode-fold-anchor", "conversation" => c.target},
+               c.context
+             )
+
+    assert String.valid?(unicode_snippet)
+    assert unicode_snippet =~ "unicode-fold-anchor"
+
+    for query <- [
+          "secret-only-needle",
+          "streaming sentinel",
+          "audit sentinel",
+          "arbitrary sentinel"
+        ] do
+      assert {:ok, %{matches: []}} =
+               Conversations.search_entries(
+                 %{"query" => query, "conversation" => c.target},
+                 c.context
+               )
+    end
+
+    assert {:ok, %{matches: [%{entry_id: "search-system", kind: "system"}]}} =
+             Conversations.search_entries(
+               %{"query" => "system evidence", "kinds" => ["system"]},
+               c.context
+             )
+
+    assert {:ok, %{matches: []}} =
+             Conversations.search_entries(%{"query" => "no such evidence"}, c.context)
+  end
+
+  test "entry search validates bounds and paginates a revision-bound snapshot", c do
+    timestamp = "2026-10-16T10:00:00.000000Z"
+
+    for i <- 1..3 do
+      assert {:ok, _} =
+               ConversationTranscriptStore.append(c.target, %{
+                 "id" => "page-#{i}",
+                 "role" => "assistant",
+                 "content" => "pagination anchor #{i}",
+                 "created_at" => timestamp,
+                 "updated_at" => timestamp
+               })
+    end
+
+    input = %{
+      "query" => "pagination anchor",
+      "conversation" => c.target,
+      "limit" => 1,
+      "max_chars" => 2_000
+    }
+
+    assert {:ok, %{matches: [first], truncated: true, next_cursor: cursor}} =
+             Conversations.search_entries(input, c.context)
+
+    assert is_binary(cursor)
+
+    assert {:ok, %{matches: [second], next_cursor: second_cursor}} =
+             Conversations.search_entries(Map.put(input, "cursor", cursor), c.context)
+
+    assert first.entry_id != second.entry_id
+
+    assert {:ok, %{matches: [third], truncated: false, next_cursor: nil}} =
+             Conversations.search_entries(Map.put(input, "cursor", second_cursor), c.context)
+
+    assert MapSet.new([first.entry_id, second.entry_id, third.entry_id]) ==
+             MapSet.new(~w(page-1 page-2 page-3))
+
+    assert {:error, :stale_or_invalid_cursor} =
+             Conversations.search_entries(
+               input |> Map.put("kinds", ["assistant"]) |> Map.put("cursor", cursor),
+               c.context
+             )
+
+    assert {:ok, _} =
+             ConversationTranscriptStore.update(c.target, first.entry_id, %{
+               "content" => "pagination anchor edited"
+             })
+
+    assert {:error, :stale_or_invalid_cursor} =
+             Conversations.search_entries(Map.put(input, "cursor", cursor), c.context)
+
+    for invalid <- [
+          %{},
+          %{"query" => " "},
+          %{"query" => "x", "unknown" => true},
+          %{"query" => "x", "errors_only" => "true"},
+          %{"query" => "x", "archived" => "no"},
+          %{"query" => "x", "kinds" => ["assistant", "assistant"]},
+          %{"query" => "x", "limit" => 0},
+          %{"query" => "x", "max_chars" => 1_999},
+          %{"query" => "x", "updated_after" => "not-a-time"},
+          %{"query" => String.duplicate("x", 201)}
+        ] do
+      assert {:error, :invalid_input} = Conversations.search_entries(invalid, c.context)
+    end
+  end
+
+  test "entry search max_chars pagination does not skip or duplicate fitted matches", c do
+    for i <- 1..8 do
+      assert {:ok, _} =
+               ConversationTranscriptStore.append(c.target, %{
+                 "id" => "tight-page-#{i}",
+                 "role" => "assistant",
+                 "run_id" => String.duplicate("r", 256),
+                 "content" => "tight budget anchor #{i} " <> String.duplicate("x", 1_000)
+               })
+    end
+
+    input = %{
+      "query" => "tight budget anchor",
+      "conversation" => c.target,
+      "limit" => 20,
+      "max_chars" => 2_000
+    }
+
+    collect_pages = fn collect_pages, page_input, collected ->
+      assert {:ok, page} = Conversations.search_entries(page_input, c.context)
+      assert String.length(Handbean.JSON.encode!(page)) <= 2_000
+      assert page.matches != []
+      collected = collected ++ Enum.map(page.matches, & &1.entry_id)
+
+      if page.next_cursor do
+        collect_pages.(collect_pages, Map.put(input, "cursor", page.next_cursor), collected)
+      else
+        refute page.truncated
+        collected
+      end
+    end
+
+    ids = collect_pages.(collect_pages, input, [])
+    assert length(ids) == 8
+    assert length(Enum.uniq(ids)) == 8
+    assert MapSet.new(ids) == MapSet.new(Enum.map(1..8, &"tight-page-#{&1}"))
+  end
+
+  test "entry search reports the documented SQL candidate guard", c do
+    now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+
+    rows =
+      Enum.map(1..5_001, fn sequence ->
+        %{
+          conversation_id: c.target,
+          entry_id: "guard-#{sequence}",
+          sequence: sequence,
+          revision: 1,
+          role: "assistant",
+          content: "guard-candidate",
+          payload: %{},
+          created_at: now,
+          updated_at: now
+        }
+      end)
+
+    rows
+    |> Enum.chunk_every(100)
+    |> Enum.each(&Handbean.Repo.insert_all(Handbean.Storage.ConversationEntry, &1))
+
+    assert {:error, :search_too_broad} =
+             Conversations.search_entries(
+               %{"query" => "guard-candidate", "conversation" => c.target},
+               c.context
+             )
+  end
+
   test "trajectory exposes durable runs, turns and bounded redacted records", c do
     opts = [run_id: "trajectory-run", model: "provider/model"]
 
