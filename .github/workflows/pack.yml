@@ -77,15 +77,12 @@ jobs:
           echo "Package commit: $commit; release tag: ${tag:-none}"
 
   checks:
-    name: Quality gate
+    name: Release metadata
     needs: target
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
-      actions: write
-      contents: write
-    outputs:
-      release_build: ${{ steps.release_tag.outputs.release_build }}
+      contents: read
 
     steps:
       - uses: actions/checkout@v5
@@ -101,134 +98,6 @@ jobs:
           if [[ -n "$RELEASE_TAG" ]]; then
             bash scripts/version.sh check-tag "$RELEASE_TAG"
           fi
-
-      - name: Build tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends build-essential pkg-config patchelf bubblewrap inotify-tools apparmor
-
-      - name: Permit Bubblewrap user namespaces on the CI runner
-        run: |
-          # Keep Ubuntu's system-wide restriction; permit only this sandbox binary.
-          sudo tee /etc/apparmor.d/handbean-ci-bwrap >/dev/null <<'EOF'
-          abi <abi/4.0>,
-          profile handbean-ci-bwrap /usr/bin/bwrap flags=(unconfined) {
-            userns,
-          }
-          EOF
-          sudo apparmor_parser -r /etc/apparmor.d/handbean-ci-bwrap
-          bwrap --unshare-user --uid 0 --gid 0 --ro-bind / / -- /usr/bin/true
-
-      - uses: goto-bus-stop/setup-zig@v2
-        with:
-          version: "0.16.0"
-
-      - uses: erlef/setup-beam@v1
-        with:
-          otp-version: "29.0"
-          elixir-version: "1.20.2"
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "24"
-          cache: npm
-
-      - uses: actions/cache@v6
-        with:
-          path: |
-            deps
-            _build
-            ~/.mix
-            ~/.hex
-          key: pack-checks-${{ runner.os }}-${{ hashFiles('mix.lock') }}
-          restore-keys: |
-            pack-checks-${{ runner.os }}-
-
-      - name: Dependencies
-        run: |
-          # MixToolchain.sync_to! tests the version pinned for mobile packaging.
-          mix local.hex 2.4.1 --force
-          mix local.rebar --force
-          mix deps.get
-
-      - name: Frontend build tools
-        env:
-          MIX_ENV: test
-        run: mix assets.setup
-
-      - name: Compile without warnings
-        env:
-          MIX_ENV: test
-        run: mix compile --warnings-as-errors
-
-      - name: Static review of this update
-        run: bash scripts/ci/review_static.sh
-
-      - name: Test database
-        run: mix ecto.create --quiet && mix ecto.migrate --quiet
-
-      - name: Default ExUnit suite
-        continue-on-error: true
-        run: mix test
-
-      - name: Slow tests
-        continue-on-error: true
-        run: mix test --include slow --only slow
-
-      - name: FakeProvider Agent end-to-end path
-        continue-on-error: true
-        run: mix test --include e2e test/handbean/e2e/fake_provider_e2e_test.exs
-
-      - name: Web feature paths
-        continue-on-error: true
-        run: mix test --include e2e test/feature
-
-      - name: Tag and dispatch release when version or build changed
-        id: release_tag
-        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/dev'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          before="${{ github.event.before }}"
-          if [[ "$before" =~ ^0+$ ]]; then
-            echo "New branch history; not tagging."
-            exit 0
-          fi
-          git fetch --depth=1 origin "$before" || {
-            echo "Previous commit is unavailable; not tagging."
-            exit 0
-          }
-          current="$(bash scripts/version.sh version)"
-          build="$(bash scripts/version.sh build)"
-          previous="$(git show "$before:version.properties")"
-          previous_version="$(printf '%s\n' "$previous" | awk -F= 'NF == 2 && $1 == "version" {sub(/\r$/, "", $2); print $2}')"
-          previous_build="$(printf '%s\n' "$previous" | awk -F= 'NF == 2 && $1 == "build" {sub(/\r$/, "", $2); print $2}')"
-          tag="v$current"
-          if [[ "$current" == "$previous_version" && "$build" == "$previous_build" ]]; then
-            if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
-              if gh release view "$tag" >/dev/null 2>&1; then
-                echo "version.properties unchanged ($current build $build); $tag release already exists."
-                exit 0
-              fi
-              echo "version.properties unchanged and $tag exists, but its release is missing; retrying the release build."
-              gh workflow run pack.yml --ref dev -f publish_release=true -f release_tag="$tag"
-              echo "release_build=dispatched" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-            echo "version.properties unchanged, but $tag is missing; retrying tag creation."
-          fi
-          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
-            echo "Tag $tag already exists."
-            exit 1
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$tag" -m "Handbean $current"
-          git push origin "refs/tags/$tag"
-          gh workflow run pack.yml --ref dev -f publish_release=true -f release_tag="$tag"
-          echo "release_build=dispatched" >> "$GITHUB_OUTPUT"
-          echo "Tagged $tag (was $previous_version build $previous_build)."
 
   web:
     name: ${{ matrix.label }}
@@ -359,19 +228,84 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  release:
+    name: Tag release after Web packages succeed
+    needs: [target, checks, web]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: write
+    outputs:
+      release_build: ${{ steps.release_tag.outputs.release_build }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.target.outputs.commit }}
+          fetch-depth: 0
+
+      - name: Tag and dispatch release when version or build changed
+        id: release_tag
+        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          before="${{ github.event.before }}"
+          if [[ "$before" =~ ^0+$ ]]; then
+            echo "New branch history; not tagging."
+            exit 0
+          fi
+          git fetch --depth=1 origin "$before" || {
+            echo "Previous commit is unavailable; not tagging."
+            exit 0
+          }
+          current="$(bash scripts/version.sh version)"
+          build="$(bash scripts/version.sh build)"
+          previous="$(git show "$before:version.properties")"
+          previous_version="$(printf '%s\n' "$previous" | awk -F= 'NF == 2 && $1 == "version" {sub(/\r$/, "", $2); print $2}')"
+          previous_build="$(printf '%s\n' "$previous" | awk -F= 'NF == 2 && $1 == "build" {sub(/\r$/, "", $2); print $2}')"
+          tag="v$current"
+          if [[ "$current" == "$previous_version" && "$build" == "$previous_build" ]]; then
+            if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+              if gh release view "$tag" >/dev/null 2>&1; then
+                echo "version.properties unchanged ($current build $build); $tag release already exists."
+                exit 0
+              fi
+              echo "version.properties unchanged and $tag exists, but its release is missing; retrying the release build."
+              gh workflow run pack.yml --ref dev -f publish_release=true -f release_tag="$tag"
+              echo "release_build=dispatched" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "version.properties unchanged, but $tag is missing; retrying tag creation."
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+            echo "Tag $tag already exists."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "Handbean $current"
+          git push origin "refs/tags/$tag"
+          gh workflow run pack.yml --ref dev -f publish_release=true -f release_tag="$tag"
+          echo "release_build=dispatched" >> "$GITHUB_OUTPUT"
+          echo "Tagged $tag (was $previous_version build $previous_build)."
+
   publish-web:
     name: Publish release
-    needs: [target, checks, web, android, ios]
+    needs: [target, checks, web, release, android, ios]
     if: >-
       always() &&
       needs.target.result == 'success' &&
       needs.checks.result == 'success' &&
       needs.web.result == 'success' &&
+      needs.release.result == 'success' &&
       (needs.android.result == 'success' || needs.android.result == 'failure' ||
        needs.android.result == 'skipped') &&
       (needs.ios.result == 'success' || needs.ios.result == 'failure' ||
        needs.ios.result == 'skipped') &&
-      needs.checks.outputs.release_build != 'dispatched' &&
+      needs.release.outputs.release_build != 'dispatched' &&
       ((github.event_name == 'workflow_dispatch' && inputs.publish_release) ||
        (github.event_name == 'push' &&
         (github.ref == 'refs/heads/dev' ||
