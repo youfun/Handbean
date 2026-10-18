@@ -792,16 +792,14 @@ defmodule HandbeanWeb.WorkspaceLive.OverlayComponents do
           class="inline-flex items-center gap-1 whitespace-nowrap tabular-nums"
           title={"MCP servers: #{@mcp_count}"}
         >
-          <span>MCP</span>
-          <span>{@mcp_count}</span>
+          <span>MCP&nbsp;</span><span>{@mcp_count}</span>
         </span>
         <span
           id="status-skills-count"
           class="inline-flex items-center gap-1 whitespace-nowrap tabular-nums"
           title={"Skills: #{@skills_count}"}
         >
-          <span>Skills</span>
-          <span>{@skills_count}</span>
+          <span>Skills&nbsp;</span><span>{@skills_count}</span>
         </span>
       </div>
       <div class="flex items-center space-x-4">
