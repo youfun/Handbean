@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md)
 
-本地 AI 编程与 Agent 助手。对话交互、工具调度与长期记忆全部保留在本机。LiveView Web 界面与移动端（Android / iOS）共享同一套 Elixir/OTP 运行时。
+本地 AI 编程与 Agent 助手。对话交互、工具调度与长期记忆全部保留在本机。LiveView Web 界面与移动端（Android / iOS）共享同一套 Elixir/OTP 运行时。本项目曾用名为 **Handbeam**。
 
 - **工作区操作**：读写与编辑文件、执行 Shell 命令、基于模糊匹配快速搜文件、基于符号检索精确定位代码位置
 - **权限管控**：细粒度工作区权限管理，支持自动执行（auto）、人工审批（prompt）与拒绝（deny）

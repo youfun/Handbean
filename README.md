@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文](README.zh.md)
 
-A local agent assistant for autonomous coding. Conversations, tool execution, and long-term memory stay entirely on your machine. The Phoenix LiveView Web UI and native mobile clients (Android and iOS) share the exact same Elixir/OTP runtime core.
+A local agent assistant for autonomous coding. Conversations, tool execution, and long-term memory stay entirely on your machine. The Phoenix LiveView Web UI and native mobile clients (Android and iOS) share the exact same Elixir/OTP runtime core. The project was formerly named **Handbeam**.
 
 - **Workspace control**: Read, edit, and write files, run a shell, fuzzy-search filenames, and locate code positions by symbol or embeddings
 - **Granular permissions**: Fine-grained workspace permission policies (auto, prompt, or deny)
