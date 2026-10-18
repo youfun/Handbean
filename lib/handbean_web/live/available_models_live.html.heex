@@ -1,0 +1,827 @@
+<!-- Available Models Settings Page — three-column layout -->
+<div class={[
+  "flex flex-col bg-main text-primary",
+  if(@embedded, do: "h-full", else: "h-screen")
+]}>
+  <!-- Toast Notification -->
+  <div
+    :if={@toast}
+    id={"toast-#{@toast.id}"}
+    class={"toast-notification #{if @toast.type == :error, do: "toast-error", else: ""}"}
+  >
+    <span :if={@toast.type == :success} class="flex-shrink-0 font-bold">✓</span>
+    <span :if={@toast.type == :error} class="flex-shrink-0 font-bold font-mono">⚠</span>
+    <span>{@toast.message}</span>
+  </div>
+  <!-- Top bar with back link (hidden when embedded in SettingsLive) -->
+  <div
+    :if={!@embedded}
+    class="settings-topbar h-9 border-b bg-surface flex items-center px-3 flex-shrink-0"
+  >
+    <a
+      href="/"
+      class="text-xs text-tertiary hover:text-primary transition-colors flex items-center gap-1.5"
+      data-phx-link="redirect"
+    >
+      <span>←</span>
+      <span>{gettext("返回工作台")}</span>
+    </a>
+    <span class="text-xs text-tertiary ml-3">/</span>
+    <span class="text-xs font-medium text-primary ml-3">{gettext("设置 / 可用模型")}</span>
+  </div>
+
+  <!-- Main content: two columns (provider list + detail) -->
+  <div class={[
+    "flex flex-1 overflow-hidden settings-available-layout",
+    if(@selected_provider, do: "has-selection", else: "")
+  ]}>
+    <!-- Left: Provider List (260px) -->
+    <div class="settings-provider-sidebar flex-shrink-0 border-r flex flex-col bg-main">
+      <div class="settings-section-header">
+        <div class="settings-section-label-row">
+          <h3 class="settings-section-label">{gettext("供应商")}</h3>
+          <span class="settings-section-count">{length(@providers)}</span>
+        </div>
+        <div class="settings-provider-actions">
+          <button
+            phx-click="open_subscription_login"
+            class="settings-btn"
+            title={gettext("Sign in with a subscription")}
+          >
+            {gettext("订阅登录")}
+          </button>
+          <button
+            phx-click="open_add_provider"
+            class="settings-btn settings-btn-accent"
+          >
+            {gettext("+ 添加供应商")}
+          </button>
+        </div>
+      </div>
+      <div class="settings-provider-list flex-1 overflow-y-auto">
+        <div :if={@providers == []} class="settings-provider-empty">
+          <p>{gettext("尚无供应商配置")}</p>
+          <p class="settings-provider-empty-hint">{gettext("点击上方按钮添加")}</p>
+        </div>
+        <button
+          :for={provider <- @providers}
+          phx-click="select_provider"
+          phx-value-id={provider.id}
+          class={[
+            "settings-provider-item",
+            if(@selected_provider_id == provider.id,
+              do: "settings-provider-item-active",
+              else: ""
+            )
+          ]}
+        >
+          <span class="settings-provider-marker" aria-hidden="true"></span>
+          <span class="settings-provider-copy">
+            <span class="settings-provider-title">
+              <span class="settings-provider-name">{provider.name}</span>
+              <span
+                :if={provider.is_default}
+                class="settings-provider-badge"
+              >
+                {gettext("默认")}
+              </span>
+            </span>
+            <span class="settings-provider-id">{provider.id}</span>
+          </span>
+          <span class="settings-provider-chevron" aria-hidden="true">›</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Right: Detail Panel (flex-1) -->
+    <div class="flex-1 overflow-y-auto bg-main">
+      <%= if @selected_provider do %>
+        <!-- Provider Detail Section -->
+        <div class="settings-detail-section border-b">
+          <button
+            type="button"
+            phx-click="clear_provider"
+            class="settings-mobile-back"
+          >
+            ← {gettext("供应商")}
+          </button>
+          <h3 class="settings-detail-heading">{gettext("供应商详情")}</h3>
+          <div class="settings-detail-grid">
+            <div class="settings-detail-row">
+              <span class="settings-detail-label">Provider ID</span>
+              <span class="settings-detail-value font-mono">{@selected_provider.id}</span>
+            </div>
+            <div class="settings-detail-row">
+              <span class="settings-detail-label">{gettext("名称")}</span>
+              <span class="settings-detail-value">{@selected_provider.name}</span>
+            </div>
+            <div class="settings-detail-row">
+              <span class="settings-detail-label">{gettext("API 类型")}</span>
+              <span class="settings-detail-value font-mono text-[11px]">
+                {@selected_provider.api}
+              </span>
+            </div>
+            <div class="settings-detail-row">
+              <span class="settings-detail-label">Base URL</span>
+              <span
+                class="settings-detail-value font-mono truncate"
+                title={@selected_provider.base_url}
+              >
+                {@selected_provider.base_url}
+              </span>
+            </div>
+            <div class="settings-detail-row">
+              <span class="settings-detail-label">API Key</span>
+              <span class="settings-detail-value font-mono">
+                {if(@selected_provider.auth_type == "oauth",
+                  do: gettext("OAuth（凭证不在此显示）"),
+                  else: obscured_api_key(@selected_provider.api_key)
+                )}
+              </span>
+            </div>
+            <p
+              :if={@selected_provider.id == "cursor"}
+              class="text-[11px] text-tertiary mt-2"
+            >
+              {gettext("非官方 Cursor 协议接入。费用未知，不会显示为 0 或免费。原生手机 OAuth 入口尚未验证。")}
+            </p>
+            <div class="settings-detail-row">
+              <span class="settings-detail-label">{gettext("默认供应商")}</span>
+              <label class="settings-toggle">
+                <input
+                  type="checkbox"
+                  checked={@selected_provider.is_default}
+                  disabled={@selected_provider.is_default}
+                  phx-click={unless(@selected_provider.is_default, do: "toggle_default_provider")}
+                  phx-value-id={@selected_provider.id}
+                  phx-value-value="true"
+                />
+                <span class="settings-toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+          <div class="settings-detail-actions">
+            <button
+              :if={@selected_provider.id == "openai_codex"}
+              phx-click="refresh_codex_models"
+              disabled={not is_nil(@codex_discover_attempt)}
+              class="settings-btn"
+            >
+              {gettext("刷新订阅模型")}
+            </button>
+            <button
+              :if={@selected_provider.id == "cursor"}
+              phx-click="refresh_cursor_models"
+              disabled={not is_nil(@cursor_discover_attempt)}
+              class="settings-btn"
+            >
+              {gettext("刷新 Cursor 模型")}
+            </button>
+            <button
+              :if={@selected_provider.fetchable}
+              phx-click="refresh_provider_models"
+              disabled={not is_nil(@catalog_discover_attempt)}
+              class="settings-btn"
+            >
+              {gettext("拉取模型")}
+            </button>
+            <button
+              phx-click="open_edit_provider"
+              phx-value-id={@selected_provider.id}
+              class="settings-btn"
+            >
+              {gettext("编辑")}
+            </button>
+            <button
+              :if={length(@providers) > 1}
+              phx-click="confirm_delete_provider"
+              class="settings-btn settings-btn-danger"
+            >
+              {gettext("删除供应商")}
+            </button>
+            <span :if={length(@providers) == 1} class="text-[10px] text-tertiary">
+              {gettext("至少需要一个供应商")}
+            </span>
+          </div>
+        </div>
+
+        <!-- Models Section -->
+        <div class="settings-detail-section">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="settings-detail-heading !mb-0">{gettext("模型")}</h3>
+            <div class="flex items-center gap-2">
+              <button
+                :if={Enum.any?(@selected_provider.models, & &1.enabled)}
+                type="button"
+                phx-click="disable_all_models"
+                class="settings-btn"
+              >
+                {gettext("全部关闭")}
+              </button>
+              <button phx-click="open_add_model" class="settings-btn settings-btn-accent">
+                {gettext("+ 添加模型")}
+              </button>
+            </div>
+          </div>
+
+          <%= if @selected_provider.models == [] do %>
+            <div class="text-center py-8 text-xs text-tertiary">
+              <p>{gettext("此供应商下尚无模型")}</p>
+            </div>
+          <% else %>
+            <table class="settings-model-table">
+              <thead>
+                <tr>
+                  <th>{gettext("启用")}</th>
+                  <th>{gettext("模型 ID")}</th>
+                  <th>{gettext("名称")}</th>
+                  <th>{gettext("类型")}</th>
+                  <th>{gettext("推理")}</th>
+                  <th>{gettext("上下文")}</th>
+                  <th>{gettext("价格")}</th>
+                  <th class="w-8"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  :for={model <- @selected_provider.models}
+                  class={unless model.enabled, do: "is-disabled"}
+                >
+                  <td data-label={gettext("启用")}>
+                    <label class="settings-toggle" title={gettext("启用后出现在模型选择中")}>
+                      <input
+                        type="checkbox"
+                        checked={model.enabled}
+                        phx-click="toggle_model_enabled"
+                        phx-value-id={model.id}
+                      />
+                      <span class="settings-toggle-slider"></span>
+                    </label>
+                  </td>
+                  <td
+                    data-label={gettext("模型 ID")}
+                    class="font-mono text-[11px] text-tertiary"
+                  >
+                    {model.id}
+                  </td>
+                  <td data-label={gettext("名称")} class="font-medium">{model.name}</td>
+                  <td data-label={gettext("类型")}>
+                    <span class="settings-badge">{model.type}</span>
+                  </td>
+                  <td data-label={gettext("推理")}>
+                    <span :if={model.reasoning} class="settings-badge">
+                      {Enum.map_join(
+                        reasoning_levels_for(@selected_provider.id, model),
+                        " / ",
+                        &reasoning_level_label/1
+                      )}
+                    </span>
+                    <span :if={!model.reasoning} class="text-tertiary">—</span>
+                  </td>
+                  <td data-label={gettext("上下文")}>
+                    <span :if={model.context_window} class="text-tertiary tabular-nums">
+                      {format_context(model.context_window)}
+                    </span>
+                    <span :if={!model.context_window} class="text-tertiary">—</span>
+                  </td>
+                  <td data-label={gettext("价格")} class="text-tertiary">
+                    {format_price(model.cost)}
+                  </td>
+                  <td class="settings-model-delete-cell">
+                    <button
+                      phx-click="confirm_delete_model"
+                      phx-value-id={model.id}
+                      class="settings-model-delete"
+                      title={gettext("删除模型")}
+                    >
+                      ✕
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          <% end %>
+        </div>
+      <% else %>
+        <div class="flex items-center justify-center h-full text-xs text-tertiary">
+          <div class="text-center">
+            <div class="text-2xl mb-2">📋</div>
+            <p>{gettext("选择左侧供应商查看详情")}</p>
+          </div>
+        </div>
+      <% end %>
+
+      <!-- Error banner -->
+      <div
+        :if={
+          @form_error && !@show_add_provider && !@show_edit_provider && !@show_add_model &&
+            !@show_subscription_login && !@subscription_oauth
+        }
+        class="mx-4 mt-3 p-2.5 rounded-lg text-xs text-error bg-error-subtle flex items-start gap-2"
+      >
+        <span class="flex-shrink-0 mt-0.5">⚠</span>
+        <span class="flex-1">{@form_error}</span>
+        <button phx-click="clear_error" class="flex-shrink-0 text-tertiary hover:text-primary">
+          ✕
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Add Provider Overlay ── -->
+<div :if={@show_add_provider} class="settings-overlay">
+  <div class="settings-dialog" phx-click-away="close_add_provider">
+    <h2 class="settings-dialog-title">{gettext("添加供应商")}</h2>
+    <div
+      :if={@form_error}
+      class="mb-4 p-2.5 rounded-lg text-xs text-error bg-error-subtle flex items-start gap-2"
+    >
+      <span class="flex-shrink-0 mt-0.5">⚠</span>
+      <span class="flex-1">{@form_error}</span>
+      <button
+        phx-click="clear_error"
+        type="button"
+        class="flex-shrink-0 text-tertiary hover:text-primary"
+      >
+        ✕
+      </button>
+    </div>
+    <form id="add-provider-form" phx-change="update_add_provider" phx-submit="submit_add_provider">
+      <input
+        type="hidden"
+        name="add_provider[provider_runtime]"
+        value={@add_provider_form["provider_runtime"]}
+      />
+
+      <div class="settings-form-group">
+        <label class="settings-form-label">{gettext("供应商名称")}</label>
+        <input
+          type="text"
+          name="add_provider[name]"
+          value={@add_provider_form["name"]}
+          placeholder={gettext("例如 StepFun")}
+          class="settings-input"
+        />
+      </div>
+
+      <div class="settings-form-group">
+        <label class="settings-form-label">Provider ID</label>
+        <input
+          type="text"
+          name="add_provider[id]"
+          value={@add_provider_form["id"]}
+          placeholder="stepfun"
+          class="settings-input font-mono"
+        />
+        <span class="settings-form-hint">{gettext("短横线命名，创建后不可修改。留空则根据名称自动生成。")}</span>
+      </div>
+
+      <div class="settings-form-group">
+        <label class="settings-form-label">{gettext("API 类型")}</label>
+        <select
+          name="add_provider[api]"
+          value={@add_provider_form["api"]}
+          class="settings-input"
+        >
+          <option value="openai" selected={@add_provider_form["api"] == "openai"}>OpenAI</option>
+          <option
+            value="openai-chat-completions"
+            selected={@add_provider_form["api"] == "openai-chat-completions"}
+          >
+            OpenAI Chat Completions
+          </option>
+          <option
+            value="openai-responses"
+            selected={@add_provider_form["api"] == "openai-responses"}
+          >
+            OpenAI Responses
+          </option>
+          <option
+            value="anthropic-messages"
+            selected={@add_provider_form["api"] == "anthropic-messages"}
+          >
+            Anthropic Messages
+          </option>
+          <option
+            value="stepfun-step-plan"
+            selected={@add_provider_form["api"] == "stepfun-step-plan"}
+          >
+            StepFun Step Plan
+          </option>
+          <option value="ollama-cloud" selected={@add_provider_form["api"] == "ollama-cloud"}>
+            Ollama Cloud
+          </option>
+          <option value="opencode-go" selected={@add_provider_form["api"] == "opencode-go"}>
+            OpenCode Go
+          </option>
+          <option
+            value="openai-compatible"
+            selected={@add_provider_form["api"] == "openai-compatible"}
+          >
+            OpenAI Compatible
+          </option>
+          <option value="custom" selected={@add_provider_form["api"] == "custom"}>Custom</option>
+        </select>
+      </div>
+
+      <div class="settings-form-group">
+        <label class="settings-form-label">Base URL</label>
+        <input
+          type="text"
+          name="add_provider[base_url]"
+          value={@add_provider_form["base_url"]}
+          placeholder="https://api.stepfun.com/step_plan/v1"
+          class="settings-input font-mono"
+        />
+      </div>
+
+      <div class="settings-form-group">
+        <label class="settings-form-label">API Key</label>
+        <input
+          type="text"
+          name="add_provider[api_key]"
+          value={@add_provider_form["api_key"]}
+          placeholder="sk-..."
+          class="settings-input font-mono"
+        />
+      </div>
+
+      <div class="settings-dialog-actions">
+        <button type="button" phx-click="close_add_provider" class="settings-btn">
+          {gettext("取消")}
+        </button>
+        <button type="submit" class="settings-btn settings-btn-primary">{gettext("添加")}</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ── Edit Provider Overlay ── -->
+<div :if={@show_edit_provider} class="settings-overlay">
+  <div class="settings-dialog" phx-click-away="close_edit_provider">
+    <h2 class="settings-dialog-title">{gettext("编辑供应商")}</h2>
+    <div
+      :if={@form_error}
+      class="mb-4 p-2.5 rounded-lg text-xs text-error bg-error-subtle flex items-start gap-2"
+    >
+      <span class="flex-shrink-0 mt-0.5">⚠</span>
+      <span class="flex-1">{@form_error}</span>
+      <button
+        phx-click="clear_error"
+        type="button"
+        class="flex-shrink-0 text-tertiary hover:text-primary"
+      >
+        ✕
+      </button>
+    </div>
+    <form
+      id="edit-provider-form"
+      phx-change="update_edit_provider"
+      phx-submit="submit_edit_provider"
+    >
+      <div class="settings-form-group">
+        <label class="settings-form-label">{gettext("名称")}</label>
+        <input
+          type="text"
+          name="edit_provider[name]"
+          value={@edit_provider_form["name"]}
+          class="settings-input"
+        />
+      </div>
+
+      <div class="settings-form-group">
+        <label class="settings-form-label">{gettext("API 类型")}</label>
+        <select
+          name="edit_provider[api]"
+          value={@edit_provider_form["api"]}
+          class="settings-input"
+        >
+          <option value="openai" selected={@edit_provider_form["api"] == "openai"}>OpenAI</option>
+          <option
+            value="openai-chat-completions"
+            selected={@edit_provider_form["api"] == "openai-chat-completions"}
+          >
+            OpenAI Chat Completions
+          </option>
+          <option
+            value="openai-responses"
+            selected={@edit_provider_form["api"] == "openai-responses"}
+          >
+            OpenAI Responses
+          </option>
+          <option
+            value="anthropic-messages"
+            selected={@edit_provider_form["api"] == "anthropic-messages"}
+          >
+            Anthropic Messages
+          </option>
+          <option
+            value="stepfun-step-plan"
+            selected={@edit_provider_form["api"] == "stepfun-step-plan"}
+          >
+            StepFun Step Plan
+          </option>
+          <option value="ollama-cloud" selected={@edit_provider_form["api"] == "ollama-cloud"}>
+            Ollama Cloud
+          </option>
+          <option value="opencode-go" selected={@edit_provider_form["api"] == "opencode-go"}>
+            OpenCode Go
+          </option>
+          <option
+            value="openai-compatible"
+            selected={@edit_provider_form["api"] == "openai-compatible"}
+          >
+            OpenAI Compatible
+          </option>
+          <option value="custom" selected={@edit_provider_form["api"] == "custom"}>Custom</option>
+        </select>
+      </div>
+
+      <div class="settings-form-group">
+        <label class="settings-form-label">Base URL</label>
+        <input
+          type="text"
+          name="edit_provider[base_url]"
+          value={@edit_provider_form["base_url"]}
+          class="settings-input font-mono"
+        />
+      </div>
+
+      <div class="settings-form-group">
+        <label class="settings-form-label">API Key</label>
+        <input
+          type="text"
+          name="edit_provider[api_key]"
+          value={@edit_provider_form["api_key"]}
+          placeholder="sk-..."
+          class="settings-input font-mono"
+        />
+      </div>
+
+      <div class="settings-dialog-actions">
+        <button type="button" phx-click="close_edit_provider" class="settings-btn">
+          {gettext("取消")}
+        </button>
+        <button type="submit" class="settings-btn settings-btn-primary">{gettext("保存")}</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ── Add Model Overlay ── -->
+<div :if={@show_add_model} class="settings-overlay">
+  <div class="settings-dialog" phx-click-away="close_add_model">
+    <h2 class="settings-dialog-title">{gettext("添加模型")}</h2>
+    <div
+      :if={@form_error}
+      class="mb-4 p-2.5 rounded-lg text-xs text-error bg-error-subtle flex items-start gap-2"
+    >
+      <span class="flex-shrink-0 mt-0.5">⚠</span>
+      <span class="flex-1">{@form_error}</span>
+      <button
+        phx-click="clear_error"
+        type="button"
+        class="flex-shrink-0 text-tertiary hover:text-primary"
+      >
+        ✕
+      </button>
+    </div>
+    <form id="add-model-form" phx-change="update_add_model" phx-submit="submit_add_model">
+      <div class="settings-form-group">
+        <label class="settings-form-label">{gettext("模型 ID")}</label>
+        <input
+          type="text"
+          name="add_model[id]"
+          value={@add_model_form["id"]}
+          placeholder="gpt-4o"
+          class="settings-input font-mono"
+        />
+      </div>
+
+      <div class="settings-form-group">
+        <label class="settings-form-label">{gettext("显示名称")}</label>
+        <input
+          type="text"
+          name="add_model[name]"
+          value={@add_model_form["name"]}
+          placeholder="GPT-4o"
+          class="settings-input"
+        />
+      </div>
+
+      <div class="settings-form-group">
+        <label class="settings-form-label">{gettext("类型")}</label>
+        <select
+          name="add_model[type]"
+          value={@add_model_form["type"]}
+          class="settings-input"
+        >
+          <option value="text">text</option>
+          <option value="image">image</option>
+          <option value="audio">audio</option>
+        </select>
+      </div>
+
+      <div class="settings-form-row">
+        <div class="settings-form-group flex-1">
+          <label class="settings-form-label">{gettext("上下文窗口")}</label>
+          <input
+            type="text"
+            name="add_model[context_window]"
+            value={@add_model_form["context_window"]}
+            placeholder="128000"
+            class="settings-input"
+          />
+        </div>
+        <div class="settings-form-group flex-1">
+          <label class="settings-form-label">{gettext("最大输出")}</label>
+          <input
+            type="text"
+            name="add_model[max_tokens]"
+            value={@add_model_form["max_tokens"]}
+            placeholder="8192"
+            class="settings-input"
+          />
+        </div>
+      </div>
+
+      <div class="settings-form-row">
+        <div class="settings-form-group flex-1">
+          <label class="settings-form-label">{gettext("输入价格")}</label>
+          <input
+            type="text"
+            name="add_model[price_input]"
+            value={@add_model_form["price_input"]}
+            placeholder="0.15"
+            class="settings-input"
+          />
+        </div>
+        <div class="settings-form-group flex-1">
+          <label class="settings-form-label">{gettext("输出价格")}</label>
+          <input
+            type="text"
+            name="add_model[price_output]"
+            value={@add_model_form["price_output"]}
+            placeholder="0.6"
+            class="settings-input"
+          />
+        </div>
+      </div>
+
+      <div class="settings-form-row">
+        <div class="settings-form-group flex-1">
+          <label class="settings-form-label">{gettext("缓存读价格")}</label>
+          <input
+            type="text"
+            name="add_model[price_cache_read]"
+            value={@add_model_form["price_cache_read"]}
+            placeholder={gettext("可选")}
+            class="settings-input"
+          />
+        </div>
+        <div class="settings-form-group flex-1">
+          <label class="settings-form-label">{gettext("缓存写价格")}</label>
+          <input
+            type="text"
+            name="add_model[price_cache_write]"
+            value={@add_model_form["price_cache_write"]}
+            placeholder={gettext("可选")}
+            class="settings-input"
+          />
+        </div>
+      </div>
+
+      <div class="settings-form-group">
+        <label class="settings-form-label">{gettext("Reasoning 价格")}</label>
+        <input
+          type="text"
+          name="add_model[price_reasoning]"
+          value={@add_model_form["price_reasoning"]}
+          placeholder={gettext("可选")}
+          class="settings-input"
+        />
+      </div>
+
+      <div class="settings-form-group">
+        <label class="settings-form-label">{gettext("支持推理")}</label>
+        <select
+          name="add_model[reasoning]"
+          value={@add_model_form["reasoning"]}
+          class="settings-input"
+        >
+          <option value="false">{gettext("不支持")}</option>
+          <option value="true">{gettext("支持，可选择推理等级")}</option>
+        </select>
+      </div>
+
+      <div :if={@add_model_form["reasoning"] == "true"} class="settings-form-group">
+        <label class="settings-form-label">{gettext("推理等级")}</label>
+        <input type="hidden" name="add_model[reasoning_levels]" value="" />
+        <div class="flex flex-wrap gap-2">
+          <label
+            :for={
+              level <-
+                configurable_reasoning_levels(
+                  Map.put(@add_model_form, "provider_id", @selected_provider.id)
+                )
+            }
+            class="settings-badge"
+          >
+            <input
+              type="checkbox"
+              name="add_model[reasoning_levels][]"
+              value={level}
+              checked={reasoning_level_checked?(@add_model_form, level)}
+            />
+            {reasoning_level_label(level)}
+          </label>
+        </div>
+      </div>
+
+      <div class="settings-dialog-actions">
+        <button type="button" phx-click="close_add_model" class="settings-btn">
+          {gettext("取消")}
+        </button>
+        <button type="submit" class="settings-btn settings-btn-primary">{gettext("添加")}</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ── Subscription login selector ── -->
+<div :if={@show_subscription_login} class="settings-overlay">
+  <div class="settings-dialog settings-dialog-sm">
+    <h2 class="settings-dialog-title">{gettext("Select provider to configure")}</h2>
+    <p class="text-xs text-secondary mb-3">
+      {gettext("选择一个订阅登录方式。订阅额度与 API 余额分开使用。")}
+    </p>
+    <div class="flex flex-col gap-2 mb-4">
+      <button
+        :for={method <- @subscription_methods}
+        type="button"
+        phx-click="start_subscription_oauth"
+        phx-value-id={method.id}
+        class="settings-btn w-full text-left"
+      >
+        {method.login_label}
+        <span class="text-[10px] text-tertiary ml-2">{gettext("[subscription]")}</span>
+      </button>
+    </div>
+    <div class="settings-dialog-actions">
+      <button phx-click="close_subscription_login" class="settings-btn">{gettext("取消")}</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Subscription OAuth Overlay ── -->
+<div :if={@subscription_oauth} class="settings-overlay">
+  <div class="settings-dialog settings-dialog-oauth">
+    <h2 class="settings-dialog-title">
+      {@subscription_oauth.login_label}
+    </h2>
+    <p class="text-xs text-secondary mb-3">
+      {@subscription_oauth.hint}
+    </p>
+    <div class="settings-detail-grid mb-4">
+      <div :if={@subscription_oauth.device[:user_code]} class="settings-detail-row">
+        <span class="settings-detail-label">{gettext("用户码")}</span>
+        <span class="settings-detail-value font-mono text-lg tracking-widest">
+          {@subscription_oauth.device.user_code}
+        </span>
+      </div>
+      <div class="settings-detail-row settings-detail-row-oauth">
+        <span class="settings-detail-label">{gettext("验证地址")}</span>
+        <a
+          href={@subscription_oauth.verification_uri}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={@subscription_oauth.verification_uri}
+          class="settings-detail-value settings-oauth-link font-mono text-accent"
+        >
+          {@subscription_oauth.verification_uri}
+        </a>
+      </div>
+    </div>
+    <p class="text-[11px] text-tertiary mb-4">{gettext("Waiting for authentication...")}</p>
+    <div class="settings-dialog-actions">
+      <button phx-click="cancel_subscription_oauth" class="settings-btn">{gettext("取消")}</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Delete Confirm Overlay ── -->
+<div :if={@show_delete_confirm} class="settings-overlay">
+  <div class="settings-dialog settings-dialog-sm" phx-click-away="close_delete_confirm">
+    <h2 class="settings-dialog-title">{delete_confirm_title(@delete_target)}</h2>
+    <p class="text-xs text-secondary mb-4">
+      {delete_confirm_message(@delete_target, @providers)}
+    </p>
+    <div class="settings-dialog-actions">
+      <button phx-click="close_delete_confirm" class="settings-btn">{gettext("取消")}</button>
+      <button phx-click="execute_delete" class="settings-btn settings-btn-danger">
+        {gettext("确认删除")}
+      </button>
+    </div>
+  </div>
+</div>

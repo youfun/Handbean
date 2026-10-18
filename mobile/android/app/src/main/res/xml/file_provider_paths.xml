@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <cache-path name="camera_capture" path="camera_capture/" />
+    <!-- Preexisting Mob camera writes cache-root mob_cam_* files. This authority
+         is not isolated. Export isolation is ${applicationId}.exportprovider only. -->
+    <cache-path name="mob_camera" path="." />
+</paths>

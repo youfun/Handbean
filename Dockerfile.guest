@@ -1,0 +1,27 @@
+# Guest preview image: OTP release only, no Elixir source.
+# Build context must be a directory that contains rel/handbean/ from
+# mix release (or scripts/build_local_release.sh).
+#
+#   mkdir -p /tmp/handbean-guest-ctx/rel
+#   cp -a _build/local_release/prod/rel/handbean /tmp/handbean-guest-ctx/rel/handbean
+#   cp Dockerfile.guest /tmp/handbean-guest-ctx/Dockerfile
+#   docker build -t handbean-guest:local /tmp/handbean-guest-ctx
+FROM debian:bookworm-slim
+
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+      libssl3 libncurses6 ca-certificates openssl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/handbean
+COPY rel/handbean/ ./
+
+ENV PHX_SERVER=true \
+    PORT=4000 \
+    HOME=/data \
+    DATABASE_PATH=/data/handbean.db \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
+
+EXPOSE 4000
+USER nobody
+CMD ["bin/handbean", "start"]

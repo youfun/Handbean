@@ -1,0 +1,310 @@
+/* Git and MCP settings */
+
+.git-settings-section {
+  padding: 16px;
+  overflow: visible;
+}
+
+.git-settings-section-header,
+.mcp-settings-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.git-settings-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.git-settings-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.git-account-list {
+  margin: 16px -16px -16px;
+  border-top: 1px solid var(--sig-border-subtle);
+}
+
+.git-account-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+}
+
+.git-account-row + .git-account-row {
+  border-top: 1px solid var(--sig-border-subtle);
+}
+
+.git-account-copy {
+  min-width: 0;
+}
+
+.git-account-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--sig-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.git-account-id {
+  margin-top: 3px;
+  color: var(--sig-text-tertiary);
+  font-family: var(--sig-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 10px;
+}
+
+.git-account-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.git-delete-confirm {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--sig-border-subtle);
+  color: var(--sig-text-secondary);
+  font-size: 12px;
+}
+
+.git-account-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 16px -16px -16px;
+  padding: 16px;
+  border-top: 1px solid var(--sig-border-subtle);
+  background: var(--sig-bg-main);
+}
+
+.settings-error-text {
+  color: var(--sig-error);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.settings-empty-state {
+  padding: 36px 20px;
+  color: var(--sig-text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.settings-empty-state .settings-field-desc {
+  max-width: 420px;
+  margin: 4px auto 0;
+}
+
+.mcp-settings-header {
+  margin-bottom: 16px;
+}
+
+#mcp-settings .text-left {
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+#mcp-settings .text-red-600 {
+  color: var(--sig-error);
+}
+
+#mcp-settings .text-green-600 {
+  color: var(--sig-success);
+}
+
+/* Local WebGPU diagnostics */
+
+.webgpu-probe {
+  margin-top: 18px;
+}
+
+.webgpu-probe-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--sig-border-default);
+  border-radius: var(--sig-radius-xl);
+  background: var(--sig-bg-elevated);
+}
+
+.webgpu-probe-eyebrow {
+  color: var(--sig-text-tertiary);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.webgpu-probe-status {
+  margin-top: 3px;
+  color: var(--sig-text-primary);
+  font-family: var(--sig-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.webgpu-probe[data-probe-status="ready"] .webgpu-probe-status,
+.webgpu-probe-check[data-status="ready"] .webgpu-probe-check-status {
+  color: var(--sig-success);
+}
+
+.webgpu-probe[data-probe-status="unsupported"] .webgpu-probe-status,
+.webgpu-probe-check[data-status="unsupported"] .webgpu-probe-check-status {
+  color: var(--sig-warning);
+}
+
+.webgpu-probe[data-probe-status="probe_failure"] .webgpu-probe-status,
+.webgpu-probe-check[data-status="probe_failure"] .webgpu-probe-check-status {
+  color: var(--sig-error);
+}
+
+.webgpu-probe-meta {
+  margin: 10px 2px 0;
+  color: var(--sig-text-tertiary);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.webgpu-probe-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.webgpu-probe-check {
+  min-width: 0;
+  padding: 13px 14px;
+  border: 1px solid var(--sig-border-default);
+  border-radius: var(--sig-radius-lg);
+  background: var(--sig-bg-elevated);
+}
+
+.webgpu-probe-check-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--sig-text-primary);
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.webgpu-probe-check-status {
+  flex: 0 0 auto;
+  color: var(--sig-text-tertiary);
+  font-family: var(--sig-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.webgpu-probe-check-detail {
+  margin-top: 5px;
+  color: var(--sig-text-tertiary);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.webgpu-probe-details {
+  margin-top: 14px;
+  border: 1px solid var(--sig-border-default);
+  border-radius: var(--sig-radius-lg);
+  background: var(--sig-bg-elevated);
+  color: var(--sig-text-secondary);
+  font-size: 12px;
+}
+
+.webgpu-probe-details summary {
+  min-height: 44px;
+  padding: 12px 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.webgpu-probe-details pre {
+  max-height: 300px;
+  margin: 0;
+  padding: 0 14px 14px;
+  overflow: auto;
+  color: var(--sig-text-secondary);
+  font-family: var(--sig-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 10px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.webgpu-probe-diagnostics-body {
+  padding: 0 14px 14px;
+}
+
+.webgpu-probe-diagnostics .webgpu-probe-meta {
+  margin-top: 0;
+}
+
+.webgpu-probe-json {
+  margin-top: 12px;
+  background: var(--sig-bg-main);
+}
+
+.webgpu-probe-caveat {
+  margin: 12px 2px 0;
+  color: var(--sig-text-tertiary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+@media (max-width: 768px) {
+  .git-settings-fields {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .git-settings-accounts-header,
+  .mcp-settings-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .git-settings-accounts-header .settings-btn,
+  .mcp-settings-header .settings-btn {
+    width: 100%;
+  }
+
+  .git-account-row {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .git-account-actions {
+    justify-content: flex-start;
+  }
+
+  .git-account-actions .settings-btn {
+    flex: 1 1 auto;
+  }
+
+  .webgpu-probe-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

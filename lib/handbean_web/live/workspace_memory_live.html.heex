@@ -1,0 +1,302 @@
+<div id="workspace-memory" class="workspace-memory settings-content-wrap h-full overflow-y-auto">
+  <div class="memory-shell">
+    <div class="memory-heading">
+      <div>
+        <h1 class="memory-title">{gettext("工作区记忆")}</h1>
+        <div :if={@workspace} class="memory-context">
+          {pgettext("memory context", "当前工作区：")}<strong>{@workspace["name"]}</strong>
+          <span class="memory-path">{@workspace["path"]}</span>
+        </div>
+        <div :if={!@workspace} class="memory-context">{gettext("仅查看全局记忆")}</div>
+      </div>
+
+      <form
+        id="memory-workspace-form"
+        phx-change="select_workspace"
+        class="memory-workspace-select"
+      >
+        <label class="sr-only" for="memory-workspace">{gettext("选择工作区")}</label>
+        <select id="memory-workspace" name="workspace[id]" class="settings-input">
+          <option
+            :for={workspace <- @workspaces}
+            value={workspace["id"]}
+            selected={@workspace_id == workspace["id"]}
+          >
+            {workspace["name"]}
+          </option>
+          <option value="global" selected={is_nil(@workspace_id)}>{gettext("全局记忆")}</option>
+        </select>
+      </form>
+    </div>
+
+    <div :if={@workspace} id="workspace-memory-setting" class="memory-setting">
+      <div class="memory-setting-copy">
+        <div class="memory-setting-title">{gettext("使用自带的记忆功能")}</div>
+        <div class="memory-setting-desc">
+          {gettext("关闭后，此工作区可继续使用 MCP 或扩展提供的外部记忆；已有记忆不会删除。")}
+        </div>
+      </div>
+      <button
+        id="workspace-memory-toggle"
+        type="button"
+        role="switch"
+        phx-click="toggle_builtin_memory"
+        class={["memory-switch", @builtin_memory_enabled && "is-on"]}
+        aria-checked={to_string(@builtin_memory_enabled)}
+        aria-label={gettext("使用自带的记忆功能")}
+      >
+        <span class="sr-only">
+          {if @builtin_memory_enabled, do: gettext("已开启"), else: gettext("已关闭")}
+        </span>
+      </button>
+    </div>
+    <div
+      :if={@memory_setting_error}
+      id="workspace-memory-setting-error"
+      class="memory-setting-error"
+    >
+      {@memory_setting_error}
+    </div>
+
+    <div class="memory-stats" role="group" aria-label={gettext("按生命周期筛选")}>
+      <button
+        :for={{lifecycle, label, count} <- lifecycle_cards(@summary)}
+        id={"memory-lifecycle-#{lifecycle}"}
+        type="button"
+        phx-click="set_lifecycle"
+        phx-value-lifecycle={lifecycle}
+        class={["memory-stat", @lifecycle_filter == lifecycle && "active"]}
+        aria-pressed={to_string(@lifecycle_filter == lifecycle)}
+      >
+        <span class="memory-stat-label">{label}</span>
+        <span class="memory-stat-value">{count}</span>
+      </button>
+    </div>
+
+    <div class="memory-filters">
+      <form id="memory-filter-form" phx-change="filter">
+        <div class="memory-filter-row">
+          <div class="memory-search-wrap">
+            <span class="memory-search-icon" aria-hidden="true">⌕</span>
+            <label class="sr-only" for="memory-search">{gettext("搜索记忆")}</label>
+            <input
+              id="memory-search"
+              class="settings-input memory-search"
+              type="search"
+              name="filters[query]"
+              value={@search_query}
+              placeholder={gettext("搜索内容或 #ID…")}
+              phx-debounce="250"
+            />
+          </div>
+          <div>
+            <label class="sr-only" for="memory-scope">{gettext("记忆范围")}</label>
+            <select
+              id="memory-scope"
+              class="settings-input"
+              name="filters[scope]"
+              disabled={is_nil(@workspace_id)}
+            >
+              <option value="workspace" selected={@scope_filter == :workspace}>
+                {pgettext("memory scope", "当前工作区")}
+              </option>
+              <option value="both" selected={@scope_filter == :both}>
+                {gettext("包含全局记忆")}
+              </option>
+              <option value="global" selected={@scope_filter == :global}>
+                {gettext("仅全局记忆")}
+              </option>
+            </select>
+            <input
+              :if={is_nil(@workspace_id)}
+              type="hidden"
+              name="filters[scope]"
+              value="global"
+            />
+          </div>
+        </div>
+      </form>
+
+      <div class="memory-kinds" role="group" aria-label={gettext("按记忆类型筛选")}>
+        <button
+          :for={kind <- kind_filters()}
+          id={"memory-kind-#{kind}"}
+          type="button"
+          phx-click="set_kind"
+          phx-value-kind={kind}
+          class={["memory-chip", @kind_filter == kind && "active"]}
+          aria-pressed={to_string(@kind_filter == kind)}
+        >
+          {kind_label(kind)}
+          <span class="memory-chip-count">{kind_count(@summary, kind)}</span>
+        </button>
+      </div>
+    </div>
+
+    <div
+      :if={@mutation_error}
+      id="memory-mutation-error"
+      class="memory-mutation-error"
+      role="alert"
+    >
+      {@mutation_error}
+    </div>
+
+    <div :if={@memories == []} id="memory-empty" class="memory-empty">
+      <div class="text-xl mb-1" aria-hidden="true">◌</div>
+      <div>{gettext("没有符合当前筛选条件的记忆")}</div>
+    </div>
+
+    <div :if={@memories != []} id="memory-list" class="memory-list">
+      <article
+        :for={engram <- @memories}
+        id={"memory-engram-#{engram.id}"}
+        class={["memory-card settings-card", expired?(engram, @now) && "expired"]}
+      >
+        <header class="memory-card-header">
+          <span class="memory-id">#{engram.id}</span>
+          <span class="memory-badge memory-kind">{kind_label(engram.kind)}</span>
+          <span class="memory-badge">{lifecycle_text(engram, @now)}</span>
+          <span class={["memory-badge memory-scope", global?(engram) && "memory-global"]}>
+            {scope_label(engram)}
+          </span>
+          <span class="memory-source" title={source_label(engram)}>
+            {gettext("来源：%{source}", source: source_label(engram))}
+          </span>
+          <time
+            class="memory-date"
+            datetime={format_iso(engram.updated_at || engram.inserted_at)}
+          >
+            {format_date(engram.updated_at || engram.inserted_at)}
+          </time>
+        </header>
+
+        <form
+          :if={@editing_id == engram.id}
+          id={"memory-edit-form-#{engram.id}"}
+          class="memory-edit-form"
+          phx-submit="save_edit"
+        >
+          <input type="hidden" name="_id" value={engram.id} />
+          <label for={"memory-edit-content-#{engram.id}"}>{gettext("记忆内容")}</label>
+          <textarea
+            id={"memory-edit-content-#{engram.id}"}
+            class="settings-input memory-edit-content"
+            name="memory[content]"
+            required
+          >{engram.content}</textarea>
+          <label for={"memory-edit-kind-#{engram.id}"}>{gettext("记忆类型")}</label>
+          <select
+            id={"memory-edit-kind-#{engram.id}"}
+            class="settings-input"
+            name="memory[kind]"
+          >
+            <option
+              :for={kind <- kind_filters() |> Enum.reject(&(&1 == :all))}
+              value={kind}
+              selected={engram.kind == kind}
+            >
+              {kind_label(kind)}
+            </option>
+          </select>
+          <div class="memory-edit-actions">
+            <button type="submit" class="memory-action memory-action-primary">
+              {gettext("保存")}
+            </button>
+            <button type="button" class="memory-action" phx-click="cancel_edit">
+              {gettext("取消")}
+            </button>
+          </div>
+        </form>
+        <div :if={@editing_id != engram.id} class="memory-content">{engram.content}</div>
+
+        <footer class="memory-footer">
+          <div class="memory-links">
+            <button
+              :for={association <- associations(engram)}
+              type="button"
+              class="memory-link"
+              phx-click="locate"
+              phx-value-id={association.id}
+              title={gettext("定位关联记忆 #%{id}", id: association.id)}
+            >
+              {association.direction} {association.kind} #{association.id}
+            </button>
+          </div>
+          <div class="memory-actions">
+            <button
+              :if={engram.short_term}
+              id={"memory-promote-#{engram.id}"}
+              type="button"
+              class="memory-action memory-action-primary"
+              phx-click="promote"
+              phx-value-id={engram.id}
+              aria-label={gettext("提升记忆 #%{id} 为长期记忆", id: engram.id)}
+            >
+              {gettext("提升为长期")}
+            </button>
+            <button
+              id={"memory-edit-#{engram.id}"}
+              type="button"
+              class="memory-action"
+              phx-click="edit"
+              phx-value-id={engram.id}
+              aria-label={gettext("编辑记忆 #%{id}", id: engram.id)}
+            >
+              {gettext("编辑")}
+            </button>
+            <button
+              id={"memory-copy-id-#{engram.id}"}
+              type="button"
+              class="memory-action"
+              phx-hook="CopyText"
+              data-copy={"##{engram.id}"}
+            >
+              {gettext("复制 #ID")}
+            </button>
+            <button
+              id={"memory-copy-content-#{engram.id}"}
+              type="button"
+              class="memory-action"
+              phx-hook="CopyText"
+              data-copy={engram.content}
+            >
+              {gettext("复制内容")}
+            </button>
+            <button
+              :if={@deleting_id != engram.id}
+              id={"memory-delete-#{engram.id}"}
+              type="button"
+              class="memory-action memory-action-danger"
+              phx-click="confirm_delete"
+              phx-value-id={engram.id}
+              aria-label={gettext("删除记忆 #%{id}", id: engram.id)}
+            >
+              {gettext("删除")}
+            </button>
+            <div
+              :if={@deleting_id == engram.id}
+              id={"memory-delete-confirm-#{engram.id}"}
+              class="memory-delete-confirm"
+              role="group"
+              aria-label={gettext("确认删除记忆 #%{id}", id: engram.id)}
+            >
+              <span>{gettext("确定永久删除？")}</span>
+              <button
+                type="button"
+                class="memory-action memory-action-danger"
+                phx-click="delete"
+                phx-value-id={engram.id}
+              >
+                {gettext("确认删除")}
+              </button>
+              <button type="button" class="memory-action" phx-click="cancel_delete">
+                {gettext("取消")}
+              </button>
+            </div>
+          </div>
+        </footer>
+      </article>
+    </div>
+  </div>
+</div>

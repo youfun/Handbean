@@ -1,0 +1,274 @@
+defmodule Handbean.ChangeSnapshot do
+  @moduledoc """
+  Builds reversible file-change snapshots for WebUI diff review.
+
+  The UI diff can be clipped for readability, so revert must rely on these
+  full before/after snapshots and hashes instead of diff lines.
+  """
+
+  @max_snapshot_bytes 1_000_000
+  @diff_context_lines 3
+  @ref_prefix "change_snapshot:"
+
+  @type snapshot :: map()
+
+  @spec sha256(binary() | nil) :: String.t() | nil
+  def sha256(nil), do: nil
+
+  def sha256(content) when is_binary(content) do
+    :crypto.hash(:sha256, content) |> Base.encode16(case: :lower)
+  end
+
+  @spec build_edit_snapshot(Path.t(), binary(), binary(), [map()] | nil, keyword()) :: snapshot()
+  def build_edit_snapshot(file_path, before_content, after_content, diff_lines \\ nil, opts \\ []) do
+    diff_lines = diff_lines || diff_lines(before_content, after_content)
+    build_snapshot("edit", file_path, true, before_content, after_content, diff_lines, opts)
+  end
+
+  @spec build_write_snapshot(Path.t(), binary() | nil, binary(), keyword()) :: snapshot()
+  def build_write_snapshot(file_path, before_content, after_content, opts \\ []) do
+    existed_before = is_binary(before_content)
+    diff_lines = diff_lines(before_content || "", after_content)
+
+    build_snapshot(
+      "write",
+      file_path,
+      existed_before,
+      before_content,
+      after_content,
+      diff_lines,
+      opts
+    )
+  end
+
+  @doc """
+  Persists a reversible snapshot outside tool events and returns an opaque
+  reference suitable for the bounded result contract.
+  """
+  @spec persist(snapshot(), map()) :: {:ok, String.t()} | {:error, term()}
+  def persist(%{reversible: true, change_id: change_id} = snapshot, context)
+      when is_map(context) do
+    with conversation_id when is_binary(conversation_id) <- conversation_id(context),
+         true <- safe_id?(conversation_id) and safe_id?(change_id),
+         path <- snapshot_path(conversation_id, change_id),
+         :ok <- File.mkdir_p(Path.dirname(path)),
+         {:ok, encoded} <- encode_snapshot(snapshot),
+         :ok <- atomic_write(path, encoded) do
+      {:ok, encode_ref(conversation_id, change_id)}
+    else
+      nil -> {:error, :missing_conversation_id}
+      false -> {:error, :invalid_snapshot_id}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  def persist(_snapshot, _context), do: {:error, :not_reversible}
+
+  @doc "Loads a persisted change snapshot from an opaque reference."
+  @spec load(String.t()) :: {:ok, snapshot()} | {:error, term()}
+  def load(@ref_prefix <> encoded) do
+    with {:ok, decoded} <- Base.url_decode64(encoded, padding: false),
+         [conversation_id, change_id] <- :binary.split(decoded, <<0>>, [:global]),
+         true <- safe_id?(conversation_id) and safe_id?(change_id),
+         {:ok, body} <- File.read(snapshot_path(conversation_id, change_id)),
+         {:ok, snapshot} <- Handbean.JSON.decode(body),
+         true <- is_map(snapshot) do
+      {:ok, snapshot}
+    else
+      false -> {:error, :invalid_snapshot_ref}
+      [_single] -> {:error, :invalid_snapshot_ref}
+      {:error, _reason} = error -> error
+      _ -> {:error, :invalid_snapshot}
+    end
+  end
+
+  def load(_ref), do: {:error, :invalid_snapshot_ref}
+
+  @doc "Returns bounded result details and stores full revert data when possible."
+  @spec result_details(snapshot(), map()) :: map()
+  def result_details(snapshot, context) do
+    details = Map.take(snapshot, snapshot_metadata_keys())
+
+    case persist(snapshot, context) do
+      {:ok, ref} ->
+        Map.put(details, :change_snapshot_ref, ref)
+
+      {:error, :not_reversible} ->
+        details
+
+      {:error, _reason} ->
+        %{
+          details
+          | reversible: false,
+            revert_status: "unavailable",
+            revert_reason: "snapshot_unavailable"
+        }
+    end
+  end
+
+  @spec diff_lines(binary(), binary()) :: [map()] | nil
+  def diff_lines(old, new) when old == new, do: nil
+
+  def diff_lines(old, new) when is_binary(old) and is_binary(new) do
+    old
+    |> diff(new)
+    |> clip_diff_context()
+    |> Enum.flat_map(fn
+      {:eq, lines} -> Enum.map(lines, &%{"type" => "eq", "text" => &1})
+      {:del, lines} -> Enum.map(lines, &%{"type" => "del", "text" => &1})
+      {:ins, lines} -> Enum.map(lines, &%{"type" => "ins", "text" => &1})
+      {:skip, count} -> [%{"type" => "skip", "text" => "... #{count} unchanged lines ..."}]
+    end)
+  end
+
+  defp build_snapshot(
+         change_type,
+         file_path,
+         existed_before,
+         before_content,
+         after_content,
+         diff_lines,
+         opts
+       ) do
+    max_bytes = Keyword.get(opts, :max_snapshot_bytes, @max_snapshot_bytes)
+    total_bytes = byte_size(before_content || "") + byte_size(after_content || "")
+    reversible = total_bytes <= max_bytes
+    change_id = Keyword.get_lazy(opts, :change_id, fn -> "chg_" <> Ecto.UUID.generate() end)
+
+    %{
+      change_id: change_id,
+      change_type: change_type,
+      file_path: file_path,
+      existed_before: existed_before,
+      before_sha256: sha256(before_content),
+      after_sha256: sha256(after_content),
+      before_content: if(reversible, do: before_content, else: nil),
+      after_content: if(reversible, do: after_content, else: nil),
+      diff_lines: diff_lines,
+      reversible: reversible,
+      revert_status: if(reversible, do: "available", else: "unavailable"),
+      revert_reason: if(reversible, do: nil, else: "too_large")
+    }
+  end
+
+  defp snapshot_metadata_keys do
+    [
+      :change_id,
+      :change_type,
+      :file_path,
+      :existed_before,
+      :before_sha256,
+      :after_sha256,
+      :reversible,
+      :revert_status,
+      :revert_reason
+    ]
+  end
+
+  defp encode_snapshot(snapshot) do
+    {:ok, Handbean.JSON.encode!(Handbean.JsonSafe.normalize(snapshot))}
+  rescue
+    error -> {:error, error}
+  end
+
+  defp atomic_write(path, body) do
+    temp = path <> ".tmp-" <> Integer.to_string(System.unique_integer([:positive]))
+
+    with :ok <- File.write(temp, body),
+         :ok <- File.rename(temp, path) do
+      :ok
+    else
+      {:error, reason} ->
+        _ = File.rm(temp)
+        {:error, reason}
+    end
+  end
+
+  defp encode_ref(conversation_id, change_id) do
+    @ref_prefix <> Base.url_encode64(conversation_id <> <<0>> <> change_id, padding: false)
+  end
+
+  defp snapshot_path(conversation_id, change_id) do
+    Path.join([
+      snapshot_root(),
+      "items",
+      conversation_id,
+      "change-snapshots",
+      change_id <> ".json"
+    ])
+  end
+
+  defp snapshot_root do
+    Handbean.ConversationArtifacts.root()
+  end
+
+  defp conversation_id(context),
+    do: Handbean.Utils.SafeMap.get_any(context, :conversation_id, "conversation_id")
+
+  defp safe_id?(id) when is_binary(id), do: Regex.match?(~r/\A[A-Za-z0-9_.:-]+\z/, id)
+  defp safe_id?(_id), do: false
+
+  defp diff(old, new) do
+    old_lines = String.split(old, "\n")
+    new_lines = String.split(new, "\n")
+    List.myers_difference(old_lines, new_lines)
+  end
+
+  defp clip_diff_context(diff) do
+    change_indices =
+      diff
+      |> Enum.with_index()
+      |> Enum.filter(fn {{type, _lines}, _i} -> type != :eq end)
+      |> Enum.map(fn {_chunk, i} -> i end)
+
+    if change_indices == [] do
+      diff
+    else
+      first = hd(change_indices)
+      last = List.last(change_indices)
+      ctx = @diff_context_lines
+
+      Enum.flat_map(Enum.with_index(diff), fn {{type, lines}, i} ->
+        case type do
+          :eq ->
+            cond do
+              i < first -> clip_before(lines, ctx)
+              i > last -> clip_after(lines, ctx)
+              true -> clip_middle(lines, ctx)
+            end
+
+          :del ->
+            [{:del, lines}]
+
+          :ins ->
+            [{:ins, lines}]
+        end
+      end)
+    end
+  end
+
+  defp clip_before(lines, ctx) when length(lines) <= ctx, do: [{:eq, lines}]
+
+  defp clip_before(lines, ctx) do
+    keep = Enum.take(lines, -ctx)
+    skipped = length(lines) - ctx
+    [{:skip, skipped}, {:eq, keep}]
+  end
+
+  defp clip_after(lines, ctx) when length(lines) <= ctx, do: [{:eq, lines}]
+
+  defp clip_after(lines, ctx) do
+    keep = Enum.take(lines, ctx)
+    skipped = length(lines) - ctx
+    [{:eq, keep}, {:skip, skipped}]
+  end
+
+  defp clip_middle(lines, ctx) when length(lines) <= ctx * 2, do: [{:eq, lines}]
+
+  defp clip_middle(lines, ctx) do
+    head = Enum.take(lines, ctx)
+    tail = Enum.take(lines, -ctx)
+    skipped = length(lines) - ctx * 2
+    [{:eq, head}, {:skip, skipped}, {:eq, tail}]
+  end
+end

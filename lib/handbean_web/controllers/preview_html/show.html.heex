@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Preview · {@record.title}</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #111; color: #eee; font-family: sans-serif; }
+      .bar { display: flex; align-items: center; gap: 12px; padding: 8px 12px;
+             background: #1c1b1f; border-bottom: 1px solid #333; min-height: 44px; }
+      .bar a { color: #9cdcfe; text-decoration: none; font-size: 14px; }
+      .meta { flex: 1; font-size: 12px; color: #aaa; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      iframe { border: 0; width: 100%; height: calc(100% - 53px); background: #fff; }
+    </style>
+  </head>
+  <body>
+    <div class="bar" id="preview-chrome">
+      <a id="preview-return" href={@return_href}>返回聊天</a>
+      <div class="meta">
+        {@record.title} · {@record.kind} · {@record.id}
+      </div>
+    </div>
+    <iframe
+      id="preview-frame"
+      src={@iframe_src}
+      sandbox="allow-scripts"
+      referrerpolicy="no-referrer"
+    ></iframe>
+  </body>
+</html>

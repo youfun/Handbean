@@ -1,0 +1,13 @@
+# MSVC build of the storage NIF. elixir_make invokes `nmake /F Makefile.win`
+# after the Windows runner has loaded vcvars. Official Windows OTP is MSVC,
+# so this DLL must be MSVC too.
+
+PRIV_DIR = $(MIX_APP_PATH)\priv
+NIF = $(PRIV_DIR)\handbean_storage.dll
+
+all:
+	if not exist "$(PRIV_DIR)" mkdir "$(PRIV_DIR)"
+	cl /nologo /O2 /W3 /LD /I"$(ERTS_INCLUDE_DIR)" c_src\handbean_storage.c /Fo"$(PRIV_DIR)\\" /Fe"$(NIF)"
+
+clean:
+	if exist "$(NIF)" del /f /q "$(NIF)"

@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.handbean_probe">
+
+    <!-- Network -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Read connectivity state for Mob.Device.network_state/0 + :network events.
+         Normal (install-time) permission; no runtime request needed. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Microphone (audio recording). CAMERA + the camera uses-features are
+         declared by the mob_camera plugin's manifest and merged at build. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- System calendar. Runtime permissions; Agent writes CalendarContract
+         only after the user grants them. Not required to prefill a clock alarm. -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+
+    <!-- USB host (Mob.Peripheral.VendorUsb). required=false so the Play Store
+         doesn't filter the app off devices without USB host support; apps
+         degrade via Mob.Peripheral.capabilities/0. No uses-permission needed —
+         per-device access is gated by the runtime ACTION_USB_PERMISSION dialog. -->
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+
+    <!-- Torch / flashlight (Mob.Torch). required=false so the Play Store doesn't
+         filter the app off flash-less devices; Mob.Torch is a no-op there. No
+         permission needed — CameraManager.setTorchMode works without one. -->
+    <uses-feature android:name="android.hardware.camera.flash" android:required="false" />
+
+    <!-- Media-library read permissions moved to the mob_photos plugin manifest
+         (READ_MEDIA_IMAGES / READ_MEDIA_VIDEO / READ_EXTERNAL_STORAGE). NOTE the
+         plugin's plain-string permission list can't express maxSdkVersion="32"
+         on the legacy one — harmless (no-op on API 33+). -->
+
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- AlarmManager for scheduled local notifications -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"
+        android:minSdkVersion="31" />
+
+    <!-- Haptic feedback -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- Package visibility (API 30+): apps we want to launch via Mob.Device.open_url. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="mailto" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="tel" />
+        </intent>
+        <!-- Clock apps that handle AlarmClock.ACTION_SET_ALARM. -->
+        <intent>
+            <action android:name="android.intent.action.SET_ALARM" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SHOW_ALARMS" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.INSERT" />
+            <data android:mimeType="vnd.android.cursor.item/event" />
+        </intent>
+    </queries>
+
+    <application
+        android:label="Handbean"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:extractNativeLibs="true"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:theme="@style/AppTheme">
+
+        <!-- Main activity -->
+        <activity android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode|fontScale|density">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="sigil" android:host="c"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="text/plain"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="*/*"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="*/*"/>
+            </intent-filter>
+        </activity>
+    <!-- The QR-scanner <activity> moved to the mob_scanner plugin
+         (io.mob.scanner.MobScannerActivity; see its host_requirements). -->
+
+        <service
+            android:name=".AgentKeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            android:stopWithTask="false">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keep the on-device Handbean BEAM running while a visible notification is shown." />
+        </service>
+
+        <!-- Scheduled local notification delivery -->
+        <receiver android:name=".NotificationReceiver"
+            android:exported="false" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_provider_paths" />
+        </provider>
+
+        <provider
+            android:name=".attachments.ExportFileProvider"
+            android:authorities="${applicationId}.exportprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/export_provider_paths" />
+        </provider>
+
+    </application>
+</manifest>

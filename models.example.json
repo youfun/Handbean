@@ -1,0 +1,179 @@
+{
+  "defaultProvider": "stepfun-anthropic",
+  "defaultModel": "step-router-v1",
+  "providers": {
+    "stepfun-anthropic": {
+      "baseUrl": "https://api.stepfun.com/step_plan",
+      "api": "anthropic-messages",
+      "apiKey": "env:OPENAI_API_KEY",
+      "receiveTimeout": 600000,
+      "connectTimeout": 30000,
+      "maxRetries": 3,
+      "retryDelayBaseMs": 1000,
+      "models": [
+        {
+          "id": "step-router-v1",
+          "name": "Step Router v1 (Anthropic)",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 256000,
+          "maxTokens": 256000,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          }
+        }
+      ]
+    },
+    "deepseek": {
+      "baseUrl": "https://api.deepseek.com",
+      "api": "openai-chat-completions",
+      "apiKey": "sk-your-deepseek-api-key",
+      "provider": "deepseek",
+      "models": [
+        {
+          "id": "deepseek-v4-flash",
+          "name": "DeepSeek V4 Flash",
+          "reasoning": false,
+          "input": ["text"],
+          "contextWindow": 128000,
+          "maxTokens": 8192,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          }
+        },
+        {
+          "id": "deepseek-v4-pro",
+          "name": "DeepSeek V4 Pro",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 128000,
+          "maxTokens": 8192,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          }
+        }
+      ]
+    },
+    "zenmux": {
+      "api": "openai-chat-completions",
+      "apiKey": "sk-your-zenmux-api-key",
+      "provider": "zenmux",
+      "models": [
+        {
+          "id": "openai/gpt-5",
+          "name": "ZenMux GPT-5",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 128000,
+          "maxTokens": 8192,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          }
+        },
+        {
+          "id": "deepseek/deepseek-v4-pro",
+          "name": "ZenMux DeepSeek V4 Pro",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 128000,
+          "maxTokens": 8192,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          }
+        }
+      ]
+    },
+    "ollama": {
+      "name": "Ollama",
+      "baseUrl": "https://ollama.com/v1",
+      "api": "ollama-cloud",
+      "apiKey": "env:OLLAMA_API_KEY",
+      "provider": "ollama",
+      "models": [
+        {
+          "id": "gemma4:31b",
+          "name": "Gemma 4 31B",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 131072,
+          "maxTokens": 8192
+        }
+      ]
+    },
+    "opencode-go": {
+      "name": "OpenCode Go",
+      "baseUrl": "https://opencode.ai/zen/go/v1",
+      "api": "opencode-go",
+      "apiKey": "env:OPENCODE_GO_API_KEY",
+      "provider": "opencode-go",
+      "models": [
+        {
+          "id": "glm-5.3-flash",
+          "name": "GLM-5.3 Flash",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 200000,
+          "maxTokens": 8192
+        },
+        {
+          "id": "minimax-m3",
+          "name": "MiniMax M3",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 1000000,
+          "maxTokens": 8192
+        }
+      ]
+    },
+    "openrouter": {
+      "api": "openai-chat-completions",
+      "apiKey": "sk-your-openrouter-api-key",
+      "provider": "openrouter",
+      "models": [
+        {
+          "id": "openai/gpt-4o",
+          "name": "OpenRouter GPT-4o",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 128000,
+          "maxTokens": 8192,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          }
+        },
+        {
+          "id": "anthropic/claude-sonnet-4",
+          "name": "OpenRouter Claude Sonnet 4",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 200000,
+          "maxTokens": 8192,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          }
+        }
+      ]
+    }
+  }
+}

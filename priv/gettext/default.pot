@@ -1,0 +1,2962 @@
+## PO Template — Sigil i18n strings extracted from source
+msgid ""
+msgstr ""
+
+# ── file_browser_component.ex ──
+#: lib/handbean_web/live/file_browser_component.ex:55
+#, elixir-autogen
+msgid "选择文件夹"
+msgstr ""
+
+#: lib/handbean_web/live/file_browser_component.ex:56
+#, elixir-autogen
+msgid "浏览并选择项目文件夹"
+msgstr ""
+
+#: lib/handbean_web/live/file_browser_component.ex:62
+#, elixir-autogen
+msgid "位置:"
+msgstr ""
+
+#: lib/handbean_web/live/file_browser_component.ex:71
+#, elixir-autogen
+msgid "返回主目录"
+msgstr ""
+
+#: lib/handbean_web/live/file_browser_component.ex:99
+#, elixir-autogen
+msgid "上级目录"
+msgstr ""
+
+#: lib/handbean_web/live/file_browser_component.ex:127
+#, elixir-autogen
+msgid "此目录下没有可用的子文件夹"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:452
+#: lib/handbean_web/live/available_models_live.html.heex:564
+#: lib/handbean_web/live/available_models_live.html.heex:744
+#: lib/handbean_web/live/available_models_live.html.heex:772
+#: lib/handbean_web/live/available_models_live.html.heex:808
+#: lib/handbean_web/live/available_models_live.html.heex:821
+#: lib/handbean_web/live/file_browser_component.ex:143
+#: lib/handbean_web/live/workspace_live/chat_components.ex:262
+#: lib/handbean_web/live/workspace_live/chat_components.ex:300
+#: lib/handbean_web/live/workspace_live/chat_components.ex:324
+#: lib/handbean_web/live/workspace_live/chat_components.ex:362
+#: lib/handbean_web/live/workspace_live/chat_components.ex:386
+#: lib/handbean_web/live/workspace_live/chat_components.ex:404
+#: lib/handbean_web/live/workspace_live/chat_components.ex:508
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:538
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:580
+#: lib/handbean_web/live/workspace_memory_live.html.heex:207
+#: lib/handbean_web/live/workspace_memory_live.html.heex:294
+#, elixir-autogen
+msgid "取消"
+msgstr ""
+
+#: lib/handbean_web/live/file_browser_component.ex:151
+#, elixir-autogen
+msgid "选择当前目录"
+msgstr ""
+
+# ── settings_panel.ex ──
+#: lib/handbean_web/live/settings_live.ex:72
+#: lib/handbean_web/live/settings_live.html.heex:35
+#: lib/handbean_web/live/settings_live.html.heex:48
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:723
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:724
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:150
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:151
+#, elixir-autogen
+msgid "Settings"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.ex:390
+#, elixir-autogen
+msgid "Model / AI"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.ex:398
+#, elixir-autogen
+msgid "SNS"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.ex:399
+#, elixir-autogen
+msgid "Tools"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.ex:400
+#, elixir-autogen
+msgid "Security"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.ex:397
+#, elixir-autogen
+msgid "UI"
+msgstr ""
+
+#: lib/handbean_web/live/git_settings_live.html.heex:138
+#: lib/handbean_web/live/git_settings_live.html.heex:203
+#: lib/handbean_web/live/mcp_settings_live.html.heex:100
+#: lib/handbean_web/live/mcp_settings_live.html.heex:122
+#: lib/handbean_web/live/mcp_settings_live.html.heex:143
+#: lib/handbean_web/live/mcp_settings_live.html.heex:297
+#, elixir-autogen
+msgid "Cancel"
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:300
+#: lib/handbean_web/live/settings_live.html.heex:87
+#: lib/handbean_web/live/settings_live.html.heex:267
+#, elixir-autogen
+msgid "Save"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:87
+#: lib/handbean_web/live/settings_live.html.heex:267
+#, elixir-autogen
+msgid "Saving..."
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:309
+#, elixir-autogen
+msgid "Global"
+msgstr ""
+
+#: lib/handbean_web/components/model_picker.ex:96
+#: lib/handbean_web/components/model_picker.ex:120
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:226
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:227
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:326
+#, elixir-autogen
+msgid "Close"
+msgstr ""
+
+# ── model_ai_panel.ex ──
+#: lib/handbean_web/live/settings/model_ai_panel.ex:29
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:487
+#, elixir-autogen
+msgid "Model"
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:35
+#, elixir-autogen
+msgid "workspace override"
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:41
+#: lib/handbean_web/live/settings/model_ai_panel.ex:58
+#, elixir-autogen
+msgid "Default model"
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:55
+#, elixir-autogen
+msgid "None (use provider default)"
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:66
+#, elixir-autogen
+msgid "Reasoning"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.ex:1332
+#: lib/handbean_web/live/settings/model_ai_panel.ex:77
+#: lib/handbean_web/live/settings/model_ai_panel.ex:449
+#: lib/handbean_web/live/workspace_live/view_components.ex:127
+#, elixir-autogen
+msgid "Off"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.ex:1333
+#: lib/handbean_web/live/settings/model_ai_panel.ex:79
+#: lib/handbean_web/live/settings/model_ai_panel.ex:450
+#: lib/handbean_web/live/workspace_live/view_components.ex:128
+#, elixir-autogen
+msgid "Minimal"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.ex:1334
+#: lib/handbean_web/live/settings/model_ai_panel.ex:81
+#: lib/handbean_web/live/settings/model_ai_panel.ex:451
+#: lib/handbean_web/live/workspace_live/view_components.ex:129
+#, elixir-autogen
+msgid "Low"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.ex:1335
+#: lib/handbean_web/live/settings/model_ai_panel.ex:83
+#: lib/handbean_web/live/settings/model_ai_panel.ex:452
+#: lib/handbean_web/live/workspace_live/view_components.ex:130
+#, elixir-autogen
+msgid "Medium"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.ex:1336
+#: lib/handbean_web/live/settings/model_ai_panel.ex:85
+#: lib/handbean_web/live/settings/model_ai_panel.ex:453
+#: lib/handbean_web/live/workspace_live/view_components.ex:131
+#, elixir-autogen
+msgid "High"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.ex:1337
+#: lib/handbean_web/live/settings/model_ai_panel.ex:87
+#: lib/handbean_web/live/settings/model_ai_panel.ex:454
+#: lib/handbean_web/live/workspace_live/view_components.ex:132
+#, elixir-autogen
+msgid "X-High"
+msgstr ""
+
+msgid "haiku (default)"
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:294
+#, elixir-autogen
+msgid "Memory scope"
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:306
+#, elixir-autogen
+msgid "Workspace only"
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:312
+#, elixir-autogen
+msgid "Both"
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:319
+#, elixir-autogen
+msgid "Privacy mode"
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:331
+#, elixir-autogen
+msgid "Standard"
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:334
+#, elixir-autogen
+msgid "Data isolated"
+msgstr ""
+
+# ── workspace_live.html.heex ──
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:209
+#, elixir-autogen
+msgid "专案"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:425
+#: lib/handbean_web/live/workspace_live/chat_components.ex:514
+#, elixir-autogen
+msgid "添加项目"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:1296
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:1297
+#, elixir-autogen
+msgid "在此工作区新建对话"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/schedules.ex:240
+#: lib/handbean_web/live/workspace_live/schedules.ex:258
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:895
+#, elixir-autogen
+msgid "恢复"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:429
+#, elixir-autogen
+msgid "项目路径"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:461
+#, elixir-autogen
+msgid "项目名称 (可选)"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:468
+#, elixir-autogen
+msgid "自动填充"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:607
+#, elixir-autogen
+msgid "Tool Approval Required"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:611
+#, elixir-autogen
+msgid "The agent wants to run the following tools. Review and approve or deny."
+msgstr ""
+
+msgid "Thinking"
+msgstr ""
+
+msgid "Agent is working…"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:873
+#, elixir-autogen
+msgid "No messages yet"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:874
+#, elixir-autogen
+msgid "Type a message to start"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:1108
+#, elixir-autogen
+msgid "消息"
+msgstr ""
+
+msgid "Enter 发送 · Shift+Enter 换行（支持拖拽/粘贴图片）"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:1195
+#: lib/handbean_web/live/workspace_live/chat_components.ex:1196
+#, elixir-autogen
+msgid "添加图片"
+msgstr ""
+
+msgid "当前权限："
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:1089
+#, elixir-autogen
+msgid "安全模式"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:211
+#: lib/handbean_web/live/workspace_live/chat_components.ex:1015
+#, elixir-autogen
+msgid "模型"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:719
+#: lib/handbean_web/live/workspace_live/chat_components.ex:1041
+#: lib/handbean_web/live/workspace_live/chat_components.ex:1042
+#, elixir-autogen
+msgid "推理等级"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:1218
+#: lib/handbean_web/live/workspace_live/chat_components.ex:1220
+#, elixir-autogen
+msgid "Stop"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:1241
+#: lib/handbean_web/live/workspace_live/chat_components.ex:1243
+#, elixir-autogen
+msgid "Send"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:615
+#, elixir-autogen, elixir-format
+msgid "Send now"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:1185
+#, elixir-autogen
+msgid "附件"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:412
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:279
+#, elixir-autogen
+msgid "移除"
+msgstr ""
+
+msgid "Diff: "
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:449
+#, elixir-autogen
+msgid "Reasoning Level"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:483
+#, elixir-autogen
+msgid "Workspace"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:103
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:491
+#, elixir-autogen
+msgid "Status"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:503
+#, elixir-autogen
+msgid "MCP / Skills"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:943
+#, elixir-autogen
+msgid "滚到底部"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:890
+#: lib/handbean_web/live/workspace_live/chat_components.ex:920
+#, elixir-autogen
+msgid "对话导航"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:896
+#, elixir-autogen
+msgid "用户消息"
+msgstr ""
+
+#: lib/handbean_web/workspace_helper.ex:321
+#: lib/handbean_web/workspace_helper.ex:327
+#, elixir-autogen
+msgid "（图片）"
+msgstr ""
+
+#: lib/handbean_web/workspace_helper.ex:322
+#: lib/handbean_web/workspace_helper.ex:327
+#, elixir-autogen
+msgid "（空消息）"
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:173
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:488
+#, elixir-autogen
+msgid "None"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:741
+#, elixir-autogen
+msgid "Tokens:"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:742
+#, elixir-autogen
+msgid "input"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:746
+#, elixir-autogen
+msgid "output"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:757
+#, elixir-autogen
+msgid "read"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:761
+#, elixir-autogen
+msgid "write"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:778
+#, elixir-autogen
+msgid "Turns:"
+msgstr ""
+
+# ── HEEx helper strings ──
+msgid "复制回复"
+msgstr ""
+
+#: lib/handbean_web/live/file_browser_component.ex:134
+#, elixir-autogen, elixir-format
+msgid "1 folder"
+msgid_plural "%{count} folders"
+msgstr[0] ""
+msgstr[1] ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:857
+#, elixir-autogen, elixir-format
+msgid "Agent is working..."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:203
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:204
+#, elixir-autogen, elixir-format
+msgid "Collapse workspace"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:391
+#, elixir-autogen, elixir-format
+msgid "Configure layout, language, and theme preferences."
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:397
+#: lib/handbean_web/live/settings_live.html.heex:403
+#, elixir-autogen, elixir-format
+msgid "Language"
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:240
+#, elixir-autogen, elixir-format
+msgid "Same as default model"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:1273
+#: lib/handbean_web/live/workspace_live/chat_components.ex:1274
+#, elixir-autogen, elixir-format
+msgid "Show workspace"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:389
+#, elixir-autogen, elixir-format
+msgid "UI Settings"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/view_components.ex:209
+#, elixir-autogen, elixir-format
+msgid "当前权限:"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:57
+#, elixir-autogen, elixir-format
+msgid "+ 添加供应商"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:222
+#, elixir-autogen, elixir-format
+msgid "+ 添加模型"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:119
+#: lib/handbean_web/live/available_models_live.html.heex:381
+#: lib/handbean_web/live/available_models_live.html.heex:494
+#, elixir-autogen, elixir-format
+msgid "API 类型"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.ex:393
+#, elixir-autogen, elixir-format
+msgid "Available Models"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:432
+#, elixir-autogen, elixir-format
+msgid "English"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.ex:312
+#, elixir-autogen, elixir-format
+msgid "Provider ID 不能为空"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.ex:315
+#, elixir-autogen, elixir-format
+msgid "Provider ID 只能包含小写字母、数字、横线和下划线"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:696
+#, elixir-autogen, elixir-format
+msgid "Reasoning 价格"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:755
+#, elixir-autogen, elixir-format
+msgid "Select provider to configure"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:49
+#, elixir-autogen, elixir-format
+msgid "Sign in with a subscription"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:806
+#, elixir-autogen, elixir-format
+msgid "Waiting for authentication..."
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.ex:391
+#, elixir-autogen, elixir-format
+msgid "Workspace Models"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:768
+#, elixir-autogen, elixir-format
+msgid "[subscription]"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:240
+#: lib/handbean_web/live/available_models_live.html.heex:281
+#: lib/handbean_web/live/workspace_memory_live.ex:176
+#, elixir-autogen, elixir-format
+msgid "上下文"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:628
+#, elixir-autogen, elixir-format
+msgid "上下文窗口"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:122
+#, elixir-autogen, elixir-format
+msgid "不限制"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:417
+#, elixir-autogen, elixir-format
+msgid "中文 (简体)"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:133
+#, elixir-autogen, elixir-format
+msgid "仅允许勾选模型"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:241
+#: lib/handbean_web/live/available_models_live.html.heex:287
+#, elixir-autogen, elixir-format
+msgid "价格"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.ex:578
+#, elixir-autogen, elixir-format
+msgid "使用供应商默认"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:363
+#, elixir-autogen, elixir-format
+msgid "例如 StepFun"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:42
+#: lib/handbean_web/live/available_models_live.html.heex:106
+#, elixir-autogen, elixir-format
+msgid "供应商"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:358
+#, elixir-autogen, elixir-format
+msgid "供应商名称"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.ex:407
+#, elixir-autogen, elixir-format
+msgid "供应商已成功更新"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.ex:331
+#, elixir-autogen, elixir-format
+msgid "供应商已成功添加"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:108
+#, elixir-autogen, elixir-format
+msgid "供应商详情"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:566
+#: lib/handbean_web/live/workspace_live/chat_components.ex:307
+#: lib/handbean_web/live/workspace_live/chat_components.ex:369
+#: lib/handbean_web/live/workspace_memory_live.html.heex:204
+#, elixir-autogen, elixir-format
+msgid "保存"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.ex:619
+#: lib/handbean_web/live/available_models_live.html.heex:200
+#, elixir-autogen, elixir-format
+msgid "删除供应商"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.ex:620
+#: lib/handbean_web/live/available_models_live.html.heex:295
+#, elixir-autogen, elixir-format
+msgid "删除模型"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:679
+#: lib/handbean_web/live/available_models_live.html.heex:689
+#: lib/handbean_web/live/available_models_live.html.heex:701
+#, elixir-autogen, elixir-format
+msgid "可选"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:115
+#: lib/handbean_web/live/available_models_live.html.heex:237
+#: lib/handbean_web/live/available_models_live.html.heex:267
+#: lib/handbean_web/live/available_models_live.html.heex:484
+#, elixir-autogen, elixir-format
+msgid "名称"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:63
+#, elixir-autogen, elixir-format
+msgid "尚无供应商配置"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.ex:293
+#, elixir-autogen, elixir-format
+msgid "工作区模型保存成功"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:146
+#: lib/handbean_web/live/settings_live.html.heex:160
+#, elixir-autogen, elixir-format
+msgid "工作区默认模型"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.ex:472
+#, elixir-autogen, elixir-format
+msgid "已成功删除"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:97
+#, elixir-autogen, elixir-format
+msgid "当前工作区模型"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.ex:692
+#, elixir-autogen, elixir-format
+msgid "打开下面的链接，输入用户码完成 xAI 订阅授权。"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:603
+#, elixir-autogen, elixir-format
+msgid "显示名称"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:638
+#, elixir-autogen, elixir-format
+msgid "最大输出"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:236
+#: lib/handbean_web/live/available_models_live.html.heex:262
+#: lib/handbean_web/live/available_models_live.html.heex:592
+#, elixir-autogen, elixir-format
+msgid "模型 ID"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.ex:529
+#, elixir-autogen, elixir-format
+msgid "模型 ID 不能为空"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.ex:548
+#, elixir-autogen, elixir-format
+msgid "模型已成功添加"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:229
+#, elixir-autogen, elixir-format
+msgid "此供应商下尚无模型"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:454
+#: lib/handbean_web/live/available_models_live.html.heex:746
+#, elixir-autogen, elixir-format
+msgid "添加"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:335
+#, elixir-autogen, elixir-format
+msgid "添加供应商"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:575
+#, elixir-autogen, elixir-format
+msgid "添加模型"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:64
+#, elixir-autogen, elixir-format
+msgid "点击上方按钮添加"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:788
+#, elixir-autogen, elixir-format
+msgid "用户码"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.ex:621
+#: lib/handbean_web/live/available_models_live.html.heex:823
+#: lib/handbean_web/live/workspace_memory_live.html.heex:291
+#, elixir-autogen, elixir-format
+msgid "确认删除"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.ex:630
+#, elixir-autogen, elixir-format
+msgid "确认删除供应商「%{name}」(ID: %{id})？这将同时删除其下所有模型。"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.ex:634
+#, elixir-autogen, elixir-format
+msgid "确认删除模型「%{id}」？"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.ex:637
+#, elixir-autogen, elixir-format
+msgid "确认删除？"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:238
+#: lib/handbean_web/live/available_models_live.html.heex:268
+#: lib/handbean_web/live/available_models_live.html.heex:614
+#, elixir-autogen, elixir-format
+msgid "类型"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:684
+#, elixir-autogen, elixir-format
+msgid "缓存写价格"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:674
+#, elixir-autogen, elixir-format
+msgid "缓存读价格"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:193
+#: lib/handbean_web/live/workspace_memory_live.html.heex:246
+#, elixir-autogen, elixir-format
+msgid "编辑"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:463
+#, elixir-autogen, elixir-format
+msgid "编辑供应商"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:203
+#, elixir-autogen, elixir-format
+msgid "至少需要一个供应商"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.ex:354
+#: lib/handbean_web/live/available_models_live.ex:427
+#: lib/handbean_web/live/available_models_live.ex:569
+#, elixir-autogen, elixir-format
+msgid "表单数据无效"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:51
+#, elixir-autogen, elixir-format
+msgid "订阅登录"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.ex:37
+#: lib/handbean_web/live/available_models_live.html.heex:30
+#, elixir-autogen, elixir-format
+msgid "设置 / 可用模型"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.ex:183
+#, elixir-autogen, elixir-format
+msgid "设置保存成功"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:106
+#, elixir-autogen, elixir-format
+msgid "访问模式"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:651
+#, elixir-autogen, elixir-format
+msgid "输入价格"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:661
+#, elixir-autogen, elixir-format
+msgid "输出价格"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:27
+#: lib/handbean_web/live/settings_live.html.heex:31
+#, elixir-autogen, elixir-format
+msgid "返回工作台"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:309
+#, elixir-autogen, elixir-format
+msgid "选择左侧供应商查看详情"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:794
+#, elixir-autogen, elixir-format
+msgid "验证地址"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:86
+#, elixir-autogen, elixir-format
+msgid "默认"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:149
+#, elixir-autogen, elixir-format
+msgid "默认供应商"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.ex:247
+#, elixir-autogen, elixir-format
+msgid "默认供应商已更改"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:775
+#, elixir-autogen
+msgid "Cache hit"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:770
+#, elixir-autogen
+msgid "This run: cached input / total input (including cache reads and writes). Not a cost saving rate. — means no cache activity reported."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:696
+#, elixir-autogen
+msgid "Allow once"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:640
+#, elixir-autogen
+msgid "More approval options"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:642
+#, elixir-autogen
+msgid "Session approval allows these tools for the rest of this run."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:650
+#, elixir-autogen
+msgid "Always allow saves these rules in this workspace:"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:82
+#, elixir-autogen
+msgid "Child ID"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:99
+#, elixir-autogen
+msgid "Run ID"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:113
+#, elixir-autogen
+msgid "Input"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:116
+#, elixir-autogen
+msgid "Output"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:119
+#, elixir-autogen
+msgid "Cache read"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:122
+#, elixir-autogen
+msgid "Cache write"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:91
+#: lib/handbean_web/live/workspace_live/chat_components.ex:92
+#, elixir-autogen
+msgid "Copy child ID"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:94
+#, elixir-autogen
+msgid "Copy"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:140
+#: lib/handbean_web/live/workspace_live/chat_components.ex:141
+#, elixir-autogen
+msgid "Copy report"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:170
+#, elixir-autogen
+msgid "Report content unavailable"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:185
+#, elixir-autogen
+msgid "Follow up"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:194
+#, elixir-autogen
+msgid "Report available"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:195
+#, elixir-autogen
+msgid "Report failed"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:196
+#, elixir-autogen
+msgid "Report unavailable"
+msgstr ""
+
+#: lib/handbean_web/workspace_helper.ex:510
+#, elixir-autogen, elixir-format
+msgid "%{count} action"
+msgid_plural "%{count} actions"
+msgstr[0] ""
+msgstr[1] ""
+
+#: lib/handbean_web/live/workspace_live/browser_panel.ex:85
+#, elixir-autogen, elixir-format
+msgid "%{count} marked"
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:447
+#, elixir-autogen, elixir-format
+msgid "%{level} (Unavailable)"
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:444
+#, elixir-autogen, elixir-format
+msgid "%{model} (Unavailable)"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:366
+#, elixir-autogen, elixir-format
+msgid "A ready result proves API access and one tiny compute dispatch only. It is not model compatibility or performance evidence, especially on software or virtual GPUs."
+msgstr ""
+
+#: lib/handbean_web/live/git_settings_live.html.heex:58
+#, elixir-autogen, elixir-format
+msgid "Accounts"
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:113
+#, elixir-autogen, elixir-format
+msgid "Add MCP Server"
+msgstr ""
+
+#: lib/handbean_web/live/git_settings_live.html.heex:70
+#, elixir-autogen, elixir-format
+msgid "Add account"
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:11
+#, elixir-autogen, elixir-format
+msgid "Add server"
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:96
+#, elixir-autogen, elixir-format
+msgid "Advisor"
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:100
+#: lib/handbean_web/live/settings/model_ai_panel.ex:122
+#, elixir-autogen, elixir-format
+msgid "Advisor model"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.ex:386
+#: lib/handbean_web/live/workspace_live.ex:2167
+#, elixir-autogen, elixir-format
+msgid "Agent replied in %{title}."
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.ex:384
+#: lib/handbean_web/live/workspace_live.ex:2165
+#, elixir-autogen, elixir-format
+msgid "Agent stopped in %{title}."
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:234
+#, elixir-autogen, elixir-format
+msgid "All workspaces, including future workspaces"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:120
+#, elixir-autogen, elixir-format
+msgid "Already inserted; cannot send now."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:158
+#, elixir-autogen, elixir-format
+msgid "Already inserted; cannot undo."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:667
+#, elixir-autogen, elixir-format
+msgid "Always allow"
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:171
+#, elixir-autogen, elixir-format
+msgid "Authentication"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/browser_panel.ex:38
+#, elixir-autogen, elixir-format
+msgid "Back"
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:175
+#, elixir-autogen, elixir-format
+msgid "Bearer token"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:182
+#, elixir-autogen, elixir-format
+msgid "Browser"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:991
+#, elixir-autogen, elixir-format
+msgid "CLI"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:606
+#, elixir-autogen, elixir-format
+msgid "CLI approval required"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:734
+#, elixir-autogen, elixir-format
+msgid "CLI is not available on this host."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:1028
+#, elixir-autogen, elixir-format
+msgid "CLI model"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:743
+#, elixir-autogen, elixir-format
+msgid "CLI turn failed: %{reason}"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:665
+#, elixir-autogen, elixir-format
+msgid "CLI turn stopped."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:161
+#, elixir-autogen, elixir-format
+msgid "Changes"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:295
+#, elixir-autogen, elixir-format
+msgid "Checks the browser boundaries needed by a future local model setting. It does not download or run a model."
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:399
+#, elixir-autogen, elixir-format
+msgid "Choose the interface language."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/browser_panel.ex:94
+#, elixir-autogen, elixir-format
+msgid "Clear"
+msgstr ""
+
+#: lib/handbean_web/live/git_settings_live.html.heex:19
+#, elixir-autogen, elixir-format
+msgid "Commit identity"
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:7
+#, elixir-autogen, elixir-format
+msgid "Connect HTTP MCP servers and control workspace access."
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:60
+#, elixir-autogen, elixir-format
+msgid "Connected"
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:278
+#, elixir-autogen, elixir-format
+msgid "Connected. %{count} tools found."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:480
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:127
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:128
+#, elixir-autogen, elixir-format
+msgid "Conversation info"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:383
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:554
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:555
+#, elixir-autogen, elixir-format
+msgid "Copy relative path"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/composer.ex:192
+#, elixir-autogen, elixir-format
+msgid "Could not resend because the queue is full."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/composer.ex:195
+#, elixir-autogen, elixir-format
+msgid "Could not resend because the run is no longer accepting input."
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.ex:139
+#, elixir-autogen, elixir-format
+msgid "Could not save language preference."
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.ex:121
+#, elixir-autogen, elixir-format
+msgid "Could not save theme preference."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:123
+#, elixir-autogen, elixir-format
+msgid "Could not send that message now."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:161
+#, elixir-autogen, elixir-format
+msgid "Could not undo that message."
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:178
+#, elixir-autogen, elixir-format
+msgid "Custom headers"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:467
+#, elixir-autogen, elixir-format
+msgid "Dark"
+msgstr ""
+
+#: lib/handbean_web/live/git_settings_live.html.heex:124
+#: lib/handbean_web/live/git_settings_live.html.heex:135
+#: lib/handbean_web/live/mcp_settings_live.html.heex:72
+#: lib/handbean_web/live/mcp_settings_live.html.heex:97
+#, elixir-autogen, elixir-format
+msgid "Delete"
+msgstr ""
+
+#: lib/handbean_web/live/git_settings_live.html.heex:128
+#, elixir-autogen, elixir-format
+msgid "Delete this account?"
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:90
+#, elixir-autogen, elixir-format
+msgid "Delete this server?"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:678
+#, elixir-autogen, elixir-format
+msgid "Deny"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/browser_panel.ex:82
+#, elixir-autogen, elixir-format
+msgid "Design"
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:50
+#: lib/handbean_web/live/mcp_settings_live.html.heex:220
+#: lib/handbean_web/live/settings/model_ai_panel.ex:179
+#, elixir-autogen, elixir-format
+msgid "Disabled"
+msgstr ""
+
+#: lib/handbean_web/live/git_settings_live.html.heex:158
+#, elixir-autogen, elixir-format
+msgid "Display name"
+msgstr ""
+
+#: lib/handbean_web/live/git_settings_live.html.heex:116
+#, elixir-autogen, elixir-format
+msgid "Edit"
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:115
+#, elixir-autogen, elixir-format
+msgid "Edit MCP Server"
+msgstr ""
+
+#: lib/handbean_web/workspace_helper.ex:500
+#, elixir-autogen, elixir-format
+msgid "Edited %{count} file"
+msgid_plural "Edited %{count} files"
+msgstr[0] ""
+msgstr[1] ""
+
+#: lib/handbean_web/live/git_settings_live.html.heex:37
+#, elixir-autogen, elixir-format
+msgid "Email"
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:51
+#, elixir-autogen, elixir-format
+msgid "Enabled"
+msgstr ""
+
+#: lib/handbean_web/workspace_helper.ex:466
+#, elixir-autogen, elixir-format
+msgid "Explored %{details}"
+msgstr ""
+
+#: lib/handbean_web/workspace_helper.ex:449
+#, elixir-autogen, elixir-format
+msgid "Called advisor model"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live.ex:1506
+#, elixir-autogen, elixir-format
+msgid "Failed to update permission mode"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.ex:857
+#, elixir-autogen, elixir-format
+msgid "Fetched %{total} models, %{added} new"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:94
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:95
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:169
+#, elixir-autogen, elixir-format
+msgid "Files"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/browser_panel.ex:46
+#, elixir-autogen, elixir-format
+msgid "Forward"
+msgstr ""
+
+#: lib/handbean_web/live/git_settings_live.html.heex:4
+#: lib/handbean_web/live/settings_live.ex:396
+#, elixir-autogen, elixir-format
+msgid "Git"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/browser_panel.ex:66
+#, elixir-autogen, elixir-format
+msgid "Go"
+msgstr ""
+
+#: lib/handbean_web/live/git_settings_live.html.heex:173
+#, elixir-autogen, elixir-format
+msgid "HTTPS endpoint"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:995
+#, elixir-autogen, elixir-format
+msgid "Handbean"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:992
+#, elixir-autogen, elixir-format
+msgid "Handbean owns the turn unless a CLI is selected"
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:199
+#, elixir-autogen, elixir-format
+msgid "Headers (JSON)"
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:321
+#, elixir-autogen, elixir-format
+msgid "How isolated memory processing should be."
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:68
+#, elixir-autogen, elixir-format
+msgid "How much internal reasoning the model should use."
+msgstr ""
+
+#: lib/handbean_web/live/git_settings_live.html.heex:146
+#, elixir-autogen, elixir-format
+msgid "Id"
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:167
+#, elixir-autogen, elixir-format
+msgid "Inherit the global advisor, choose another model, or turn it off here."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:599
+#, elixir-autogen, elixir-format
+msgid "Inserts after approval"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/browser_panel.ex:142
+#, elixir-autogen, elixir-format
+msgid "Install agent-browser to use the browser"
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:206
+#, elixir-autogen, elixir-format
+msgid "Leave blank to keep saved headers"
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:192
+#, elixir-autogen, elixir-format
+msgid "Leave blank to keep saved token"
+msgstr ""
+
+#: lib/handbean_web/live/git_settings_live.html.heex:192
+#, elixir-autogen, elixir-format
+msgid "Leave blank to keep the saved token"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:456
+#, elixir-autogen, elixir-format
+msgid "Light"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:441
+#, elixir-autogen, elixir-format
+msgid "Light, dark, or follow the system."
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:108
+#, elixir-autogen, elixir-format
+msgid "Limit which models this workspace can use."
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:293
+#, elixir-autogen, elixir-format
+msgid "Local WebGPU capability probe"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.ex:395
+#, elixir-autogen, elixir-format
+msgid "MCP"
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:5
+#, elixir-autogen, elixir-format
+msgid "MCP Servers"
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:224
+#: lib/handbean_web/live/settings/model_ai_panel.ex:243
+#, elixir-autogen, elixir-format
+msgid "Memory model"
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:138
+#: lib/handbean_web/live/settings/model_ai_panel.ex:263
+#, elixir-autogen, elixir-format
+msgid "Model default"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.ex:115
+#: lib/handbean_web/live/available_models_live.ex:125
+#: lib/handbean_web/live/available_models_live.ex:134
+#, elixir-autogen, elixir-format
+msgid "Model discovery failed"
+msgstr ""
+
+#: lib/handbean_web/live/git_settings_live.html.heex:27
+#: lib/handbean_web/live/mcp_settings_live.html.heex:148
+#, elixir-autogen, elixir-format
+msgid "Name"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.ex:358
+#, elixir-autogen, elixir-format
+msgid "Needs confirmation"
+msgid_plural "Needs confirmation · %{count} tasks"
+msgstr[0] ""
+msgstr[1] ""
+
+#: lib/handbean_web/live/git_settings_live.html.heex:75
+#, elixir-autogen, elixir-format
+msgid "No Git accounts yet."
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:25
+#, elixir-autogen, elixir-format
+msgid "No MCP servers configured."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:251
+#, elixir-autogen, elixir-format
+msgid "No file changes yet"
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:118
+#, elixir-autogen, elixir-format
+msgid "No workspace model"
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:117
+#, elixir-autogen, elixir-format
+msgid "Not configured"
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:61
+#, elixir-autogen, elixir-format
+msgid "Not connected"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:596
+#, elixir-autogen, elixir-format
+msgid "Not delivered"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:137
+#, elixir-autogen, elixir-format
+msgid "OAuth（凭证不在此显示）"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/browser_panel.ex:117
+#: lib/handbean_web/live/workspace_live/browser_panel.ex:253
+#: lib/handbean_web/live/workspace_live/browser_panel.ex:304
+#, elixir-autogen, elixir-format
+msgid "Open a conversation before sending annotations."
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:102
+#, elixir-autogen, elixir-format
+msgid "Optional second model. When set, the agent can ask it for advice and decides for itself when to call."
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:317
+#, elixir-autogen, elixir-format
+msgid "Overall result"
+msgstr ""
+
+#: lib/handbean_web/live/git_settings_live.html.heex:183
+#, elixir-autogen, elixir-format
+msgid "Password or token"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:360
+#, elixir-autogen, elixir-format
+msgid "Probe is running…"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:602
+#, elixir-autogen, elixir-format
+msgid "Queued · when this run finishes"
+msgstr ""
+
+#: lib/handbean_web/workspace_helper.ex:469
+#, elixir-autogen, elixir-format
+msgid "Ran %{details}"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:329
+#, elixir-autogen, elixir-format
+msgid "Reading browser capabilities…"
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:132
+#, elixir-autogen, elixir-format
+msgid "Reasoning level used by the advisor model."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/browser_panel.ex:54
+#, elixir-autogen, elixir-format
+msgid "Reload"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:624
+#, elixir-autogen, elixir-format
+msgid "Resend"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:391
+#, elixir-autogen, elixir-format
+msgid "Resent, but the previous copy could not be removed from history."
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:321
+#, elixir-autogen, elixir-format
+msgid "Run probe"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.ex:354
+#, elixir-autogen, elixir-format
+msgid "Running %{running} · waiting %{waiting}"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.ex:362
+#, elixir-autogen, elixir-format
+msgid "Running 1 task"
+msgid_plural "Running %{count} tasks"
+msgstr[0] ""
+msgstr[1] ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:1119
+#, elixir-autogen, elixir-format
+msgid "Running: send inserts next · queue waits until this run finishes"
+msgstr ""
+
+#: lib/handbean_web/live/git_settings_live.html.heex:200
+#, elixir-autogen, elixir-format
+msgid "Save account"
+msgstr ""
+
+#: lib/handbean_web/live/git_settings_live.html.heex:50
+#, elixir-autogen, elixir-format
+msgid "Save identity"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:565
+#, elixir-autogen, elixir-format
+msgid "Select a CLI model before sending."
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:244
+#, elixir-autogen, elixir-format
+msgid "Selected workspaces"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/browser_panel.ex:106
+#, elixir-autogen, elixir-format
+msgid "Send to composer"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:227
+#, elixir-autogen, elixir-format
+msgid "Sent to subagent %{ref}."
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:359
+#, elixir-autogen, elixir-format
+msgid "Structured result"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:228
+#, elixir-autogen, elixir-format
+msgid "Subagent %{ref} is answering a follow-up."
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.ex:102
+#, elixir-autogen, elixir-format
+msgid "Subscription authorization failed"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:102
+#, elixir-autogen, elixir-format
+msgid "Symlinks are not opened from the workspace tree"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:478
+#, elixir-autogen, elixir-format
+msgid "System"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:117
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:118
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:194
+#, elixir-autogen, elixir-format
+msgid "Terminal"
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:294
+#, elixir-autogen, elixir-format
+msgid "Test connection"
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:294
+#, elixir-autogen, elixir-format
+msgid "Testing..."
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:439
+#: lib/handbean_web/live/settings_live.html.heex:446
+#, elixir-autogen, elixir-format
+msgid "Theme"
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:130
+#: lib/handbean_web/live/settings/model_ai_panel.ex:251
+#, elixir-autogen, elixir-format
+msgid "Think level"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:729
+#: lib/handbean_web/live/workspace_live/message_submission.ex:732
+#, elixir-autogen, elixir-format
+msgid "This CLI cannot list models."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:731
+#, elixir-autogen, elixir-format
+msgid "This CLI has no selectable models."
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.ex:385
+#: lib/handbean_web/live/workspace_live.ex:2166
+#, elixir-autogen, elixir-format
+msgid "This run ended in %{title}."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:648
+#, elixir-autogen, elixir-format
+msgid "This session"
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:80
+#, elixir-autogen, elixir-format
+msgid "This stdio server comes from %{source}. Edit its source configuration to change how it launches."
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:184
+#, elixir-autogen, elixir-format
+msgid "Token"
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:159
+#: lib/handbean_web/live/workspace_live/browser_panel.ex:56
+#, elixir-autogen, elixir-format
+msgid "URL"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:275
+#, elixir-autogen, elixir-format
+msgid "Unable to list workspace files"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:615
+#, elixir-autogen, elixir-format
+msgid "Undo"
+msgstr ""
+
+#: lib/handbean_web/live/git_settings_live.html.heex:108
+#, elixir-autogen, elixir-format
+msgid "Use as default"
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:173
+#, elixir-autogen, elixir-format
+msgid "Use global"
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:176
+#, elixir-autogen, elixir-format
+msgid "Use the model selected above"
+msgstr ""
+
+#: lib/handbean_web/workspace_helper.ex:472
+#: lib/handbean_web/workspace_helper.ex:511
+#, elixir-autogen, elixir-format
+msgid "Used %{details}"
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:43
+#, elixir-autogen, elixir-format
+msgid "Used for new conversations unless a workspace default overrides it."
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:149
+#, elixir-autogen, elixir-format
+msgid "Used when starting a new conversation in this workspace."
+msgstr ""
+
+#: lib/handbean_web/live/git_settings_live.html.heex:162
+#, elixir-autogen, elixir-format
+msgid "Username"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:353
+#, elixir-autogen, elixir-format
+msgid "Waiting for probe…"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:605
+#, elixir-autogen, elixir-format
+msgid "Waiting to insert · next step"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:1230
+#: lib/handbean_web/live/workspace_live/chat_components.ex:1232
+#, elixir-autogen, elixir-format
+msgid "When done"
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:296
+#, elixir-autogen, elixir-format
+msgid "Where extracted memories are stored."
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.ex:392
+#, elixir-autogen, elixir-format
+msgid "Workspace Memory"
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:225
+#, elixir-autogen, elixir-format
+msgid "Workspace access"
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:165
+#, elixir-autogen, elixir-format
+msgid "Workspace advisor"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.ex:381
+#: lib/handbean_web/live/workspace_live.ex:2162
+#, elixir-autogen, elixir-format
+msgid "conversation"
+msgstr ""
+
+#: lib/handbean_web/live/git_settings_live.html.heex:90
+#, elixir-autogen, elixir-format
+msgid "default"
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:154
+#, elixir-autogen, elixir-format
+msgid "e.g. My MCP Server"
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:137
+#, elixir-autogen, elixir-format
+msgid "stdio servers are read-only here. Edit the source configuration to change the launcher."
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:51
+#, elixir-autogen, elixir-format
+msgid "tools"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:1091
+#, elixir-autogen, elixir-format
+msgid "yolo"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/schedules.ex:343
+#, elixir-autogen, elixir-format
+msgid "下次"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:713
+#, elixir-autogen, elixir-format
+msgid "不支持"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/view_components.ex:207
+#, elixir-autogen, elixir-format
+msgid "不限制操作，仅保留内置的 env 与敏感路径拦截。"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.ex:175
+#, elixir-autogen, elixir-format
+msgid "事实"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.html.heex:107
+#, elixir-autogen, elixir-format
+msgid "仅全局记忆"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.html.heex:10
+#, elixir-autogen, elixir-format
+msgid "仅查看全局记忆"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:451
+#, elixir-autogen, elixir-format
+msgid "从下载导入…"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:943
+#, elixir-autogen, elixir-format
+msgid "仓库"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:273
+#, elixir-autogen, elixir-format
+msgid "会话名称"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:154
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:254
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:60
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:356
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:489
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:646
+#, elixir-autogen, elixir-format
+msgid "会话数量"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:439
+#, elixir-autogen, elixir-format
+msgid "使用系统选择器导入到应用内"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.ex:172
+#, elixir-autogen, elixir-format
+msgid "偏好"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/schedules.ex:67
+#, elixir-autogen, elixir-format
+msgid "先说清何时、做什么"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.html.heex:27
+#, elixir-autogen, elixir-format
+msgid "全局记忆"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:219
+#, elixir-autogen, elixir-format
+msgid "全部关闭"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:588
+#: lib/handbean_web/live/workspace_live/schedules.ex:284
+#: lib/handbean_web/live/workspace_memory_live.html.heex:275
+#, elixir-autogen, elixir-format
+msgid "删除"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:178
+#, elixir-autogen, elixir-format
+msgid "刷新 Cursor 模型"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:170
+#, elixir-autogen, elixir-format
+msgid "刷新订阅模型"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.html.heex:104
+#, elixir-autogen, elixir-format
+msgid "包含全局记忆"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:135
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:136
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:1395
+#, elixir-autogen, elixir-format
+msgid "取消置顶"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/view_components.ex:204
+#, elixir-autogen, elixir-format
+msgid "只自动复审本来要问的操作，不扩大权限。"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:1016
+#, elixir-autogen, elixir-format
+msgid "可在对话中途更换模型"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live.ex:1141
+#: lib/handbean_web/live/workspace_live.ex:1276
+#, elixir-autogen, elixir-format
+msgid "名称不能为空"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live.ex:1149
+#: lib/handbean_web/live/workspace_live.ex:1283
+#, elixir-autogen, elixir-format
+msgid "名称不能超过 80 个字符"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:235
+#: lib/handbean_web/live/available_models_live.html.heex:250
+#, elixir-autogen, elixir-format
+msgid "启用"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:251
+#, elixir-autogen, elixir-format
+msgid "启用后出现在模型选择中"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.html.heex:255
+#, elixir-autogen, elixir-format
+msgid "复制 #ID"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:1448
+#, elixir-autogen, elixir-format
+msgid "复制 ID"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.html.heex:264
+#, elixir-autogen, elixir-format
+msgid "复制内容"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:1079
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:1080
+#, elixir-autogen, elixir-format
+msgid "复制标题"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.html.heex:221
+#, elixir-autogen, elixir-format
+msgid "定位关联记忆 #%{id}"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:95
+#: lib/handbean_web/live/workspace_live/schedules.ex:135
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:922
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:1508
+#, elixir-autogen, elixir-format
+msgid "定时任务"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:153
+#: lib/handbean_web/live/workspace_live/schedules.ex:368
+#: lib/handbean_web/live/workspace_live/schedules.ex:373
+#: lib/handbean_web/live/workspace_live/schedules.ex:381
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:448
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:888
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:1509
+#, elixir-autogen, elixir-format
+msgid "对话"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:298
+#, elixir-autogen, elixir-format
+msgid "对话加载失败"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:324
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:345
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:351
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:442
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:478
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:484
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:590
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:632
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:638
+#, elixir-autogen, elixir-format
+msgid "展开"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:335
+#, elixir-autogen, elixir-format
+msgid "工作区名称"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.html.heex:5
+#, elixir-autogen, elixir-format
+msgid "工作区记忆"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:1449
+#, elixir-autogen, elixir-format
+msgid "已复制"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:830
+#, elixir-autogen, elixir-format
+msgid "已存档"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:110
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:330
+#, elixir-autogen, elixir-format
+msgid "已置顶"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.ex:183
+#: lib/handbean_web/live/workspace_memory_live.ex:199
+#, elixir-autogen, elixir-format
+msgid "已过期"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:1469
+#, elixir-autogen, elixir-format
+msgid "归档"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:455
+#, elixir-autogen, elixir-format
+msgid "手机不能直接把系统下载目录当工作区。系统授权后会把所选文件夹复制进应用私有目录。Downloads 根目录在部分 Android 版本上不可选，请选其中的项目子文件夹。"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.ex:690
+#, elixir-autogen, elixir-format
+msgid "打开下面的链接，用 Cursor 账号完成浏览器授权。这是非官方协议接入，费用未知，不会显示为免费。"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.ex:687
+#, elixir-autogen, elixir-format
+msgid "打开下面的链接，输入用户码完成 ChatGPT 授权。使用 Codex 订阅额度，不是 OpenAI API 余额；可用模型与限额由账号决定。"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:769
+#, elixir-autogen, elixir-format
+msgid "打开预览"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:186
+#, elixir-autogen, elixir-format
+msgid "拉取模型"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.html.heex:61
+#, elixir-autogen, elixir-format
+msgid "按生命周期筛选"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.html.heex:120
+#, elixir-autogen, elixir-format
+msgid "按记忆类型筛选"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:787
+#: lib/handbean_web/live/workspace_live/chat_components.ex:796
+#, elixir-autogen, elixir-format
+msgid "接管浏览器"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:239
+#: lib/handbean_web/live/available_models_live.html.heex:271
+#, elixir-autogen, elixir-format
+msgid "推理"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.html.heex:88
+#, elixir-autogen, elixir-format
+msgid "搜索内容或 #ID…"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.html.heex:81
+#, elixir-autogen, elixir-format
+msgid "搜索记忆"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:707
+#, elixir-autogen, elixir-format
+msgid "支持推理"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:714
+#, elixir-autogen, elixir-format
+msgid "支持，可选择推理等级"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:325
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:346
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:352
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:443
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:479
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:485
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:591
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:633
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:639
+#, elixir-autogen, elixir-format
+msgid "收起"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:174
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:175
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:455
+#, elixir-autogen, elixir-format
+msgid "新建自由对话"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:1090
+#, elixir-autogen, elixir-format
+msgid "智能审批"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/schedules.ex:231
+#: lib/handbean_web/live/workspace_live/schedules.ex:249
+#, elixir-autogen, elixir-format
+msgid "暂停"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:1358
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:1359
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:1363
+#, elixir-autogen, elixir-format
+msgid "更多操作"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.ex:180
+#, elixir-autogen, elixir-format
+msgid "有效记忆"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:34
+#, elixir-autogen, elixir-format
+msgid "查看图片 %{name}"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.ex:174
+#, elixir-autogen, elixir-format
+msgid "模式"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:290
+#, elixir-autogen, elixir-format
+msgid "正在刷新对话…"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:282
+#, elixir-autogen, elixir-format
+msgid "正在加载对话…"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.html.heex:147
+#, elixir-autogen, elixir-format
+msgid "没有符合当前筛选条件的记忆"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:451
+#, elixir-autogen, elixir-format
+msgid "浏览..."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:778
+#, elixir-autogen, elixir-format
+msgid "用浏览器打开"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.ex:202
+#, elixir-autogen, elixir-format
+msgid "短期 · %{hours}h 后过期"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.ex:182
+#, elixir-autogen, elixir-format
+msgid "短期记忆"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:377
+#, elixir-autogen, elixir-format
+msgid "短横线命名，创建后不可修改。留空则根据名称自动生成。"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:1166
+#: lib/handbean_web/live/workspace_live/chat_components.ex:1182
+#, elixir-autogen, elixir-format
+msgid "移除 %{name}"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:394
+#, elixir-autogen, elixir-format
+msgid "移除「%{name}」后，其中的对话会进入已存档。项目目录不会被删除。"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:392
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:276
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:277
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:992
+#, elixir-autogen, elixir-format
+msgid "移除工作区"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live.ex:1330
+#, elixir-autogen, elixir-format
+msgid "移除工作区失败"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/schedules.ex:267
+#: lib/handbean_web/live/workspace_live/schedules.ex:401
+#, elixir-autogen, elixir-format
+msgid "立即运行"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:1192
+#, elixir-autogen, elixir-format
+msgid "等待确认"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:1395
+#, elixir-autogen, elixir-format
+msgid "置顶"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.ex:173
+#, elixir-autogen, elixir-format
+msgid "规则"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.html.heex:93
+#, elixir-autogen, elixir-format
+msgid "记忆范围"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:1120
+#, elixir-autogen, elixir-format
+msgid "输入消息"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/schedules.ex:394
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:1189
+#, elixir-autogen, elixir-format
+msgid "运行中"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:757
+#, elixir-autogen, elixir-format
+msgid "选择一个订阅登录方式。订阅额度与 API 余额分开使用。"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.html.heex:18
+#, elixir-autogen, elixir-format
+msgid "选择工作区"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:966
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:967
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:1420
+#, elixir-autogen, elixir-format
+msgid "重命名"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:269
+#, elixir-autogen, elixir-format
+msgid "重命名会话"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live.ex:1157
+#: lib/handbean_web/live/workspace_live.ex:1288
+#, elixir-autogen, elixir-format
+msgid "重命名失败"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:331
+#, elixir-autogen, elixir-format
+msgid "重命名工作区"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:303
+#, elixir-autogen, elixir-format
+msgid "重试"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.ex:193
+#, elixir-autogen, elixir-format
+msgid "长期"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.ex:191
+#, elixir-autogen, elixir-format
+msgid "长期 · 强化 ×%{count}"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.ex:181
+#, elixir-autogen, elixir-format
+msgid "长期记忆"
+msgstr ""
+
+#: lib/handbean_web/live/available_models_live.html.heex:146
+#, elixir-autogen, elixir-format
+msgid "非官方 Cursor 协议接入。费用未知，不会显示为 0 或免费。原生手机 OAuth 入口尚未验证。"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live.ex:1324
+#, elixir-autogen, elixir-format
+msgid "默认工作区不能移除"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:1317
+#, elixir-autogen
+msgid "Choose a checkout"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:217
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:218
+#, elixir-autogen
+msgid "新建对话"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:231
+#, elixir-autogen
+msgid "选择项目"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:787
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:803
+#, elixir-autogen
+msgid "添加工作区"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:222
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:378
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:557
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:776
+#, elixir-autogen
+msgid "更多"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:220
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:376
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:555
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:774
+#, elixir-autogen
+msgid "显示更多对话"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:551
+#, elixir-autogen
+msgid "“%{title}”将立即从列表中隐藏，删除后无法恢复。"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:565
+#, elixir-autogen
+msgid "受管媒体会在后台删除；失败时系统会保留定位信息并自动重试。"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live.ex:1116
+#, elixir-autogen
+msgid "删除请求失败，请重试"
+msgstr ""
+
+#: lib/handbean_web/components/model_picker.ex:114
+#, elixir-autogen, elixir-format
+msgid "%{count} model"
+msgid_plural "%{count} models"
+msgstr[0] ""
+msgstr[1] ""
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:740
+#, elixir-autogen, elixir-format
+msgid "A run is already active in this conversation."
+msgstr ""
+
+#: lib/handbean_web/live/git_settings_live.html.heex:77
+#, elixir-autogen, elixir-format
+msgid "Add an account when a private HTTPS repository needs credentials."
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.ex:394
+#, elixir-autogen, elixir-format
+msgid "Advanced"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:1152
+#, elixir-autogen, elixir-format
+msgid "Checkout unavailable"
+msgstr ""
+
+#: lib/handbean_web/components/model_picker.ex:206
+#, elixir-autogen, elixir-format
+msgid "Choose a model"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:325
+#, elixir-autogen, elixir-format
+msgid "Close %{name}"
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:202
+#, elixir-autogen, elixir-format
+msgid "Compaction produces reviewable memory candidates when enabled."
+msgstr ""
+
+#: lib/handbean_web/live/mcp_settings_live.html.heex:27
+#, elixir-autogen, elixir-format
+msgid "Connect a server to make its tools available to approved workspaces."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:380
+#, elixir-autogen, elixir-format
+msgid "Copy absolute path"
+msgstr ""
+
+#: lib/handbean_web/live/git_settings_live.html.heex:60
+#, elixir-autogen, elixir-format
+msgid "Credentials used for HTTPS clone, fetch, pull, and push."
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:199
+#, elixir-autogen, elixir-format
+msgid "Enable memory reflection"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:375
+#, elixir-autogen, elixir-format
+msgid "File actions"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:1061
+#, elixir-autogen, elixir-format
+msgid "Loading CLI models…"
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:189
+#, elixir-autogen, elixir-format
+msgid "Memory Reflection"
+msgstr ""
+
+#: lib/handbean_web/components/model_picker.ex:181
+#, elixir-autogen, elixir-format
+msgid "No matching models"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:313
+#, elixir-autogen, elixir-format
+msgid "Not a secure context"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:296
+#, elixir-autogen, elixir-format
+msgid "Open files"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:526
+#, elixir-autogen, elixir-format
+msgid "Permission denied."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:418
+#, elixir-autogen, elixir-format
+msgid "Preview truncated at 128 KiB"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:309
+#, elixir-autogen, elixir-format
+msgid "Probe failed"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:307
+#, elixir-autogen, elixir-format
+msgid "Ready"
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:253
+#, elixir-autogen, elixir-format
+msgid "Reasoning level used for memory reflection."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:477
+#, elixir-autogen, elixir-format
+msgid "Rendered"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:540
+#, elixir-autogen, elixir-format
+msgid "Reveal in Finder"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:442
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:456
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:542
+#, elixir-autogen, elixir-format
+msgid "Reveal in file manager"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:311
+#, elixir-autogen, elixir-format
+msgid "Run probe again"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:306
+#, elixir-autogen, elixir-format
+msgid "Running"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:310
+#, elixir-autogen, elixir-format
+msgid "Running…"
+msgstr ""
+
+#: lib/handbean_web/components/model_picker.ex:142
+#: lib/handbean_web/components/model_picker.ex:143
+#, elixir-autogen, elixir-format
+msgid "Search models"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:312
+#, elixir-autogen, elixir-format
+msgid "Secure context"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:541
+#, elixir-autogen, elixir-format
+msgid "Show in File Explorer"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:485
+#, elixir-autogen, elixir-format
+msgid "Source"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:761
+#: lib/handbean_web/live/workspace_live/message_submission.ex:820
+#, elixir-autogen, elixir-format
+msgid "Stop the active CLI run before sending with Handbean."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:527
+#, elixir-autogen, elixir-format
+msgid "Symlinks cannot be previewed."
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:326
+#, elixir-autogen, elixir-format
+msgid "Technical details"
+msgstr ""
+
+#: lib/handbean_web/live/git_settings_live.html.heex:21
+#, elixir-autogen, elixir-format
+msgid "The author name and email written to new commits."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:525
+#, elixir-autogen, elixir-format
+msgid "The file no longer exists."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:577
+#: lib/handbean_web/live/workspace_live/message_submission.ex:737
+#, elixir-autogen, elixir-format
+msgid "This CLI does not support attachments. Remove them or choose Handbean."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/composer.ex:92
+#, elixir-autogen, elixir-format
+msgid "This conversation checkout is unavailable."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:753
+#, elixir-autogen, elixir-format
+msgid "This conversation checkout is unavailable. Restore it before running tools."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:528
+#, elixir-autogen, elixir-format
+msgid "This file cannot be previewed."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:449
+#, elixir-autogen, elixir-format
+msgid "This file format is not rendered in the workspace yet."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:433
+#, elixir-autogen, elixir-format
+msgid "Unable to display this image. It may be invalid or exceed the 25 MiB limit."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:335
+#, elixir-autogen, elixir-format
+msgid "Unable to preview file"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:308
+#, elixir-autogen, elixir-format
+msgid "Unsupported"
+msgstr ""
+
+#: lib/handbean_web/live/git_settings_live.html.heex:6
+#, elixir-autogen, elixir-format
+msgid "Used for Git commits and HTTPS repository access. Saved passwords and tokens are never shown again."
+msgstr ""
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex:226
+#, elixir-autogen, elixir-format
+msgid "Used to generate reviewable memory candidates from compacted conversations."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/workspace_components.ex:487
+#, elixir-autogen, elixir-format
+msgid "Wrap lines"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/schedules.ex:172
+#, elixir-autogen, elixir-format
+msgid "交给 Agent"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/schedules.ex:179
+#, elixir-autogen, elixir-format
+msgid "任务"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/schedules.ex:170
+#, elixir-autogen, elixir-format
+msgid "任务会在默认工作区的新对话中运行并返回结果"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:60
+#, elixir-autogen, elixir-format
+msgid "任务数量"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:475
+#: lib/handbean_web/live/workspace_memory_live.html.heex:34
+#: lib/handbean_web/live/workspace_memory_live.html.heex:46
+#, elixir-autogen, elixir-format
+msgid "使用自带的记忆功能"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/schedules.ex:276
+#, elixir-autogen, elixir-format
+msgid "修改"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.ex:216
+#, elixir-autogen, elixir-format
+msgid "全局范围"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:218
+#, elixir-autogen, elixir-format
+msgid "全选"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/schedules.ex:180
+#, elixir-autogen, elixir-format
+msgid "共 1 个任务"
+msgid_plural "共 %{count} 个任务"
+msgstr[0] ""
+msgstr[1] ""
+
+#: lib/handbean_web/live/workspace_live/chat_components.ex:478
+#, elixir-autogen, elixir-format
+msgid "关闭后可使用配置的外部记忆工具"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.html.heex:36
+#, elixir-autogen, elixir-format
+msgid "关闭后，此工作区可继续使用 MCP 或扩展提供的外部记忆；已有记忆不会删除。"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.html.heex:273
+#, elixir-autogen, elixir-format
+msgid "删除记忆 #%{id}"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/schedules.ex:187
+#, elixir-autogen, elixir-format
+msgid "在上方描述一个任务，Agent 会确认时间和执行内容。"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.ex:216
+#, elixir-autogen, elixir-format
+msgid "工作区范围"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/schedules.ex:166
+#, elixir-autogen, elixir-format
+msgid "工作日每天 09:00，把项目摘要发到这个聊天"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:911
+#, elixir-autogen, elixir-format
+msgid "工具"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/schedules.ex:397
+#, elixir-autogen, elixir-format
+msgid "已停用"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.html.heex:49
+#, elixir-autogen, elixir-format
+msgid "已关闭"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/schedules.ex:396
+#, elixir-autogen, elixir-format
+msgid "已完成"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.html.heex:49
+#, elixir-autogen, elixir-format
+msgid "已开启"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/schedules.ex:395
+#, elixir-autogen, elixir-format
+msgid "已暂停"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:200
+#, elixir-autogen, elixir-format
+msgid "已选 %{selected} / %{total}"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/schedules.ex:214
+#, elixir-autogen, elixir-format
+msgid "打开对话"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/schedules.ex:215
+#, elixir-autogen, elixir-format
+msgid "打开对话 %{title}"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live.ex:1694
+#: lib/handbean_web/live/workspace_live.ex:1700
+#, elixir-autogen, elixir-format
+msgid "找不到对话"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live.ex:1627
+#, elixir-autogen, elixir-format
+msgid "找不到默认工作区"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.html.heex:236
+#, elixir-autogen, elixir-format
+msgid "提升为长期"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.html.heex:234
+#, elixir-autogen, elixir-format
+msgid "提升记忆 #%{id} 为长期记忆"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:176
+#, elixir-autogen, elixir-format
+msgid "搜索模型"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:182
+#, elixir-autogen, elixir-format
+msgid "搜索模型或供应商"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/schedules.ex:158
+#, elixir-autogen, elixir-format
+msgid "新建任务"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.ex:318
+#, elixir-autogen, elixir-format
+msgid "无法更新这条记忆。请刷新后重试。"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.ex:221
+#: lib/handbean_web/live/workspace_memory_live.ex:222
+#, elixir-autogen, elixir-format
+msgid "未知来源"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.html.heex:164
+#, elixir-autogen, elixir-format
+msgid "来源：%{source}"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/schedules.ex:301
+#, elixir-autogen, elixir-format
+msgid "查看对话"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:256
+#, elixir-autogen, elixir-format
+msgid "没有匹配的模型"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:227
+#, elixir-autogen, elixir-format
+msgid "清空"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/schedules.ex:159
+#, elixir-autogen, elixir-format
+msgid "用一句话说明何时运行、要做什么。后续修改时间、频率或语言，也可以直接说。"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.html.heex:284
+#, elixir-autogen, elixir-format
+msgid "确定永久删除？"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.html.heex:282
+#, elixir-autogen, elixir-format
+msgid "确认删除记忆 #%{id}"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/schedules.ex:136
+#, elixir-autogen, elixir-format
+msgid "管理定时任务，点对话可以跳转"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.html.heex:244
+#, elixir-autogen, elixir-format
+msgid "编辑记忆 #%{id}"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.html.heex:181
+#, elixir-autogen, elixir-format
+msgid "记忆内容"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.html.heex:188
+#, elixir-autogen, elixir-format
+msgid "记忆类型"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/schedules.ex:289
+#, elixir-autogen, elixir-format
+msgid "运行历史"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/schedules.ex:146
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:28
+#, elixir-autogen, elixir-format
+msgid "返回对话"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/schedules.ex:186
+#, elixir-autogen, elixir-format
+msgid "还没有定时任务"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.ex:171
+#, elixir-autogen, elixir-format
+msgctxt "memory kind filter"
+msgid "全部"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.html.heex:101
+#, elixir-autogen, elixir-format
+msgctxt "memory scope"
+msgid "当前工作区"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_memory_live.html.heex:7
+#, elixir-autogen, elixir-format
+msgctxt "memory context"
+msgid "当前工作区："
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:495
+#, elixir-autogen, elixir-format
+msgid "Conversation"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:548
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:1489
+#, elixir-autogen, elixir-format
+msgid "删除对话"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:515
+#, elixir-autogen, elixir-format
+msgid "删除当前对话"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:560
+#, elixir-autogen, elixir-format
+msgid "同时删除 %{count} 个子对话。"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:1429
+#, elixir-autogen, elixir-format
+msgid "复制对话 ID，用于对话协作"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:344
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:736
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:742
+#, elixir-autogen, elixir-format
+msgid "展开子对话"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:345
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:737
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:743
+#, elixir-autogen, elixir-format
+msgid "收起子对话"
+msgstr ""

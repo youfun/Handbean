@@ -1,0 +1,6 @@
+.build/
+.swiftpm/
+build/
+*.app
+Resources/handbea[mn]-web/**
+!Resources/handbea[mn]-web/.gitkeep

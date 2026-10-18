@@ -1,0 +1,20 @@
+import Config
+
+# Portable Mob pack config. `script/ci_setup_android.sh` and
+# `mix mob.write_mob_exs` copy this to gitignored `mob.exs`.
+# Machine-specific paths stay env-overridable; do not put secrets here.
+config :mob_dev,
+  mob_dir: Path.join(File.cwd!(), "deps/mob"),
+  elixir_lib:
+    System.get_env("MOB_ELIXIR_LIB", :code.lib_dir(:elixir) |> to_string() |> Path.dirname()),
+  static_nifs: [
+    %{module: :handbean_storage, archs: [:android, :ios]},
+    %{module: :handbean_notify, archs: [:android]},
+    %{module: :handbean_browser, archs: [:android]},
+    %{module: :handbean_ios, archs: [:ios]},
+    %{module: :bcrypt_nif, init: "bcrypt_nif_nif_init", archs: [:ios]}
+  ]
+
+config :mob, :plugins, []
+
+config :mob, :trusted_plugins, %{}

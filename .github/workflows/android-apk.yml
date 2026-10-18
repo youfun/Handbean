@@ -1,0 +1,142 @@
+# OTP zip is one ABI per APK. arm64-v8a is phones; x86_64 is Chromos/emulators.
+# Local and CI share mobile/script/pack_android_apks.sh.
+name: Android APK
+
+on:
+  push:
+    paths:
+      - "lib/**"
+      - "mix.exs"
+      - "mix.lock"
+      - "version.properties"
+      - "scripts/version.sh"
+      - "priv/**"
+      - "mobile/**"
+      - "ex_fff/**"
+      - ".github/workflows/android-apk.yml"
+  pull_request:
+    paths:
+      - "lib/**"
+      - "mix.exs"
+      - "mix.lock"
+      - "version.properties"
+      - "scripts/version.sh"
+      - "priv/**"
+      - "mobile/**"
+      - "ex_fff/**"
+      - ".github/workflows/android-apk.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: android-apk-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: mobile
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "29.0"
+          elixir-version: "1.20"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Frontend assets
+        working-directory: .
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+          mix deps.get
+          npm ci
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+          working_directory: mobile
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: ""
+
+      - name: Android SDK and NDK
+        run: |
+          export ANDROID_HOME="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "ndk;27.2.12479018" \
+            "cmake;3.22.1"
+
+      - name: Host packages
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends zip libgit2-dev pkg-config inotify-tools bubblewrap
+          if [[ ! -f /usr/include/git2/sys/errors.h ]]; then
+            sudo mkdir -p /usr/include/git2/sys
+            printf '%s\n' \
+              '#ifndef INCLUDE_git_sys_errors_h__' \
+              '#define INCLUDE_git_sys_errors_h__' \
+              '#include "git2/errors.h"' \
+              '#endif' \
+              | sudo tee /usr/include/git2/sys/errors.h >/dev/null
+          fi
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.mob/cache
+            mobile/deps
+            mobile/_build
+            _build
+            ~/.mix
+            ~/.hex
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: mob-apk-${{ runner.os }}-${{ hashFiles('mobile/mix.lock', 'mix.lock') }}
+          restore-keys: |
+            mob-apk-${{ runner.os }}-
+
+      - name: Pack APKs
+        env:
+          LIBGIT2_DIR: /usr
+        run: bash script/pack_android_apks.sh --artifacts artifacts
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: handbean-android-apk
+          path: mobile/artifacts/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish GitHub Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-latest
+          name: Android APK
+          prerelease: true
+          generate_release_notes: true
+          make_latest: false
+          files: mobile/artifacts/*.apk

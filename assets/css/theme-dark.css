@@ -1,0 +1,174 @@
+/* Sigil — Dark Theme
+ * Warm paper, inverted. Accent stays copper so controls are not the page ink.
+ * Filled buttons use --sig-accent-fill so label contrast stays with white text.
+ */
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --sig-bg-page:            #161411;
+  --sig-bg-surface:         #1E1B18;
+  --sig-bg-surface-hover:   #272420;
+  --sig-bg-surface-active:  #312C27;
+  --sig-bg-elevated:        #221F1C;
+  --sig-bg-input:           #2A2622;
+  --sig-bg-code:            #12100E;
+
+  --sig-text-primary:       #F3EFEA;
+  --sig-text-secondary:     #B7AFA6;
+  --sig-text-tertiary:      #8A8178;
+  --sig-text-inverse:       #161411;
+
+  --sig-border-default:     #3A342E;
+  --sig-border-subtle:      #2C2824;
+  --sig-border-emphasis:    #4A433C;
+
+  --sig-accent:             #E2A56C;
+  --sig-accent-hover:       #F0C092;
+  --sig-accent-fill:        #A35A2E;
+  --sig-accent-fill-hover:  #8C4A22;
+  --sig-on-accent:          #FFFFFF;
+  --sig-accent-subtle:      rgba(226, 165, 108, 0.14);
+  --sig-accent-strong:      rgba(226, 165, 108, 0.22);
+  --sig-accent-border:      rgba(226, 165, 108, 0.40);
+  --sig-sel:                rgba(226, 165, 108, 0.16);
+  --sig-pop-shadow:         0 16px 44px rgba(0, 0, 0, 0.45), 0 0 0 0.5px rgba(255, 255, 255, 0.06);
+
+  --sig-success:            #6FCB9A;
+  --sig-success-bg:         rgba(111, 203, 154, 0.14);
+  --sig-warning:            #E2B15A;
+  --sig-warning-bg:         rgba(226, 177, 90, 0.14);
+  --sig-error:              #F0A0A0;
+  --sig-error-bg:           rgba(240, 160, 160, 0.14);
+
+  --sig-msg-user-bg:        var(--sig-bg-surface-active);
+  --sig-msg-user-text:      var(--sig-text-primary);
+  --sig-msg-assistant-bg:   var(--sig-bg-surface);
+  --sig-msg-assistant-border: var(--sig-border-default);
+
+  --sig-tool-running-border: var(--sig-warning);
+  --sig-tool-running-bg:     var(--sig-warning-bg);
+  --sig-tool-done-border:    var(--sig-success);
+  --sig-tool-done-bg:        var(--sig-success-bg);
+  --sig-tool-error-border:   var(--sig-error);
+  --sig-tool-error-bg:       var(--sig-error-bg);
+
+  --sig-diff-add-text:      #6FCB9A;
+  --sig-diff-add-bg:        rgba(111, 203, 154, 0.12);
+  --sig-diff-remove-text:   #F0A0A0;
+  --sig-diff-remove-bg:     rgba(240, 160, 160, 0.12);
+  --sig-diff-eq-text:       var(--sig-text-tertiary);
+
+  --color-primary: var(--sig-accent);
+  --color-primary-hover: var(--sig-accent-hover);
+  --color-user-message: var(--sig-accent);
+  --color-user-message-hover: var(--sig-accent-hover);
+  --color-background: var(--sig-bg-page);
+  --color-surface: var(--sig-bg-surface);
+  --color-surface-hover: var(--sig-bg-surface-hover);
+  --color-surface-active: var(--sig-bg-surface-active);
+  --color-border: var(--sig-border-default);
+  --color-border-light: var(--sig-border-subtle);
+  --color-border-hover: var(--sig-border-emphasis);
+  --color-text-primary: var(--sig-text-primary);
+  --color-text-secondary: var(--sig-text-secondary);
+  --color-text-tertiary: var(--sig-text-tertiary);
+  --color-success: var(--sig-success);
+  --color-success-bg: var(--sig-success-bg);
+  --color-warning: var(--sig-warning);
+  --color-warning-bg: var(--sig-warning-bg);
+  --color-error: var(--sig-error);
+  --color-error-bg: var(--sig-error-bg);
+  --color-diff-add: var(--sig-diff-add-text);
+  --color-diff-add-bg: var(--sig-diff-add-bg);
+  --color-diff-rem: var(--sig-diff-remove-text);
+  --color-diff-rem-bg: var(--sig-diff-remove-bg);
+  --color-bg-main: var(--sig-bg-page);
+  --color-bg-surface: var(--sig-bg-surface);
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-theme="system"] {
+    color-scheme: dark;
+
+    --sig-bg-page:            #161411;
+    --sig-bg-surface:         #1E1B18;
+    --sig-bg-surface-hover:   #272420;
+    --sig-bg-surface-active:  #312C27;
+    --sig-bg-elevated:        #221F1C;
+    --sig-bg-input:           #2A2622;
+    --sig-bg-code:            #12100E;
+
+    --sig-text-primary:       #F3EFEA;
+    --sig-text-secondary:     #B7AFA6;
+    --sig-text-tertiary:      #8A8178;
+    --sig-text-inverse:       #161411;
+
+    --sig-border-default:     #3A342E;
+    --sig-border-subtle:      #2C2824;
+    --sig-border-emphasis:    #4A433C;
+
+    --sig-accent:             #E2A56C;
+    --sig-accent-hover:       #F0C092;
+    --sig-accent-fill:        #A35A2E;
+    --sig-accent-fill-hover:  #8C4A22;
+    --sig-on-accent:          #FFFFFF;
+    --sig-accent-subtle:      rgba(226, 165, 108, 0.14);
+    --sig-accent-strong:      rgba(226, 165, 108, 0.22);
+    --sig-accent-border:      rgba(226, 165, 108, 0.40);
+    --sig-sel:                rgba(226, 165, 108, 0.16);
+    --sig-pop-shadow:         0 16px 44px rgba(0, 0, 0, 0.45), 0 0 0 0.5px rgba(255, 255, 255, 0.06);
+
+    --sig-success:            #6FCB9A;
+    --sig-success-bg:         rgba(111, 203, 154, 0.14);
+    --sig-warning:            #E2B15A;
+    --sig-warning-bg:         rgba(226, 177, 90, 0.14);
+    --sig-error:              #F0A0A0;
+    --sig-error-bg:           rgba(240, 160, 160, 0.14);
+
+    --sig-msg-user-bg:        var(--sig-bg-surface-active);
+    --sig-msg-user-text:      var(--sig-text-primary);
+    --sig-msg-assistant-bg:   var(--sig-bg-surface);
+    --sig-msg-assistant-border: var(--sig-border-default);
+
+    --sig-tool-running-border: var(--sig-warning);
+    --sig-tool-running-bg:     var(--sig-warning-bg);
+    --sig-tool-done-border:    var(--sig-success);
+    --sig-tool-done-bg:        var(--sig-success-bg);
+    --sig-tool-error-border:   var(--sig-error);
+    --sig-tool-error-bg:       var(--sig-error-bg);
+
+    --sig-diff-add-text:      #6FCB9A;
+    --sig-diff-add-bg:        rgba(111, 203, 154, 0.12);
+    --sig-diff-remove-text:   #F0A0A0;
+    --sig-diff-remove-bg:     rgba(240, 160, 160, 0.12);
+    --sig-diff-eq-text:       var(--sig-text-tertiary);
+
+    --color-primary: var(--sig-accent);
+    --color-primary-hover: var(--sig-accent-hover);
+    --color-user-message: var(--sig-accent);
+    --color-user-message-hover: var(--sig-accent-hover);
+    --color-background: var(--sig-bg-page);
+    --color-surface: var(--sig-bg-surface);
+    --color-surface-hover: var(--sig-bg-surface-hover);
+    --color-surface-active: var(--sig-bg-surface-active);
+    --color-border: var(--sig-border-default);
+    --color-border-light: var(--sig-border-subtle);
+    --color-border-hover: var(--sig-border-emphasis);
+    --color-text-primary: var(--sig-text-primary);
+    --color-text-secondary: var(--sig-text-secondary);
+    --color-text-tertiary: var(--sig-text-tertiary);
+    --color-success: var(--sig-success);
+    --color-success-bg: var(--sig-success-bg);
+    --color-warning: var(--sig-warning);
+    --color-warning-bg: var(--sig-warning-bg);
+    --color-error: var(--sig-error);
+    --color-error-bg: var(--sig-error-bg);
+    --color-diff-add: var(--sig-diff-add-text);
+    --color-diff-add-bg: var(--sig-diff-add-bg);
+    --color-diff-rem: var(--sig-diff-remove-text);
+    --color-diff-rem-bg: var(--sig-diff-remove-bg);
+    --color-bg-main: var(--sig-bg-page);
+    --color-bg-surface: var(--sig-bg-surface);
+  }
+}

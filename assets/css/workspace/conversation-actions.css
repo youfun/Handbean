@@ -1,0 +1,493 @@
+/* ═══════════════════════════════════════════════════════════════════
+   Message Copy Button
+   ═══════════════════════════════════════════════════════════════════ */
+
+.msg-copy-btn {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+  z-index: 2;
+}
+
+.msg-copy-btn svg,
+.code-block-copy svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+}
+
+.msg-bubble.msg-assistant:hover .msg-copy-btn,
+.msg-copy-btn:focus-visible {
+  opacity: 1;
+}
+
+.msg-copy-btn:hover {
+  color: var(--color-text-secondary);
+  background-color: var(--color-surface-hover);
+}
+
+.msg-copy-btn.copied {
+  color: var(--color-success);
+  opacity: 1;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Copy Toast
+   ═══════════════════════════════════════════════════════════════════ */
+
+.copy-toast {
+  position: fixed;
+  bottom: 5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.375rem 0.875rem;
+  border-radius: var(--radius-md);
+  background-color: var(--color-text-primary);
+  color: var(--color-background);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  z-index: 1000;
+  animation: copy-toast-in 0.2s ease, copy-toast-out 0.2s ease 1.8s forwards;
+  pointer-events: none;
+  height: auto !important;
+  width: max-content;
+  max-width: 90vw;
+  white-space: nowrap;
+}
+
+@keyframes copy-toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+@keyframes copy-toast-out {
+  from { opacity: 1; transform: translateX(-50%) translateY(0); }
+  to { opacity: 0; transform: translateX(-50%) translateY(8px); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Code Block Copy Button
+   ═══════════════════════════════════════════════════════════════════ */
+
+.code-block-wrapper {
+  position: relative;
+  margin: 0.5rem 0;
+}
+
+.code-block-wrapper pre {
+  padding-right: 2.5rem;
+  margin: 0;
+}
+
+[data-html-preview] {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+}
+
+.html-preview-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.5rem;
+  padding: 0.3rem 2.5rem 0.3rem 0.65rem;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--font-size-xs);
+}
+
+.html-preview-label,
+.html-preview-status {
+  color: var(--muted-2);
+}
+
+.html-preview-status {
+  margin-left: auto;
+}
+
+.html-preview-toolbar button {
+  padding: 0.2rem 0.5rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.html-preview-toolbar button[aria-pressed="true"] {
+  color: var(--text);
+  background: var(--panel-2);
+}
+
+.html-preview-frame {
+  display: block;
+  width: 100%;
+  height: 360px;
+  border: 0;
+  background: var(--panel);
+}
+
+.html-preview-frame-pending {
+  display: none !important;
+}
+
+[data-html-preview] [hidden] {
+  display: none;
+}
+
+[data-html-preview] > pre {
+  max-height: 360px;
+  overflow: auto;
+}
+
+[data-html-preview] .code-block-copy {
+  opacity: 1;
+}
+
+.code-block-copy {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+  z-index: 1;
+}
+
+/* Desktop: show copy button on hover */
+.code-block-wrapper:hover .code-block-copy,
+.code-block-copy:focus-visible {
+  opacity: 1;
+}
+
+/* Mobile / touch: always show copy buttons (no hover) */
+@media (hover: none) and (pointer: coarse) {
+  .code-block-copy,
+  .msg-copy-btn {
+    opacity: 0.7;
+  }
+  .code-block-wrapper:hover .code-block-copy,
+  .code-block-copy:focus-visible,
+  .msg-bubble.msg-assistant:hover .msg-copy-btn,
+  .msg-copy-btn:focus-visible {
+    opacity: 1;
+  }
+}
+
+.code-block-copy:hover {
+  color: var(--color-text-secondary);
+  background-color: var(--color-surface-hover);
+}
+
+.code-block-copy.copied {
+  color: var(--color-success);
+  opacity: 1;
+}
+
+.code-block-wrapper:has(.mermaid-diagram) .code-block-copy,
+.code-block-wrapper:has(.mermaid-diagram):hover .code-block-copy {
+  opacity: 1;
+}
+
+.mermaid-diagram {
+  overflow-x: auto;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.mermaid-diagram svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+
+.mermaid-error {
+  margin: 0.35rem 0 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Turn Folding
+   ═══════════════════════════════════════════════════════════════════ */
+
+.turn-group {
+  position: relative;
+}
+
+.turn-header {
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: none;
+  transition: background-color 0.15s ease;
+}
+
+.turn-header:hover {
+  background-color: var(--color-surface-hover);
+}
+
+.turn-chevron {
+  display: inline-block;
+  font-size: 0.55rem;
+  width: 0.75rem;
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.turn-chevron.collapsed {
+  transform: rotate(-90deg);
+}
+
+.turn-label {
+  opacity: 0.6;
+}
+
+.turn-summary {
+  max-width: 320px;
+}
+
+.turn-entry {
+  animation: turn-enter 150ms ease-out;
+}
+
+@keyframes turn-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Tool work collapse (Amp-style: fold completed tools into a summary)
+   ═══════════════════════════════════════════════════════════════════ */
+
+#ai-messages .tool-event.tool-work-collapsed.tool-work-lead {
+  border: none;
+  background: transparent;
+  padding: 0.1rem 0 0.35rem;
+  margin: 0;
+}
+
+#ai-messages .tool-event.tool-work-collapsed.tool-work-follow {
+  display: none;
+}
+
+#ai-messages .tool-event.tool-work-collapsed .tool-work-body {
+  display: none;
+}
+
+#ai-messages .tool-event.tool-work-collapsed .file-change-card,
+#ai-messages .tool-event.tool-work-collapsed .tool-work-line {
+  display: none;
+}
+
+#timeline-stream > div:has(> .tool-event.tool-work-follow) {
+  margin-top: 0;
+}
+
+#ai-messages .tool-event.tool-work-open,
+#ai-messages .tool-event.tool-work-collapsed.tool-work-lead {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+
+.tool-work-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  max-width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--sig-text-tertiary);
+  font-size: 13px;
+  line-height: 22px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.tool-work-chevron {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  color: var(--sig-text-quaternary, var(--sig-text-tertiary));
+}
+
+.tool-work-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 22px;
+  font-size: 13px;
+  line-height: 22px;
+  color: var(--sig-text-secondary);
+}
+
+.tool-work-line.indent-1,
+#ai-messages .tool-event.tool-work-open .file-change-card.tool-work-file.indent-1 {
+  padding-left: 12px;
+}
+
+.tool-work-line.indent-2,
+#ai-messages .tool-event.tool-work-open .file-change-card.tool-work-file.indent-2 {
+  padding-left: 28px;
+}
+
+.tool-work-verb {
+  flex: 0 0 auto;
+}
+
+.tool-work-target {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--sig-text-tertiary);
+}
+
+#ai-messages .tool-event.tool-work-open .file-change-card.tool-work-file {
+  margin-top: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+
+#ai-messages .tool-event.tool-work-open .file-change-card.tool-work-file .file-change-card-head {
+  min-height: 22px;
+  padding: 0;
+  gap: 6px;
+}
+
+#ai-messages .tool-event.tool-work-open .file-change-card.tool-work-file .file-change-card-toggle {
+  flex: 0 1 auto;
+  width: auto;
+  font-size: 13px;
+  line-height: 22px;
+}
+
+#ai-messages .tool-event.tool-work-open .file-change-card.tool-work-file .file-change-label {
+  font-weight: 400;
+  color: var(--sig-text-secondary);
+}
+
+#ai-messages .tool-event.tool-work-open .file-change-card.tool-work-file .file-change-path {
+  flex: 0 1 auto;
+  font-family: inherit;
+}
+
+#ai-messages .tool-event.tool-work-open .file-change-card.tool-work-file .file-change-copy {
+  display: none;
+}
+
+#ai-messages .tool-event.tool-work-open .file-change-card.tool-work-file .file-change-diff {
+  margin-left: 0;
+}
+
+.tool-work-summary:hover {
+  color: var(--sig-text-secondary);
+}
+
+.tool-work-hide {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin: 0 0 10px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--sig-text-tertiary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.tool-work-hide::before,
+.tool-work-hide::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--sig-border-subtle);
+}
+
+.tool-work-hide:hover {
+  color: var(--sig-text-secondary);
+}
+
+.tool-group {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.35rem 0.5rem;
+  background: var(--color-surface);
+  margin: 0.25rem 0;
+}
+
+.tool-group[open] .tool-group-chevron {
+  transform: rotate(90deg);
+}
+
+.tool-group .tool-group-chevron {
+  display: inline-block;
+  font-size: 0.5rem;
+  width: 0.6rem;
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.tool-group-summary {
+  color: var(--color-text-secondary);
+  opacity: 0.75;
+}
+
+.tool-group-summary:hover {
+  opacity: 1;
+  color: var(--color-text-primary);
+}
+
+.tool-group summary::-webkit-details-marker {
+  display: none;
+}
+
+.tool-group summary::marker {
+  display: none;
+  content: "";
+}
+
+.tool-group-body {
+  border-left: 1px solid var(--color-border-light);
+  padding-left: 0.5rem;
+  margin-top: 0.25rem;
+}

@@ -1,0 +1,216 @@
+/* Model / AI and workspace model policy settings */
+
+.settings-model-ai-form {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.settings-model-section {
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.settings-model-section:last-of-type {
+  border-bottom: none;
+}
+
+.settings-model-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
+.settings-model-toggle-header {
+  justify-content: flex-start;
+}
+
+.settings-model-section-title {
+  margin: 0 0 10px;
+  color: var(--sig-text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.4;
+}
+
+.settings-model-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(260px, 1fr);
+  gap: 14px 16px;
+}
+
+.settings-model-grid-single {
+  grid-template-columns: minmax(260px, 520px) minmax(180px, 260px);
+  justify-content: start;
+}
+
+.settings-model-field {
+  min-width: 0;
+}
+
+.settings-model-field-small {
+  max-width: 120px;
+}
+
+.settings-model-label {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.settings-model-control {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--sig-radius-lg);
+  background: var(--color-bg-main);
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.settings-model-control:focus {
+  border-color: var(--color-primary);
+  outline: none;
+}
+
+.settings-model-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-model-filter .settings-input {
+  width: 100%;
+}
+
+.settings-model-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.settings-model-provider {
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--sig-radius-xl);
+  background: var(--sig-bg-elevated);
+}
+
+.settings-model-provider-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  margin-bottom: 4px;
+}
+
+.settings-model-provider-title {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.settings-model-provider-count {
+  margin-top: 2px;
+  color: var(--sig-text-tertiary);
+  font-size: 10px;
+}
+
+.settings-model-provider-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.settings-model-provider-actions .settings-btn {
+  min-height: 36px;
+  padding-inline: 9px;
+}
+
+.settings-model-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px;
+  border-radius: var(--sig-radius-lg);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.settings-model-row:hover {
+  background: var(--sig-bg-surface-hover);
+}
+
+.settings-model-row input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--sig-accent);
+}
+
+.settings-model-empty {
+  padding: 32px 16px;
+  color: var(--sig-text-tertiary);
+  font-size: 12px;
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .settings-model-grid,
+  .settings-model-grid-single {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .settings-model-field-small {
+    max-width: 160px;
+  }
+}
+
+@media (max-width: 768px) {
+  .settings-model-ai-form {
+    gap: 18px;
+  }
+
+  .settings-model-section {
+    padding-bottom: 18px;
+  }
+
+  .settings-model-control {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .settings-model-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .settings-model-provider {
+    padding: 10px 8px;
+  }
+
+  .settings-model-provider-actions .settings-btn {
+    min-height: 44px;
+  }
+
+  .settings-model-row {
+    min-height: 48px;
+    padding: 7px 8px;
+  }
+
+  .settings-model-row input {
+    width: 20px;
+    height: 20px;
+  }
+}

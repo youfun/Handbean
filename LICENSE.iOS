@@ -1,0 +1,18 @@
+Handbean iOS distribution license
+Copyright (C) 2026 youfun
+
+The Handbean source repository is licensed under the Functional Source
+License, Version 1.1, ALv2 Future License (FSL-1.1-ALv2). See the LICENSE
+file. That license continues to cover source distributions and builds that
+do not statically link iSH.
+
+An iOS binary that statically links iSH (https://github.com/youfun/ish-arm64,
+GPLv3) is a combined work. youfun distributes that binary, and offers its
+corresponding source, under the GNU General Public License, version 3, as
+published by the Free Software Foundation. The license text is LICENSE.GPLv3.
+Corresponding source includes the Handbean code linked into that binary, not
+only the iSH tree. Recipients of that iOS version receive GPLv3 rights in
+that version's source.
+
+Android builds do not use this grant. PRoot remains a separate executable
+under GPLv2 and is not linked into the Handbean program.

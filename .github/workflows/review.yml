@@ -1,0 +1,188 @@
+# Review each update before it lands. Pull requests and pushes to the default
+# branch run the same quality gate; packaging stays in pack.yml.
+name: Review
+
+on:
+  pull_request:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+concurrency:
+  group: review-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  elixir:
+    name: Elixir quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config patchelf bubblewrap inotify-tools apparmor
+
+      - name: Permit Bubblewrap user namespaces on the CI runner
+        run: |
+          # Keep Ubuntu's system-wide restriction; permit only this sandbox binary.
+          sudo tee /etc/apparmor.d/handbean-ci-bwrap >/dev/null <<'EOF'
+          abi <abi/4.0>,
+          profile handbean-ci-bwrap /usr/bin/bwrap flags=(unconfined) {
+            userns,
+          }
+          EOF
+          sudo apparmor_parser -r /etc/apparmor.d/handbean-ci-bwrap
+          bwrap --unshare-user --uid 0 --gid 0 --ro-bind / / -- /usr/bin/true
+
+      - uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: "0.16.0"
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "29.0"
+          elixir-version: "1.20.2"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            deps
+            _build
+            ~/.mix
+            ~/.hex
+          key: review-elixir-${{ runner.os }}-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            review-elixir-${{ runner.os }}-
+
+      - name: Dependencies
+        run: |
+          # MixToolchain.sync_to! tests the version pinned for mobile packaging.
+          mix local.hex 2.4.1 --force
+          mix local.rebar --force
+          mix deps.get
+
+      - name: Frontend build tools
+        env:
+          MIX_ENV: test
+        run: mix assets.setup
+
+      - name: Compile without warnings
+        env:
+          MIX_ENV: test
+        run: mix compile --warnings-as-errors
+
+      - name: Static review of this update
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            bash scripts/ci/review_static.sh "${{ github.event.pull_request.base.sha }}"
+          else
+            bash scripts/ci/review_static.sh
+          fi
+
+      - name: Test database
+        run: mix ecto.create --quiet && mix ecto.migrate --quiet
+
+      - name: Default ExUnit suite
+        run: mix test
+
+      - name: Slow tests
+        run: mix test --include slow --only slow
+
+  frontend:
+    name: Frontend unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Dependencies
+        run: npm ci
+
+      - name: Frontend tests
+        run: npm test
+
+  features:
+    name: Web feature paths
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config patchelf bubblewrap inotify-tools apparmor
+
+      - name: Permit Bubblewrap user namespaces on the CI runner
+        run: |
+          sudo tee /etc/apparmor.d/handbean-ci-bwrap >/dev/null <<'EOF'
+          abi <abi/4.0>,
+          profile handbean-ci-bwrap /usr/bin/bwrap flags=(unconfined) {
+            userns,
+          }
+          EOF
+          sudo apparmor_parser -r /etc/apparmor.d/handbean-ci-bwrap
+          bwrap --unshare-user --uid 0 --gid 0 --ro-bind / / -- /usr/bin/true
+
+      - uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: "0.16.0"
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "29.0"
+          elixir-version: "1.20.2"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            deps
+            _build
+            ~/.mix
+            ~/.hex
+          key: review-features-${{ runner.os }}-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            review-features-${{ runner.os }}-
+
+      - name: Dependencies
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+          mix deps.get
+
+      - name: Frontend build tools
+        env:
+          MIX_ENV: test
+        run: mix assets.setup
+
+      - name: FakeProvider Agent end-to-end path
+        run: mix test --include e2e test/handbean/e2e/fake_provider_e2e_test.exs
+
+      - name: Web feature paths
+        run: mix test --include e2e test/feature

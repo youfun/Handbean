@@ -1,0 +1,41 @@
+# Unsigned Handbean.app (system WebKit + bundled macOS web release).
+# Dispatch-only so main CI does not upload a large OTP artifact on every push.
+name: macOS app
+
+on:
+  workflow_dispatch:
+    inputs:
+      web_tag:
+        description: Release tag containing handbean-web-macos-arm64.tar.gz
+        default: web-latest
+        type: string
+
+jobs:
+  app:
+    name: Handbean.app
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Test shell
+        working-directory: desktop/macos
+        run: swift test
+
+      - name: Fetch web release
+        working-directory: desktop/macos
+        run: bash scripts/fetch_web_release.sh "${{ inputs.web_tag }}"
+
+      - name: Build app
+        working-directory: desktop/macos
+        run: bash scripts/build_app.sh
+
+      - name: Zip
+        working-directory: desktop/macos/build
+        run: ditto -c -k --keepParent Handbean.app Handbean-macos-arm64.zip
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Handbean-macos-arm64
+          path: desktop/macos/build/Handbean-macos-arm64.zip
+          retention-days: 7

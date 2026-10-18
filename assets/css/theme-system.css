@@ -1,0 +1,168 @@
+/* Sigil — Theme System
+ * 主题通过 <html data-theme="light|dark|custom"> 切换
+ * 默认 fallback 到 light 主题色值
+ *
+ * 加载顺序: theme-system.css → theme-light.css → workspace.css / composer.css
+ */
+
+/* :root fallback — mirrors [data-theme="light"] values for when no data-theme is set */
+:root {
+  /* Background */
+  --sig-bg-page:            #FAF9F7;
+  --sig-bg-surface:         #F4F3F0;
+  --sig-bg-surface-hover:   #EDEBE7;
+  --sig-bg-surface-active:  #E6E3DE;
+  --sig-bg-elevated:        #FFFFFF;
+  --sig-bg-input:           #EFEEEA;
+  --sig-bg-code:            #EEECE8;
+
+  /* Text */
+  --sig-text-primary:       #1A1815;
+  --sig-text-secondary:     #6B6560;
+  --sig-text-tertiary:      #9C9590;
+  --sig-text-inverse:       #FFFFFF;
+
+  /* Border */
+  --sig-border-default:     #E4E0DA;
+  --sig-border-subtle:      #F0EDE8;
+  --sig-border-emphasis:    #D4CEC5;
+
+  /* Accent is a control color, not the ink used for titles. */
+  --sig-accent:             #8C4A22;
+  --sig-accent-hover:       #703916;
+  --sig-accent-fill:        #8C4A22;
+  --sig-accent-fill-hover:  #703916;
+  --sig-on-accent:          #FFFFFF;
+  --sig-accent-subtle:      rgba(140, 74, 34, 0.08);
+  --sig-accent-strong:      rgba(140, 74, 34, 0.14);
+  --sig-accent-border:      rgba(140, 74, 34, 0.28);
+  --sig-sel:                rgba(140, 74, 34, 0.10);
+  --sig-pop-shadow:         0 16px 44px rgba(26, 24, 21, 0.12), 0 0 0 0.5px rgba(26, 24, 21, 0.08);
+
+  /* Semantic */
+  --sig-success:            #1B8A5E;
+  --sig-success-bg:         rgba(27, 138, 94, 0.08);
+  --sig-warning:            #9A6A0C;
+  --sig-warning-bg:         rgba(154, 106, 12, 0.08);
+  --sig-error:              #C53030;
+  --sig-error-bg:           rgba(197, 48, 48, 0.08);
+
+  /* Messages */
+  --sig-msg-user-bg:        var(--sig-bg-surface-active);
+  --sig-msg-user-text:      var(--sig-text-primary);
+  --sig-msg-assistant-bg:   var(--sig-bg-surface);
+  --sig-msg-assistant-border: var(--sig-border-default);
+
+  /* Tool events */
+  --sig-tool-running-border: var(--sig-warning);
+  --sig-tool-running-bg:     var(--sig-warning-bg);
+  --sig-tool-done-border:    var(--sig-success);
+  --sig-tool-done-bg:        var(--sig-success-bg);
+  --sig-tool-error-border:   var(--sig-error);
+  --sig-tool-error-bg:       var(--sig-error-bg);
+
+  /* Diff */
+  --sig-diff-add-text:      #1B8A5E;
+  --sig-diff-add-bg:        rgba(27, 138, 94, 0.08);
+  --sig-diff-remove-text:   #C53030;
+  --sig-diff-remove-bg:     rgba(197, 48, 48, 0.08);
+  --sig-diff-eq-text:       var(--sig-text-tertiary);
+
+  /* Radius */
+  --sig-radius-sm:   4px;
+  --sig-radius-md:   6px;
+  --sig-radius-lg:  10px;
+  --sig-radius-xl:  14px;
+  --sig-radius-full: 9999px;
+
+  /* Motion */
+  --sig-motion-fast:   120ms;
+  --sig-motion-normal: 200ms;
+  --sig-motion-slow:   300ms;
+  --sig-motion-ease:   cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* Font */
+  --sig-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Noto Sans SC", sans-serif;
+  color-scheme: light;
+  --sig-font-mono: "JetBrains Mono", "SF Mono", "Cascadia Code", ui-monospace, monospace;
+
+  /* Legacy compat aliases — keep components from breaking during migration */
+  --color-primary: var(--sig-accent);
+  --color-primary-hover: var(--sig-accent-hover);
+  --color-user-message: var(--sig-accent);
+  --color-user-message-hover: var(--sig-accent-hover);
+  --color-background: var(--sig-bg-page);
+  --color-surface: var(--sig-bg-surface);
+  --color-surface-hover: var(--sig-bg-surface-hover);
+  --color-surface-active: var(--sig-bg-surface-active);
+  --color-border: var(--sig-border-default);
+  --color-border-light: var(--sig-border-subtle);
+  --color-border-hover: var(--sig-border-emphasis);
+  --color-text-primary: var(--sig-text-primary);
+  --color-text-secondary: var(--sig-text-secondary);
+  --color-text-tertiary: var(--sig-text-tertiary);
+  --color-success: var(--sig-success);
+  --color-success-bg: var(--sig-success-bg);
+  --color-warning: var(--sig-warning);
+  --color-warning-bg: var(--sig-warning-bg);
+  --color-error: var(--sig-error);
+  --color-error-bg: var(--sig-error-bg);
+  --color-diff-add: var(--sig-diff-add-text);
+  --color-diff-add-bg: var(--sig-diff-add-bg);
+  --color-diff-rem: var(--sig-diff-remove-text);
+  --color-diff-rem-bg: var(--sig-diff-remove-bg);
+  --color-bg-main: var(--sig-bg-page);
+  --color-bg-surface: var(--sig-bg-surface);
+}
+
+button:focus-visible,
+a:focus-visible,
+select:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--sig-accent);
+  outline-offset: 2px;
+}
+
+/* ── Agent working indicator ── */
+.agent-working {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 2px;
+  font-size: 12px;
+  color: var(--sig-text-tertiary);
+  animation: aw-fade-in 400ms var(--sig-motion-ease);
+}
+
+.aw-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--sig-text-secondary);
+}
+
+@keyframes aw-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+
+/* ── Workspace Panel collapse / expand ── */
+#workspace-panel {
+  transition: max-width 300ms var(--sig-motion-ease),
+              opacity 300ms var(--sig-motion-ease),
+              border-width 300ms var(--sig-motion-ease);
+}
+
+#workspace-expand-bar {
+  transition: opacity 300ms var(--sig-motion-ease);
+}
+
+#workspace-expand-bar:hover .expand-icon {
+  color: var(--sig-accent);
+}

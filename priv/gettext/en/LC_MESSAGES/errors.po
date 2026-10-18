@@ -1,0 +1,59 @@
+## Ecto validation errors — English (identity mapping)
+msgid ""
+msgstr ""
+
+msgid "can't be blank"
+msgstr "can't be blank"
+
+msgid "is invalid"
+msgstr "is invalid"
+
+msgid "has invalid format"
+msgstr "has invalid format"
+
+msgid "has already been taken"
+msgstr "has already been taken"
+
+msgid "does not match confirmation"
+msgstr "does not match confirmation"
+
+msgid "must be accepted"
+msgstr "must be accepted"
+
+msgid "should be at least %{count} character(s)"
+msgid_plural "should be at least %{count} character(s)"
+msgstr[0] "should be at least %{count} character(s)"
+msgstr[1] "should be at least %{count} character(s)"
+
+msgid "should be at most %{count} character(s)"
+msgid_plural "should be at most %{count} character(s)"
+msgstr[0] "should be at most %{count} character(s)"
+msgstr[1] "should be at most %{count} character(s)"
+
+msgid "should have at least %{count} item(s)"
+msgid_plural "should have at least %{count} item(s)"
+msgstr[0] "should have at least %{count} item(s)"
+msgstr[1] "should have at least %{count} item(s)"
+
+msgid "should have at most %{count} item(s)"
+msgid_plural "should have at most %{count} item(s)"
+msgstr[0] "should have at most %{count} item(s)"
+msgstr[1] "should have at most %{count} item(s)"
+
+msgid "should be %{number}"
+msgstr "should be %{number}"
+
+msgid "must be less than %{number}"
+msgstr "must be less than %{number}"
+
+msgid "must be greater than %{number}"
+msgstr "must be greater than %{number}"
+
+msgid "must be less than or equal to %{number}"
+msgstr "must be less than or equal to %{number}"
+
+msgid "must be greater than or equal to %{number}"
+msgstr "must be greater than or equal to %{number}"
+
+msgid "must be equal to %{number}"
+msgstr "must be equal to %{number}"

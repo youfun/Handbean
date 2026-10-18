@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# sg — 零配置启动 Handbean 本地 Web UI
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+# === Local/LAN release 默认值 ===
+export PHX_SERVER=true
+export PORT="${PORT:-5008}"
+export PHX_HOST="${PHX_HOST:-localhost}"
+export DATABASE_PATH="${DATABASE_PATH:-$HOME/.handbean/handbean.db}"
+export SECRET_KEY_BASE="${SECRET_KEY_BASE:-$(openssl rand -base64 48 2>/dev/null || echo 'dev-fallback')}"
+
+BIN="_build/local_release/prod/rel/handbean/bin/handbean"
+
+if [[ ! -f "$BIN" ]]; then
+  echo "❌ 未找到 local/LAN release，请先运行 scripts/build_local_release.sh"
+  exit 1
+fi
+
+# 获取本机 LAN IP
+lan_ip=$(ifconfig 2>/dev/null | grep -Eo 'inet (addr:)?192\.168\.[0-9.]+' | head -1 | awk '{print $2}')
+if [[ -z "$lan_ip" ]]; then
+  lan_ip=$(ifconfig 2>/dev/null | grep -Eo 'inet (addr:)?10\.[0-9.]+' | head -1 | awk '{print $2}')
+fi
+
+echo "🚀 Handbean Local/LAN Web UI 启动中..."
+echo "   本机:     http://localhost:$PORT"
+if [[ -n "$lan_ip" ]]; then
+  echo "   局域网:   http://$lan_ip:$PORT"
+fi
+echo "   数据库:   $DATABASE_PATH"
+echo ""
+
+exec "$BIN" start

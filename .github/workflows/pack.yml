@@ -1,0 +1,653 @@
+# Pack the Web UI OTP release for Linux x86_64, Linux ARM64, Windows amd64,
+# and macOS arm64, the native macOS WebKit app, both Android APKs, and a
+# re-signable iOS IPA. Manual runs upload artifacts unless publication is requested.
+# Pushes to dev or v* tags publish packages to GitHub Releases.
+# A dev push that changes version or build also creates the v* tag after
+# checks pass, then dispatches the formal package build from that tag.
+# Windows ARM64 is not built here: OTP has no ARM64 installer, and the
+# hosted ARM runner cannot install WSL without a reboot.
+name: Pack
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Publish packages to GitHub Releases (release_tag or web-latest)
+        default: false
+        type: boolean
+      release_tag:
+        description: Existing release tag to rebuild with this workflow (empty uses the current ref)
+        default: ""
+        type: string
+  push:
+    branches: [dev]
+    tags:
+      - "v*"
+
+concurrency:
+  group: pack-${{ inputs.release_tag != '' && format('refs/tags/{0}', inputs.release_tag) || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  target:
+    name: Resolve package source
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      commit: ${{ steps.resolve.outputs.commit }}
+      release_tag: ${{ steps.resolve.outputs.release_tag }}
+      mobile_required: ${{ steps.resolve.outputs.mobile_required }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Resolve immutable checkout and publication target
+        id: resolve
+        env:
+          REQUESTED_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          tag=""
+          source="$GITHUB_SHA"
+          if [[ -n "$REQUESTED_TAG" ]]; then
+            if [[ "$GITHUB_EVENT_NAME" != workflow_dispatch ]]; then
+              echo "release_tag is only supported for manual runs."
+              exit 1
+            fi
+            if [[ ! "$REQUESTED_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+              echo "release_tag must be an existing v<semver> tag."
+              exit 1
+            fi
+            tag="$REQUESTED_TAG"
+            source="refs/tags/$tag"
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tag="$GITHUB_REF_NAME"
+          fi
+          commit="$(git rev-parse --verify "${source}^{commit}")"
+          mobile_required=false
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch || -n "$tag" ]]; then
+            mobile_required=true
+          fi
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "mobile_required=$mobile_required" >> "$GITHUB_OUTPUT"
+          echo "Workflow commit: $GITHUB_SHA"
+          echo "Package commit: $commit; release tag: ${tag:-none}"
+
+  checks:
+    name: Release metadata
+    needs: target
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.target.outputs.commit }}
+          fetch-depth: 0
+
+      - name: Validate release metadata and tag
+        env:
+          RELEASE_TAG: ${{ needs.target.outputs.release_tag }}
+        run: |
+          bash scripts/version.sh version
+          if [[ -n "$RELEASE_TAG" ]]; then
+            bash scripts/version.sh check-tag "$RELEASE_TAG"
+          fi
+
+  web:
+    name: ${{ matrix.label }}
+    needs: target
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: ${{ matrix.timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: linux-x86_64
+            label: Web (linux-x86_64)
+            timeout: 40
+          - os: ubuntu-24.04-arm
+            target: linux-arm64
+            label: Web (linux-arm64)
+            timeout: 40
+          - os: windows-2025
+            target: windows-amd64
+            label: Web (windows-amd64)
+            timeout: 75
+          - os: macos-15
+            target: macos-arm64
+            label: macOS GUI (arm64)
+            timeout: 50
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.target.outputs.commit }}
+
+      - name: Linux terminal build tools
+        if: startsWith(matrix.target, 'linux-')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends patchelf
+
+      - uses: goto-bus-stop/setup-zig@v2
+        if: startsWith(matrix.target, 'linux-') || matrix.target == 'macos-arm64'
+        with:
+          version: "0.16.0"
+
+      - uses: erlef/setup-beam@v1
+        if: matrix.target != 'windows-arm64'
+        with:
+          otp-version: "29.0"
+          elixir-version: "1.20"
+
+      - name: Install Windows ARM64 OTP
+        if: matrix.target == 'windows-arm64'
+        shell: pwsh
+        run: ./scripts/ci/install_otp_windows_arm64.ps1
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: startsWith(matrix.target, 'windows-')
+        with:
+          arch: ${{ matrix.target == 'windows-arm64' && 'arm64' || 'x64' }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            deps
+            _build
+            ~/.mix
+            ~/.hex
+          key: pack-web-${{ matrix.target }}-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            pack-web-${{ matrix.target }}-
+
+      - name: OTP release
+        shell: bash
+        if: startsWith(matrix.target, 'linux-') || matrix.target == 'macos-arm64'
+        run: bash scripts/pack_webui.sh ${{ matrix.target }}
+
+      - name: OTP release
+        shell: pwsh
+        if: startsWith(matrix.target, 'windows-')
+        run: ./scripts/pack_webui.ps1 ${{ matrix.target }}
+
+      - name: Test macOS shell
+        if: matrix.target == 'macos-arm64'
+        working-directory: desktop/macos
+        run: swift test
+
+      - name: Pack native macOS app
+        if: matrix.target == 'macos-arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          export HANDBEAN_WEB_ROOT="$PWD/_build/prod/rel/handbean"
+          bash desktop/macos/scripts/build_app.sh
+
+          app="desktop/macos/build/Handbean.app"
+          archive="desktop/macos/build/Handbean-macos-arm64.zip"
+          rm -f "$archive" "$archive.sha256"
+          ditto -c -k --keepParent "$app" "$archive"
+          shasum -a 256 "$archive" > "$archive.sha256"
+          codesign --verify --deep --strict "$app"
+          unzip -tq "$archive"
+
+      - name: Experimental Windows toolchain package
+        shell: pwsh
+        if: matrix.target == 'windows-amd64'
+        run: ./scripts/pack_windows_toolchain.ps1
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: handbean-web-${{ matrix.target }}
+          path: handbean-web-${{ matrix.target }}.*
+          if-no-files-found: error
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v7
+        if: matrix.target == 'windows-amd64'
+        with:
+          name: handbean-web-windows-amd64-toolchain
+          path: handbean-web-windows-amd64-toolchain.*
+          if-no-files-found: error
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v7
+        if: matrix.target == 'macos-arm64'
+        with:
+          name: handbean-macos-app-arm64
+          path: desktop/macos/build/Handbean-macos-arm64.zip*
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Tag release after Web packages succeed
+    needs: [target, checks, web]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: write
+    outputs:
+      release_build: ${{ steps.release_tag.outputs.release_build }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.target.outputs.commit }}
+          fetch-depth: 0
+
+      - name: Tag and dispatch release when version or build changed
+        id: release_tag
+        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          before="${{ github.event.before }}"
+          if [[ "$before" =~ ^0+$ ]]; then
+            echo "New branch history; not tagging."
+            exit 0
+          fi
+          git fetch --depth=1 origin "$before" || {
+            echo "Previous commit is unavailable; not tagging."
+            exit 0
+          }
+          current="$(bash scripts/version.sh version)"
+          build="$(bash scripts/version.sh build)"
+          previous="$(git show "$before:version.properties")"
+          previous_version="$(printf '%s\n' "$previous" | awk -F= 'NF == 2 && $1 == "version" {sub(/\r$/, "", $2); print $2}')"
+          previous_build="$(printf '%s\n' "$previous" | awk -F= 'NF == 2 && $1 == "build" {sub(/\r$/, "", $2); print $2}')"
+          tag="v$current"
+          if [[ "$current" == "$previous_version" && "$build" == "$previous_build" ]]; then
+            if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+              if gh release view "$tag" >/dev/null 2>&1; then
+                echo "version.properties unchanged ($current build $build); $tag release already exists."
+                exit 0
+              fi
+              echo "version.properties unchanged and $tag exists, but its release is missing; retrying the release build."
+              gh workflow run pack.yml --ref dev -f publish_release=true -f release_tag="$tag"
+              echo "release_build=dispatched" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "version.properties unchanged, but $tag is missing; retrying tag creation."
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+            echo "Tag $tag already exists."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "Handbean $current"
+          git push origin "refs/tags/$tag"
+          gh workflow run pack.yml --ref dev -f publish_release=true -f release_tag="$tag"
+          echo "release_build=dispatched" >> "$GITHUB_OUTPUT"
+          echo "Tagged $tag (was $previous_version build $previous_build)."
+
+  publish-web:
+    name: Publish release
+    needs: [target, checks, web, release, android, ios]
+    if: >-
+      always() &&
+      needs.target.result == 'success' &&
+      needs.checks.result == 'success' &&
+      needs.web.result == 'success' &&
+      needs.release.result == 'success' &&
+      (needs.android.result == 'success' || needs.android.result == 'failure' ||
+       needs.android.result == 'skipped') &&
+      (needs.ios.result == 'success' || needs.ios.result == 'failure' ||
+       needs.ios.result == 'skipped') &&
+      needs.release.outputs.release_build != 'dispatched' &&
+      ((github.event_name == 'workflow_dispatch' && inputs.publish_release) ||
+       (github.event_name == 'push' &&
+        (github.ref == 'refs/heads/dev' ||
+         startsWith(github.ref, 'refs/tags/v'))))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ needs.target.outputs.release_tag }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.target.outputs.commit }}
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: handbean-web-*
+          path: dist
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v8
+        if: needs.android.result == 'success'
+        with:
+          name: handbean-android-apk
+          path: dist
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: handbean-macos-app-arm64
+          path: dist
+
+      - uses: actions/download-artifact@v8
+        if: needs.ios.result == 'success'
+        with:
+          name: handbean-ios-ipa
+          path: dist
+
+      - name: Verify complete package set
+        env:
+          MOBILE_REQUIRED: ${{ needs.target.outputs.mobile_required }}
+        run: |
+          set -euo pipefail
+          for package in handbean-web-linux-x86_64 handbean-web-linux-arm64 \
+            handbean-web-windows-amd64 handbean-web-windows-amd64-toolchain \
+            handbean-web-macos-arm64 Handbean-macos-arm64; do
+            if [[ ! -s "dist/$package.tar.gz" && ! -s "dist/$package.zip" ]]; then
+              echo "Missing package: $package"
+              exit 1
+            fi
+          done
+          if [[ "$MOBILE_REQUIRED" == true ]]; then
+            echo "Mobile packages are optional. Missing Android or iOS packages do not block publication."
+          fi
+
+      - name: Release notes
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(dist/handbean-web-* dist/Handbean-macos-* dist/*.apk dist/*.ipa dist/*.ipa.sha256)
+          if [[ ${#files[@]} -eq 0 ]]; then
+            echo "No packages were built"
+            exit 1
+          fi
+          {
+            echo "Handbean desktop, Web UI, and mobile packages."
+            echo
+            echo "macOS desktop: unpack \`Handbean-macos-arm64.zip\` and open \`Handbean.app\`."
+            if compgen -G "dist/*.ipa" >/dev/null; then
+              echo "iOS: \`Handbean-ios-sideload.ipa\` is ad-hoc signed and has no provisioning profile. Re-sign it with your own Apple ID in Sideloadly or AltStore, then install it. Bundle id: \`com.example.handbean_probe\`."
+            fi
+            echo "Linux and macOS Web UI: unpack the platform tarball and run \`./start.sh\`."
+            echo "Windows: unpack and run \`start.bat\`."
+            echo "Default URL: http://localhost:5008"
+            echo
+            echo "Windows packages do not include the in-browser terminal. Ghostty has no Windows NIF."
+            echo
+            echo "handbean-web-windows-amd64.zip is the Web UI only. Elixir and Git must already be installed."
+            echo "handbean-web-windows-amd64-toolchain.zip is experimental. It adds Elixir, Mix, Hex, Rebar3, and MinGit, and puts them first on PATH for that process. It does not include a C compiler."
+            if ! compgen -G "dist/handbean-web-windows-arm64*" >/dev/null; then
+              echo "Windows ARM64 is omitted: OTP publishes no ARM64 installer, and GitHub-hosted ARM runners cannot install WSL."
+            fi
+            echo
+            if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+              changelog_ref="$GITHUB_REF_NAME"
+            else
+              changelog_ref="$GITHUB_SHA"
+            fi
+            echo "[完整更新日志](https://github.com/${GITHUB_REPOSITORY}/blob/${changelog_ref}/CHANGELOG.md)"
+            echo
+            echo "Assets:"
+            find dist -type f -printf '%f\n' | sort
+          } > notes.md
+
+      - name: Replace moving web-latest tag
+        if: ${{ needs.target.outputs.release_tag == '' }}
+        run: gh release delete web-latest --yes --cleanup-tag || true
+
+      - name: Publish release
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(dist/handbean-web-* dist/Handbean-macos-* dist/*.apk dist/*.ipa dist/*.ipa.sha256)
+          if [[ ${#files[@]} -eq 0 ]]; then
+            echo "No packages to upload"
+            exit 1
+          fi
+          if [[ -n "$RELEASE_TAG" ]]; then
+            tag="$RELEASE_TAG"
+          else
+            tag="web-latest"
+          fi
+          version="$(bash scripts/version.sh version)"
+          if [[ "$tag" != web-latest ]]; then
+            bash scripts/version.sh check-tag "$tag"
+          fi
+          title="Handbean ${version}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "${files[@]}" --clobber
+            gh release edit "$tag" --title "$title" --notes-file notes.md --prerelease=false --latest
+          else
+            gh release create "$tag" "${files[@]}" \
+              --title "$title" \
+              --notes-file notes.md \
+              --latest
+          fi
+
+  android:
+    name: Android APK
+    needs: target
+    if: needs.target.outputs.mobile_required == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: mobile
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.target.outputs.commit }}
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "29.0"
+          elixir-version: "1.20"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Frontend assets
+        working-directory: .
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+          mix deps.get
+          npm ci
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+          working_directory: mobile
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: ""
+
+      - name: Android SDK and NDK
+        run: |
+          export ANDROID_HOME="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "ndk;27.2.12479018" \
+            "cmake;3.22.1"
+
+      - name: Host packages
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends zip libgit2-dev pkg-config
+          # Ubuntu's package has git2.h but not git2/sys/errors.h. Write it before
+          # any mix command. ci_setup compiles ex_git and looks in /usr/include.
+          if [[ ! -f /usr/include/git2/sys/errors.h ]]; then
+            sudo mkdir -p /usr/include/git2/sys
+            printf '%s\n' \
+              '#ifndef INCLUDE_git_sys_errors_h__' \
+              '#define INCLUDE_git_sys_errors_h__' \
+              '#include "git2/errors.h"' \
+              '#endif' \
+              | sudo tee /usr/include/git2/sys/errors.h >/dev/null
+          fi
+          test -f /usr/include/git2/sys/errors.h && grep -q 'git2/errors.h' /usr/include/git2/sys/errors.h
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.mob/cache
+            mobile/deps
+            mobile/_build
+            _build
+            ~/.mix
+            ~/.hex
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: pack-apk-${{ runner.os }}-${{ hashFiles('mobile/mix.lock', 'mix.lock') }}
+          restore-keys: |
+            pack-apk-${{ runner.os }}-
+
+      - name: Pack APKs
+        env:
+          # ex_git's host Makefile looks under $LIBGIT2_DIR/include. Ubuntu
+          # installs the headers in /usr, not /usr/local. The sys/errors.h
+          # shim is added by script/pack_android_apks.sh.
+          LIBGIT2_DIR: /usr
+        run: bash script/pack_android_apks.sh --artifacts artifacts --skip-test
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: handbean-android-apk
+          path: mobile/artifacts/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  ios:
+    name: iOS sideload IPA
+    needs: target
+    if: needs.target.outputs.mobile_required == 'true'
+    runs-on: macos-15
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: mobile
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.target.outputs.commit }}
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "29.0"
+          elixir-version: "1.20"
+
+      - name: libgit2
+        run: brew install libgit2
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.mob/cache
+            mobile/deps
+            mobile/_build
+            _build
+            ~/.mix
+            ~/.hex
+          key: pack-ipa-${{ runner.os }}-${{ hashFiles('mobile/mix.lock', 'mix.lock') }}
+          restore-keys: |
+            pack-ipa-${{ runner.os }}-
+
+      - name: Build iSH guest libraries
+        run: |
+          brew install meson ninja lld
+          git clone --depth 1 https://github.com/youfun/ish-arm64.git "$RUNNER_TEMP/ish-arm64"
+          git -C "$RUNNER_TEMP/ish-arm64" submodule update --init --depth 1
+          SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          export SDK
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          sdk = os.environ["SDK"]
+          Path(os.environ["RUNNER_TEMP"], "ios-cross.txt").write_text(f"""[binaries]
+          c = ['clang', '-arch', 'arm64', '-isysroot', '{sdk}', '-miphoneos-version-min=17.0']
+          ar = 'ar'
+          strip = 'strip'
+          pkg-config = 'false'
+
+          [host_machine]
+          system = 'darwin'
+          cpu_family = 'aarch64'
+          cpu = 'aarch64'
+          endian = 'little'
+
+          [properties]
+          needs_exe_wrapper = true
+          sys_root = '{sdk}'
+          """)
+          PY
+          export PATH="$(brew --prefix lld)/bin:$PATH"
+          meson setup "$RUNNER_TEMP/ish-arm64/build-ios" "$RUNNER_TEMP/ish-arm64" \
+            --cross-file "$RUNNER_TEMP/ios-cross.txt" \
+            --buildtype=release -Db_ndebug=true -Dlog= -Dlog_handler=nslog \
+            -Dkernel=ish -Dengine=asbestos -Dguest_arch=arm64
+          ninja -C "$RUNNER_TEMP/ish-arm64/build-ios" libish.a libish_emu.a libfakefs.a
+          echo "HANDREAM_ISH_LIBS=$RUNNER_TEMP/ish-arm64/build-ios/libish_emu.a,$RUNNER_TEMP/ish-arm64/build-ios/libish.a,$RUNNER_TEMP/ish-arm64/build-ios/libfakefs.a" >> "$GITHUB_ENV"
+          echo "HANDREAM_ISH_INCLUDE=$RUNNER_TEMP/ish-arm64" >> "$GITHUB_ENV"
+
+      - name: Apply pinned iOS build harness
+        env:
+          PACKAGE_COMMIT: ${{ needs.target.outputs.commit }}
+          RELEASE_TAG: ${{ needs.target.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          git fetch --depth=1 origin "$GITHUB_SHA"
+          harness=mobile/script/pack_sideload_ipa.exs
+          blob="$(git rev-parse "$GITHUB_SHA:$harness")"
+          git show "$blob" > script/pack_sideload_ipa.exs
+          echo "Workflow commit: $GITHUB_SHA"
+          echo "Package commit: $PACKAGE_COMMIT"
+          echo "Build harness: $harness; blob: $blob"
+          test "$(git rev-parse HEAD)" = "$PACKAGE_COMMIT"
+          while IFS= read -r changed; do
+            test "$changed" = "$harness"
+          done < <(git -C .. diff --name-only)
+          if [[ -n "$RELEASE_TAG" ]]; then
+            bash ../scripts/version.sh check-tag "$RELEASE_TAG"
+          fi
+
+      - name: Pack sideload IPA
+        run: bash script/pack_sideload_ipa.sh --artifacts artifacts
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: handbean-ios-ipa
+          path: |
+            mobile/artifacts/Handbean-ios-sideload.ipa
+            mobile/artifacts/Handbean-ios-sideload.ipa.sha256
+          if-no-files-found: error
+          retention-days: 14

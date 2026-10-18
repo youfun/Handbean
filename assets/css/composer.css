@@ -1,0 +1,863 @@
+/* ── Sigil Composer — composer input area styles ──
+ *
+ * Base styles for the message composer: textarea, toolbar, buttons, pill,
+ * permission menu, model selectors, attachments, skill suggestions, error states.
+ *
+ * Every visual property uses --sig-* tokens from theme-system.css.
+ * Hover / active / focus variants that need higher specificity live in workspace.css.
+ *
+ * Load order: theme-system.css → theme-light.css → workspace.css → composer.css → motion.css
+ */
+
+/* ═══════════════════════════════════════════════════════════════════
+   Composer form wrapper
+   ═══════════════════════════════════════════════════════════════════ */
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  overflow: visible;
+  gap: 8px;
+}
+
+.composer.dropzone {
+  /* subtle ring hint while dragging files over */
+}
+
+.composer-running {
+  opacity: 0.92;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   Composer error banner
+   ═══════════════════════════════════════════════════════════════════ */
+
+.composer-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--sig-error);
+  background: var(--sig-error-bg);
+  border: 1px solid rgba(197, 48, 48, 0.15);
+  border-radius: var(--sig-radius-lg);
+}
+
+.composer-error button {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--sig-error);
+  background: none;
+  border: none;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity var(--sig-motion-fast);
+}
+
+.composer-error button:hover {
+  opacity: 1;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   Textarea wrap
+   ═══════════════════════════════════════════════════════════════════ */
+
+.composer-dock {
+  position: relative;
+  z-index: 40;
+  padding: 8px 16px 14px;
+  background: transparent;
+}
+
+.once-schedule-dock {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.once-schedule-dock .once-schedule-card {
+  margin-top: 0;
+  background: var(--sig-bg-elevated);
+}
+
+.schedule-switch {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 20px;
+  padding: 2px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--sig-border-emphasis);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.schedule-switch-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--sig-text-inverse);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 15%);
+  transition: transform 0.15s ease;
+}
+
+.schedule-switch[aria-checked="true"] {
+  background: var(--sig-accent);
+}
+
+.schedule-switch[aria-checked="true"] .schedule-switch-thumb {
+  transform: translateX(16px);
+}
+
+.schedule-switch:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.schedule-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--sig-radius-md);
+  background: transparent;
+  color: var(--sig-text-secondary);
+  cursor: pointer;
+}
+
+.schedule-delete svg {
+  width: 16px;
+  height: 16px;
+}
+
+.schedule-delete:hover {
+  color: var(--sig-error);
+  background: var(--sig-error-bg);
+}
+
+.schedule-switch:focus-visible,
+.schedule-delete:focus-visible {
+  outline: 2px solid var(--sig-accent);
+  outline-offset: 3px;
+}
+
+.composer-turn-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 6px 2px;
+}
+
+.composer-turn-pickers {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.composer-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 10px 12px 8px;
+  background: var(--sig-bg-elevated);
+  border: 1px solid var(--sig-border-default);
+  border-radius: var(--sig-radius-xl, 14px);
+  box-shadow: none;
+}
+
+.composer:focus-within .composer-bar {
+  border-color: var(--sig-border-emphasis);
+}
+
+.textarea-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+}
+
+.textarea-wrap textarea {
+  width: 100%;
+  min-height: calc(1.45em * 3);
+  max-height: 160px;
+  resize: none;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 2px 2px 0;
+  color: var(--sig-text-primary);
+  outline: none;
+  font-size: 14px;
+  line-height: 1.45;
+  box-shadow: none;
+}
+
+.textarea-wrap textarea:focus {
+  border: none;
+  box-shadow: none;
+}
+
+.textarea-wrap textarea:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.composer-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+
+.composer-thumbs {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+  overflow-x: auto;
+}
+
+.composer-thumbs.visible {
+  display: flex;
+}
+
+.composer-thumb {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: var(--sig-radius-lg);
+  background: var(--sig-bg-input);
+  border: 1px solid var(--sig-border-default);
+}
+
+.composer-thumb img,
+.composer-thumb > img,
+.composer-thumb picture,
+.composer-thumb canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  border-radius: inherit;
+}
+
+.composer-thumb-remove {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  z-index: 1;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: var(--sig-text-primary);
+  color: var(--sig-text-inverse);
+  font-size: 12px;
+  line-height: 16px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.composer-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.composer-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--sig-radius-full);
+  background: transparent;
+  color: var(--sig-text-tertiary);
+  cursor: pointer;
+}
+
+.composer-icon-btn:hover {
+  background: var(--sig-bg-surface-hover);
+  color: var(--sig-text-secondary);
+}
+
+.composer-send-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--sig-radius-full);
+  background: var(--sig-text-primary);
+  color: var(--sig-text-inverse);
+  cursor: pointer;
+}
+
+.composer-send-btn.primary:hover {
+  background: var(--sig-text-secondary);
+}
+
+.composer-send-btn.steer {
+  background: var(--sig-warning);
+}
+
+.composer-send-btn[disabled] {
+  cursor: wait;
+  opacity: 0.68;
+}
+
+.composer-stop-btn {
+  color: var(--sig-text-primary);
+}
+
+.composer-stop-square {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.composer-steer-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Toolbar
+   ═══════════════════════════════════════════════════════════════════ */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px 8px;
+  border-top: none;
+  gap: 8px;
+}
+
+.toolbar .left,
+.toolbar .right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   Buttons — base, primary, stop, steer, icon
+   ═══════════════════════════════════════════════════════════════════ */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: var(--sig-radius-lg);
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--sig-border-default);
+  background: var(--sig-bg-surface);
+  color: var(--sig-text-secondary);
+  transition: all var(--sig-motion-fast);
+  cursor: pointer;
+  font-family: inherit;
+  line-height: 1.4;
+}
+
+.btn:hover {
+  background: var(--sig-bg-surface-hover);
+  border-color: var(--sig-border-emphasis);
+}
+
+.btn:active {
+  transform: scale(0.96);
+}
+
+.btn.primary {
+  background: var(--sig-accent-fill);
+  border-color: transparent;
+  color: var(--sig-on-accent);
+}
+
+.btn.primary:hover {
+  background: var(--sig-accent-fill-hover);
+}
+
+.btn.stop {
+  background: var(--sig-error-bg);
+  border-color: rgba(197, 48, 48, 0.2);
+  color: var(--sig-error);
+}
+
+.btn.steer {
+  background: var(--sig-warning-bg);
+  border-color: rgba(154, 106, 12, 0.2);
+  color: var(--sig-warning);
+  font-weight: 600;
+}
+
+.btn.icon {
+  padding: 7px 10px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+#send-button {
+  transition: background-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+#send-button.btn.send {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  padding: 0;
+  border: none;
+  border-radius: var(--sig-radius-full);
+  background: var(--sig-text-primary);
+  color: var(--sig-bg-elevated);
+  justify-content: center;
+}
+
+#send-button.btn.send:hover:not(:disabled) {
+  background: var(--sig-text-secondary);
+  box-shadow: none;
+}
+
+#send-button:hover:not(:disabled) {
+  box-shadow: none;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   Permission pill — base styles
+   ═══════════════════════════════════════════════════════════════════ */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: var(--sig-radius-full);
+  font-size: 12px;
+  color: var(--sig-text-tertiary);
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  transition: all var(--sig-motion-fast);
+  font-family: inherit;
+}
+
+.pill:hover {
+  background: var(--sig-bg-surface-hover);
+  border-color: transparent;
+  color: var(--sig-text-secondary);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   Permission dropdown menu
+   ═══════════════════════════════════════════════════════════════════ */
+
+.permission-menu-container {
+  position: relative;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.permission-dropdown-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 2;
+  background: var(--sig-bg-elevated);
+  border: 1px solid var(--sig-border-default);
+  border-radius: var(--sig-radius-lg);
+  box-shadow: var(--sig-pop-shadow);
+  padding: 4px;
+  min-width: 180px;
+  border-radius: 12px;
+  /* Clear the conversation-nav buttons that sit over the composer corner.
+     Keep the offset on the element; the entrance animation must not own transform,
+     or the menu snaps back under those buttons when the animation ends. */
+  transform: translateX(-90px);
+  animation: permission-dropdown-in 120ms var(--sig-motion-ease);
+}
+
+@keyframes permission-dropdown-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes dropdown-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.permission-dropdown-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--sig-text-primary);
+  background: transparent;
+  border: none;
+  border-radius: var(--sig-radius-md);
+  cursor: pointer;
+  transition: background-color var(--sig-motion-fast);
+  font-family: inherit;
+}
+
+.permission-dropdown-item:hover {
+  background: var(--sig-bg-surface-hover);
+}
+
+.permission-dropdown-item {
+  border-radius: 8px;
+  font-weight: 500;
+  min-height: 32px;
+}
+
+.permission-dropdown-item.active {
+  background: var(--sig-sel);
+  color: var(--sig-text-primary);
+  font-weight: 500;
+}
+
+.permission-dropdown-item.active::after {
+  content: "\2713";
+  margin-left: auto;
+  color: var(--sig-accent);
+  font-size: 12px;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   Model / Reasoning selectors
+   ═══════════════════════════════════════════════════════════════════ */
+
+.model-control {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.model-picker:not([data-enhanced="true"]) #model-picker,
+#reasoning-picker {
+  padding: 2px 4px 2px 6px;
+  border-radius: var(--sig-radius-md);
+  font-size: 12px;
+  line-height: 1.3;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--sig-text-tertiary);
+  outline: none;
+  width: max-content;
+  max-width: 11.5rem;
+  field-sizing: content;
+  transition: background-color var(--sig-motion-fast), color var(--sig-motion-fast);
+  cursor: pointer;
+  font-family: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 12 12'><path fill='none' stroke='%239C9590' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round' d='M3 4.5 6 7.5 9 4.5'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 4px center;
+  padding-right: 16px;
+}
+
+#reasoning-picker {
+  max-width: 4.5rem;
+}
+
+.model-picker:not([data-enhanced="true"]) #model-picker:hover,
+#reasoning-picker:hover {
+  background-color: var(--sig-bg-surface-hover);
+  color: var(--sig-text-secondary);
+}
+
+.model-picker:not([data-enhanced="true"]) #model-picker:focus,
+#reasoning-picker:focus {
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--sig-text-primary);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   Model error message
+   ═══════════════════════════════════════════════════════════════════ */
+
+.composer-model-error {
+  font-size: 11px;
+  color: var(--sig-error);
+  line-height: 1.3;
+  max-width: 240px;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   Attachment preview chips
+   ═══════════════════════════════════════════════════════════════════ */
+
+#composer-attachments.composer-thumbs {
+  border-top: none;
+  padding: 0;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 6px 6px;
+  border: 1px solid var(--sig-border-default);
+  border-radius: var(--sig-radius-lg);
+  background: var(--sig-bg-surface);
+  font-size: 12px;
+  max-width: 220px;
+  transition: border-color var(--sig-motion-fast);
+}
+
+.chip:hover {
+  border-color: var(--sig-border-emphasis);
+}
+
+.chip .thumb {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--sig-radius-md);
+  overflow: hidden;
+  flex-shrink: 0;
+  background: var(--sig-bg-input);
+}
+
+.chip .thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.chip .meta {
+  min-width: 0;
+}
+
+.chip .name {
+  font-size: 11px;
+  color: var(--sig-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chip .sub {
+  font-size: 10px;
+  color: var(--sig-text-tertiary);
+  margin-top: 1px;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   Skill autocomplete dropdown
+   ═══════════════════════════════════════════════════════════════════ */
+
+.skill-suggestions-dropdown {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 25;
+  background: var(--sig-bg-elevated);
+  border: 1px solid var(--sig-border-default);
+  border-radius: var(--sig-radius-lg);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+  animation: dropdown-in 120ms var(--sig-motion-ease);
+}
+
+.skill-suggestion-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-radius: var(--sig-radius-md);
+  background: transparent;
+  cursor: pointer;
+  transition: background-color var(--sig-motion-fast);
+  font-family: inherit;
+}
+
+.skill-suggestion-btn:hover {
+  background: var(--sig-bg-surface-hover);
+}
+
+.skill-suggestion-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sig-accent);
+  font-family: var(--sig-font-mono);
+}
+
+.skill-suggestion-desc {
+  font-size: 11px;
+  color: var(--sig-text-tertiary);
+  margin-top: 2px;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   Mobile responsive (≤ 768px)
+   ═══════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+  .composer {
+    gap: 4px;
+  }
+
+  .composer-dock {
+    padding: 6px 10px 8px;
+    border-top: 1px solid var(--sig-border-subtle);
+    background: color-mix(in srgb, var(--sig-bg-surface) 94%, transparent);
+    backdrop-filter: blur(12px);
+  }
+
+  .composer-turn-controls {
+    flex-wrap: nowrap;
+    min-height: 0;
+    padding: 0 2px 2px;
+    gap: 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .composer-turn-controls::-webkit-scrollbar {
+    display: none;
+  }
+
+  .composer-turn-pickers {
+    flex: 0 0 auto;
+  }
+
+  .textarea-wrap {
+    padding: 0;
+  }
+
+  .textarea-wrap textarea {
+    min-height: 44px;
+    max-height: 120px;
+    height: auto;
+    font-size: 16px;
+    line-height: 1.35;
+    padding: 8px 4px 4px;
+    border-radius: 0;
+    resize: none;
+    overflow-y: auto;
+    transition: all var(--sig-motion-normal);
+  }
+
+  .composer-bar {
+    position: relative;
+    flex-direction: column;
+    align-items: stretch;
+    border-radius: var(--sig-radius-xl, 14px);
+    padding: 4px 6px 6px 10px;
+    gap: 2px;
+  }
+
+  .composer-toolbar {
+    width: 100%;
+    min-height: 44px;
+    gap: 2px;
+    justify-content: flex-end;
+  }
+
+  .composer-thumbs.visible {
+    position: absolute;
+    left: 10px;
+    bottom: 100%;
+    margin-bottom: 4px;
+  }
+
+  .composer-icon-btn,
+  .composer-send-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .composer:focus-within textarea {
+    min-height: 44px;
+    max-height: 120px;
+  }
+
+  .btn {
+    font-size: 13px;
+    padding: 8px 16px;
+  }
+
+  .model-picker:not([data-enhanced="true"]) #model-picker,
+  #reasoning-picker,
+  #cli-picker,
+  .model-picker:not([data-enhanced="true"]) #cli-model-picker {
+    min-height: 36px;
+    min-width: 0;
+    max-width: 168px;
+    font-size: 12px;
+  }
+
+  .pill {
+    display: none;
+  }
+}

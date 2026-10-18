@@ -1,0 +1,209 @@
+<div id="git-settings" class="settings-content-wrap h-full overflow-y-auto">
+  <div class="settings-content-card settings-form-section">
+    <div class="settings-section-heading">
+      <div class="settings-section-title">{gettext("Git")}</div>
+      <div class="settings-help-text">
+        {gettext(
+          "Used for Git commits and HTTPS repository access. Saved passwords and tokens are never shown again."
+        )}
+      </div>
+    </div>
+
+    <div :if={@load_error} id="git-load-error" class="settings-error-text">
+      {@load_error}
+    </div>
+
+    <form id="git-identity" phx-submit="save_identity" class="settings-card git-settings-section">
+      <div class="git-settings-section-header">
+        <div>
+          <div class="settings-field-title">{gettext("Commit identity")}</div>
+          <div class="settings-field-desc">
+            {gettext("The author name and email written to new commits.")}
+          </div>
+        </div>
+      </div>
+      <div class="git-settings-fields">
+        <label class="settings-form-group">
+          <span class="settings-form-label">{gettext("Name")}</span>
+          <input
+            type="text"
+            name="identity[name]"
+            value={@identity["name"]}
+            class="settings-input"
+            autocomplete="name"
+          />
+        </label>
+        <label class="settings-form-group">
+          <span class="settings-form-label">{gettext("Email")}</span>
+          <input
+            type="email"
+            name="identity[email]"
+            value={@identity["email"]}
+            class="settings-input"
+            autocomplete="email"
+          />
+        </label>
+      </div>
+      <div :if={@identity_error} class="settings-error-text">{@identity_error}</div>
+      <div class="git-settings-actions">
+        <button type="submit" class="settings-btn settings-btn-primary">
+          {gettext("Save identity")}
+        </button>
+      </div>
+    </form>
+
+    <section class="settings-card git-settings-section">
+      <div class="git-settings-section-header git-settings-accounts-header">
+        <div>
+          <div class="settings-field-title">{gettext("Accounts")}</div>
+          <div class="settings-field-desc">
+            {gettext("Credentials used for HTTPS clone, fetch, pull, and push.")}
+          </div>
+        </div>
+        <button
+          :if={is_nil(@form)}
+          id="git-add"
+          type="button"
+          phx-click="new_account"
+          class="settings-btn settings-btn-primary"
+        >
+          {gettext("Add account")}
+        </button>
+      </div>
+
+      <div :if={@accounts == [] and is_nil(@form)} id="git-empty" class="settings-empty-state">
+        <div>{gettext("No Git accounts yet.")}</div>
+        <div class="settings-field-desc">
+          {gettext("Add an account when a private HTTPS repository needs credentials.")}
+        </div>
+      </div>
+
+      <div :if={@accounts != []} class="git-account-list">
+        <article
+          :for={account <- @accounts}
+          id={"git-account-#{account.id}"}
+          class="git-account-row"
+        >
+          <div class="git-account-copy">
+            <div class="git-account-name">
+              {account.name}
+              <span :if={account.default?} class="settings-badge">{gettext("default")}</span>
+            </div>
+            <div class="settings-field-desc">
+              {account.endpoint}
+              <%= if account.username != "" do %>
+                · {account.username}
+              <% end %>
+            </div>
+            <div class="git-account-id">{account.id}</div>
+          </div>
+          <div class="git-account-actions">
+            <button
+              :if={not account.default?}
+              type="button"
+              phx-click="set_default"
+              phx-value-id={account.id}
+              class="settings-btn"
+            >
+              {gettext("Use as default")}
+            </button>
+            <button
+              type="button"
+              phx-click="edit_account"
+              phx-value-id={account.id}
+              class="settings-btn"
+            >
+              {gettext("Edit")}
+            </button>
+            <button
+              type="button"
+              phx-click="confirm_delete"
+              phx-value-id={account.id}
+              class="settings-btn settings-btn-danger"
+            >
+              {gettext("Delete")}
+            </button>
+          </div>
+          <div :if={@delete_target == account.id} class="git-delete-confirm">
+            <span>{gettext("Delete this account?")}</span>
+            <button
+              type="button"
+              phx-click="delete_account"
+              phx-value-id={account.id}
+              class="settings-btn settings-btn-danger"
+            >
+              {gettext("Delete")}
+            </button>
+            <button type="button" phx-click="cancel_delete" class="settings-btn">
+              {gettext("Cancel")}
+            </button>
+          </div>
+        </article>
+      </div>
+
+      <form :if={@form} id="git-account-form" phx-submit="save_account" class="git-account-form">
+        <label class="settings-form-group">
+          <span class="settings-form-label">{gettext("Id")}</span>
+          <input
+            type="text"
+            name="account[id]"
+            value={@form["id"]}
+            class="settings-input"
+            readonly={@form["id"] not in [nil, ""]}
+            placeholder="github"
+          />
+        </label>
+        <div class="git-settings-fields">
+          <label class="settings-form-group">
+            <span class="settings-form-label">{gettext("Display name")}</span>
+            <input type="text" name="account[name]" value={@form["name"]} class="settings-input" />
+          </label>
+          <label class="settings-form-group">
+            <span class="settings-form-label">{gettext("Username")}</span>
+            <input
+              type="text"
+              name="account[username]"
+              value={@form["username"]}
+              class="settings-input"
+              autocomplete="username"
+            />
+          </label>
+        </div>
+        <label class="settings-form-group">
+          <span class="settings-form-label">{gettext("HTTPS endpoint")}</span>
+          <input
+            type="url"
+            name="account[endpoint]"
+            value={@form["endpoint"]}
+            class="settings-input"
+            placeholder="https://github.com"
+          />
+        </label>
+        <label class="settings-form-group">
+          <span class="settings-form-label">{gettext("Password or token")}</span>
+          <input
+            type="password"
+            name="account[password]"
+            value=""
+            class="settings-input"
+            autocomplete="new-password"
+            placeholder={
+              if @form["has_password"],
+                do: gettext("Leave blank to keep the saved token"),
+                else: ""
+            }
+          />
+        </label>
+        <div :if={@form_error} class="settings-error-text">{@form_error}</div>
+        <div class="git-settings-actions">
+          <button type="submit" class="settings-btn settings-btn-primary">
+            {gettext("Save account")}
+          </button>
+          <button type="button" phx-click="cancel_account" class="settings-btn">
+            {gettext("Cancel")}
+          </button>
+        </div>
+      </form>
+    </section>
+  </div>
+</div>
