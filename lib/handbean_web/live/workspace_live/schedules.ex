@@ -4,7 +4,6 @@ defmodule HandbeanWeb.WorkspaceLive.Schedules do
   use HandbeanWeb, :html
 
   alias Handbean.Schedule.{Presentation, Rule, Store}
-  alias Phoenix.LiveView.JS
 
   def defaults(socket) do
     tz =
@@ -23,8 +22,12 @@ defmodule HandbeanWeb.WorkspaceLive.Schedules do
     |> Phoenix.Component.assign(:show_schedules, false)
     |> Phoenix.Component.assign(:schedule_request, "")
     |> Phoenix.Component.assign(:schedule_error, nil)
+    |> Phoenix.Component.assign(:schedule_in_place, false)
+    |> Phoenix.Component.assign(:schedule_target_conversation_id, nil)
+    |> Phoenix.Component.assign(:schedule_target_workspace_id, nil)
     |> Phoenix.Component.assign(:schedules, [])
     |> Phoenix.Component.assign(:schedule_runs, %{})
+    |> Phoenix.Component.assign(:schedule_conversation_titles, %{})
   end
 
   def toggle(socket) do
@@ -37,10 +40,8 @@ defmodule HandbeanWeb.WorkspaceLive.Schedules do
   end
 
   def reload(socket) do
-    id = socket.assigns.current_conversation_id
-
-    if socket.assigns.chat_scope == :workspace and is_binary(id) do
-      schedules = Store.list_for_conversation(id)
+    if socket.assigns.chat_scope == :workspace do
+      schedules = Store.list()
 
       runs =
         Map.new(schedules, fn entry ->
@@ -50,10 +51,12 @@ defmodule HandbeanWeb.WorkspaceLive.Schedules do
       socket
       |> Phoenix.Component.assign(:schedules, schedules)
       |> Phoenix.Component.assign(:schedule_runs, runs)
+      |> Phoenix.Component.assign(:schedule_conversation_titles, conversation_titles(schedules))
     else
       socket
       |> Phoenix.Component.assign(:schedules, [])
       |> Phoenix.Component.assign(:schedule_runs, %{})
+      |> Phoenix.Component.assign(:schedule_conversation_titles, %{})
     end
   end
 
@@ -79,6 +82,9 @@ defmodule HandbeanWeb.WorkspaceLive.Schedules do
       {:ok, entry} ->
         socket
         |> Phoenix.Component.assign(:schedule_request, revise_prompt(entry))
+        |> Phoenix.Component.assign(:schedule_in_place, true)
+        |> Phoenix.Component.assign(:schedule_target_conversation_id, entry.conversation_id)
+        |> Phoenix.Component.assign(:schedule_target_workspace_id, entry.workspace_id)
         |> Phoenix.Component.assign(:schedule_error, nil)
 
       {:error, reason} ->
@@ -115,6 +121,7 @@ defmodule HandbeanWeb.WorkspaceLive.Schedules do
   attr :error, :any, default: nil
   attr :time_zone, :any, default: nil
   attr :workspace_label, :string, required: true
+  attr :conversation_titles, :map, default: %{}
 
   def center(assigns) do
     ~H"""
@@ -126,7 +133,7 @@ defmodule HandbeanWeb.WorkspaceLive.Schedules do
           </span>
           <div>
             <h1>{gettext("定时任务")}</h1>
-            <p>{gettext("管理当前对话的自动运行")} · {@workspace_label}</p>
+            <p>{gettext("管理定时任务，点对话可以跳转")} · {@workspace_label}</p>
           </div>
         </div>
         <button
@@ -160,7 +167,7 @@ defmodule HandbeanWeb.WorkspaceLive.Schedules do
           ></textarea>
           <p :if={@error} class="schedule-error" role="alert">{@error}</p>
           <div class="schedule-create-actions">
-            <span>{gettext("任务会在当前对话中运行并返回结果")}</span>
+            <span>{gettext("任务会在默认工作区的新对话中运行并返回结果")}</span>
             <button type="submit" class="schedule-primary-button">
               {gettext("交给 Agent")}
             </button>
@@ -170,7 +177,7 @@ defmodule HandbeanWeb.WorkspaceLive.Schedules do
         <div class="schedule-list-heading">
           <div>
             <h2>{gettext("任务")}</h2>
-            <p>{ngettext("当前对话有 1 个任务", "当前对话有 %{count} 个任务", length(@schedules))}</p>
+            <p>{ngettext("共 1 个任务", "共 %{count} 个任务", length(@schedules))}</p>
           </div>
         </div>
 
@@ -196,6 +203,20 @@ defmodule HandbeanWeb.WorkspaceLive.Schedules do
               </div>
               <p class="schedule-card-rule">{sidebar_summary(entry, @runs)}</p>
               <p class="schedule-card-next">{sidebar_status(entry, @runs, @time_zone)}</p>
+              <% title = conversation_title(entry, @conversation_titles) %>
+              <p class="schedule-card-conversation">
+                <button
+                  id={"schedule-#{entry.id}-conversation"}
+                  type="button"
+                  phx-click="open_schedule_conversation"
+                  phx-value-id={entry.conversation_id}
+                  phx-value-ws_id={entry.workspace_id}
+                  title={gettext("打开对话")}
+                  aria-label={gettext("打开对话 %{title}", title: title)}
+                >
+                  {title}
+                </button>
+              </p>
               <p class="schedule-card-instruction">{entry.instruction}</p>
             </div>
 
@@ -273,12 +294,9 @@ defmodule HandbeanWeb.WorkspaceLive.Schedules do
                   <button
                     :if={run.run_id}
                     type="button"
-                    phx-click={
-                      JS.dispatch("phx:scroll-to-run",
-                        to: "window",
-                        detail: %{run_id: run.run_id}
-                      )
-                    }
+                    phx-click="open_schedule_conversation"
+                    phx-value-id={entry.conversation_id}
+                    phx-value-ws_id={entry.workspace_id}
                   >
                     {gettext("查看对话")}
                   </button>
@@ -336,8 +354,31 @@ defmodule HandbeanWeb.WorkspaceLive.Schedules do
     end
   end
 
-  defp current(socket, id) do
-    Store.get_for_conversation(socket.assigns.current_conversation_id, id)
+  defp current(_socket, id), do: Store.get(id)
+
+  defp conversation_titles(schedules) do
+    schedules
+    |> Enum.map(& &1.conversation_id)
+    |> Enum.uniq()
+    |> Map.new(fn id ->
+      title =
+        case Handbean.ConversationStore.get_metadata(id) do
+          {:ok, meta} ->
+            case String.trim(to_string(meta["title"] || "")) do
+              "" -> gettext("对话")
+              title -> title
+            end
+
+          _ ->
+            gettext("对话")
+        end
+
+      {id, title}
+    end)
+  end
+
+  defp conversation_title(entry, titles) do
+    Map.get(titles, entry.conversation_id) || gettext("对话")
   end
 
   defp revise_prompt(entry) do

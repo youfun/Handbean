@@ -346,6 +346,24 @@
   color: var(--sig-text-tertiary);
 }
 
+.schedule-card-conversation {
+  margin-top: 8px !important;
+}
+
+.schedule-card-conversation button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--sig-accent);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: left;
+  text-decoration: underline;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
 .schedule-card-instruction {
   margin-top: 12px !important;
   color: var(--sig-text-primary);

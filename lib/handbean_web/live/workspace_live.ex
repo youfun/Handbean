@@ -1442,9 +1442,11 @@ defmodule HandbeanWeb.WorkspaceLive do
   def handle_event("schedule_ask", %{"request" => request}, socket) do
     case Schedules.prepare_ask(socket, request) do
       {:ok, socket, text} ->
-        socket
-        |> assign(:show_schedules, false)
-        |> MessageSubmission.send_schedule_request(text)
+        if socket.assigns.schedule_in_place do
+          ask_schedule_in_place(socket, text)
+        else
+          ask_schedule_in_new_conversation(socket, text)
+        end
 
       {:error, socket} ->
         {:noreply, socket}
@@ -1471,6 +1473,81 @@ defmodule HandbeanWeb.WorkspaceLive do
     {:noreply, Schedules.revise(socket, id)}
   end
 
+  def handle_event("open_schedule_conversation", %{"id" => conv_id, "ws_id" => ws_id}, socket) do
+    case switch_workspace_conversation(socket, ws_id, conv_id) do
+      {:ok, socket} -> {:noreply, push_patch(socket, to: "/w/#{ws_id}/c/#{conv_id}")}
+      {:error, socket} -> {:noreply, socket}
+    end
+  end
+
+  defp ask_schedule_in_place(socket, text) do
+    conv_id =
+      socket.assigns[:schedule_target_conversation_id] || socket.assigns.current_conversation_id
+
+    ws_id = socket.assigns[:schedule_target_workspace_id] || socket.assigns.current_workspace_id
+
+    case switch_workspace_conversation(socket, ws_id, conv_id) do
+      {:ok, socket} ->
+        {:noreply, socket} =
+          socket
+          |> assign(:schedule_in_place, false)
+          |> MessageSubmission.send_schedule_request(text)
+
+        {:noreply, push_patch(socket, to: "/w/#{ws_id}/c/#{conv_id}")}
+
+      {:error, socket} ->
+        {:noreply, socket}
+    end
+  end
+
+  defp ask_schedule_in_new_conversation(socket, text) do
+    case open_default_workspace_conversation(socket) do
+      {:ok, socket, ws_id, conv_id} ->
+        {:noreply, socket} =
+          socket
+          |> assign(:show_schedules, false)
+          |> MessageSubmission.send_schedule_request(text)
+
+        {:noreply, push_patch(socket, to: "/w/#{ws_id}/c/#{conv_id}")}
+
+      {:error, socket} ->
+        {:noreply, socket}
+    end
+  end
+
+  defp open_default_workspace_conversation(socket) do
+    case default_workspace(socket) do
+      %{"id" => ws_id} = ws ->
+        socket = CliSelection.prepare_switch(socket)
+
+        {socket, conv_id} =
+          ConversationSwitching.new_conversation(
+            socket,
+            ws_id,
+            ModelSelection.switching_opts()
+            |> Keyword.put(:checkout_path, ws["default_checkout_path"])
+          )
+
+        socket =
+          socket
+          |> attach_created_conversation(ws_id)
+          |> WorkspaceNavigation.close_mobile_sheets()
+
+        {:ok, socket, ws_id, conv_id}
+
+      nil ->
+        {:error, assign(socket, :schedule_error, gettext("找不到默认工作区"))}
+    end
+  end
+
+  defp default_workspace(socket) do
+    Enum.find(socket.assigns.workspaces || [], &(&1["default"] == true)) ||
+      case Handbean.WorkspaceStore.ensure_default!() do
+        {:ok, workspace} -> workspace
+        {:error, _reason} -> nil
+      end
+  end
+
   defp begin_conversation_in_workspace(socket, ws_id, opts) do
     close_sheets? = Keyword.get(opts, :close_sheets?, false)
 
@@ -1486,13 +1563,7 @@ defmodule HandbeanWeb.WorkspaceLive do
         {:noreply, CliSelection.restore_current(socket)}
 
       {:created, socket, conv_id} ->
-        socket =
-          socket
-          |> drop_composer_for_switch()
-          |> ConversationSwitching.close_checkout_picker()
-          |> WorkspaceNavigation.expand_group(ws_id)
-          |> WorkspaceNavigation.after_switch()
-          |> RuntimeProjection.subscribe_session()
+        socket = attach_created_conversation(socket, ws_id)
 
         socket =
           if close_sheets?,
@@ -1501,6 +1572,44 @@ defmodule HandbeanWeb.WorkspaceLive do
 
         {:noreply, push_patch(socket, to: "/w/#{ws_id}/c/#{conv_id}")}
     end
+  end
+
+  defp attach_created_conversation(socket, ws_id) do
+    socket
+    |> drop_composer_for_switch()
+    |> ConversationSwitching.close_checkout_picker()
+    |> WorkspaceNavigation.expand_group(ws_id)
+    |> WorkspaceNavigation.after_switch()
+    |> RuntimeProjection.subscribe_session()
+  end
+
+  defp switch_workspace_conversation(socket, ws_id, conv_id)
+       when is_binary(ws_id) and is_binary(conv_id) do
+    socket = assign(socket, :show_schedules, false)
+
+    if socket.assigns.current_workspace_id == ws_id and
+         socket.assigns.current_conversation_id == conv_id do
+      {:ok, socket}
+    else
+      with {:ok, %{"workspace_id" => ^ws_id}} <-
+             Handbean.ConversationStore.get(conv_id, include_timeline?: false) do
+        socket = drop_composer_for_switch(socket, conv_id)
+        {socket, _conv_id} = ConversationSwitching.select_conversation(socket, ws_id, conv_id)
+
+        {:ok,
+         socket
+         |> WorkspaceNavigation.after_switch()
+         |> RuntimeProjection.subscribe_session()
+         |> restore_session()
+         |> WorkspaceNavigation.close_mobile_sheets()}
+      else
+        _ -> {:error, assign(socket, :schedule_error, gettext("找不到对话"))}
+      end
+    end
+  end
+
+  defp switch_workspace_conversation(socket, _ws_id, _conv_id) do
+    {:error, assign(socket, :schedule_error, gettext("找不到对话"))}
   end
 
   # ── Agent events ──
@@ -1670,15 +1779,8 @@ defmodule HandbeanWeb.WorkspaceLive do
     {:noreply, assign(socket, :ext_widget_data, %{event: event, data: data})}
   end
 
-  def handle_info({:schedule_changed, conv_id}, socket) do
-    socket =
-      if socket.assigns.current_conversation_id == conv_id do
-        Schedules.reload(socket)
-      else
-        socket
-      end
-
-    {:noreply, socket}
+  def handle_info({:schedule_changed, _conv_id}, socket) do
+    {:noreply, Schedules.reload(socket)}
   end
 
   def handle_info({:schedule_notice, conv_id, entry}, socket) do

@@ -11,6 +11,12 @@ defmodule Handbean.Schedule.Store do
   alias Handbean.Repo
   alias Handbean.Schedule.{Entry, Rule, Run}
 
+  @spec list() :: [Entry.t()]
+  def list do
+    from(s in Entry, order_by: [desc: s.updated_at, desc: s.inserted_at])
+    |> Repo.all()
+  end
+
   @spec list_for_conversation(String.t()) :: [Entry.t()]
   def list_for_conversation(conversation_id) when is_binary(conversation_id) do
     from(s in Entry,
