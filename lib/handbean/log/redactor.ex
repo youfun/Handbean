@@ -3,7 +3,8 @@ defmodule Handbean.Log.Redactor do
   Recursive sensitive-data redactor.
 
   Walks maps, lists, strings, and tuples, replacing values associated with
-  sensitive keys (case-insensitive) and bearer-token strings with `"[REDACTED]"`.
+  sensitive keys (case-insensitive), credential assignments, common credential
+  token shapes, and bearer-token strings with `"[REDACTED]"`.
 
   ## Covered sensitive keys
 
@@ -30,6 +31,13 @@ defmodule Handbean.Log.Redactor do
   @sensitive_set MapSet.new(@sensitive_keys, &String.downcase/1)
 
   @bearer_regex ~r/(bearer)\s+\S+/i
+
+  @authorization_assignment_regex ~r/((?:["']?)authorization(?:["']?)\s*[:=]\s*)(?:["'][^"'\r\n]*["']|(?:basic|bearer)\s+\S+|[^\s,;&}\]]+)/i
+  @cookie_assignment_regex ~r/((?:["']?)cookie(?:["']?)\s*[:=]\s*)[^,\r\n}]+/i
+
+  @sensitive_assignment_regex ~r/((?:["']?)(?:api[\s_-]?key|apikey|auth[\s_-]?token|access[\s_-]?token|refresh[\s_-]?token|token|secret|password|pass)(?:["']?)\s*[:=]\s*)(?:["'][^"'\r\n]*["']|[^\s,;&}\]]+)/i
+
+  @credential_token_regex ~r/\b(?:AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{20,})\b/
 
   @redacted "[REDACTED]"
 
@@ -95,6 +103,11 @@ defmodule Handbean.Log.Redactor do
   defp sensitive_key?(_), do: false
 
   defp redact_bearer(string) when is_binary(string) do
-    String.replace(string, @bearer_regex, "\\1 [REDACTED]")
+    string
+    |> String.replace(@authorization_assignment_regex, "\\1#{@redacted}")
+    |> String.replace(@cookie_assignment_regex, "\\1#{@redacted}")
+    |> String.replace(@sensitive_assignment_regex, "\\1#{@redacted}")
+    |> String.replace(@bearer_regex, "\\1 #{@redacted}")
+    |> String.replace(@credential_token_regex, @redacted)
   end
 end

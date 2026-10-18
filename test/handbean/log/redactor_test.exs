@@ -77,6 +77,37 @@ defmodule Handbean.Log.RedactorTest do
     end
   end
 
+  describe "redact/1 — credential strings" do
+    test "redacts assignments in plain and JSON-like text" do
+      input =
+        ~s(request api_key=sk-live-value-1234567890 password: hunter2 {"auth_token":"token-value"})
+
+      result = Redactor.redact(input)
+
+      refute result =~ "sk-live-value"
+      refute result =~ "hunter2"
+      refute result =~ "token-value"
+      assert result =~ "api_key=[REDACTED]"
+      assert result =~ "password: [REDACTED]"
+      assert result =~ ~s("auth_token":[REDACTED])
+    end
+
+    test "redacts authorization, cookie, and standalone credential token shapes" do
+      input =
+        "Authorization: Basic dXNlcjpwYXNz Cookie: session=abc; csrf=def " <>
+          "AKIA1234567890ABCDEF sk-abcdefghijklmnopqrstuvwxyz"
+
+      result = Redactor.redact(input)
+
+      refute result =~ "dXNlcjpwYXNz"
+      refute result =~ "session=abc"
+      refute result =~ "AKIA1234567890ABCDEF"
+      refute result =~ "sk-abcdefghijklmnopqrstuvwxyz"
+      assert result =~ "Authorization: [REDACTED]"
+      assert result =~ "Cookie: [REDACTED]"
+    end
+  end
+
   describe "redact/1 — nested data structures" do
     test "recursively redacts nested maps" do
       input = %{
