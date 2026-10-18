@@ -6,7 +6,7 @@ defmodule Handbean.Tool.Builtin.SearchConversations do
     module: Handbean.Conversations,
     action: :search_entries,
     description:
-      "Search redacted persisted messages and tool records across authorized durable conversations in the current workspace. Returns bounded snippets with stable conversation/run/turn/sequence/entry anchors; continue with read_conversation or get_conversation_trajectory. Excludes free and internal task conversations. Matching is literal, not fuzzy. Cursors invalidate on source changes.",
+      "Search redacted persisted messages and tool records across authorized durable conversations in the current workspace. The invoking run is excluded so the current request and completed search tool calls cannot become their own evidence or invalidate pagination. Returns bounded snippets with stable conversation/run/turn/sequence/entry anchors; continue with read_conversation or get_conversation_trajectory. Excludes free and internal task conversations. Matching is literal, not fuzzy. Cursors invalidate on searched source changes.",
     schema: %{
       type: "object",
       additionalProperties: false,

@@ -404,6 +404,7 @@ defmodule Handbean.Tool.RegistryTest do
 
       assert {:ok, _state} =
                Handbean.Agent.run("hello",
+                 builtin_memory_enabled: false,
                  provider: Handbean.TestSupport.FakeProvider,
                  provider_config: %{scenario: :simple_answer},
                  model: "fake",
@@ -426,6 +427,7 @@ defmodule Handbean.Tool.RegistryTest do
       assert {:ok, _state} =
                Handbean.Agent.run("hello",
                  tools: [Handbean.Tool.Builtin.Read],
+                 builtin_memory_enabled: false,
                  provider: Handbean.TestSupport.FakeProvider,
                  provider_config: %{scenario: :simple_answer},
                  model: "fake",
@@ -457,6 +459,7 @@ defmodule Handbean.Tool.RegistryTest do
 
       assert {:ok, _state} =
                Handbean.Agent.run("hello",
+                 builtin_memory_enabled: false,
                  provider: Handbean.TestSupport.FakeProvider,
                  provider_config: %{scenario: :simple_answer},
                  model: "fake",
@@ -497,6 +500,7 @@ defmodule Handbean.Tool.RegistryTest do
 
       assert {:ok, _state} =
                Handbean.Agent.run("hello",
+                 builtin_memory_enabled: false,
                  provider: Handbean.TestSupport.FakeProvider,
                  provider_config: %{scenario: :simple_answer},
                  model: "fake",

@@ -25,7 +25,8 @@ Semantic memory remains owned by `engrams`; execution evidence remains owned by
   projection over canonical tables.
 - Tool adapter: deferred `search_conversations`.
 - Result: snippets and stable anchors only; never an unbounded transcript.
-- Match mode: case-insensitive literal substring, not fuzzy/regex/SQL/FTS syntax.
+- Match mode: literal substring, ASCII case-insensitive. Non-ASCII text is matched
+  literally in V1; Unicode case folding and normalization are deferred with fuzzy search.
 - Follow-up readers: `read_conversation` and `get_conversation_trajectory`.
 
 ## Authorization invariants
@@ -43,6 +44,8 @@ Semantic memory remains owned by `engrams`; execution evidence remains owned by
       elsewhere” metadata.
 - [x] Only settled public trajectory kinds are eligible; internal/audit and
       streaming/running records are excluded.
+- [x] The invoking conversation's current run is excluded, so the current request and
+      completed search calls cannot become their own evidence or invalidate cursors.
 
 ## V1 input contract
 
@@ -124,7 +127,7 @@ snippet (<= 300 Unicode codepoints)
 
 - [x] Update `docs/conversation-tools.md` to distinguish title discovery from
       execution-body search.
-- [x] Document redaction-before-match, stable anchors, archive default, cursor
+- [x] Document redaction-before-final-match, stable anchors, archive default, cursor
       invalidation, and absence of totals.
 - [x] Document that search results are evidence locators, not trusted memory.
 
@@ -138,7 +141,10 @@ snippet (<= 300 Unicode codepoints)
 - [x] Literal `%`, `_`, quotes, slash, Unicode and emoji do not become grammar.
 - [x] Stable anchors map back to the same entry/trajectory record.
 - [x] Deterministic ties paginate without duplicate/skip.
-- [x] Filter/caller/source mutation invalidates cursors.
+- [x] Filter/caller/searched-source mutation invalidates cursors; writes from the
+      excluded invoking run do not.
+- [x] Real tool-lifecycle-equivalent pagination excludes the invoking run and remains
+      stable when its completed search record is persisted.
 - [x] Empty authorized result is a successful empty result.
 - [x] Deferred registration/discovery/loading and result cap are covered.
 - [x] Root compile and focused conversation/tool tests pass.
@@ -148,8 +154,9 @@ snippet (<= 300 Unicode codepoints)
 ## Validation evidence
 
 - `mix compile --warnings-as-errors` passed.
-- Conversations domain plus tool adapter: 24 focused tests passed.
-- Deferred registry exposure: 1 focused test passed.
+- Conversations domain plus tool adapter: 25 focused tests passed.
+- Current review regression set (conversation search, deferred adapter/registry,
+  memory store/projection, and redaction): 110 tests passed.
 - Real `~/.handbean_dev` default-workspace fixture verified:
   - same-workspace assistant and tool evidence located;
   - foreign-workspace and internal evidence excluded;
@@ -159,8 +166,10 @@ snippet (<= 300 Unicode codepoints)
     through `read_conversation` and `get_conversation_trajectory`;
   - deferred tool JSON matched the domain result;
   - all fixture conversations and entries were deleted afterward.
-- V1 intentionally has no migration/index. A 5,000 SQL-candidate guard returns
-  `search_too_broad`; callers narrow the query with conversation/run/kind/tool/path/time filters.
+- V1 intentionally has no migration/index. A 5,000 raw SQL-candidate guard runs before
+  final redaction and returns `search_too_broad`; callers narrow the query with
+  conversation/run/kind/tool/path/time filters. The guard is a bounded resource-safety
+  tradeoff within the already-authorized workspace, not a sanitized result count.
 
 ## Explicit non-goals
 

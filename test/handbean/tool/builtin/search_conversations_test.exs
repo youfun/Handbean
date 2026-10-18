@@ -38,7 +38,8 @@ defmodule Handbean.Tool.Builtin.SearchConversationsTest do
     assert description =~ "read_conversation"
     assert description =~ "get_conversation_trajectory"
     assert description =~ "literal, not fuzzy"
-    assert description =~ "Cursors invalidate on source changes"
+    assert description =~ "invoking run is excluded"
+    assert description =~ "Cursors invalidate on searched source changes"
   end
 
   test "declares the bounded search schema" do

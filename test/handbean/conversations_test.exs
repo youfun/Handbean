@@ -146,6 +146,7 @@ defmodule Handbean.ConversationsTest do
                ConversationTranscriptStore.append(id, %{
                  "id" => "scope-#{id}",
                  "role" => "assistant",
+                 "run_id" => if(id == c.source, do: "historical-run", else: nil),
                  "content" => "scope sentinel"
                })
     end
@@ -290,6 +291,12 @@ defmodule Handbean.ConversationsTest do
         "tool_name" => "read"
       },
       %{
+        "id" => "search-string-secret",
+        "role" => "assistant",
+        "content" =>
+          "visible string evidence api_key=sk-abcdefghijklmnopqrstuvwxyz password: hunter2"
+      },
+      %{
         "id" => "search-unicode-fold",
         "role" => "assistant",
         "content" => String.duplicate("İ", 120) <> " unicode-fold-anchor"
@@ -395,8 +402,20 @@ defmodule Handbean.ConversationsTest do
     assert String.valid?(unicode_snippet)
     assert unicode_snippet =~ "unicode-fold-anchor"
 
+    assert {:ok, %{matches: [string_secret]}} =
+             Conversations.search_entries(
+               %{"query" => "visible string evidence", "conversation" => c.target},
+               c.context
+             )
+
+    encoded_string_secret = Handbean.JSON.encode!(string_secret)
+    refute encoded_string_secret =~ "sk-abcdefghijklmnopqrstuvwxyz"
+    refute encoded_string_secret =~ "hunter2"
+
     for query <- [
           "secret-only-needle",
+          "sk-abcdefghijklmnopqrstuvwxyz",
+          "hunter2",
           "streaming sentinel",
           "audit sentinel",
           "arbitrary sentinel"
@@ -416,6 +435,53 @@ defmodule Handbean.ConversationsTest do
 
     assert {:ok, %{matches: []}} =
              Conversations.search_entries(%{"query" => "no such evidence"}, c.context)
+  end
+
+  test "entry search excludes the invoking run and keeps pagination stable after its tool records settle",
+       c do
+    for i <- 1..2 do
+      assert {:ok, _} =
+               ConversationTranscriptStore.append(c.target, %{
+                 "id" => "history-page-#{i}",
+                 "role" => "assistant",
+                 "run_id" => "historical-run",
+                 "content" => "self pollution anchor #{i}"
+               })
+    end
+
+    assert {:ok, _} =
+             ConversationTranscriptStore.append(c.source, %{
+               "id" => "current-user-query",
+               "role" => "user",
+               "run_id" => c.context.run_id,
+               "content" => "self pollution anchor"
+             })
+
+    input = %{"query" => "self pollution anchor", "limit" => 1, "max_chars" => 2_000}
+
+    assert {:ok, %{matches: [first], next_cursor: cursor}} =
+             Conversations.search_entries(input, c.context)
+
+    assert first.conversation_id == c.target
+    assert is_binary(cursor)
+
+    assert {:ok, _} =
+             ConversationTranscriptStore.append(c.source, %{
+               "id" => "settled-search-tool",
+               "role" => "tool",
+               "content_type" => "tool",
+               "run_id" => c.context.run_id,
+               "tool_name" => "search_conversations",
+               "tool_status" => "done",
+               "input" => %{"query" => "self pollution anchor"},
+               "output" => "self pollution anchor"
+             })
+
+    assert {:ok, %{matches: [second], next_cursor: nil, truncated: false}} =
+             Conversations.search_entries(Map.put(input, "cursor", cursor), c.context)
+
+    assert second.conversation_id == c.target
+    assert first.entry_id != second.entry_id
   end
 
   test "entry search validates bounds and paginates a revision-bound snapshot", c do

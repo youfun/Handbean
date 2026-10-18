@@ -21,6 +21,10 @@ defmodule Handbean.ConversationStore.EntrySearch do
         conversation.workspace_id == ^workspace_id and conversation.visibility == "user"
     )
     |> public_entries()
+    |> exclude_current_execution(
+      Keyword.get(opts, :exclude_conversation_id),
+      Keyword.get(opts, :exclude_run_id)
+    )
     |> archive_filter(Keyword.fetch!(opts, :archived))
     |> optional_equal(:conversation_id, Keyword.get(opts, :conversation_id))
     |> optional_equal(:run_id, Keyword.get(opts, :run_id))
@@ -62,6 +66,24 @@ defmodule Handbean.ConversationStore.EntrySearch do
         (is_nil(entry.tool_status) or entry.tool_status not in ["streaming", "running"])
     )
   end
+
+  defp exclude_current_execution(query, conversation_id, run_id)
+       when is_binary(conversation_id) and conversation_id != "" and is_binary(run_id) and
+              run_id != "" do
+    where(
+      query,
+      [entry, _conversation],
+      entry.conversation_id != ^conversation_id or
+        (not is_nil(entry.run_id) and entry.run_id != ^run_id)
+    )
+  end
+
+  defp exclude_current_execution(query, conversation_id, _run_id)
+       when is_binary(conversation_id) and conversation_id != "" do
+    where(query, [entry, _conversation], entry.conversation_id != ^conversation_id)
+  end
+
+  defp exclude_current_execution(query, _conversation_id, _run_id), do: query
 
   defp archive_filter(query, "active"),
     do: where(query, [_entry, conversation], is_nil(conversation.archived_at))
