@@ -225,38 +225,41 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarComponents do
             role="menu"
             phx-click-away="close_checkout_picker"
           >
-            <%= if is_nil(@checkout_picker.workspace_id) do %>
-              <div class="workspace-checkout-heading">{gettext("选择项目")}</div>
-              <button
-                :for={ws <- @workspaces}
-                id={"new-conversation-project-#{ws["id"]}"}
-                type="button"
-                role="menuitem"
-                phx-click="new_conversation_in_workspace"
-                phx-value-ws_id={ws["id"]}
-                phx-value-source="header"
-                class="workspace-checkout-item"
-                title={ws["path"]}
-              >
-                <span class="workspace-checkout-name">{ws["name"]}</span>
-              </button>
-            <% else %>
-              <div class="workspace-checkout-heading">{gettext("Choose a checkout")}</div>
-              <button
-                :for={checkout <- @checkout_picker.checkouts}
-                type="button"
-                role="menuitem"
-                phx-click="new_conversation_on_checkout"
-                phx-value-ws_id={@checkout_picker.workspace_id}
-                phx-value-path={checkout.path}
-                class="workspace-checkout-item"
-                title={checkout.path}
-              >
-                <span class="workspace-checkout-name">{Path.basename(checkout.path)}</span>
-                <span :if={checkout_ref(checkout)} class="workspace-checkout-ref">
-                  {checkout_ref(checkout)}
-                </span>
-              </button>
+            <div class="workspace-checkout-heading">{gettext("选择项目")}</div>
+            <%= for project <- @checkout_picker.projects || [] do %>
+              <%= if length(project.checkouts) > 1 do %>
+                <div class="workspace-checkout-heading workspace-checkout-project">
+                  {project.name}
+                </div>
+                <button
+                  :for={checkout <- project.checkouts}
+                  type="button"
+                  role="menuitem"
+                  phx-click="new_conversation_on_checkout"
+                  phx-value-ws_id={project.id}
+                  phx-value-path={checkout.path}
+                  class="workspace-checkout-item is-checkout"
+                  title={checkout.path}
+                >
+                  <span class="workspace-checkout-name">{Path.basename(checkout.path)}</span>
+                  <span :if={checkout_ref(checkout)} class="workspace-checkout-ref">
+                    {checkout_ref(checkout)}
+                  </span>
+                </button>
+              <% else %>
+                <button
+                  id={"new-conversation-project-#{project.id}"}
+                  type="button"
+                  role="menuitem"
+                  phx-click="new_conversation_in_workspace"
+                  phx-value-ws_id={project.id}
+                  phx-value-source="header"
+                  class="workspace-checkout-item"
+                  title={project.path}
+                >
+                  <span class="workspace-checkout-name">{project.name}</span>
+                </button>
+              <% end %>
             <% end %>
           </div>
         </div>
@@ -588,6 +591,13 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarComponents do
               <span class="truncate flex-1">{ws["name"]}</span>
             </button>
             <span class="workspace-title-rule" aria-hidden="true"></span>
+            <div class="workspace-row-actions">
+              <.checkout_picker
+                workspace_id={ws["id"]}
+                picker={@checkout_picker}
+                source={:sidebar}
+              />
+            </div>
             <button
               type="button"
               id={"workspace-toggle-#{ws["id"]}"}

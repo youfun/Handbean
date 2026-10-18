@@ -497,9 +497,27 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
         close_checkout_picker(socket)
 
       _other ->
-        assign(socket, :checkout_picker, %{workspace_id: nil, checkouts: [], source: :header})
+        assign(socket, :checkout_picker, %{
+          workspace_id: nil,
+          checkouts: [],
+          source: :header,
+          projects: new_conversation_projects(socket.assigns.workspaces)
+        })
     end
   end
+
+  def new_conversation_projects(workspaces) when is_list(workspaces) do
+    Enum.map(workspaces, fn ws ->
+      %{
+        id: ws["id"],
+        name: ws["name"] || ws["id"],
+        path: ws["path"],
+        checkouts: checkouts_for(ws)
+      }
+    end)
+  end
+
+  def new_conversation_projects(_workspaces), do: []
 
   def toggle_thread(socket, conversation_id) when is_binary(conversation_id) do
     update(socket, :collapsed_thread_ids, fn collapsed ->

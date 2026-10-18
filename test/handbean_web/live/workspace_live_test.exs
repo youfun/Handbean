@@ -4124,12 +4124,19 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
                    Handbean.Security.PathValidator.resolve_symlink(linked)
                  ])
 
-        choose_new_conversation_project(view, main_workspace["id"])
+        view
+        |> element("#new-conversation-picker-toggle")
+        |> render_click()
 
         html = render(view)
         assert html =~ ~s(id="new-conversation-picker")
         assert html =~ Path.basename(repo)
         assert html =~ Path.basename(linked)
+
+        refute has_element?(
+                 view,
+                 "#new-conversation-project-#{main_workspace["id"]}"
+               )
 
         linked_path = Handbean.Security.PathValidator.resolve_symlink(linked)
         before = Handbean.ConversationStore.list_for_workspace(main_workspace["id"])
@@ -4152,6 +4159,15 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
       after
         File.rm_rf!(base)
       end
+    end
+
+    test "workspace rows keep a new-conversation button next to the count", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/")
+
+      assert has_element?(
+               view,
+               "#workspace-group-default .workspace-row-actions button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']"
+             )
     end
 
     test "new conversation in a single-checkout workspace still creates immediately", %{

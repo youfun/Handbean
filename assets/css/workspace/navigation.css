@@ -95,6 +95,14 @@
   font-size: var(--font-size-xs);
 }
 
+.projects-panel-new-conversation-menu .workspace-checkout-project {
+  padding-top: 0.45rem;
+}
+
+.projects-panel-new-conversation-menu .workspace-checkout-item.is-checkout {
+  padding-left: 0.85rem;
+}
+
 .workspace-add-entry {
   padding-top: 0.25rem;
   padding-bottom: 0.35rem;
