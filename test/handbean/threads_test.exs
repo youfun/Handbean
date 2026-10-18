@@ -487,10 +487,15 @@ defmodule Handbean.ThreadsTest do
     {:ok, same} = Collaboration.create(input, c.context)
     assert same.thread == receipt.thread
     child_context = %{c.context | conversation_id: receipt.thread}
-    refute Collaboration.tool_allowed?("bash", child_context)
-    refute Collaboration.tool_allowed?("write", child_context)
-    assert Collaboration.tool_allowed?("read", child_context)
-    assert Collaboration.tool_allowed?("send_thread_message", child_context)
+
+    for name <-
+          ~w(read grep file_search code_search web_fetch mem_recall skill tool_search send_thread_message) do
+      assert Collaboration.tool_allowed?(name, child_context)
+    end
+
+    for name <- ~w(write edit bash browser task create_thread mem_learn) do
+      refute Collaboration.tool_allowed?(name, child_context)
+    end
 
     ConversationStore.upsert(%{
       "id" => receipt.thread,
@@ -575,6 +580,13 @@ defmodule Handbean.ThreadsTest do
     refute block.is_error
     assert Jason.decode!(block.content)["threads"] |> length() == 2
     ConversationStore.update_meta(c.source, collaboration: %{"read_only" => true})
+    authorized = Handbean.Agent.Tool.Executor.authorized_tools(config)
+    assert "web_fetch" in authorized
+    assert "grep" in authorized
+    assert "mem_recall" in authorized
+    refute "write" in authorized
+    refute "bash" in authorized
+    refute "task" in authorized
     path = Path.join(c.home, "must-not-exist")
 
     assert {:ok, _, [denied]} =

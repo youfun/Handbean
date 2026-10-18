@@ -72,13 +72,14 @@ resolves that model's provider config itself; it does not copy the caller's
 provider module or provider config. Later wakes of a pinned child keep that model.
 
 `create_thread` defaults to a persistent read-only child in the same shared
-directory, **not an isolated checkout or sandbox**. `mode: write` removes the
-read-only allowlist so the child can edit this workspace. Write mode does not
-raise a separate approval. Its prompts use smart review (`approval` defaults to
-`auto_review`). `approval: yolo` skips those prompts for that child only and
-does not change workspace settings; built-in sensitive-path denies still apply.
-A runtime execution allowlist still rejects mutating, shell, browser, extension
-and unknown tools on read-only children, including after approval/resume.
+directory, **not an isolated checkout or sandbox**. The child is its own
+session and uses this workspace's permission mode (safe / smart review / yolo);
+it does not take a separate approval. `mode: write` removes the read-only
+allowlist so the child can edit this workspace. A runtime execution allowlist
+still rejects mutating, shell, browser, extension and unknown tools on
+read-only children. Workspace search, `web_fetch`, `mem_recall`, `skill`, and
+`tool_search` stay available; the provider-visible catalog is the same
+allowlist so the child does not see denied tools.
 
 Messages are capped at 8,000 characters.
 
@@ -111,7 +112,7 @@ automatic acknowledgment is sent.
 ## UI
 
 One compact entry per associated handoff (even with the same peer) expands existing persisted reports using native
-`details`; there is no input box or separate channel/storage. The summary shows the delegated child's access (`read-only`, `write`, or `write · yolo`) from collaboration metadata, on either side of the exchange. A peer without that metadata has no access label. Important parent
+`details`; there is no input box or separate channel/storage. The summary shows the delegated child's access (`read-only` or `write`) from collaboration metadata, on either side of the exchange. A peer without that metadata has no access label. Important parent
 reports remain visible in the main timeline. Source titles/links come from
 authorized metadata, never body text. Unavailable sources show a placeholder.
 Human text cannot impersonate the report card. Known webhook/SNS/scheduler inputs

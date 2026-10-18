@@ -110,9 +110,6 @@ defmodule HandbeanWeb.ThreadHandoff do
   # The exchange itself stays a projection: expanding it never dispatches.
   defp access_label(viewer, target) do
     case delegated_child(viewer, target) do
-      %{"collaboration" => %{"read_only" => false, "approval" => "yolo"}} ->
-        "write · yolo"
-
       %{"collaboration" => %{"read_only" => false}} ->
         "write"
 

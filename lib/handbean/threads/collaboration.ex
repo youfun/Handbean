@@ -9,7 +9,13 @@ defmodule Handbean.Threads.Collaboration do
   """
   alias Handbean.{ConversationStore, ConversationTranscriptStore, Threads}
 
-  @read_tools ~w(read file_search grep code_search list_models list_threads find_thread read_thread get_thread_status get_thread_trajectory reply_to_parent_thread send_thread_message)
+  # Inspection and handoff only. Mutating, shell, browser, extension, and
+  # further-delegation tools stay off this list.
+  @read_tools ~w(
+    read file_search grep code_search web_fetch skill tool_search mem_recall
+    list_models list_threads find_thread read_thread get_thread_status
+    get_thread_trajectory reply_to_parent_thread send_thread_message
+  )
 
   def completed(id, result, _opts) do
     status = if is_map(result), do: Map.get(result, :status, :error), else: :error
@@ -17,11 +23,19 @@ defmodule Handbean.Threads.Collaboration do
     :ok
   end
 
-  def tool_allowed?(name, context) do
+  def read_tools, do: @read_tools
+
+  def read_only?(context) when is_map(context) do
     case ConversationStore.get_metadata(context[:conversation_id]) do
-      {:ok, %{"collaboration" => %{"read_only" => true}}} -> name in @read_tools
-      _ -> context[:delegated_read_only] != true or name in @read_tools
+      {:ok, %{"collaboration" => %{"read_only" => true}}} -> true
+      _ -> context[:delegated_read_only] == true
     end
+  end
+
+  def read_only?(_context), do: false
+
+  def tool_allowed?(name, context) do
+    not read_only?(context) or name in @read_tools
   end
 
   def send_message(input, context) do
@@ -56,12 +70,12 @@ defmodule Handbean.Threads.Collaboration do
 
   def create(input, context) do
     with :ok <-
-           Threads.validate(input, ~w(title message request_id model mode approval)),
+           Threads.validate(input, ~w(title message request_id model mode)),
          {:ok, source} <- Threads.identity(context),
          {:ok, title} <- Threads.text(input, "title", nil, 200),
          {:ok, key} <- Threads.text(input, "request_id", nil, 128),
          {:ok, _} <- Threads.text(input, "message", nil, 8000),
-         {:ok, read_only, approval} <- access(input),
+         {:ok, read_only} <- access(input),
          {:ok, selection} <- model_selection(input),
          true <- is_nil(source["collaboration"]),
          {:ok, pinned} <- resolve_selection(selection, context) do
@@ -75,7 +89,6 @@ defmodule Handbean.Threads.Collaboration do
                  id,
                  title,
                  read_only,
-                 approval,
                  pinned
                ),
              {:ok, receipt} <- deliver(input, context, source, target, false) do
@@ -93,14 +106,10 @@ defmodule Handbean.Threads.Collaboration do
   end
 
   defp access(input) do
-    mode = Map.get(input, "mode", "read_only")
-    approval = Map.get(input, "approval")
-
-    cond do
-      mode == "read_only" and approval in [nil, "auto_review"] -> {:ok, true, nil}
-      mode == "write" and approval in [nil, "auto_review"] -> {:ok, false, "auto_review"}
-      mode == "write" and approval == "yolo" -> {:ok, false, "yolo"}
-      true -> {:error, :invalid_input}
+    case Map.get(input, "mode", "read_only") do
+      "read_only" -> {:ok, true}
+      "write" -> {:ok, false}
+      _ -> {:error, :invalid_input}
     end
   end
 
@@ -148,10 +157,9 @@ defmodule Handbean.Threads.Collaboration do
     Keyword.get(opts, :workspace_path) || Keyword.get(opts, :working_directory)
   end
 
-  defp child(source, context, id, title, read_only, approval, pinned) do
+  defp child(source, context, id, title, read_only, pinned) do
     spec =
       %{"read_only" => read_only}
-      |> maybe_put("approval", approval)
       |> maybe_put("provider", pinned && pinned["provider"])
       |> maybe_put("model", pinned && pinned["model"])
 
@@ -208,7 +216,7 @@ defmodule Handbean.Threads.Collaboration do
     collab = target["collaboration"] || %{}
 
     ConversationStore.parent_conversation_id(target) == parent_id and
-      Enum.all?(~w(read_only approval provider model), fn key ->
+      Enum.all?(~w(read_only provider model), fn key ->
         Map.get(collab, key) == Map.get(spec, key)
       end)
   end
@@ -348,7 +356,6 @@ defmodule Handbean.Threads.Collaboration do
             deliver_as: if(mode == "follow_up", do: :follow_up, else: :steer),
             tools: Handbean.Agent.default_tools()
           )
-          |> put_approval(target)
 
         Handbean.Agent.Coordinator.add_message(
           target["id"],
@@ -387,14 +394,6 @@ defmodule Handbean.Threads.Collaboration do
       end
     else
       {:ok, base}
-    end
-  end
-
-  defp put_approval(opts, target) do
-    case get_in(target, ["collaboration", "approval"]) do
-      "yolo" -> Keyword.put(opts, :delegated_approval, :yolo)
-      "auto_review" -> Keyword.put(opts, :delegated_approval, :auto_review)
-      _ -> opts
     end
   end
 

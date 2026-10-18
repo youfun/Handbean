@@ -225,7 +225,6 @@ defmodule Handbean.ThreadCollaborationTest do
       "message" => "Use the caller model",
       "request_id" => "provider-defaults",
       "mode" => "read_only",
-      "approval" => "auto_review",
       "model" => ""
     }
 
@@ -397,7 +396,7 @@ defmodule Handbean.ThreadCollaborationTest do
            end)
   end
 
-  test "write mode edits the shared workspace and defaults to smart review", c do
+  test "write mode edits the shared workspace and follows workspace permission mode", c do
     {:ok, receipt} =
       Collaboration.create(
         %{"title" => "Patch", "message" => "Edit", "request_id" => "write", "mode" => "write"},
@@ -407,7 +406,7 @@ defmodule Handbean.ThreadCollaborationTest do
     assert_receive {:held, _, _}, 2000
     {:ok, meta} = ConversationStore.get_metadata(receipt.thread)
     assert get_in(meta, ["collaboration", "read_only"]) == false
-    assert get_in(meta, ["collaboration", "approval"]) == "auto_review"
+    refute get_in(meta, ["collaboration", "approval"])
     child = %{c.context | conversation_id: receipt.thread}
     assert Collaboration.tool_allowed?("write", child)
     assert Collaboration.tool_allowed?("edit", child)
@@ -415,7 +414,7 @@ defmodule Handbean.ThreadCollaborationTest do
     {:ok, status} = Handbean.Agent.Runner.status(receipt.thread)
     state = :sys.get_state(status.run_pid)
     refute state.opts[:delegated_read_only]
-    assert state.opts[:delegated_approval] == :auto_review
+    refute state.opts[:delegated_approval]
 
     assert {:error, :idempotency_conflict} =
              Collaboration.create(
@@ -424,29 +423,14 @@ defmodule Handbean.ThreadCollaborationTest do
              )
   end
 
-  test "write yolo is explicit and read-only rejects an approval override", c do
-    {:ok, receipt} =
-      Collaboration.create(
-        %{
-          "title" => "Patch",
-          "message" => "Edit",
-          "request_id" => "yolo",
-          "mode" => "write",
-          "approval" => "yolo"
-        },
-        c.context
-      )
-
-    assert_receive {:held, _, _}, 2000
-    {:ok, status} = Handbean.Agent.Runner.status(receipt.thread)
-    assert :sys.get_state(status.run_pid).opts[:delegated_approval] == :yolo
-
+  test "create_thread does not take a per-child approval", c do
     assert {:error, :invalid_input} =
              Collaboration.create(
                %{
-                 "title" => "Audit",
-                 "message" => "Read",
-                 "request_id" => "bad-approval",
+                 "title" => "Patch",
+                 "message" => "Edit",
+                 "request_id" => "yolo",
+                 "mode" => "write",
                  "approval" => "yolo"
                },
                c.context
@@ -519,7 +503,7 @@ defmodule Handbean.ThreadCollaborationTest do
     opts = :sys.get_state(status.run_pid).opts
     assert opts[:model] == "other-model"
     refute opts[:provider] == HoldProvider
-    assert opts[:delegated_approval] == :auto_review
+    refute opts[:delegated_approval]
   end
 
   defp catalog do

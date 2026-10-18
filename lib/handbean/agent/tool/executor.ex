@@ -685,10 +685,12 @@ defmodule Handbean.Agent.Tool.Executor do
 
   @doc "The run's authorization ceiling, intersected with the live session policy."
   def authorized_tools(config) do
+    context = config.context || %{}
     registered = Map.keys(Handbean.Tool.Registry.tool_fns())
-    session_id = config.context[:conversation_id] || config.context[:session_id]
+    session_id = context[:conversation_id] || context[:session_id]
     active = if session_id, do: Handbean.Tool.Registry.active_for_session(session_id)
-    parent = config.context[:delegation_parent]
+    parent = context[:delegation_parent]
+    read_only? = Handbean.Threads.Collaboration.read_only?(context)
 
     parent_active =
       if parent, do: Handbean.Tool.Registry.active_for_session(parent.conversation_id)
@@ -701,7 +703,8 @@ defmodule Handbean.Agent.Tool.Executor do
           (is_nil(active) or &1 in active) and
           (is_nil(parent_active) or &1 in parent_active) and
           (is_nil(parent) or
-             Handbean.Agent.Delegation.Policy.authorized_child?(parent, config.run_id)))
+             Handbean.Agent.Delegation.Policy.authorized_child?(parent, config.run_id)) and
+          (not read_only? or &1 in Handbean.Threads.Collaboration.read_tools()))
     )
   end
 

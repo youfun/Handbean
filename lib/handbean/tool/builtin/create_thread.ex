@@ -6,7 +6,7 @@ defmodule Handbean.Tool.Builtin.CreateThread do
     module: Handbean.Threads.Collaboration,
     action: :create,
     description:
-      "Delegate a persistent task in this workspace. Shared directory is NOT an isolated checkout. mode read_only (default) can only read; mode write may edit this workspace. Write does not raise a separate approval: approval defaults to auto_review (smart review) and may be yolo. yolo skips prompts for that child only and does not change workspace settings; sensitive-path denies still apply. Omit model or pass current to inherit this thread's current model. To use another model, call list_models and pass its complete id. May incur provider charges. Reuse request_id on retry; a different mode, approval, or model under the same request_id conflicts.",
+      "Delegate a persistent task in this workspace. Shared directory is NOT an isolated checkout. The child is its own session and uses this workspace's permission mode. mode read_only (default) can only read; mode write may edit this workspace. Omit model or pass current to inherit this thread's current model. To use another model, call list_models and pass its complete id. May incur provider charges. Reuse request_id on retry; a different mode or model under the same request_id conflicts.",
     schema: %{
       type: "object",
       additionalProperties: false,
@@ -25,12 +25,6 @@ defmodule Handbean.Tool.Builtin.CreateThread do
           type: "string",
           enum: ["read_only", "write"],
           description: "read_only (default) or write. write edits the shared workspace."
-        },
-        approval: %{
-          type: "string",
-          enum: ["auto_review", "yolo"],
-          description:
-            "Write threads only. Default auto_review. yolo skips prompts except built-in sensitive-path denies."
         }
       }
     }

@@ -41,7 +41,7 @@ defmodule HandbeanWeb.ThreadHandoffTest do
         "role" => "user",
         "content_type" => "user_msg",
         "origin" => Map.put(origin, "important", true),
-        "content" => "Verified result"
+        "content" => "## Verified result\n\n**bold** and a `code` span"
       },
       %{
         "id" => "missing",
@@ -86,6 +86,21 @@ defmodule HandbeanWeb.ThreadHandoffTest do
 
     refute has_element?(view, "[data-user-msg='progress']")
     assert html =~ "Verified result"
+
+    assert has_element?(
+             view,
+             "#thread-result-md-result[phx-hook='StreamingMarkdown'][data-final='true'][data-streaming='false'][data-source]"
+           )
+
+    assert has_element?(view, "#thread-result-md-result [data-markdown-target]")
+
+    assert has_element?(
+             view,
+             "#thread-result-md-result .markdown-noscript-fallback",
+             "Verified result"
+           )
+
+    assert html =~ "## Verified result"
     assert html =~ "Source unavailable"
     refute html =~ "Private hidden body"
     refute has_element?(view, "details input, details textarea, details button")
@@ -208,8 +223,7 @@ defmodule HandbeanWeb.ThreadHandoffTest do
         title: "Writer",
         parent_conversation_id: c.parent,
         collaboration: %{
-          "read_only" => false,
-          "approval" => "yolo"
+          "read_only" => false
         }
       )
 
@@ -253,7 +267,7 @@ defmodule HandbeanWeb.ThreadHandoffTest do
 
     assert has_element?(
              view,
-             "[data-thread-handoff='write-a'][data-thread-access='write · yolo']"
+             "[data-thread-handoff='write-a'][data-thread-access='write']"
            )
 
     assert has_element?(view, "[data-thread-handoff='read-a'][data-thread-access='read-only']")
@@ -263,7 +277,7 @@ defmodule HandbeanWeb.ThreadHandoffTest do
 
     assert has_element?(
              view,
-             "[data-thread-handoff='write-a'][data-thread-access='write · yolo']"
+             "[data-thread-handoff='write-a'][data-thread-access='write']"
            )
 
     refute has_element?(view, "[data-thread-handoff='write-a'] summary", "read-only")

@@ -33,6 +33,32 @@ defmodule Handbean.Agent.Tool.CatalogTest do
     assert names == ["read"]
   end
 
+  test "read-only delegated runs declare inspection tools only" do
+    Enum.each(
+      [Handbean.Tool.Builtin.Grep, Handbean.Tool.Builtin.WebFetch, Handbean.Tool.Builtin.Task],
+      &Handbean.Tool.Registry.register/1
+    )
+
+    state =
+      State.init(
+        %Config{
+          provider: Handbean.TestSupport.FakeProvider,
+          model: "fake",
+          max_turns: 5,
+          context: %{delegated_read_only: true}
+        },
+        "inspect"
+      )
+
+    names = state |> Catalog.active_defs([]) |> Enum.map(& &1.name)
+
+    assert "read" in names
+    assert "grep" in names
+    assert "web_fetch" in names
+    refute "write" in names
+    refute "task" in names
+  end
+
   test "final turn suppresses tools and requests a complete answer" do
     state =
       State.init(
