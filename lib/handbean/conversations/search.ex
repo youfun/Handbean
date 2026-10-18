@@ -50,11 +50,13 @@ defmodule Handbean.Conversations.Search do
              tool_name: tool_name,
              file_path: file_path,
              errors_only: Map.get(input, "errors_only", false),
-             archived: archived
+             archived: archived,
+             exclude_conversation_id: source["id"],
+             exclude_run_id: current_run_id(context)
            ) do
       matches = project_matches(rows, query)
       snapshot = snapshot(matches)
-      binding = binding(source, filters)
+      binding = binding(source, current_run_id(context), filters)
 
       with {:ok, offset} <- cursor_position(input["cursor"], binding, snapshot, length(matches)) do
         response(matches, offset, filters, binding, snapshot, limit, max_chars)
@@ -416,8 +418,15 @@ defmodule Handbean.Conversations.Search do
     |> drop_nil_values()
   end
 
-  defp binding(source, filters) do
-    digest({"entry-search", source["id"], source["workspace_id"], filters})
+  defp binding(source, current_run_id, filters) do
+    digest({"entry-search", source["id"], source["workspace_id"], current_run_id, filters})
+  end
+
+  defp current_run_id(context) do
+    case Map.get(context, :run_id) || Map.get(context, "run_id") do
+      value when is_binary(value) and value != "" -> value
+      _other -> nil
+    end
   end
 
   defp snapshot(matches), do: digest(matches)
