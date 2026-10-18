@@ -510,16 +510,16 @@ defmodule Handbean.ConversationStore do
     normalized = normalize_usage(usage)
 
     if exists?(conversation_id) do
+      # Cache read/write persistence is temporarily disabled. Input/output and
+      # total input usage continue to be recorded.
       sql = """
       INSERT INTO conversation_run_usage
-        (conversation_id, run_id, source, input_tokens, output_tokens, cache_read_tokens,
-         cache_write_tokens, total_input_tokens, usage_incomplete, inserted_at, updated_at)
-      VALUES (?, ?, 'unkeyed', ?, ?, ?, ?, ?, ?, ?, ?)
+        (conversation_id, run_id, source, input_tokens, output_tokens,
+         total_input_tokens, usage_incomplete, inserted_at, updated_at)
+      VALUES (?, ?, 'unkeyed', ?, ?, ?, ?, ?, ?)
       ON CONFLICT(conversation_id, source, run_id) DO UPDATE SET
         input_tokens = input_tokens + excluded.input_tokens,
         output_tokens = output_tokens + excluded.output_tokens,
-        cache_read_tokens = cache_read_tokens + excluded.cache_read_tokens,
-        cache_write_tokens = cache_write_tokens + excluded.cache_write_tokens,
         total_input_tokens = total_input_tokens + excluded.total_input_tokens,
         usage_incomplete = usage_incomplete OR excluded.usage_incomplete,
         updated_at = excluded.updated_at
@@ -532,8 +532,6 @@ defmodule Handbean.ConversationStore do
         @unkeyed_run_id,
         normalized.input_tokens,
         normalized.output_tokens,
-        normalized.cache_read_tokens,
-        normalized.cache_write_tokens,
         normalized.total_input_tokens,
         if(normalized.usage_incomplete, do: 1, else: 0),
         timestamp,
@@ -982,8 +980,9 @@ defmodule Handbean.ConversationStore do
     |> Map.take([
       :input_tokens,
       :output_tokens,
-      :cache_read_tokens,
-      :cache_write_tokens,
+      # Cache read/write persistence is temporarily disabled.
+      # :cache_read_tokens,
+      # :cache_write_tokens,
       :total_input_tokens,
       :usage_incomplete
     ])
@@ -1037,8 +1036,9 @@ defmodule Handbean.ConversationStore do
     %{
       input_tokens: acc.input_tokens + row.input_tokens,
       output_tokens: acc.output_tokens + row.output_tokens,
-      cache_read_tokens: acc.cache_read_tokens + row.cache_read_tokens,
-      cache_write_tokens: acc.cache_write_tokens + row.cache_write_tokens,
+      # Cache read/write aggregation is temporarily disabled.
+      cache_read_tokens: acc.cache_read_tokens,
+      cache_write_tokens: acc.cache_write_tokens,
       total_input_tokens: acc.total_input_tokens + row.total_input_tokens,
       usage_incomplete: acc.usage_incomplete or row.usage_incomplete
     }

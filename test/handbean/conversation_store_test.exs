@@ -2,6 +2,7 @@ defmodule Handbean.ConversationStoreTest do
   use Handbean.DataCase, async: false
 
   alias Handbean.{ConversationStore, ConversationTranscriptStore}
+  alias Handbean.Storage.ConversationRunUsage
 
   test "creates one conversation with editor state and transcript in a transaction" do
     assert {:ok, conversation} =
@@ -166,7 +167,13 @@ defmodule Handbean.ConversationStoreTest do
 
   test "run usage is idempotent by source and run while unkeyed usage accumulates" do
     {:ok, conversation} = ConversationStore.create("workspace-a", id: "usage")
-    usage = %{"input_tokens" => 10, "output_tokens" => 2, "cache_read_tokens" => 3}
+
+    usage = %{
+      "input_tokens" => 10,
+      "output_tokens" => 2,
+      "cache_read_tokens" => 3,
+      "cache_write_tokens" => 4
+    }
 
     assert :ok = ConversationStore.record_run_usage(conversation["id"], "run-1", usage)
 
@@ -186,8 +193,15 @@ defmodule Handbean.ConversationStoreTest do
     assert {:ok, totals} = ConversationStore.get_token_usage(conversation["id"])
     assert totals.input_tokens == 20
     assert totals.output_tokens == 2
-    assert totals.cache_read_tokens == 3
+    assert totals.cache_read_tokens == 0
+    assert totals.cache_write_tokens == 0
     refute totals.usage_incomplete
+
+    assert Enum.all?(
+             Handbean.Repo.all(ConversationRunUsage),
+             &(&1.cache_read_tokens == 0 and &1.cache_write_tokens == 0)
+           )
+
     assert ConversationStore.delegated_usage(conversation["id"])["child-1"]["input_tokens"] == 7
   end
 

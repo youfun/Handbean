@@ -1115,7 +1115,8 @@ defmodule Handbean.Agent.TranscriptPersistenceTest do
             %{
               input_tokens: 9,
               output_tokens: 2,
-              cache_read_tokens: 5,
+              cache_read_tokens: 0,
+              cache_write_tokens: 0,
               total_input_tokens: 14,
               usage_incomplete: false
             }} = Handbean.ConversationStore.get_token_usage(conversation_id)

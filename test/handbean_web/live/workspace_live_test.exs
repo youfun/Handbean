@@ -2864,8 +2864,7 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
         send(view.pid, {:agent_event, agent_event(:usage_updated, payload, seq)})
         assert has_element?(view, "#status-input-tokens", "25")
         assert has_element?(view, "#status-output-tokens", "35")
-        assert has_element?(view, "#status-cache-read", "7")
-        assert has_element?(view, "#status-cache-write", "3")
+        refute has_element?(view, "#status-cache-tokens")
       end
 
       send(
@@ -2927,7 +2926,9 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
       assert has_element?(view, "#status-cache-hit-rate", "—")
     end
 
-    test "token footer formats live and final usage while preserving exact titles", %{conn: conn} do
+    test "token footer keeps input/output while cache read/write totals stay hidden", %{
+      conn: conn
+    } do
       {:ok, view, _html} = live(conn, "/")
       create_default_conversation(view)
       send(view.pid, {:agent_event, agent_event(:run_start, %{model: "fake"})})
@@ -2944,8 +2945,9 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
       assert has_element?(view, "button[phx-click='stop_run']")
       assert has_element?(view, "#status-input-tokens[title='5481']", "5.5K")
       assert has_element?(view, "#status-output-tokens[title='827']", "827")
-      assert has_element?(view, "#status-cache-read[title='999950']", "1M")
-      assert has_element?(view, "#status-cache-write[title='1000']", "1K")
+      refute has_element?(view, "#status-cache-tokens")
+      refute has_element?(view, "#status-cache-read")
+      refute has_element?(view, "#status-cache-write")
 
       conv_id = session_id_from_html(render(view))
 
@@ -2969,8 +2971,7 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
       assert {:ok, ^usage_before} = Handbean.ConversationStore.get_token_usage(conv_id)
       assert has_element?(view, "#status-input-tokens[title='33261']", "33.3K")
       assert has_element?(view, "#status-output-tokens[title='1250']", "1.3K")
-      assert has_element?(view, "#status-cache-read[title='1200000']", "1.2M")
-      assert has_element?(view, "#status-cache-write[title='999']", "999")
+      refute has_element?(view, "#status-cache-tokens")
     end
 
     test "run_end event updates input and output token counts from provider usage", %{conn: conn} do
@@ -3062,7 +3063,7 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
 
       send(view.pid, {:agent_event, agent_event(:run_end, %{status: "completed", turns: 10}, 2)})
 
-      assert has_element?(view, "#status-cache-hit-rate", "25.0%")
+      assert has_element?(view, "#status-cache-hit-rate", "—")
       assert has_element?(view, "#status-input-tokens", "100")
       assert has_element?(view, "#status-turns", "10")
 
@@ -3082,7 +3083,7 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
       )
       |> render_click()
 
-      assert has_element?(view, "#status-cache-hit-rate", "25.0%")
+      assert has_element?(view, "#status-cache-hit-rate", "—")
       assert has_element?(view, "#status-input-tokens", "100")
       refute has_element?(view, "#status-turns")
     end
