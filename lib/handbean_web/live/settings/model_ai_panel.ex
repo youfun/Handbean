@@ -35,7 +35,7 @@ defmodule HandbeanWeb.Live.Settings.ModelAIPanel do
             {gettext("workspace override")}
           </span>
         </div>
-        <div class="settings-card">
+        <div class="settings-card settings-card-has-model-picker">
           <div class="settings-field-row">
             <div class="settings-field-copy">
               <div class="settings-field-title">{gettext("Default model")}</div>
@@ -94,7 +94,7 @@ defmodule HandbeanWeb.Live.Settings.ModelAIPanel do
 
       <section class="settings-model-section">
         <h4 class="settings-model-section-title">{gettext("Advisor")}</h4>
-        <div class="settings-card">
+        <div class="settings-card settings-card-has-model-picker">
           <div class="settings-field-row">
             <div class="settings-field-copy">
               <div class="settings-field-title">{gettext("Advisor model")}</div>
@@ -188,7 +188,7 @@ defmodule HandbeanWeb.Live.Settings.ModelAIPanel do
         <h4 class="settings-model-section-title">
           {gettext("Observational Memory")}
         </h4>
-        <div class="settings-card">
+        <div class="settings-card settings-card-has-model-picker">
           <div class="settings-field-row">
             <div class="settings-field-copy">
               <div class="settings-field-title">{gettext("Memory model")}</div>

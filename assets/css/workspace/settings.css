@@ -810,6 +810,17 @@ select.settings-input {
   overflow: hidden;
 }
 
+.settings-card-has-model-picker {
+  overflow: visible;
+}
+
+@media (min-width: 769px) {
+  .settings-card-has-model-picker .model-picker-panel {
+    right: 0;
+    left: auto;
+  }
+}
+
 .settings-field-row {
   display: flex;
   align-items: center;
