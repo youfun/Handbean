@@ -549,6 +549,27 @@ defmodule Handbean.Agent.Provider.OpenAIStreamTest do
       assert reason =~ "Invalid tool call JSON"
     end
 
+    test "rejects missing, truncated, invalid escape, and trailing tool arguments" do
+      for {arguments, expected} <- [
+            {"", "empty arguments"},
+            {~S({"path":), "expected an object"},
+            {~S({"path":"\uZZZZ"}), "expected an object"},
+            {~S({"path":"a"} trailing), "expected an object"}
+          ] do
+        acc = %{
+          new_acc()
+          | tool_calls: %{
+              0 => %{id: "call_001", name: "read", arguments_buffer: arguments}
+            },
+            finish_reason: "tool_calls"
+        }
+
+        assert {:error, reason} = OpenAIStream.build_response(acc)
+        assert reason =~ expected
+        if arguments != "", do: refute(reason =~ arguments)
+      end
+    end
+
     test "maps finish_reason correctly" do
       assert {:ok, %{stop_reason: :end_turn}} =
                OpenAIStream.build_response(%{new_acc() | finish_reason: "stop"})

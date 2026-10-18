@@ -237,11 +237,7 @@ defmodule Handbean.Agent.Provider.OpenAIStream do
       acc.tool_calls
       |> Enum.sort_by(fn {index, _} -> index end)
       |> Enum.reduce_while([], fn {index, tc}, blocks ->
-        input_result =
-          case tc.arguments_buffer do
-            "" -> {:ok, %{}}
-            args -> Handbean.JSON.decode(args)
-          end
+        input_result = decode_tool_arguments(tc.arguments_buffer)
 
         name = resolved_tool_name(tc, input_result, acc)
 
@@ -260,6 +256,9 @@ defmodule Handbean.Agent.Provider.OpenAIStream do
 
           {{:ok, _input}, _} ->
             {:halt, {:error, "Missing or ambiguous tool call name"}}
+
+          {{:error, :empty_arguments}, _} ->
+            {:halt, {:error, "Invalid tool call JSON: empty arguments"}}
 
           {{:error, _reason}, _} ->
             {:halt, {:error, "Invalid tool call JSON: expected an object"}}
@@ -293,6 +292,12 @@ defmodule Handbean.Agent.Provider.OpenAIStream do
   end
 
   defp resolved_tool_name(_tc, _input_result, _acc), do: nil
+
+  # OpenAI-compatible tool calls encode even a zero-argument input as the JSON
+  # object "{}". Treat a missing arguments delta as an incomplete call instead
+  # of manufacturing an empty map that could reach execution.
+  defp decode_tool_arguments(""), do: {:error, :empty_arguments}
+  defp decode_tool_arguments(arguments), do: Handbean.JSON.decode(arguments)
 
   defp unique_tool_name(input, tool_defs) when is_map(input) and is_list(tool_defs) do
     matches =

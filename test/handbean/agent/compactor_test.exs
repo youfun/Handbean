@@ -241,6 +241,12 @@ defmodule Handbean.Agent.CompactorTest do
         item: %{type: "reasoning", encrypted_content: encrypted}
       }
 
+      old_thinking = %{
+        type: "thinking",
+        thinking: "private-anthropic-reasoning",
+        signature: "sig-private"
+      }
+
       recent_reasoning = %{
         type: "responses_reasoning",
         item: %{type: "reasoning", encrypted_content: "recent-cipher"}
@@ -250,6 +256,7 @@ defmodule Handbean.Agent.CompactorTest do
         Message.user("original request"),
         Message.assistant_blocks([
           old_reasoning,
+          old_thinking,
           %{type: "image", data: "old-image"},
           %{type: "tool_use", id: "old", name: "read", input: %{path: "large.txt"}}
         ]),
@@ -266,11 +273,17 @@ defmodule Handbean.Agent.CompactorTest do
           max_tokens: 2_000,
           compaction: [reserve_tokens: 100, keep_recent_tokens: 1_500],
           provider_config: %{
+            "reasoning_effort" => "high",
             summary_response: {:ok, summary_text("Sanitized")},
             test_pid: self(),
             cache_fork: true,
             previous_response_id: "parent-response",
-            use_previous_response_id: true
+            use_previous_response_id: true,
+            max_tokens: 777,
+            extended_thinking: [budget_tokens: 5_000],
+            thinking: %{type: "adaptive"},
+            output_config: %{effort: "high"},
+            reasoning: %{effort: "high"}
           }
         )
 
@@ -279,6 +292,7 @@ defmodule Handbean.Agent.CompactorTest do
       assert_received {:summary_request, request_messages, [], config}
       assert [%Message{role: :user, content: prompt}] = request_messages
       refute prompt =~ encrypted
+      refute prompt =~ "private-anthropic-reasoning"
       refute prompt =~ "old-image"
       refute prompt =~ "-tool-tail"
       assert prompt =~ "[Assistant tool call] read("
@@ -287,6 +301,18 @@ defmodule Handbean.Agent.CompactorTest do
       refute Map.has_key?(config, :cache_fork)
       refute Map.has_key?(config, :previous_response_id)
       refute config.use_previous_response_id
+      assert config.max_tokens == 777
+
+      for key <- [
+            :extended_thinking,
+            :thinking,
+            :output_config,
+            :reasoning,
+            "reasoning_effort"
+          ] do
+        refute Map.has_key?(config, key)
+      end
+
       assert Enum.any?(compacted.messages, &(&1 == Enum.at(messages, 4)))
       assert Compactor.request_tokens(compacted.messages, nil) < state.config.max_tokens
     end

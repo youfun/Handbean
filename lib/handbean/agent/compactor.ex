@@ -220,15 +220,27 @@ defmodule Handbean.Agent.Compactor do
     config =
       opts
       |> Keyword.get(:provider_config, state.config.provider_config)
-      |> Map.delete(:provider_state)
-      |> Map.delete("provider_state")
-      |> Map.delete(:previous_response_id)
-      |> Map.delete("previous_response_id")
+      |> Map.drop([
+        :provider_state,
+        "provider_state",
+        :previous_response_id,
+        "previous_response_id",
+        :cache_fork,
+        "cache_fork",
+        :cache_fork_suffix,
+        "cache_fork_suffix",
+        :extended_thinking,
+        "extended_thinking",
+        :thinking,
+        "thinking",
+        :output_config,
+        "output_config",
+        :reasoning,
+        "reasoning",
+        :reasoning_effort,
+        "reasoning_effort"
+      ])
       |> Map.put(:use_previous_response_id, false)
-      |> Map.delete(:cache_fork)
-      |> Map.delete(:cache_fork_suffix)
-      |> Map.delete("cache_fork")
-      |> Map.delete("cache_fork_suffix")
       |> Map.put(:system_prompt, @summary_system_prompt)
 
     Logger.warning(

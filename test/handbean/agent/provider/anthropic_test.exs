@@ -341,7 +341,7 @@ defmodule Handbean.Agent.Provider.AnthropicTest do
             "message" => %{
               "usage" => %{
                 "input_tokens" => 10,
-                "output_tokens" => 0,
+                "output_tokens" => 1,
                 "cache_read_input_tokens" => 70,
                 "cache_creation_input_tokens" => 20
               }
@@ -374,6 +374,7 @@ defmodule Handbean.Agent.Provider.AnthropicTest do
       assert Message.text(hd(result.messages)) == "Hello world"
       assert result.usage.total_input_tokens == 100
       assert result.usage.cache_read_input_tokens == 70
+      assert result.usage.output_tokens == 5
       assert_received {:chunk, "Hello"}
       assert_received {:chunk, " world"}
     end
@@ -417,6 +418,59 @@ defmodule Handbean.Agent.Provider.AnthropicTest do
       assert tool_call.name == "read"
       assert tool_call.input == %{"file_path" => "mix.exs"}
     end
+
+    test "concatenates thinking signatures and keeps latest non-null usage snapshots" do
+      config =
+        config_with_sse_stream([
+          ant_event("message_start", %{
+            "message" => %{
+              "usage" => %{
+                "input_tokens" => 10,
+                "output_tokens" => 1,
+                "cache_read_input_tokens" => 70
+              }
+            }
+          }),
+          ant_event("content_block_start", %{
+            "index" => 0,
+            "content_block" => %{"type" => "thinking", "thinking" => ""}
+          }),
+          ant_event("content_block_delta", %{
+            "index" => 0,
+            "delta" => %{"type" => "thinking_delta", "thinking" => "reasoning"}
+          }),
+          ant_event("content_block_delta", %{
+            "index" => 0,
+            "delta" => %{"type" => "signature_delta", "signature" => "sig-"}
+          }),
+          ant_event("content_block_delta", %{
+            "index" => 0,
+            "delta" => %{"type" => "signature_delta", "signature" => "part"}
+          }),
+          ant_event("content_block_stop", %{"index" => 0}),
+          ant_event("message_delta", %{
+            "delta" => %{"stop_reason" => "end_turn"},
+            "usage" => %{
+              "input_tokens" => nil,
+              "output_tokens" => 5,
+              "cache_read_input_tokens" => nil
+            }
+          }),
+          ant_event("message_stop", %{})
+        ])
+
+      assert {:ok, result} =
+               Anthropic.stream([Message.user("Think")], [], config, fn _ -> :ok end)
+
+      [thinking] = hd(result.messages).content
+      assert thinking.thinking == "reasoning"
+      assert thinking.signature == "sig-part"
+      assert thinking.provider_context.model == "claude-sonnet-4-6"
+      assert result.usage.input_tokens == 10
+      assert result.usage.cache_read_input_tokens == 70
+      assert result.usage.output_tokens == 5
+      assert result.usage.total_input_tokens == 80
+    end
   end
 
   # ── Extended Thinking ──
@@ -433,6 +487,7 @@ defmodule Handbean.Agent.Provider.AnthropicTest do
               "role" => "assistant",
               "content" => [
                 %{"type" => "thinking", "thinking" => "Reasoning...", "signature" => "sig123"},
+                %{"type" => "redacted_thinking", "data" => "redacted-data"},
                 %{"type" => "text", "text" => "Answer: 42"}
               ],
               "stop_reason" => "end_turn",
@@ -441,9 +496,85 @@ defmodule Handbean.Agent.Provider.AnthropicTest do
         })
 
       assert {:ok, result} = Anthropic.complete([Message.user("Q")], [], config)
-      [thinking, _] = hd(result.messages).content
+      [thinking, redacted, _] = hd(result.messages).content
       assert thinking.type == "thinking"
       assert thinking.signature == "sig123"
+
+      assert thinking.provider_context == %{
+               provider: "https://api.anthropic.com",
+               api: "anthropic",
+               model: "claude-sonnet-4-6"
+             }
+
+      assert redacted == %{
+               type: "redacted_thinking",
+               data: "redacted-data",
+               provider_context: thinking.provider_context
+             }
+    end
+
+    test "replays only same-origin signed thinking and drops foreign private blocks" do
+      config = Map.put(config_that_captures_request(), :provider_key, "anthropic-account")
+
+      same_origin = %{
+        provider: "anthropic-account",
+        api: "anthropic",
+        model: "claude-sonnet-4-6"
+      }
+
+      messages = [
+        Message.user("continue"),
+        Message.assistant_blocks([
+          %{
+            type: "thinking",
+            thinking: "same model reasoning",
+            signature: "sig-same",
+            provider_context: same_origin
+          },
+          %{
+            type: "thinking",
+            thinking: "foreign reasoning",
+            signature: "sig-foreign",
+            provider_context: %{same_origin | model: "claude-opus-4-6"}
+          },
+          %{type: "redacted_thinking", data: "same-redacted", provider_context: same_origin},
+          %{
+            type: "redacted_thinking",
+            data: "foreign-redacted",
+            provider_context: %{same_origin | model: "claude-opus-4-6"}
+          },
+          %{type: "thinking", thinking: "legacy reasoning", signature: "sig-legacy"},
+          %{
+            type: "responses_reasoning",
+            item: %{type: "reasoning", encrypted_content: "opaque"}
+          },
+          %{type: "text", text: "visible"}
+        ]),
+        Message.assistant_blocks([
+          %{
+            type: "thinking",
+            thinking: "foreign only",
+            signature: "sig-foreign-only",
+            provider_context: %{same_origin | provider: "other-account"}
+          }
+        ])
+      ]
+
+      assert {:ok, _result} = Anthropic.complete(messages, [], config)
+      assert_received {:request_body, body}
+
+      decoded = Jason.decode!(body)
+      assert [_, assistant] = decoded["messages"]
+
+      assert assistant["content"] == [
+               %{
+                 "type" => "thinking",
+                 "thinking" => "same model reasoning",
+                 "signature" => "sig-same"
+               },
+               %{"type" => "redacted_thinking", "data" => "same-redacted"},
+               %{"type" => "text", "text" => "visible"}
+             ]
     end
 
     test "extended_thinking in request" do

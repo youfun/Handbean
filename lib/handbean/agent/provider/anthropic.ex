@@ -96,7 +96,7 @@ defmodule Handbean.Agent.Provider.Anthropic do
 
     case request_with_retry(req_opts, Map.get(config, :retry_count, @default_retry_count), config) do
       {:ok, %{status: 200, body: resp_body}} ->
-        parse_response(resp_body)
+        parse_response(resp_body, config)
 
       {:ok, %{status: status, body: resp_body}} ->
         {:error, parse_error(status, resp_body)}
@@ -152,7 +152,7 @@ defmodule Handbean.Agent.Provider.Anthropic do
     case request_with_retry(req_opts, Map.get(config, :retry_count, @default_retry_count), config) do
       {:ok, %{status: 200} = resp} ->
         sse_acc = Map.get(resp.private, :sse_acc, initial_acc)
-        build_stream_response(sse_acc)
+        build_stream_response(sse_acc, config)
 
       {:ok, %{status: status} = resp} ->
         error_body = streaming_error_body(resp, initial_acc)
@@ -214,7 +214,13 @@ defmodule Handbean.Agent.Provider.Anthropic do
          "delta" => %{"type" => "signature_delta", "signature" => sig}
        }) do
     current = Map.get(acc.content_blocks, index, %{"type" => "thinking", "thinking" => ""})
-    updated = Map.put(current, "signature", sig)
+
+    updated =
+      Map.update(current, "signature", sig, fn
+        existing when is_binary(existing) -> existing <> sig
+        _existing -> sig
+      end)
+
     put_in(acc.content_blocks[index], updated)
   end
 
@@ -283,32 +289,36 @@ defmodule Handbean.Agent.Provider.Anthropic do
 
   defp handle_sse_event(acc, _event_type, _data), do: acc
 
+  # Anthropic's message_delta usage is the latest cumulative snapshot for the
+  # fields it contains, not a numeric delta to add to message_start usage.
   defp merge_sse_usage(existing, new) do
-    Map.merge(existing, new, fn _k, v1, v2 ->
-      if is_number(v1) and is_number(v2), do: v1 + v2, else: v2
-    end)
+    Map.merge(existing, Map.reject(new, fn {_key, value} -> is_nil(value) end))
   end
 
-  defp build_stream_response(%{stream_error: error}) when is_binary(error), do: {:error, error}
+  defp build_stream_response(%{stream_error: error}, _config) when is_binary(error),
+    do: {:error, error}
 
-  defp build_stream_response(%{message_stopped?: false}),
+  defp build_stream_response(%{message_stopped?: false}, _config),
     do: {:error, "Anthropic stream ended without message_stop"}
 
-  defp build_stream_response(%{input_json_buffers: buffers}) when map_size(buffers) > 0,
+  defp build_stream_response(%{input_json_buffers: buffers}, _config) when map_size(buffers) > 0,
     do: {:error, "Anthropic stream ended with unfinished tool call arguments"}
 
-  defp build_stream_response(acc) do
+  defp build_stream_response(acc, config) do
     blocks =
       acc.content_blocks
       |> Enum.sort_by(fn {index, _} -> index end)
       |> Enum.map(fn {_index, block} -> block end)
 
-    parse_response(%{
-      "type" => "message",
-      "content" => blocks,
-      "stop_reason" => acc.stop_reason,
-      "usage" => acc.usage
-    })
+    parse_response(
+      %{
+        "type" => "message",
+        "content" => blocks,
+        "stop_reason" => acc.stop_reason,
+        "usage" => acc.usage
+      },
+      config
+    )
   end
 
   # --- Request Building ---
@@ -319,7 +329,8 @@ defmodule Handbean.Agent.Provider.Anthropic do
     formatted_messages =
       messages
       |> Handbean.Tool.Images.bound_history()
-      |> Enum.map(&format_message/1)
+      |> Enum.map(&format_message(&1, config))
+      |> Enum.reject(&is_nil/1)
       |> maybe_add_cache_to_last_user_message(cache?, config)
 
     body = %{
@@ -434,46 +445,99 @@ defmodule Handbean.Agent.Provider.Anthropic do
 
   defp auth_header(config), do: {"x-api-key", config.api_key}
 
-  defp format_message(%Message{role: :tool_result, content: blocks}) when is_list(blocks) do
-    %{"role" => "user", "content" => Enum.map(blocks, &format_content_block/1)}
+  defp format_message(%Message{role: :tool_result, content: blocks}, config)
+       when is_list(blocks) do
+    formatted = format_content_blocks(blocks, config)
+    if formatted == [], do: nil, else: %{"role" => "user", "content" => formatted}
   end
 
-  defp format_message(%Message{role: :tool_result, content: content}) when is_binary(content) do
+  defp format_message(%Message{role: :tool_result, content: content}, _config)
+       when is_binary(content) do
     %{"role" => "user", "content" => content}
   end
 
-  defp format_message(%Message{role: role, content: content}) when is_binary(content) do
+  defp format_message(%Message{role: role, content: content}, _config) when is_binary(content) do
     %{"role" => to_string(role), "content" => content}
   end
 
-  defp format_message(%Message{role: role, content: blocks}) when is_list(blocks) do
-    %{"role" => to_string(role), "content" => Enum.map(blocks, &format_content_block/1)}
+  defp format_message(%Message{role: role, content: blocks}, config) when is_list(blocks) do
+    formatted = format_content_blocks(blocks, config)
+    if formatted == [], do: nil, else: %{"role" => to_string(role), "content" => formatted}
   end
 
-  defp format_content_block(%{type: "thinking", thinking: thinking} = block) do
-    %{"type" => "thinking", "thinking" => thinking}
-    |> maybe_put("signature", block[:signature])
+  defp format_content_blocks(blocks, config) do
+    blocks
+    |> Enum.map(&format_content_block(&1, config))
+    |> Enum.reject(&is_nil/1)
   end
 
-  defp format_content_block(%{type: "text", text: text}) do
+  defp format_content_block(%{type: "thinking", thinking: thinking} = block, config) do
+    if replayable_thinking?(block, config) do
+      %{
+        "type" => "thinking",
+        "thinking" => thinking,
+        "signature" => Handbean.Utils.SafeMap.get_any(block, :signature, "signature")
+      }
+    end
+  end
+
+  defp format_content_block(%{"type" => "thinking", "thinking" => thinking} = block, config) do
+    if replayable_thinking?(block, config) do
+      %{
+        "type" => "thinking",
+        "thinking" => thinking,
+        "signature" => Handbean.Utils.SafeMap.get_any(block, :signature, "signature")
+      }
+    end
+  end
+
+  defp format_content_block(%{type: "redacted_thinking", data: data} = block, config) do
+    if same_provider_context?(block, config) do
+      %{"type" => "redacted_thinking", "data" => data}
+    end
+  end
+
+  defp format_content_block(%{"type" => "redacted_thinking", "data" => data} = block, config) do
+    if same_provider_context?(block, config) do
+      %{"type" => "redacted_thinking", "data" => data}
+    end
+  end
+
+  # Private reasoning formats are provider-specific. Never let another
+  # provider's opaque block fall through into an Anthropic request.
+  defp format_content_block(%{type: type}, _config)
+       when type in ["responses_reasoning", "codex_reasoning"],
+       do: nil
+
+  defp format_content_block(%{"type" => type}, _config)
+       when type in ["responses_reasoning", "codex_reasoning"],
+       do: nil
+
+  defp format_content_block(%{type: "text", text: text}, _config) do
     %{"type" => "text", "text" => text}
   end
 
-  defp format_content_block(%{type: "tool_use", id: id, name: name, input: input}) do
+  defp format_content_block(%{type: "tool_use", id: id, name: name, input: input}, _config) do
     %{"type" => "tool_use", "id" => id, "name" => name, "input" => input}
   end
 
-  defp format_content_block(%{type: "tool_result", tool_use_id: id, content: content} = block) do
+  defp format_content_block(
+         %{type: "tool_result", tool_use_id: id, content: content} = block,
+         config
+       ) do
     content =
       if block[:images] in [nil, []],
         do: content,
-        else: Enum.map(Handbean.Tool.Images.content(block), &format_content_block/1)
+        else: format_content_blocks(Handbean.Tool.Images.content(block), config)
 
     result = %{"type" => "tool_result", "tool_use_id" => id, "content" => content}
     if Map.get(block, :is_error), do: Map.put(result, "is_error", true), else: result
   end
 
-  defp format_content_block(%{type: "server_tool_use", id: id, name: name, input: input}) do
+  defp format_content_block(
+         %{type: "server_tool_use", id: id, name: name, input: input},
+         _config
+       ) do
     %{"type" => "server_tool_use", "id" => id, "name" => name, "input" => input}
   end
 
@@ -482,13 +546,14 @@ defmodule Handbean.Agent.Provider.Anthropic do
            type: "server_tool_result",
            tool_use_id: id,
            content: content
-         } = block
+         } = block,
+         _config
        ) do
     result = %{"type" => "server_tool_result", "tool_use_id" => id, "content" => content}
     if Map.get(block, :is_error), do: Map.put(result, "is_error", true), else: result
   end
 
-  defp format_content_block(%{type: "image", mime_type: mime_type, data: data}) do
+  defp format_content_block(%{type: "image", mime_type: mime_type, data: data}, _config) do
     %{
       "type" => "image",
       "source" => %{
@@ -499,11 +564,11 @@ defmodule Handbean.Agent.Provider.Anthropic do
     }
   end
 
-  defp format_content_block(%{type: type}) when type in ["audio", "video"] do
+  defp format_content_block(%{type: type}, _config) when type in ["audio", "video"] do
     %{"type" => "text", "text" => "[Unsupported media type for Anthropic provider: #{type}]"}
   end
 
-  defp format_content_block(%{type: "document", mime_type: mime_type}) do
+  defp format_content_block(%{type: "document", mime_type: mime_type}, _config) do
     %{
       "type" => "text",
       "text" =>
@@ -511,9 +576,39 @@ defmodule Handbean.Agent.Provider.Anthropic do
     }
   end
 
-  defp format_content_block(block) when is_map(block) do
+  defp format_content_block(block, _config) when is_map(block) do
     Map.new(block, fn {k, v} -> {to_string(k), v} end)
   end
+
+  defp replayable_thinking?(block, config) do
+    signature = Handbean.Utils.SafeMap.get_any(block, :signature, "signature")
+    is_binary(signature) and signature != "" and same_provider_context?(block, config)
+  end
+
+  defp same_provider_context?(block, config) do
+    source = Handbean.Utils.SafeMap.get_any(block, :provider_context, "provider_context")
+    is_map(source) and reasoning_origin(source) == reasoning_origin(config)
+  end
+
+  defp reasoning_origin(config) when is_map(config) do
+    %{
+      provider:
+        identity_value(
+          Handbean.Utils.SafeMap.get_any(config, :provider_key, "provider_key") ||
+            Handbean.Utils.SafeMap.get_any(config, :provider, "provider") ||
+            Handbean.Utils.SafeMap.get_any(config, :api_url, "api_url") ||
+            Handbean.Utils.SafeMap.get_any(config, :base_url, "base_url") ||
+            @default_api_url
+        ),
+      api: identity_value(Handbean.Utils.SafeMap.get_any(config, :api, "api") || :anthropic),
+      model: identity_value(Handbean.Utils.SafeMap.get_any(config, :model, "model"))
+    }
+  end
+
+  defp identity_value(nil), do: nil
+  defp identity_value(value) when is_atom(value), do: Atom.to_string(value)
+  defp identity_value(value) when is_binary(value), do: value
+  defp identity_value(value), do: to_string(value)
 
   defp maybe_add_cache_to_last_tool([], _cache?), do: []
   defp maybe_add_cache_to_last_tool(tools, false), do: tools
@@ -602,16 +697,16 @@ defmodule Handbean.Agent.Provider.Anthropic do
 
   # --- Response Parsing ---
 
-  defp parse_response(body) when is_binary(body) do
+  defp parse_response(body, config) when is_binary(body) do
     case Handbean.Agent.Provider.decode_body(body) do
-      {:ok, decoded} -> parse_response(decoded)
+      {:ok, decoded} -> parse_response(decoded, config)
       {:error, _} = err -> err
     end
   end
 
-  defp parse_response(%{"type" => "message", "stop_reason" => reason} = resp)
+  defp parse_response(%{"type" => "message", "stop_reason" => reason} = resp, config)
        when reason in ["end_turn", "tool_use", "stop_sequence", "refusal"] do
-    with {:ok, content_blocks} <- parse_content_blocks(resp["content"]),
+    with {:ok, content_blocks} <- parse_content_blocks(resp["content"], config),
          true <- reason != "tool_use" or Enum.any?(content_blocks, &(&1.type == "tool_use")) do
       message = %Message{
         role: :assistant,
@@ -630,30 +725,35 @@ defmodule Handbean.Agent.Provider.Anthropic do
     end
   end
 
-  defp parse_response(%{"type" => "error"} = resp) do
+  defp parse_response(%{"type" => "error"} = resp, _config) do
     error = resp["error"] || %{}
     {:error, "#{error["type"]}: #{error["message"]}"}
   end
 
-  defp parse_response(_resp), do: {:error, "Anthropic response did not complete successfully"}
+  defp parse_response(_resp, _config),
+    do: {:error, "Anthropic response did not complete successfully"}
 
   defp parse_stop_reason("end_turn"), do: :end_turn
   defp parse_stop_reason("tool_use"), do: :tool_use
   defp parse_stop_reason("stop_sequence"), do: :end_turn
   defp parse_stop_reason("refusal"), do: :end_turn
 
-  defp parse_content_blocks(blocks) when is_list(blocks) do
+  defp parse_content_blocks(blocks, config) when is_list(blocks) do
     if Enum.all?(blocks, &valid_content_block?/1),
-      do: {:ok, Enum.map(blocks, &parse_content_block/1)},
+      do: {:ok, Enum.map(blocks, &parse_content_block(&1, config))},
       else: {:error, "Malformed Anthropic response content"}
   end
 
-  defp parse_content_blocks(_blocks), do: {:error, "Malformed Anthropic response content"}
+  defp parse_content_blocks(_blocks, _config),
+    do: {:error, "Malformed Anthropic response content"}
 
   defp valid_content_block?(%{"type" => "text", "text" => text}), do: is_binary(text)
 
   defp valid_content_block?(%{"type" => "thinking", "thinking" => thinking}),
     do: is_binary(thinking)
+
+  defp valid_content_block?(%{"type" => "redacted_thinking", "data" => data}),
+    do: is_binary(data) and data != ""
 
   defp valid_content_block?(%{"type" => type, "id" => id, "name" => name, "input" => input})
        when type in ["tool_use", "server_tool_use"] do
@@ -661,33 +761,44 @@ defmodule Handbean.Agent.Provider.Anthropic do
   end
 
   defp valid_content_block?(%{"type" => type})
-       when type in ["text", "thinking", "tool_use", "server_tool_use"], do: false
+       when type in ["text", "thinking", "redacted_thinking", "tool_use", "server_tool_use"],
+       do: false
 
   defp valid_content_block?(block), do: is_map(block)
 
-  defp parse_content_block(%{"type" => "thinking", "thinking" => thinking} = block) do
-    %{type: "thinking", thinking: thinking}
+  defp parse_content_block(%{"type" => "thinking", "thinking" => thinking} = block, config) do
+    %{type: "thinking", thinking: thinking, provider_context: reasoning_origin(config)}
     |> maybe_put(:signature, block["signature"])
   end
 
-  defp parse_content_block(%{"type" => "text", "text" => text}) do
+  defp parse_content_block(%{"type" => "redacted_thinking", "data" => data}, config) do
+    %{type: "redacted_thinking", data: data, provider_context: reasoning_origin(config)}
+  end
+
+  defp parse_content_block(%{"type" => "text", "text" => text}, _config) do
     %{type: "text", text: text}
   end
 
-  defp parse_content_block(%{"type" => "tool_use", "id" => id, "name" => name, "input" => input}) do
+  defp parse_content_block(
+         %{"type" => "tool_use", "id" => id, "name" => name, "input" => input},
+         _config
+       ) do
     %{type: "tool_use", id: id, name: name, input: input}
   end
 
-  defp parse_content_block(%{
-         "type" => "server_tool_use",
-         "id" => id,
-         "name" => name,
-         "input" => input
-       }) do
+  defp parse_content_block(
+         %{
+           "type" => "server_tool_use",
+           "id" => id,
+           "name" => name,
+           "input" => input
+         },
+         _config
+       ) do
     %{type: "server_tool_use", id: id, name: name, input: input}
   end
 
-  defp parse_content_block(block) do
+  defp parse_content_block(block, _config) do
     # Unknown block type — preserve with string keys to avoid atom table
     # pollution from untrusted API responses. Only convert known keys.
     type = Map.get(block, "type", "unknown")
@@ -698,14 +809,14 @@ defmodule Handbean.Agent.Provider.Anthropic do
   defp maybe_put(map, key, val), do: Map.put(map, key, val)
 
   defp parse_usage(usage) do
-    input = Map.get(usage, "input_tokens", 0)
-    read = Map.get(usage, "cache_read_input_tokens", 0)
-    write = Map.get(usage, "cache_creation_input_tokens", 0)
+    input = Map.get(usage, "input_tokens") || 0
+    read = Map.get(usage, "cache_read_input_tokens") || 0
+    write = Map.get(usage, "cache_creation_input_tokens") || 0
 
     %{
       input_tokens: input,
       total_input_tokens: input + read + write,
-      output_tokens: Map.get(usage, "output_tokens", 0),
+      output_tokens: Map.get(usage, "output_tokens") || 0,
       cache_creation_input_tokens: write,
       cache_read_input_tokens: read
     }
