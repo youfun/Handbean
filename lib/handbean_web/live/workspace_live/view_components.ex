@@ -25,6 +25,11 @@ defmodule HandbeanWeb.WorkspaceLive.ViewComponents do
 
   defdelegate free_conversations(conversations_by_workspace), to: ConversationSwitching
 
+  defdelegate free_conversation_slice(conversations_by_workspace, limit, current_conversation_id),
+    to: ConversationSwitching
+
+  defdelegate sidebar_limit(limits, bucket), to: ConversationSwitching
+
   defdelegate workspace_conversations(conversations_by_workspace, ws_id, workspaces),
     to: ConversationSwitching
 
@@ -33,6 +38,16 @@ defmodule HandbeanWeb.WorkspaceLive.ViewComponents do
                 ws_id,
                 workspaces,
                 collapsed_thread_ids
+              ),
+              to: ConversationSwitching
+
+  defdelegate workspace_conversation_slice(
+                conversations_by_workspace,
+                ws_id,
+                workspaces,
+                collapsed_thread_ids,
+                limit,
+                current_conversation_id
               ),
               to: ConversationSwitching
 

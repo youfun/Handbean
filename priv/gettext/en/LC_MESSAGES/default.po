@@ -2573,3 +2573,13 @@ msgstr "Choose a project"
 #: lib/handbean_web/live/workspace_live/sidebar_components.ex
 msgid "添加工作区"
 msgstr "Add workspace"
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex
+msgid "更多"
+msgstr "More"
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex
+msgid "显示更多对话"
+msgstr "Show more conversations"

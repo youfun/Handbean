@@ -531,6 +531,36 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
       refute rendered =~ ~s(id="conversation-list-refreshing")
     end
 
+    test "sidebar More reveals the next conversation batch", %{conn: conn} do
+      for index <- 1..12 do
+        {:ok, _conversation} =
+          Handbean.ConversationStore.create("default", title: "History #{index}")
+      end
+
+      {:ok, view, _html} = live(conn, "/")
+      render_async(view, 5_000)
+
+      assert has_element?(view, "#workspace-more-default")
+
+      assert view
+             |> render()
+             |> Floki.parse_document!()
+             |> Floki.find("#workspace-conversations-default > .conversation-row")
+             |> length() == 10
+
+      view
+      |> element("#workspace-more-default")
+      |> render_click()
+
+      refute has_element?(view, "#workspace-more-default")
+
+      assert view
+             |> render()
+             |> Floki.parse_document!()
+             |> Floki.find("#workspace-conversations-default > .conversation-row")
+             |> length() == 12
+    end
+
     test "stale sidebar results and refresh failures preserve newer rows" do
       current = %{"id" => "current", "title" => "Current", "workspace_id" => "default"}
       stale = %{"id" => "stale", "title" => "Stale", "workspace_id" => "default"}

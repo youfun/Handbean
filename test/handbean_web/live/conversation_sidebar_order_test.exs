@@ -144,6 +144,112 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSidebarOrderTest do
     assert ids == ["new", "old"]
   end
 
+  test "sidebar slice reveals root thread families in batches" do
+    conversations =
+      for day <- 1..12 do
+        conversation(
+          "conversation-#{day}",
+          "2026-01-#{String.pad_leading(to_string(day), 2, "0")}T00:00:00Z"
+        )
+      end
+
+    slice =
+      ConversationSwitching.workspace_conversation_slice(
+        %{"ws" => conversations},
+        "ws",
+        [%{"id" => "ws", "name" => "WS"}],
+        MapSet.new(),
+        10,
+        nil
+      )
+
+    assert length(slice.rows) == 10
+    assert slice.has_more?
+    assert slice.hidden_count == 2
+    assert slice.visible_limit == 10
+    assert hd(slice.rows).id == "conversation-12"
+  end
+
+  test "sidebar slice never splits a parent thread family" do
+    parent = conversation("parent", "2026-01-01T00:00:00Z")
+
+    child =
+      conversation("child", "2026-03-01T00:00:00Z", %{
+        "parent_conversation_id" => "parent"
+      })
+
+    unrelated = conversation("unrelated", "2026-02-01T00:00:00Z")
+
+    slice =
+      ConversationSwitching.workspace_conversation_slice(
+        %{"ws" => [parent, child, unrelated]},
+        "ws",
+        [%{"id" => "ws", "name" => "WS"}],
+        MapSet.new(),
+        1,
+        nil
+      )
+
+    assert Enum.map(slice.rows, & &1.id) == ["parent", "child"]
+    assert Enum.map(slice.rows, & &1.tree_depth) == [0, 1]
+    assert slice.has_more?
+    assert slice.hidden_count == 1
+  end
+
+  test "sidebar slice expands far enough to keep the active conversation visible" do
+    conversations =
+      for day <- 1..12 do
+        conversation(
+          "conversation-#{day}",
+          "2026-01-#{String.pad_leading(to_string(day), 2, "0")}T00:00:00Z"
+        )
+      end
+
+    slice =
+      ConversationSwitching.workspace_conversation_slice(
+        %{"ws" => conversations},
+        "ws",
+        [%{"id" => "ws", "name" => "WS"}],
+        MapSet.new(),
+        10,
+        "conversation-1"
+      )
+
+    assert length(slice.rows) == 12
+    assert slice.visible_limit == 12
+    refute slice.has_more?
+    assert Enum.any?(slice.rows, &(&1.id == "conversation-1"))
+  end
+
+  test "pinned conversations do not consume regular sidebar batch slots" do
+    regular =
+      for day <- 1..10 do
+        conversation(
+          "conversation-#{day}",
+          "2026-01-#{String.pad_leading(to_string(day), 2, "0")}T00:00:00Z"
+        )
+      end
+
+    pinned =
+      conversation("pinned", "2026-02-01T00:00:00Z", %{
+        "pinned_at" => "2026-02-01T00:00:00Z"
+      })
+
+    slice =
+      ConversationSwitching.workspace_conversation_slice(
+        %{"ws" => [pinned | regular]},
+        "ws",
+        [%{"id" => "ws", "name" => "WS"}],
+        MapSet.new(),
+        10,
+        nil
+      )
+
+    assert length(slice.rows) == 10
+    refute slice.has_more?
+    refute Enum.any?(slice.rows, &(&1.id == "pinned"))
+  end
+
   test "background and pinned indicators use only runtime status" do
     conv = conversation("background", "2026-01-01T00:00:00Z")
 
@@ -297,6 +403,73 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSidebarOrderTest do
     assert mobile
            |> Floki.find("#sheet-thread-toggle-parent")
            |> Floki.attribute("phx-click") == ["toggle_thread"]
+  end
+
+  test "desktop and mobile lists render the same More control for a workspace" do
+    conversations =
+      for day <- 1..11 do
+        conversation(
+          "conversation-#{day}",
+          "2026-01-#{String.pad_leading(to_string(day), 2, "0")}T00:00:00Z"
+        )
+      end
+
+    common = [
+      chat_scope: :workspace,
+      collapsed_workspace_ids: MapSet.new(),
+      conversations_by_workspace: %{"ws" => conversations},
+      current_conversation_id: "conversation-11",
+      current_workspace_id: "ws",
+      runtime_tasks: %{tasks: []},
+      sidebar_visible_limits: %{},
+      workspaces: [%{"id" => "ws", "name" => "Workspace"}]
+    ]
+
+    desktop =
+      Phoenix.LiveViewTest.render_component(
+        &HandbeanWeb.WorkspaceLive.SidebarComponents.projects_sidebar/1,
+        Keyword.merge(common,
+          conversation_menu_id: nil,
+          show_archive: false
+        )
+      )
+      |> Floki.parse_document!()
+
+    assert desktop
+           |> Floki.find("#workspace-more-ws")
+           |> Floki.attribute("phx-click") == ["show_more_conversations"]
+
+    assert desktop
+           |> Floki.find("#workspace-more-ws")
+           |> Floki.attribute("phx-value-bucket") == ["ws"]
+
+    mobile =
+      Phoenix.LiveViewTest.render_component(
+        &HandbeanWeb.WorkspaceLive.OverlayComponents.mobile_sheets/1,
+        Keyword.merge(common,
+          available_models: [],
+          available_reasoning_levels: [],
+          mcp_count: 0,
+          selected_model: nil,
+          selected_reasoning_level: nil,
+          show_model_sheet: false,
+          show_reasoning_sheet: false,
+          show_settings_sheet: false,
+          show_workspace_sheet: true,
+          skills_count: 0,
+          status_info: %{model: nil, status: "idle"},
+          workspace_label: "Workspace"
+        )
+      )
+      |> Floki.parse_document!()
+
+    assert mobile
+           |> Floki.find("#sheet-workspace-more-ws")
+           |> Floki.attribute("phx-click") == ["show_more_conversations"]
+
+    assert mobile
+           |> Floki.find("#sheet-workspace-more-ws")
+           |> Floki.attribute("phx-value-bucket") == ["ws"]
   end
 
   test "refresh state preserves existing conversation rows" do

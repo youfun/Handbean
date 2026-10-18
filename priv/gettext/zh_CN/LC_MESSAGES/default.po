@@ -2651,3 +2651,13 @@ msgstr "用于从压缩后的对话生成可审核的记忆候选。"
 #: lib/handbean_web/live/settings/model_ai_panel.ex
 msgid "Reasoning level used for memory reflection."
 msgstr "记忆反思使用的思考等级。"
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex
+msgid "更多"
+msgstr "更多"
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex
+msgid "显示更多对话"
+msgstr "显示更多对话"

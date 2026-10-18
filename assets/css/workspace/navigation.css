@@ -2,13 +2,6 @@
    Layer 4b: Workspace / Project Sidebar
    ═══════════════════════════════════════════════════════════════════ */
 
-/* ── Activity bar resized for projects ── */
-#activity-bar {
-  width: 240px;
-  min-width: 240px;
-  height: 100%;
-}
-
 /* ── Sidebar header ── */
 #activity-bar > .p-3 {
   min-height: 2.75rem;
@@ -284,6 +277,42 @@
   position: relative;
   margin: 0.1rem 0 0.2rem;
   padding-left: 0;
+}
+
+.conversation-more-button {
+  display: flex;
+  align-items: center;
+  width: calc(100% - 0.5rem);
+  min-height: 1.9rem;
+  margin: 0.1rem 0.25rem;
+  padding: 0.35rem 0.75rem 0.35rem 1.75rem;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--sig-bg-surface-active);
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: 1.25;
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.conversation-more-button:hover,
+.conversation-more-button:focus-visible {
+  background: var(--color-surface-hover);
+  color: var(--color-text-secondary);
+}
+
+.conversation-more-button:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.sheet-conversation-more {
+  width: calc(100% - 24px);
+  min-height: 44px;
+  margin: 2px 12px;
+  padding-left: 20px;
 }
 
 /* ── Conversation row (item + inline action) ── */

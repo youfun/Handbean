@@ -184,21 +184,24 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarComponents do
   attr :conversation_list_loaded, :boolean, default: false
   attr :conversation_list_error, :any, default: nil
   attr :runtime_tasks, :map, default: %{tasks: []}
+  attr :sidebar_visible_limits, :map, default: %{}
   attr :show_schedules, :boolean, default: false
   attr :schedule_count, :integer, default: 0
 
   def projects_sidebar(assigns) do
     assigns =
-      assign(
-        assigns,
-        run_states: Map.new(assigns.runtime_tasks.tasks, &{&1.conversation_id, &1.status})
+      assigns
+      |> assign(
+        :run_states,
+        Map.new(assigns.runtime_tasks.tasks, &{&1.conversation_id, &1.status})
       )
+      |> assign(:visible_hover_ids, visible_hover_ids(assigns))
 
     ~H"""
     <div
       id="activity-bar"
       phx-hook="ConversationSidebar"
-      class="w-[220px] flex-shrink-0 border-r bg-surface flex flex-col workspace-panel projects-panel"
+      class="flex-shrink-0 border-r bg-surface flex flex-col workspace-panel projects-panel"
     >
       <div class="projects-panel-header">
         <h2 class="projects-panel-title">
@@ -503,14 +506,19 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarComponents do
               </svg>
             </button>
           </div>
+          <% free_slice =
+            free_conversation_slice(
+              @conversations_by_workspace,
+              sidebar_limit(@sidebar_visible_limits, "free"),
+              @current_conversation_id
+            ) %>
           <div
             :if={not workspace_group_collapsed?(@collapsed_workspace_ids, "free")}
             id="free-conversations"
             class="conversations-list"
           >
             <div
-              :for={conv <- free_conversations(@conversations_by_workspace)}
-              :if={not conv.pinned}
+              :for={conv <- free_slice.rows}
               id={"free-conversation-#{conv.id}"}
               class="conversation-row"
               data-conversation-id={conv.id}
@@ -537,6 +545,17 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarComponents do
               </button>
               <.conversation_menu conv={conv} conversation_menu_id={@conversation_menu_id} />
             </div>
+            <button
+              :if={free_slice.has_more?}
+              id="free-conversations-more"
+              type="button"
+              phx-click="show_more_conversations"
+              phx-value-bucket="free"
+              class="conversation-more-button"
+              aria-label={gettext("显示更多对话")}
+            >
+              {gettext("更多")}
+            </button>
           </div>
         </div>
 
@@ -646,22 +665,22 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarComponents do
             </button>
           </div>
 
+          <% workspace_slice =
+            workspace_conversation_slice(
+              @conversations_by_workspace,
+              ws["id"],
+              @workspaces,
+              @collapsed_thread_ids,
+              sidebar_limit(@sidebar_visible_limits, ws["id"]),
+              @current_conversation_id
+            ) %>
           <div
             :if={not workspace_group_collapsed?(@collapsed_workspace_ids, ws["id"])}
             id={"workspace-conversations-#{ws["id"]}"}
             class="conversations-list"
           >
             <div
-              :for={
-                conv <-
-                  visible_workspace_conversations(
-                    @conversations_by_workspace,
-                    ws["id"],
-                    @workspaces,
-                    @collapsed_thread_ids
-                  )
-              }
-              :if={!conv.archived and not conv.pinned}
+              :for={conv <- workspace_slice.rows}
               id={"conversation-#{conv.id}"}
               class={[
                 "conversation-row",
@@ -745,6 +764,17 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarComponents do
               </button>
               <.conversation_menu conv={conv} conversation_menu_id={@conversation_menu_id} />
             </div>
+            <button
+              :if={workspace_slice.has_more?}
+              id={"workspace-more-#{ws["id"]}"}
+              type="button"
+              phx-click="show_more_conversations"
+              phx-value-bucket={ws["id"]}
+              class="conversation-more-button"
+              aria-label={gettext("显示更多对话")}
+            >
+              {gettext("更多")}
+            </button>
           </div>
         </div>
 
@@ -893,7 +923,10 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarComponents do
           <span :if={@schedule_count > 0} class="sidebar-primary-nav-count">{@schedule_count}</span>
         </button>
       </nav>
-      <.conversation_hover_card conversations_by_workspace={@conversations_by_workspace} />
+      <.conversation_hover_card
+        conversations_by_workspace={@conversations_by_workspace}
+        visible_ids={@visible_hover_ids}
+      />
       <.workspace_hover_card />
     </div>
     """
@@ -962,11 +995,69 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarComponents do
     """
   end
 
+  defp visible_hover_ids(assigns) do
+    free_ids =
+      if workspace_group_collapsed?(assigns.collapsed_workspace_ids, "free") do
+        []
+      else
+        assigns.conversations_by_workspace
+        |> free_conversation_slice(
+          sidebar_limit(assigns.sidebar_visible_limits, "free"),
+          assigns.current_conversation_id
+        )
+        |> Map.fetch!(:rows)
+        |> Enum.map(& &1.id)
+      end
+
+    workspace_ids =
+      Enum.flat_map(assigns.workspaces, fn workspace ->
+        if workspace_group_collapsed?(assigns.collapsed_workspace_ids, workspace["id"]) do
+          []
+        else
+          assigns.conversations_by_workspace
+          |> workspace_conversation_slice(
+            workspace["id"],
+            assigns.workspaces,
+            assigns.collapsed_thread_ids,
+            sidebar_limit(assigns.sidebar_visible_limits, workspace["id"]),
+            assigns.current_conversation_id
+          )
+          |> Map.fetch!(:rows)
+          |> Enum.map(& &1.id)
+        end
+      end)
+
+    pinned_ids =
+      if workspace_group_collapsed?(assigns.collapsed_workspace_ids, "pinned") do
+        []
+      else
+        assigns.workspaces
+        |> pinned_conversations(assigns.conversations_by_workspace)
+        |> Enum.map(& &1.id)
+      end
+
+    archived_ids =
+      if assigns.show_archive do
+        assigns.workspaces
+        |> archived_conversations(assigns.conversations_by_workspace)
+        |> Enum.map(& &1.id)
+      else
+        []
+      end
+
+    MapSet.new(free_ids ++ workspace_ids ++ pinned_ids ++ archived_ids)
+  end
+
   attr :conversations_by_workspace, :map, required: true
+  attr :visible_ids, :any, required: true
 
   defp conversation_hover_card(assigns) do
     assigns =
-      assign(assigns, :contexts, hover_contexts(assigns.conversations_by_workspace))
+      assign(
+        assigns,
+        :contexts,
+        hover_contexts(assigns.conversations_by_workspace, assigns.visible_ids)
+      )
 
     ~H"""
     <div id="conversation-hover-card" class="conversation-hover" role="tooltip" hidden>
@@ -1065,10 +1156,13 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarComponents do
     """
   end
 
-  defp hover_contexts(conversations_by_workspace) do
+  defp hover_contexts(conversations_by_workspace, visible_ids) do
     conversations_by_workspace
     |> Map.values()
     |> List.flatten()
+    |> Enum.filter(fn conversation ->
+      MapSet.member?(visible_ids, ConversationState.conversation_id(conversation))
+    end)
     |> Enum.map(fn conversation ->
       {ConversationState.conversation_id(conversation),
        ConversationSwitching.hover_context(conversation)}

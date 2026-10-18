@@ -18,6 +18,7 @@ defmodule HandbeanWeb.WorkspaceLive.OverlayComponents do
   attr :current_workspace_id, :any, required: true
   attr :mcp_count, :any, required: true
   attr :runtime_tasks, :map, default: %{tasks: []}
+  attr :sidebar_visible_limits, :map, default: %{}
   attr :selected_cli, :any, default: nil
   attr :selected_model, :any, required: true
   attr :selected_reasoning_level, :any, required: true
@@ -187,10 +188,15 @@ defmodule HandbeanWeb.WorkspaceLive.OverlayComponents do
             </svg>
           </button>
         </div>
+        <% free_slice =
+          free_conversation_slice(
+            @conversations_by_workspace,
+            sidebar_limit(@sidebar_visible_limits, "free"),
+            @current_conversation_id
+          ) %>
         <div :if={not free_collapsed?} id="sheet-free-conversations">
           <button
-            :for={conv <- free_conversations(@conversations_by_workspace)}
-            :if={not conv.pinned}
+            :for={conv <- free_slice.rows}
             phx-click="select_free_conversation"
             phx-value-id={conv.id}
             class={[
@@ -203,6 +209,17 @@ defmodule HandbeanWeb.WorkspaceLive.OverlayComponents do
               state={Map.get(@run_states, conv.id)}
             />
             <span class="truncate flex-1">{conv.title}</span>
+          </button>
+          <button
+            :if={free_slice.has_more?}
+            id="sheet-free-conversations-more"
+            type="button"
+            phx-click="show_more_conversations"
+            phx-value-bucket="free"
+            class="conversation-more-button sheet-conversation-more"
+            aria-label={gettext("显示更多对话")}
+          >
+            {gettext("更多")}
           </button>
         </div>
         <%= for ws <- @workspaces do %>
@@ -267,8 +284,17 @@ defmodule HandbeanWeb.WorkspaceLive.OverlayComponents do
               source={:mobile}
             />
           </div>
+          <% workspace_slice =
+            workspace_conversation_slice(
+              @conversations_by_workspace,
+              ws["id"],
+              @workspaces,
+              @collapsed_thread_ids,
+              sidebar_limit(@sidebar_visible_limits, ws["id"]),
+              @current_conversation_id
+            ) %>
           <%= if not workspace_group_collapsed?(@collapsed_workspace_ids, ws["id"]) do %>
-            <%= for conv <- visible_workspace_conversations(@conversations_by_workspace, ws["id"], @workspaces, @collapsed_thread_ids) |> Enum.reject(&(&1[:archived] or &1.pinned)) do %>
+            <%= for conv <- workspace_slice.rows do %>
               <div class={[
                 "sheet-conv-row sheet-thread-row",
                 conv.tree_depth > 0 && "conversation-row-child",
@@ -340,6 +366,17 @@ defmodule HandbeanWeb.WorkspaceLive.OverlayComponents do
                 </button>
               </div>
             <% end %>
+            <button
+              :if={workspace_slice.has_more?}
+              id={"sheet-workspace-more-#{ws["id"]}"}
+              type="button"
+              phx-click="show_more_conversations"
+              phx-value-bucket={ws["id"]}
+              class="conversation-more-button sheet-conversation-more"
+              aria-label={gettext("显示更多对话")}
+            >
+              {gettext("更多")}
+            </button>
           <% end %>
         <% end %>
         <button phx-click="open_add_project" class="sheet-add-row">

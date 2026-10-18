@@ -11,6 +11,16 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
   alias HandbeanWeb.WorkspaceLive.Schedules
 
   @free_key :free
+  @sidebar_page_size 10
+
+  def sidebar_limit(limits, bucket) when is_map(limits) do
+    case Map.get(limits, to_string(bucket), @sidebar_page_size) do
+      limit when is_integer(limit) and limit > 0 -> limit
+      _ -> @sidebar_page_size
+    end
+  end
+
+  def sidebar_limit(_limits, _bucket), do: @sidebar_page_size
 
   defp put_conversation(socket, conversation_id) do
     token =
@@ -529,6 +539,48 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
     end)
   end
 
+  def show_more_conversations(socket, bucket) when is_binary(bucket) do
+    if valid_sidebar_bucket?(socket, bucket) do
+      slice = sidebar_slice(socket, bucket)
+      limits = Map.get(socket.assigns, :sidebar_visible_limits, %{})
+
+      assign(
+        socket,
+        :sidebar_visible_limits,
+        Map.put(limits, bucket, slice.visible_limit + @sidebar_page_size)
+      )
+    else
+      socket
+    end
+  end
+
+  def show_more_conversations(socket, _bucket), do: socket
+
+  defp valid_sidebar_bucket?(_socket, "free"), do: true
+
+  defp valid_sidebar_bucket?(socket, bucket) do
+    Enum.any?(socket.assigns.workspaces, &(&1["id"] == bucket))
+  end
+
+  defp sidebar_slice(socket, "free") do
+    free_conversation_slice(
+      socket.assigns.conversations_by_workspace,
+      sidebar_limit(socket.assigns[:sidebar_visible_limits], "free"),
+      socket.assigns.current_conversation_id
+    )
+  end
+
+  defp sidebar_slice(socket, workspace_id) do
+    workspace_conversation_slice(
+      socket.assigns.conversations_by_workspace,
+      workspace_id,
+      socket.assigns.workspaces,
+      socket.assigns[:collapsed_thread_ids],
+      sidebar_limit(socket.assigns[:sidebar_visible_limits], workspace_id),
+      socket.assigns.current_conversation_id
+    )
+  end
+
   def close_checkout_picker(socket), do: assign(socket, :checkout_picker, nil)
 
   def checkout_picker_open?(picker, workspace_id, source \\ :sidebar)
@@ -899,6 +951,23 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
     |> Enum.map(&conversation_row(&1, nil, "对话", "free"))
   end
 
+  def free_conversation_slice(conversations_by_workspace, limit, current_conversation_id)
+      when is_map(conversations_by_workspace) do
+    conversations =
+      conversations_by_workspace
+      |> free_conversations()
+      |> Enum.reject(& &1.pinned)
+
+    effective_limit = effective_row_limit(conversations, limit, current_conversation_id)
+
+    %{
+      rows: Enum.take(conversations, effective_limit),
+      has_more?: length(conversations) > effective_limit,
+      hidden_count: max(length(conversations) - effective_limit, 0),
+      visible_limit: effective_limit
+    }
+  end
+
   def workspace_conversations(conversations_by_workspace, ws_id, workspaces)
       when is_map(conversations_by_workspace) and is_list(workspaces) do
     ws_map = Map.new(workspaces, fn ws -> {ws["id"], ws["name"] || ws["id"]} end)
@@ -929,10 +998,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
         workspaces,
         collapsed_thread_ids
       ) do
-    collapsed_thread_ids =
-      if is_struct(collapsed_thread_ids, MapSet),
-        do: collapsed_thread_ids,
-        else: MapSet.new()
+    collapsed_thread_ids = normalize_collapsed_threads(collapsed_thread_ids)
 
     conversations_by_workspace
     |> workspace_conversations(ws_id, workspaces)
@@ -940,6 +1006,75 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
       Enum.any?(row.tree_ancestor_ids, &MapSet.member?(collapsed_thread_ids, &1))
     end)
   end
+
+  def workspace_conversation_slice(
+        conversations_by_workspace,
+        ws_id,
+        workspaces,
+        collapsed_thread_ids,
+        limit,
+        current_conversation_id
+      )
+      when is_map(conversations_by_workspace) and is_list(workspaces) do
+    ws_map = Map.new(workspaces, fn ws -> {ws["id"], ws["name"] || ws["id"]} end)
+    workspace_name = Map.get(ws_map, ws_id, ws_id)
+
+    families =
+      conversations_by_workspace
+      |> Map.get(ws_id, [])
+      |> Enum.reject(&archived_conversation?/1)
+      |> Enum.reject(&pinned_conversation?/1)
+      |> thread_tree_families(fn conv ->
+        conversation_row(conv, ws_id, workspace_name, "workspace")
+      end)
+
+    effective_limit = effective_family_limit(families, limit, current_conversation_id)
+    collapsed_thread_ids = normalize_collapsed_threads(collapsed_thread_ids)
+
+    rows =
+      families
+      |> Enum.take(effective_limit)
+      |> List.flatten()
+      |> Enum.reject(fn row ->
+        Enum.any?(row.tree_ancestor_ids, &MapSet.member?(collapsed_thread_ids, &1))
+      end)
+
+    %{
+      rows: rows,
+      has_more?: length(families) > effective_limit,
+      hidden_count: max(length(families) - effective_limit, 0),
+      visible_limit: effective_limit
+    }
+  end
+
+  defp normalize_collapsed_threads(collapsed_thread_ids) do
+    if is_struct(collapsed_thread_ids, MapSet),
+      do: collapsed_thread_ids,
+      else: MapSet.new()
+  end
+
+  defp effective_row_limit(rows, limit, current_conversation_id) do
+    limit = normalize_sidebar_limit(limit)
+
+    case Enum.find_index(rows, &(&1.id == current_conversation_id)) do
+      nil -> limit
+      index -> max(limit, index + 1)
+    end
+  end
+
+  defp effective_family_limit(families, limit, current_conversation_id) do
+    limit = normalize_sidebar_limit(limit)
+
+    case Enum.find_index(families, fn rows ->
+           Enum.any?(rows, &(&1.id == current_conversation_id))
+         end) do
+      nil -> limit
+      index -> max(limit, index + 1)
+    end
+  end
+
+  defp normalize_sidebar_limit(limit) when is_integer(limit) and limit > 0, do: limit
+  defp normalize_sidebar_limit(_limit), do: @sidebar_page_size
 
   defp conversation_row(conv, workspace_id, workspace_name, scope) do
     row = %{
@@ -1184,6 +1319,12 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
   end
 
   defp thread_tree_rows(conversations, row_fun) do
+    conversations
+    |> thread_tree_families(row_fun)
+    |> List.flatten()
+  end
+
+  defp thread_tree_families(conversations, row_fun) do
     by_id = Map.new(conversations, &{ConversationState.conversation_id(&1), &1})
 
     parent_by_id =
