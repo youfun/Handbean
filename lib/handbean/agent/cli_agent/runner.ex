@@ -9,8 +9,8 @@ defmodule Handbean.Agent.CliAgent.Runner do
 
   use GenServer
 
+  alias Handbean.Agent.{CandidateQueue, Message, TranscriptPersistence}
   alias Handbean.Agent.CliAgent.{Binding, Run}
-  alias Handbean.Agent.TranscriptPersistence
   alias Handbean.PubSub.Session
 
   require Logger
@@ -133,8 +133,7 @@ defmodule Handbean.Agent.CliAgent.Runner do
 
   defp finish_init(conversation_id, content, display_text, run_opts, queue_pid) do
     result =
-      with :ok <- Handbean.Agent.CandidateQueue.seal(queue_pid),
-           {:ok, _entry} <- persist_inbound(conversation_id, content, run_opts),
+      with {:ok, _entry} <- persist_inbound(conversation_id, content, run_opts),
            :ok <-
              Session.attach_run(conversation_id, self(), queue_pid,
                run_id: run_opts[:run_id],
@@ -207,6 +206,7 @@ defmodule Handbean.Agent.CliAgent.Runner do
         {:reply, :ok, state}
 
       true ->
+        :ok = CandidateQueue.seal(state.queue_pid)
         send(self(), :cancel_cli_run)
         {:reply, :ok, %{state | status: :cancelling, pending: nil}}
     end
@@ -358,8 +358,7 @@ defmodule Handbean.Agent.CliAgent.Runner do
   defp handle_turn_result({:ok, _text, meta}, state) do
     remember_session(state.conversation_id, meta, state.opts)
     state = %{state | session_id: meta[:session_id] || state.session_id}
-    state = finish(state, :completed)
-    {:stop, :normal, state}
+    continue_or_finish(state)
   end
 
   defp handle_turn_result({:awaiting, kind, meta}, state) do
@@ -389,6 +388,47 @@ defmodule Handbean.Agent.CliAgent.Runner do
     state = finish(state, :error, reason)
     {:stop, :normal, state}
   end
+
+  defp continue_or_finish(state) do
+    case CandidateQueue.take_next_or_seal(state.queue_pid) do
+      :sealed ->
+        state = finish(state, :completed)
+        {:stop, :normal, state}
+
+      {:pending, deliver_as, message} ->
+        :ok = consume_candidate(state, deliver_as, message)
+
+        opts =
+          state.opts
+          |> Keyword.put(:session_id, state.session_id)
+          |> Keyword.delete(:decision)
+
+        state = %{state | content: candidate_input(message), status_detail: nil}
+        {:noreply, launch_turn(state, opts)}
+    end
+  end
+
+  defp consume_candidate(state, deliver_as, message) do
+    payload = %{
+      deliver_as: deliver_as,
+      count: 1,
+      message_ids: [message.id],
+      run_id: state.opts[:run_id]
+    }
+
+    with :ok <-
+           TranscriptPersistence.handle_event(
+             state.conversation_id,
+             {:candidate_message_injected, payload},
+             state.opts
+           ) do
+      Session.broadcast_event(state.conversation_id, :candidate_message_injected, payload)
+      :ok
+    end
+  end
+
+  defp candidate_input(%Message{content: content}) when is_binary(content), do: content
+  defp candidate_input(%Message{} = message), do: message
 
   defp track_event(state, {:turn_end, _payload}), do: %{state | turns: state.turns + 1}
 
@@ -515,6 +555,8 @@ defmodule Handbean.Agent.CliAgent.Runner do
   defp finish(%{terminal?: true} = state, _status, _reason), do: state
 
   defp finish(state, status, reason) do
+    :ok = CandidateQueue.seal(state.queue_pid)
+
     payload =
       lifecycle_payload(state)
       |> Map.merge(%{status: status, turns: state.turns, session_id: state.session_id})

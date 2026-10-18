@@ -602,7 +602,25 @@ defmodule HandbeanWeb.WorkspaceLive.MessageSubmission do
       )
 
     case Handbean.Agent.Coordinator.start_cli_run(conv_id, content, message, opts) do
-      {:ok, _ack} ->
+      {:ok, %{action: :enqueued}} ->
+        pending =
+          Handbean.Agent.PendingMessages.put_queued(
+            socket.assigns.pending_messages,
+            msg_id,
+            :follow_up,
+            %{content: message, attachments: attachments}
+          )
+
+        {:noreply,
+         socket
+         |> assign(:input_value, "")
+         |> assign(:pending_attachments, [])
+         |> Composer.forget(conv_id)
+         |> append_user_message(message, attachments, msg_id)
+         |> assign_pending_messages(pending)
+         |> push_event("user-message-sent", %{})}
+
+      {:ok, %{action: :started}} ->
         socket =
           socket
           |> assign(:input_value, "")

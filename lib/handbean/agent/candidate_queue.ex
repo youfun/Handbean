@@ -32,6 +32,7 @@ defmodule Handbean.Agent.CandidateQueue do
   def drain_follow_up(server), do: GenServer.call(server, {:drain, :follow_up})
   def seal(server), do: GenServer.call(server, :seal)
   def take_pending_or_seal(server), do: GenServer.call(server, :take_pending_or_seal)
+  def take_next_or_seal(server), do: GenServer.call(server, :take_next_or_seal)
   def has_pending?(server), do: GenServer.call(server, :has_pending?)
   def get_messages(server, timeout \\ 5_000), do: GenServer.call(server, :get_messages, timeout)
 
@@ -140,6 +141,15 @@ defmodule Handbean.Agent.CandidateQueue do
      %{state | steer: :queue.new(), follow_up: :queue.new(), size: 0}}
   end
 
+  def handle_call(:take_next_or_seal, _from, %{size: 0} = state) do
+    {:reply, :sealed, %{state | sealed?: true}}
+  end
+
+  def handle_call(:take_next_or_seal, _from, state) do
+    {deliver_as, item, state} = take_next(state)
+    {:reply, {:pending, deliver_as, item.message}, %{state | size: state.size - 1}}
+  end
+
   def handle_call(:has_pending?, _from, state) do
     {:reply, state.size > 0, state}
   end
@@ -189,6 +199,17 @@ defmodule Handbean.Agent.CandidateQueue do
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
+
+  defp take_next(state) do
+    case :queue.out(state.steer) do
+      {{:value, item}, steer} ->
+        {:steer, item, %{state | steer: steer}}
+
+      {:empty, _steer} ->
+        {{:value, item}, follow_up} = :queue.out(state.follow_up)
+        {:follow_up, item, %{state | follow_up: follow_up}}
+    end
+  end
 
   defp put_persisted_id(item, %{"id" => id}) when is_binary(id),
     do: %{item | message: %{item.message | id: id}}

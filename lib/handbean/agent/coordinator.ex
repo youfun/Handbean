@@ -249,31 +249,109 @@ defmodule Handbean.Agent.Coordinator do
       when is_binary(conversation_id) and
              (is_binary(content) or is_struct(content, Handbean.Agent.Message)) and
              is_binary(display_text) and is_list(opts) do
+    {content, opts} = stamp_message_ids(content, opts)
+
     with :ok <- Handbean.Storage.Health.check_write(),
-         :ok <- validate_conversation_access(conversation_id, opts) do
-      {content, opts} = stamp_message_ids(content, opts)
-      opts = ensure_run_id(opts)
+         :ok <- validate_conversation_access(conversation_id, opts),
+         {:ok, _module} <- Handbean.Agent.CliAgent.Run.validate_input(content, opts),
+         opts <- ensure_run_id(opts) do
+      admit_cli_run(conversation_id, content, display_text, opts, 2)
+    end
+  end
 
-      opts =
-        case Keyword.get(opts, :session_id) do
-          session_id when is_binary(session_id) and session_id != "" ->
-            opts
+  defp admit_cli_run(_conversation_id, _content, _display_text, _opts, 0),
+    do: {:error, :run_in_progress}
 
-          _ ->
-            backend = Keyword.get(opts, :backend)
+  defp admit_cli_run(conversation_id, content, display_text, opts, attempts) do
+    requested_backend = Keyword.get(opts, :backend)
 
-            session_id =
-              Handbean.Agent.CliAgent.Binding.resumable_session_id(
-                conversation_id,
-                backend,
-                opts
-              )
+    case Handbean.Agent.Runner.status(conversation_id) do
+      {:ok,
+       %{
+         running?: true,
+         status: status,
+         loop_owner: :cli_agent,
+         backend: backend
+       } = active}
+      when status in [:starting, :running, :awaiting_approval] and backend == requested_backend ->
+        enqueue_cli_follow_up(conversation_id, content, display_text, opts, attempts, active)
 
-            Keyword.put(opts, :session_id, session_id)
+      {:ok, %{running?: true, status: :cancelling} = active} ->
+        with :ok <- await_run_exit(active[:run_supervisor]) do
+          admit_cli_run(conversation_id, content, display_text, opts, attempts - 1)
         end
 
-      Handbean.Agent.CliAgent.Runner.start(conversation_id, content, display_text, opts)
+      {:ok, %{running?: true}} ->
+        {:error, :run_in_progress}
+
+      {:ok, %{running?: false} = inactive} ->
+        with :ok <- await_run_exit(inactive[:run_supervisor]) do
+          start_or_retry_cli_run(conversation_id, content, display_text, opts, attempts)
+        end
+
+      {:error, :not_found} ->
+        start_or_retry_cli_run(conversation_id, content, display_text, opts, attempts)
+
+      error ->
+        error
     end
+  end
+
+  defp enqueue_cli_follow_up(
+         conversation_id,
+         content,
+         display_text,
+         opts,
+         attempts,
+         active
+       ) do
+    candidate_opts =
+      opts
+      |> Keyword.put(:deliver_as, :follow_up)
+      |> Keyword.put(:expected_run_id, active.run_id)
+      |> Keyword.put(:persist_candidate?, true)
+
+    case enqueue_candidate(conversation_id, content, candidate_opts) do
+      {:error, reason} when reason in [:sealed, :no_active_run, :stale_run] ->
+        with :ok <- await_run_exit(active[:run_supervisor]) do
+          admit_cli_run(conversation_id, content, display_text, opts, attempts - 1)
+        end
+
+      result ->
+        result
+    end
+  end
+
+  defp start_or_retry_cli_run(conversation_id, content, display_text, opts, attempts) do
+    case start_cli_runner(conversation_id, content, display_text, opts) do
+      {:error, :run_in_progress} ->
+        admit_cli_run(conversation_id, content, display_text, opts, attempts - 1)
+
+      result ->
+        result
+    end
+  end
+
+  defp start_cli_runner(conversation_id, content, display_text, opts) do
+    opts =
+      case Keyword.get(opts, :session_id) do
+        session_id when is_binary(session_id) and session_id != "" ->
+          opts
+
+        _ ->
+          backend = Keyword.get(opts, :backend)
+
+          session_id =
+            Handbean.Agent.CliAgent.Binding.resumable_session_id(
+              conversation_id,
+              backend,
+              opts
+            )
+
+          Keyword.put(opts, :session_id, session_id)
+      end
+
+    Handbean.Agent.CliAgent.Runner.start(conversation_id, content, display_text, opts)
   end
 
   @spec enqueue_candidate(String.t(), String.t() | Handbean.Agent.Message.t(), keyword()) ::

@@ -248,6 +248,52 @@ defmodule HandbeanWeb.CliComposerLiveTest do
     assert fresh.private.resumed == nil
   end
 
+  test "a message sent during an active CLI turn runs next in the same session", %{conn: conn} do
+    Registry.register(Handbean.Agent.CliAgentTest.FakeBackend)
+    Application.put_env(:handbean, :fake_cli_notify, self())
+    {:ok, view, _html} = live(conn, "/")
+    select_cli(view, "fake-cli")
+
+    view
+    |> form("#composer", %{message: "slow", cli: "fake-cli", model: "fake-model"})
+    |> render_submit()
+
+    assert_receive {:fake_cli_turn, "slow", first}
+    assert_receive {:fake_cli_waiting, task}
+
+    html =
+      view
+      |> form("#composer", %{
+        message: "follow while running",
+        cli: "fake-cli",
+        model: "fake-model"
+      })
+      |> render_submit()
+
+    refute html =~ "A run is already active in this conversation."
+
+    pending = :sys.get_state(view.pid).socket.assigns.pending_messages
+
+    assert [%{content: "follow while running", deliver_as: :follow_up, status: :queued}] =
+             Map.values(pending)
+
+    send(task, :finish_fake_cli)
+
+    assert_receive {:fake_cli_turn, "follow while running", second}
+    assert second.session_id == first.session_id
+    assert second.private.resumed == first.session_id
+
+    conversation_id = first_conversation_id(view)
+    assert :ok = Handbean.Agent.CliAgent.Runner.await_stop(conversation_id)
+
+    {:ok, entries} = Handbean.ConversationTranscriptStore.list(conversation_id)
+
+    assert Enum.any?(entries, fn entry ->
+             entry["role"] == "user" and entry["content"] == "follow while running" and
+               entry["delivery"] == "follow_up" and entry["consumption"] == "consumed"
+           end)
+  end
+
   test "a CLI permission renders as a pending approval and only an offered option resumes", %{
     conn: conn
   } do

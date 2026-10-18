@@ -79,6 +79,22 @@ defmodule Handbean.Agent.CandidateQueueTest do
       refute CandidateQueue.has_pending?(queue)
     end
 
+    test "atomically takes one pending message before sealing an empty queue" do
+      {:ok, queue} = CandidateQueue.start_link(session_id: "cq-take-next", owner: self())
+
+      assert :ok = CandidateQueue.enqueue(queue, "follow", deliver_as: :follow_up)
+      assert :ok = CandidateQueue.enqueue(queue, "steer", deliver_as: :steer)
+
+      assert {:pending, :steer, %Message{content: "steer"}} =
+               CandidateQueue.take_next_or_seal(queue)
+
+      assert {:pending, :follow_up, %Message{content: "follow"}} =
+               CandidateQueue.take_next_or_seal(queue)
+
+      assert :sealed = CandidateQueue.take_next_or_seal(queue)
+      assert {:error, :sealed} = CandidateQueue.enqueue(queue, "too late")
+    end
+
     test "atomically drains pending messages or seals an empty queue" do
       {:ok, queue} = CandidateQueue.start_link(session_id: "cq-take-or-seal", owner: self())
 
