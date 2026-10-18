@@ -361,7 +361,8 @@ defmodule Handbean.Agent.Delegation do
             report: view.report,
             report_truncated?: view.report_truncated?,
             usage: view.usage,
-            diff_stat: view.diff_stat || session.diff_stat
+            diff_stat: view.diff_stat || session.diff_stat,
+            error: view.error
         }
 
         persist_descriptor(session)
@@ -390,6 +391,7 @@ defmodule Handbean.Agent.Delegation do
           maybe_finish(%{job | reply_to: nil})
 
         {:error, reason} ->
+          report_startup_failure(job, reason)
           close(%{job | reply_to: nil, error: reason}, :startup_failed)
       end
     end)
@@ -531,13 +533,18 @@ defmodule Handbean.Agent.Delegation do
             ref == job.runner_ref ->
               job
 
-            ref == job.starter_ref ->
+            ref == job.starter_ref and not job.started? ->
+              error = {:startup_failed, :starter_down, reason}
+              report_startup_failure(job, error)
               reply_start(job, {:error, "Subagent failed to start"})
-              job = %{job | started?: true, reply_to: nil}
+              job = %{job | started?: true, reply_to: nil, error: error}
 
               if job.status == :running and is_nil(job.runner),
                 do: close(job, :startup_failed),
                 else: maybe_finish(job)
+
+            ref == job.starter_ref ->
+              maybe_finish(job)
 
             ref == job.cleanup_ref and not job.cleaned? ->
               # Cleanup worker failed; the owner retains responsibility.
@@ -603,7 +610,8 @@ defmodule Handbean.Agent.Delegation do
       worktree: nil,
       worktree_base: nil,
       worktree_status: nil,
-      diff_stat: nil
+      diff_stat: nil,
+      error: nil
     }
 
     job =
@@ -630,33 +638,51 @@ defmodule Handbean.Agent.Delegation do
   end
 
   defp start_initial_child(job, context, prompt, owner) do
-    worktree_result =
-      if job.profile.isolation == :worktree,
-        do: Worktree.create(context.working_directory, job.id),
-        else: {:ok, nil}
-
-    with {:ok, worktree} <- worktree_result,
+    with {:ok, worktree} <-
+           startup_step(:worktree, fn ->
+             if job.profile.isolation == :worktree,
+               do: Worktree.create(context.working_directory, job.id),
+               else: {:ok, nil}
+           end),
          workspace = (worktree && worktree.path) || context.working_directory,
          {:ok, _} <-
-           ConversationStore.create(context[:workspace_id],
-             id: job.id,
-             visibility: "internal",
-             parent_conversation_id: context.conversation_id,
-             parent_run_id: context.run_id,
-             parent_tool_call_id: context[:tool_call_id],
-             checkout_path: workspace,
-             title: "Subagent #{job.profile.name}"
-           ),
+           startup_step(:create_conversation, fn ->
+             ConversationStore.create(context[:workspace_id],
+               id: job.id,
+               visibility: "internal",
+               parent_conversation_id: context.conversation_id,
+               parent_run_id: context.run_id,
+               parent_tool_call_id: context[:tool_call_id],
+               checkout_path: workspace,
+               title: "Subagent #{job.profile.name}"
+             )
+           end),
          {:ok, child_opts} <-
-           Policy.child_opts(
-             %{context | working_directory: workspace},
-             job.budget,
-             job.profile,
-             %{mode: job.mode, child_id: job.id}
-           ) do
+           startup_step(:child_opts, fn ->
+             Policy.child_opts(
+               %{context | working_directory: workspace},
+               job.budget,
+               job.profile,
+               %{mode: job.mode, child_id: job.id}
+             )
+           end) do
       send(owner, {:prepared, job.id, child_opts, worktree})
-      Coordinator.add_message(job.id, prompt, child_opts ++ run_opts(job, owner))
+
+      startup_step(:add_message, fn ->
+        Coordinator.add_message(job.id, prompt, child_opts ++ run_opts(job, owner))
+      end)
     end
+  end
+
+  defp startup_step(stage, fun) when is_atom(stage) and is_function(fun, 0) do
+    case fun.() do
+      {:error, reason} -> {:error, {:startup_failed, stage, reason}}
+      result -> result
+    end
+  rescue
+    exception -> {:error, {:startup_failed, stage, {exception, __STACKTRACE__}}}
+  catch
+    kind, reason -> {:error, {:startup_failed, stage, {kind, reason, __STACKTRACE__}}}
   end
 
   defp start_follow_up(state, session, text, opts, from) do
@@ -724,7 +750,8 @@ defmodule Handbean.Agent.Delegation do
         run_id: job.run_id,
         runs: session.runs + 1,
         report: "",
-        report_truncated?: false
+        report_truncated?: false,
+        error: nil
     }
 
     {:noreply, state |> put_session(session) |> put_job(job)}
@@ -1081,6 +1108,7 @@ defmodule Handbean.Agent.Delegation do
       report_truncated?: job.truncated?,
       usage: job.usage,
       diff_stat: job.diff && job.diff.stat,
+      error: public_error(job.error),
       text: report_text(job)
     }
   end
@@ -1155,7 +1183,7 @@ defmodule Handbean.Agent.Delegation do
       report_truncated?: job.truncated?,
       usage_complete?: status in [:completed, "completed"]
     }
-    |> put_if(job.error, :error, fn e -> if is_binary(e), do: e, else: inspect(e) end)
+    |> put_if(public_error(job.error), :error, & &1)
     |> put_if(job.diff, :diff_stat, & &1.stat)
     |> put_if(job.diff, :worktree_base, & &1.base)
   end
@@ -1178,6 +1206,8 @@ defmodule Handbean.Agent.Delegation do
       diff_stat: session.diff_stat
     }
 
+    base = put_if(base, (job && public_error(job.error)) || session.error, :error, & &1)
+
     if Keyword.get(opts, :report, false) do
       Map.merge(base, %{report: session.report, report_truncated?: session.report_truncated?})
     else
@@ -1197,7 +1227,7 @@ defmodule Handbean.Agent.Delegation do
   end
 
   defp publish_end(job) do
-    publish(job, :subagent_end, %{
+    payload = %{
       tool_use_id: job.tool_call_id,
       child_conversation_id: job.id,
       child_run_id: job.run_id,
@@ -1206,8 +1236,80 @@ defmodule Handbean.Agent.Delegation do
       status: job.status,
       usage: job.usage,
       report: job.text
-    })
+    }
+
+    publish(job, :subagent_end, put_if(payload, public_error(job.error), :error, & &1))
   end
+
+  defp report_startup_failure(job, reason) do
+    stage = startup_stage(reason)
+    message = public_error(reason)
+
+    Logger.warning(
+      "[Delegation] subagent startup failed parent=#{job.parent_id} " <>
+        "parent_run=#{job.parent_run_id} child=#{job.id} child_run=#{job.run_id} " <>
+        "type=#{job.profile.name} mode=#{job.mode} stage=#{stage}: #{message}"
+    )
+
+    ErrorReporter.report(
+      startup_reason(reason),
+      %{
+        "source" => "delegation",
+        "conversation_id" => job.parent_id,
+        "run_id" => job.parent_run_id,
+        "child_conversation_id" => job.id,
+        "child_run_id" => job.run_id,
+        "subagent_type" => job.profile.name,
+        "subagent_mode" => job.mode,
+        "startup_stage" => stage
+      },
+      failure_class: :subagent_startup_failed
+    )
+  end
+
+  defp startup_stage({:startup_failed, stage, _reason}) when is_atom(stage), do: stage
+  defp startup_stage(_reason), do: :unknown
+
+  defp startup_reason({:startup_failed, _stage, reason}), do: startup_reason(reason)
+
+  defp startup_reason({exception, stacktrace}) when is_exception(exception),
+    do: {exception, stacktrace}
+
+  defp startup_reason({_kind, reason, _stacktrace}), do: reason
+  defp startup_reason(reason), do: reason
+
+  defp public_error(nil), do: nil
+
+  defp public_error({:startup_failed, stage, reason}) do
+    "Subagent failed to start during #{stage}: #{public_error_reason(reason)}"
+  end
+
+  defp public_error(reason), do: public_error_reason(reason)
+
+  defp public_error_reason(reason) do
+    case Handbean.Storage.ErrorClassifier.classify(reason) do
+      :busy ->
+        "Local database was busy"
+
+      category when category in [:full, :ioerr, :corrupt] ->
+        "Local storage was unavailable (#{category})"
+
+      _ ->
+        reason
+        |> render_public_error()
+        |> Handbean.Log.Redactor.redact()
+        |> String.slice(0, 500)
+    end
+  end
+
+  defp render_public_error(reason) when is_binary(reason), do: reason
+  defp render_public_error(reason) when is_atom(reason), do: Atom.to_string(reason)
+
+  defp render_public_error({exception, _stacktrace}) when is_exception(exception),
+    do: Exception.message(exception)
+
+  defp render_public_error({_kind, reason, _stacktrace}), do: render_public_error(reason)
+  defp render_public_error(reason), do: inspect(reason, limit: 20, printable_limit: 500)
 
   defp progress(job, tool) do
     t = now()

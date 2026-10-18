@@ -576,25 +576,42 @@ defmodule Handbean.ConversationStore do
         updated_at: timestamp
       }
 
-      Repo.transaction(fn ->
-        row =
-          %Conversation{}
-          |> Changeset.cast(attrs, [:id | @metadata_fields])
-          |> Repo.insert!()
+      result =
+        Repo.transaction(fn ->
+          row =
+            %Conversation{}
+            |> Changeset.cast(attrs, [:id | @metadata_fields])
+            |> Repo.insert!()
 
-        editor = %{
-          "editor_files" => Keyword.get(opts, :editor_files, []),
-          "active_file" => Keyword.get(opts, :active_file),
-          "file_preview_error" => Keyword.get(opts, :file_preview_error)
-        }
+          editor = %{
+            "editor_files" => Keyword.get(opts, :editor_files, []),
+            "active_file" => Keyword.get(opts, :active_file),
+            "file_preview_error" => Keyword.get(opts, :file_preview_error)
+          }
 
-        :ok = save_files(row.id, editor)
+          editor_attrs = insert_initial_editor_state!(row.id, editor)
+          timeline = Keyword.get(opts, :timeline, [])
 
-        timeline = Keyword.get(opts, :timeline, [])
-        ensure_transaction!(Handbean.ConversationTranscriptStore.replace_all(row.id, timeline))
-        conversation_map(row, include_timeline?: true)
-      end)
-      |> unwrap_transaction()
+          if timeline != [] do
+            ensure_transaction!(
+              Handbean.ConversationTranscriptStore.replace_all(row.id, timeline)
+            )
+          end
+
+          {row, editor_attrs, timeline == []}
+        end)
+        |> unwrap_transaction()
+
+      case result do
+        {:ok, {row, editor_attrs, true}} ->
+          {:ok, new_conversation_map(row, editor_attrs)}
+
+        {:ok, {row, _editor_attrs, false}} ->
+          {:ok, conversation_map(row, include_timeline?: true)}
+
+        {:error, _reason} = error ->
+          error
+      end
     end
   rescue
     error in Ecto.ConstraintError -> {:error, constraint_reason(error)}
@@ -718,9 +735,21 @@ defmodule Handbean.ConversationStore do
     |> Map.put("timeline", timeline)
   end
 
-  defp metadata_map(row) do
-    usage = usage_metadata(row.id)
+  defp new_conversation_map(row, editor_attrs) do
+    row
+    |> base_metadata_map()
+    |> Map.merge(empty_usage_metadata())
+    |> Map.merge(editor_map(editor_attrs))
+    |> Map.put("timeline", [])
+  end
 
+  defp metadata_map(row) do
+    row
+    |> base_metadata_map()
+    |> Map.merge(usage_metadata(row.id))
+  end
+
+  defp base_metadata_map(row) do
     %{
       "id" => row.id,
       "scope" => row.scope,
@@ -742,7 +771,6 @@ defmodule Handbean.ConversationStore do
       "created_at" => iso8601(row.created_at),
       "updated_at" => iso8601(row.updated_at)
     }
-    |> Map.merge(usage)
   end
 
   defp summary_map(row) do
@@ -836,6 +864,23 @@ defmodule Handbean.ConversationStore do
 
   defp immutable_checkout_path(_existing, _incoming, _scope), do: nil
 
+  defp insert_initial_editor_state!(conversation_id, files_data) do
+    attrs = editor_attrs(conversation_id, files_data)
+
+    %ConversationEditorState{}
+    |> Changeset.cast(attrs, [
+      :conversation_id,
+      :editor_files,
+      :active_file,
+      :file_preview_error,
+      :inserted_at,
+      :updated_at
+    ])
+    |> Repo.insert!()
+
+    attrs
+  end
+
   defp editor_attrs(id, files_data) do
     %{
       conversation_id: id,
@@ -907,6 +952,15 @@ defmodule Handbean.ConversationStore do
       from usage in ConversationRunUsage,
         where: usage.conversation_id == ^conversation_id and usage.source == ^source
     )
+  end
+
+  defp empty_usage_metadata do
+    %{
+      "token_usage" => atom_usage_to_string(empty_token_usage()),
+      "run_usage" => %{},
+      "usage_legacy" => atom_usage_to_string(empty_token_usage()),
+      "delegated_usage" => %{}
+    }
   end
 
   defp usage_metadata(conversation_id) do

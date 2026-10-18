@@ -21,6 +21,7 @@ defmodule Handbean.Agent.ErrorReporter do
     run_inactivity_timeout
     run_tree_exit
     inbound_persist_failed
+    subagent_startup_failed
     subagent_stopped
     tool_error
     agent_error

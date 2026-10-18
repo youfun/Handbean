@@ -219,6 +219,98 @@ defmodule Handbean.Agent.DelegationTest do
              7
   end
 
+  test "parallel background researchers all provision and persist one inbound", %{
+    context: context
+  } do
+    results =
+      1..4
+      |> Task.async_stream(
+        fn index ->
+          Handbean.Tool.Builtin.Task.execute(
+            %{
+              "task" => "Find evidence #{index}",
+              "criteria" => "Return one line",
+              "background" => true
+            },
+            %{context | tool_call_id: "parallel-task-#{index}"}
+          )
+        end,
+        max_concurrency: 4,
+        ordered: false,
+        timeout: 5_000
+      )
+      |> Enum.map(fn {:ok, {:ok, _ack, details}} -> details end)
+
+    assert length(results) == 4
+    assert Enum.all?(results, &(&1.status == :running))
+    assert length(Enum.uniq_by(results, & &1.child_conversation_id)) == 4
+
+    children =
+      for _ <- 1..4 do
+        assert_receive {:provider, :child, child, _, _, _}, 5_000
+        child
+      end
+
+    refs = Enum.map(children, &{Process.monitor(&1), &1})
+    Enum.each(children, &send(&1, :finish))
+
+    for {ref, child} <- refs do
+      assert_receive {:DOWN, ^ref, :process, ^child, _}, 5_000
+    end
+
+    ids = MapSet.new(results, & &1.child_conversation_id)
+
+    assert_eventually(fn ->
+      assert {:ok, sessions} = Delegation.status(context.conversation_id, :list)
+
+      completed =
+        sessions
+        |> Enum.filter(&MapSet.member?(ids, &1.child_conversation_id))
+        |> Enum.filter(&(&1.status in [:completed, "completed"]))
+
+      assert length(completed) == 4
+    end)
+
+    internal_ids =
+      ConversationStore.list(include_internal?: true)
+      |> Enum.filter(&ConversationStore.internal?/1)
+      |> MapSet.new(& &1["id"])
+
+    assert MapSet.subset?(ids, internal_ids)
+
+    for id <- ids do
+      assert {:ok, entries} =
+               Handbean.ConversationTranscriptStore.list(id, access_context: context)
+
+      inbound = Enum.filter(entries, &(&1["role"] == "user"))
+      assert [%{"sequence" => 1}] = inbound
+    end
+  end
+
+  test "startup failures retain a sanitized stage-specific error", %{context: context} do
+    missing = Path.join(context.working_directory, "missing-checkout")
+
+    task =
+      Task.async(fn ->
+        Handbean.Tool.Builtin.Task.execute(
+          %{"task" => "Fail before launch", "criteria" => "Expose the startup reason"},
+          %{context | working_directory: missing}
+        )
+      end)
+
+    assert {:ok, _text, %{child_conversation_id: child_id, status: :running}} =
+             Task.await(task, 5_000)
+
+    assert_eventually(fn ->
+      assert {:ok, %{status: :startup_failed, error: error}} =
+               Delegation.status(context.conversation_id, :get, child_id)
+
+      assert error =~ "create_conversation"
+      assert error =~ "invalid_checkout_path"
+      refute error =~ missing
+    end)
+  end
+
   test "shorter deadline stops provider and Runner before returning", %{context: context} do
     task = delegate(%{context | tool_timeout: 4_000})
     assert_receive {:provider, :child, child, _, _, _}, 2_000
@@ -587,5 +679,16 @@ defmodule Handbean.Agent.DelegationTest do
 
       assert Enum.all?(children, &(&1.restart == :temporary))
     end
+  end
+
+  defp assert_eventually(fun, attempts \\ 50)
+  defp assert_eventually(fun, 0), do: fun.()
+
+  defp assert_eventually(fun, attempts) do
+    fun.()
+  rescue
+    ExUnit.AssertionError ->
+      Process.sleep(20)
+      assert_eventually(fun, attempts - 1)
   end
 end
