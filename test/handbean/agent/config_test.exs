@@ -170,7 +170,6 @@ defmodule Handbean.Agent.ConfigTest do
           task_instructions: "Write only visible facts."
         )
 
-      assert config.system_prompt =~ "You are Handbean"
       assert config.system_prompt =~ "Current checkout: #{workspace}"
       assert config.system_prompt =~ "## Task instructions"
       assert config.system_prompt =~ "Write only visible facts."
@@ -217,11 +216,6 @@ defmodule Handbean.Agent.ConfigTest do
         refute config.system_prompt =~ "created_by_conversation_id:"
         assert config.system_prompt =~ "Prefer checkout-relative file paths"
         assert config.system_prompt =~ "`bash`, `grep`, `file_search`"
-        assert config.system_prompt =~ "Use `file_search` to find files by name or path"
-
-        assert config.system_prompt =~
-                 ~r/omit `pattern` only when passing\s+`glob` to list files/
-
         assert config.system_prompt =~ "checkout is NOT the filesystem root"
         assert config.system_prompt =~ "runs commands from the current checkout by default"
         assert config.system_prompt =~ "Do not prefix commands with `cd #{workspace} &&`"

@@ -581,6 +581,8 @@ defmodule Handbean.Agent.Config do
     """
     You are Handbean, an AI coding assistant. You help users by reading files,
     executing commands, editing code, and writing new files.
+    When writing or editing code, follow the idiomatic style of the target
+    language and its ecosystem.
 
     ## Workflow
 
