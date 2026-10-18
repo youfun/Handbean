@@ -76,6 +76,48 @@ defmodule Handbean.Agent.ErrorReporterTest do
     assert Repo.aggregate(Occurrence, :count) == 0
   end
 
+  test "classifies only explicit or normalized recoverable tool failures as expected" do
+    assert {:expected, "text_not_found"} =
+             ErrorReporter.tool_failure_disposition(
+               "edit #1: Could not find text. Re-read and retry.",
+               %{}
+             )
+
+    assert {:expected, "invalid_arguments"} =
+             ErrorReporter.tool_failure_disposition("file_path is required", %{})
+
+    assert {:expected, "file_not_found"} =
+             ErrorReporter.tool_failure_disposition("File not found: /tmp/missing", %{})
+
+    assert {:expected, "path_not_allowed"} =
+             ErrorReporter.tool_failure_disposition(
+               "Path traversal blocked: /tmp/private is outside workspace",
+               %{}
+             )
+
+    assert {:expected, _category} =
+             ErrorReporter.tool_failure_disposition("arbitrary message", %{code: :input_rejected})
+
+    assert {:expected, _category} =
+             ErrorReporter.tool_failure_disposition("arbitrary message", %{permission: :denied})
+
+    assert {:report, "unexpected_bridge_state"} =
+             ErrorReporter.tool_failure_disposition("unexpected bridge state", %{})
+
+    assert {:report, "capability_unavailable"} =
+             ErrorReporter.tool_failure_disposition("internal task service unavailable", %{})
+
+    assert {:report, "failed_with_redacted"} =
+             ErrorReporter.tool_failure_disposition(
+               "failed with api-key-secret",
+               %{},
+               %{api_key: "api-key-secret"}
+             )
+
+    assert {:report, _category} =
+             ErrorReporter.tool_failure_disposition("unknown failure", %{code: :new_unknown_code})
+  end
+
   test "separates tool reason categories while grouping dynamic details" do
     context = %{"source" => "agent_tool", "tool" => "read_thread"}
 

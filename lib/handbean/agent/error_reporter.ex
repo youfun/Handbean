@@ -35,6 +35,37 @@ defmodule Handbean.Agent.ErrorReporter do
     provider_error
   )a
 
+  @expected_tool_codes ~w(
+    capability_unavailable
+    cursor_invalid
+    input_rejected
+    invalid_arguments
+    invalid_retry
+    not_accessible
+    not_found
+    permission_denied
+    retry_not_found
+    stale_or_invalid_cursor
+    text_not_found
+  )a
+
+  @expected_tool_reason_categories ~w(
+    chunk_not_found
+    dependency_not_installed
+    error_not_found
+    file_not_found
+    id_is_required
+    invalid_arguments
+    invalid_error_tracker_cursor
+    no_such_file
+    not_accessible
+    path_not_allowed
+    permission_denied
+    stale_or_invalid_cursor
+    subagent_not_found
+    text_not_found
+  )
+
   @sensitive_keys MapSet.new(~w(
     api_key apikey token authorization cookie secret password pass openai_api_key
   ))
@@ -44,7 +75,11 @@ defmodule Handbean.Agent.ErrorReporter do
     if reportable?(reason) do
       provider_config = Keyword.get(opts, :provider_config) || %{}
       failure_class = failure_class(reason, Keyword.get(opts, :failure_class))
-      reason_category = reason_category(reason, safe_reason(reason, provider_config))
+
+      reason_category =
+        Keyword.get_lazy(opts, :reason_category, fn ->
+          reason_category(reason, safe_reason(reason, provider_config))
+        end)
 
       context =
         context
@@ -60,6 +95,26 @@ defmodule Handbean.Agent.ErrorReporter do
     _ -> :ok
   catch
     _, _ -> :ok
+  end
+
+  @doc "Classifies a failed tool result without changing the model-facing failure."
+  @spec tool_failure_disposition(term(), map() | nil, map()) ::
+          {:expected | :report, String.t()}
+  def tool_failure_disposition(reason, metadata \\ %{}, provider_config \\ %{}) do
+    metadata = metadata || %{}
+    code = field(metadata, :code)
+    permission = field(metadata, :permission)
+    category = reason_category(reason, safe_reason(reason, provider_config))
+
+    disposition =
+      cond do
+        permission in [:denied, "denied"] -> :expected
+        expected_tool_code?(code) -> :expected
+        category in @expected_tool_reason_categories -> :expected
+        true -> :report
+      end
+
+    {disposition, category}
   end
 
   defp reportable?(reason) do
@@ -179,6 +234,12 @@ defmodule Handbean.Agent.ErrorReporter do
     end
   end
 
+  defp expected_tool_code?(code) when is_binary(code) do
+    Enum.any?(@expected_tool_codes, &(Atom.to_string(&1) == code))
+  end
+
+  defp expected_tool_code?(code), do: code in @expected_tool_codes
+
   defp contains?(text, markers), do: Enum.any?(markers, &String.contains?(text, &1))
 
   defp exception_reason?({%_{} = exception, stacktrace}),
@@ -241,8 +302,22 @@ defmodule Handbean.Agent.ErrorReporter do
       match = Regex.run(~r/http status\s+(\d{3})/, first_line) ->
         "http_status_#{Enum.at(match, 1)}"
 
-      String.contains?(first_line, "no such file") ->
-        "no_such_file"
+      String.contains?(first_line, ["no such file", "file not found"]) ->
+        "file_not_found"
+
+      String.contains?(first_line, [
+        "permission denied",
+        "read-only file",
+        "parent directory not writeable",
+        "sensitive path blocked"
+      ]) ->
+        "permission_denied"
+
+      String.contains?(first_line, "path traversal blocked") ->
+        "path_not_allowed"
+
+      Regex.match?(~r/\b(?:is|are) required\b/, first_line) ->
+        "invalid_arguments"
 
       String.contains?(first_line, "no subagent") ->
         "subagent_not_found"

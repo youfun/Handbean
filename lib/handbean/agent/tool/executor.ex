@@ -198,7 +198,10 @@ defmodule Handbean.Agent.Tool.Executor do
             end)
 
             result_to_block(
-              Result.error(failure_content("Tool execution timed out", tool_fns, tool_name)),
+              Result.error(
+                failure_content("Tool execution timed out", tool_fns, tool_name),
+                %{code: :tool_timeout, side_effect: :unknown}
+              ),
               tool_id
             )
         end)
@@ -345,7 +348,8 @@ defmodule Handbean.Agent.Tool.Executor do
 
         {result_to_block(
            Result.error(
-             failure_content("Tool execution failed: #{inspect(reason)}", tool_fns, tool_name)
+             failure_content("Tool execution failed: #{inspect(reason)}", tool_fns, tool_name),
+             %{code: :tool_task_exit, side_effect: :unknown}
            ),
            tool_id
          ), nil}
@@ -362,7 +366,8 @@ defmodule Handbean.Agent.Tool.Executor do
                "Tool execution timed out after #{div(guard_ms, 1000)}s",
                tool_fns,
                tool_name
-             )
+             ),
+             %{code: :tool_timeout, side_effect: :unknown}
            ),
            tool_id
          ), nil}
@@ -578,7 +583,8 @@ defmodule Handbean.Agent.Tool.Executor do
           "Tool returned an unexpected result: #{inspect(other, limit: 5)}",
           tool_fns,
           name
-        )
+        ),
+        %{code: :tool_protocol_error, side_effect: :unknown}
       )
 
   defp project_result(%Result{} = result, context) do
@@ -723,7 +729,8 @@ defmodule Handbean.Agent.Tool.Executor do
         if Handbean.Threads.Collaboration.tool_allowed?(name, context) do
           entry.executor.(input || %{}, Map.put(context, :tool_call_id, id))
         else
-          {:error, "Delegated thread is read-only; tool execution denied"}
+          {:error, "Delegated thread is read-only; tool execution denied",
+           %{code: :permission_denied, permission: :denied, side_effect: :not_started}}
         end
 
       outcome
@@ -737,7 +744,10 @@ defmodule Handbean.Agent.Tool.Executor do
           msg <> "\n" <> Exception.format(:error, exception, __STACKTRACE__)
         end)
 
-        Result.error(failure_content(msg, tool_fns, name))
+        Result.error(failure_content(msg, tool_fns, name), %{
+          code: :tool_exception,
+          side_effect: :unknown
+        })
     end
   end
 
@@ -747,7 +757,7 @@ defmodule Handbean.Agent.Tool.Executor do
 
     dev_log("[Executor] unknown tool call raw=#{inspect(%{id: id, name: name, input: input})}")
 
-    Result.error(msg)
+    Result.error(msg, %{code: :unknown_tool, side_effect: :not_started})
   end
 
   defp authorize_nested(name, tool_fns, context, state) do
@@ -838,9 +848,23 @@ defmodule Handbean.Agent.Tool.Executor do
     end
   end
 
-  defp report_tool_error(call, %{is_error: true, content: reason}, context) do
+  defp report_tool_error(call, %{is_error: true, content: reason} = block, context) do
+    details = block[:details] || %{}
     run_opts = context[:thread_run_opts] || []
+    provider_config = run_opts[:provider_config] || %{}
 
+    case ErrorReporter.tool_failure_disposition(reason, details, provider_config) do
+      {:expected, _reason_category} ->
+        :ok
+
+      {:report, reason_category} ->
+        report_tool_failure(call, reason, reason_category, details, context, run_opts)
+    end
+  end
+
+  defp report_tool_error(_call, _block, _context), do: :ok
+
+  defp report_tool_failure(call, reason, reason_category, details, context, run_opts) do
     ErrorReporter.report(
       reason,
       %{
@@ -852,15 +876,15 @@ defmodule Handbean.Agent.Tool.Executor do
         "model" => run_opts[:model],
         "tool" => SafeMap.get_any(call, :name, "name"),
         "tool_call_id" => SafeMap.get_any(call, :id, "id"),
-        "parent_tool_call_id" => context[:parent_tool_call_id]
+        "parent_tool_call_id" => context[:parent_tool_call_id],
+        "tool_error_code" => detail_value(details, :code, nil)
       },
       failure_class: :tool_error,
+      reason_category: reason_category,
       provider: run_opts[:provider],
       provider_config: run_opts[:provider_config]
     )
   end
-
-  defp report_tool_error(_call, _block, _context), do: :ok
 
   defp build_context(%State{} = state, opts) do
     state
