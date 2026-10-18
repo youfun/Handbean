@@ -196,16 +196,34 @@ defmodule HandbeanWeb.WorkspaceLive.Composer do
 
   def resend_error(reason), do: outbound_error(reason)
 
-  def attachment_url(%{url: url}) when is_binary(url) and url != "", do: url
-  def attachment_url(%{"url" => url}) when is_binary(url) and url != "", do: url
+  def attachment_url(attachment) when is_map(attachment) do
+    conversation_id =
+      Handbean.Utils.SafeMap.get_any(attachment, "conversation_id", :conversation_id)
 
-  def attachment_url(%{data: data, mime_type: type}) when is_binary(data),
-    do: "data:#{type || "image/png"};base64,#{data}"
+    media_id = Handbean.Utils.SafeMap.get_any(attachment, "media_id", :media_id)
 
-  def attachment_url(%{"data" => data, "mime_type" => type}) when is_binary(data),
-    do: "data:#{type || "image/png"};base64,#{data}"
+    if is_binary(conversation_id) and conversation_id != "" and is_binary(media_id) and
+         media_id != "" do
+      "/media/#{encode_path_segment(conversation_id)}/#{encode_path_segment(media_id)}/content"
+    else
+      legacy_attachment_url(attachment)
+    end
+  end
 
   def attachment_url(_), do: "#"
+
+  defp legacy_attachment_url(%{url: url}) when is_binary(url) and url != "", do: url
+  defp legacy_attachment_url(%{"url" => url}) when is_binary(url) and url != "", do: url
+
+  defp legacy_attachment_url(%{data: data, mime_type: type}) when is_binary(data),
+    do: "data:#{type || "image/png"};base64,#{data}"
+
+  defp legacy_attachment_url(%{"data" => data, "mime_type" => type}) when is_binary(data),
+    do: "data:#{type || "image/png"};base64,#{data}"
+
+  defp legacy_attachment_url(_), do: "#"
+
+  defp encode_path_segment(segment), do: URI.encode(segment, &URI.char_unreserved?/1)
 
   def attachment_filename(%{filename: filename}) when is_binary(filename), do: filename
   def attachment_filename(%{"filename" => filename}) when is_binary(filename), do: filename

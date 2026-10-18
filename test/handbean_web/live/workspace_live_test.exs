@@ -830,6 +830,143 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
       assert rendered_after =~ "New question"
     end
 
+    test "renders role-neutral user and assistant attachments without an empty assistant bubble",
+         %{
+           conn: conn
+         } do
+      conversation_id = "conv-assistant-media"
+      media_url = "/media/#{conversation_id}/media-generated/content"
+      data_url = "data:image/png;base64,iVBORw0KGgo="
+
+      assistant_attachments = [
+        %{
+          "media_id" => "media-generated",
+          "conversation_id" => conversation_id,
+          "kind" => "image",
+          "mime_type" => "image/png",
+          "filename" => "generated.png"
+        },
+        %{
+          "kind" => "image",
+          "mime_type" => "image/png",
+          "filename" => "legacy-data.png",
+          "data" => "iVBORw0KGgo="
+        },
+        %{
+          "kind" => "text",
+          "filename" => "notes.txt",
+          "url" => "/uploads/legacy-notes.txt"
+        }
+      ]
+
+      {:ok, conversation} =
+        Handbean.ConversationStore.create("default",
+          id: conversation_id,
+          title: "Assistant media",
+          timeline: [
+            %{
+              "id" => "user-legacy-media",
+              "content_type" => "user_msg",
+              "role" => "user",
+              "content" => "",
+              "attachments" => [
+                %{
+                  "kind" => "image",
+                  "filename" => "legacy-user.png",
+                  "url" => "/uploads/legacy-user.png"
+                }
+              ]
+            },
+            %{
+              "id" => "assistant-media",
+              "content_type" => "assistant_msg",
+              "role" => "assistant",
+              "content" => "",
+              "attachments" => assistant_attachments
+            },
+            %{
+              "id" => "assistant-text",
+              "content_type" => "assistant_msg",
+              "role" => "assistant",
+              "content" => "Rendered reply"
+            }
+          ]
+        )
+
+      {:ok, view, _html} = live(conn, "/w/default/c/#{conversation["id"]}")
+
+      :sys.replace_state(view.pid, fn %{socket: socket} = state ->
+        timeline =
+          Enum.map(socket.assigns.timeline, fn
+            %{"id" => "assistant-media"} = entry ->
+              Map.put(entry, "attachments", assistant_attachments)
+
+            entry ->
+              entry
+          end)
+
+        socket =
+          socket
+          |> Phoenix.Component.assign(:timeline, timeline)
+          |> Phoenix.LiveView.stream(:timeline, timeline, reset: true)
+
+        %{state | socket: socket}
+      end)
+
+      render_click(view, "clear_composer_error", %{})
+
+      assert has_element?(
+               view,
+               "[data-user-msg='user-legacy-media'] .msg-shot[data-shot-src='/uploads/legacy-user.png'] img[alt='legacy-user.png']"
+             )
+
+      assert has_element?(view, "[data-assistant-msg='assistant-media']")
+
+      assert has_element?(
+               view,
+               "[data-assistant-msg='assistant-media'] .msg-shot[data-shot-name='generated.png'][title='generated.png'][aria-label] img[alt='generated.png']"
+             )
+
+      assert has_element?(
+               view,
+               "[data-assistant-msg='assistant-media'] .msg-shot[data-shot-src='#{media_url}'] img[src='#{media_url}']"
+             )
+
+      assert has_element?(
+               view,
+               "[data-assistant-msg='assistant-media'] .msg-shot[data-shot-src='#{data_url}'] img[src='#{data_url}'][alt='legacy-data.png']"
+             )
+
+      assert has_element?(
+               view,
+               "[data-assistant-msg='assistant-media'] a.msg-file[href='/uploads/legacy-notes.txt'][target='_blank'][rel='noreferrer']",
+               "notes.txt"
+             )
+
+      refute has_element?(view, "[data-assistant-msg='assistant-media'] .msg-bubble")
+      refute has_element?(view, "[data-assistant-msg='assistant-media'] .msg-copy-btn")
+
+      refute has_element?(
+               view,
+               "[data-assistant-msg='assistant-media'] [phx-hook='StreamingMarkdown']"
+             )
+
+      assert has_element?(
+               view,
+               "[data-assistant-msg='assistant-text'] [phx-hook='StreamingMarkdown']"
+             )
+
+      assert has_element?(view, "[data-assistant-msg='assistant-text'] .msg-copy-btn")
+
+      assert {:ok, transcript} =
+               Handbean.ConversationTranscriptStore.list(conversation["id"])
+
+      persisted = Enum.find(transcript, &(&1["id"] == "assistant-media"))
+      media_descriptor = hd(persisted["attachments"])
+      assert media_descriptor["media_id"] == "media-generated"
+      refute Map.has_key?(media_descriptor, "url")
+    end
+
     test "pages long history backward without losing newly appended messages", %{conn: conn} do
       timeline =
         for index <- 1..250 do

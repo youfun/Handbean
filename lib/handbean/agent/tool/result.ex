@@ -26,7 +26,8 @@ defmodule Handbean.Agent.Tool.Result do
           side_effect: side_effect(),
           recovery: map() | atom() | nil,
           artifacts: [map()],
-          images: [map()]
+          images: [map()],
+          published_media: [map()]
         }
 
   defstruct [
@@ -39,7 +40,8 @@ defmodule Handbean.Agent.Tool.Result do
     status: :succeeded,
     side_effect: :unknown,
     artifacts: [],
-    images: []
+    images: [],
+    published_media: []
   ]
 
   @doc """
@@ -94,7 +96,8 @@ defmodule Handbean.Agent.Tool.Result do
       side_effect: Keyword.get(opts, :side_effect, :unknown),
       recovery: Keyword.get(opts, :recovery),
       artifacts: Keyword.get(opts, :artifacts, []),
-      images: Keyword.get(opts, :images, [])
+      images: Keyword.get(opts, :images, []),
+      published_media: Keyword.get(opts, :published_media, [])
     }
   end
 

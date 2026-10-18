@@ -263,19 +263,85 @@ defmodule HandbeanProbe.NativeTimeline do
           body |> String.replace(~r/\s+/u, " ") |> String.trim() |> String.slice(0, 80)
       )
     else
-      node(:column, [fill_width: true, padding_top: 12, padding_bottom: 20], [
-        if(role != "assistant",
-          do: text(gettext("System"), text_size: 11, text_color: color(:hint))
-        ),
+      if role == "assistant" do
+        assistant_entry(entry, body)
+      else
+        node(:column, [fill_width: true, padding_top: 12, padding_bottom: 20], [
+          text(gettext("System"), text_size: 11, text_color: color(:hint)),
+          text(body, id: entry["id"], selectable: true)
+        ])
+      end
+    end
+  end
+
+  defp assistant_entry(entry, body) do
+    body_node =
+      if is_binary(body) and String.trim(body) != "" do
         text(body,
           id: entry["id"],
           selectable: true,
-          markdown: role == "assistant",
+          markdown: true,
           markdown_streaming: entry["streaming"] == true
         )
-      ])
+      end
+
+    media_nodes =
+      entry["attachments"]
+      |> List.wrap()
+      |> Enum.map(&Payload.attachment/1)
+      |> Enum.filter(&public_media?/1)
+      |> Enum.map(&assistant_media_card/1)
+
+    case [body_node | media_nodes] |> Enum.reject(&is_nil/1) do
+      [] -> nil
+      children -> node(:column, [fill_width: true, padding_top: 12, padding_bottom: 20], children)
     end
   end
+
+  defp public_media?(attachment) do
+    case attachment["media_id"] do
+      media_id when is_binary(media_id) -> String.trim(media_id) != ""
+      _ -> false
+    end
+  end
+
+  defp assistant_media_card(attachment) do
+    name = display_metadata(attachment["filename"]) || gettext("Attachment")
+
+    details =
+      [display_metadata(attachment["mime_type"]), media_size(attachment["size_bytes"])]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.join(" · ")
+
+    node(
+      :column,
+      [
+        fill_width: true,
+        background: color(:card),
+        border_color: color(:border),
+        border_width: 1,
+        corner_radius: 10,
+        padding: 10
+      ],
+      [
+        text(gettext("Attachment"), text_size: 11, text_color: color(:hint)),
+        text(name, text_size: 13, weight: 1),
+        if(details != "", do: text(details, text_size: 11, text_color: color(:muted)))
+      ]
+    )
+  end
+
+  defp display_metadata(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
+  defp display_metadata(_), do: nil
+
+  defp media_size(size) when is_integer(size) and size >= 0, do: "#{size} B"
+  defp media_size(_), do: nil
 
   defp summary(entry) when is_map(entry) do
     # Hug the summary. A full-width row would park the chevron on the far edge.

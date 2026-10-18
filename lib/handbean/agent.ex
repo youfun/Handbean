@@ -227,6 +227,7 @@ defmodule Handbean.Agent do
       Handbean.Tool.Builtin.WebFetch,
       Handbean.Tool.Builtin.Browser,
       Handbean.Tool.Builtin.OpenUrl,
+      Handbean.Tool.Builtin.PublishMedia,
       Handbean.Tool.Memory.MemAssociate,
       Handbean.Tool.Memory.MemForget,
       Handbean.Tool.Memory.MemLearn,

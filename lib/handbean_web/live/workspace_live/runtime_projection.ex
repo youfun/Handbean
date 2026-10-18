@@ -581,6 +581,7 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
       socket
       |> assign(:tools_active, tools_active)
       |> project_timeline(entry, persist?: false)
+      |> maybe_project_published_media(payload, status)
       |> EditorProjection.maybe_add_diff_file(
         file_path,
         diff_lines,
@@ -593,6 +594,37 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
       updated
     end
   end
+
+  defp maybe_project_published_media(socket, payload, :done) do
+    media =
+      payload
+      |> payload_value(:published_media, [])
+      |> Handbean.Media.project()
+
+    tool_use_id = payload_value(payload, :tool_use_id)
+
+    if media != [] and is_binary(tool_use_id) do
+      timeline_insert(socket, %{
+        "id" => "msg-media-#{tool_use_id}",
+        "content_type" => "assistant_msg",
+        "message_type" => "assistant",
+        "role" => "assistant",
+        "direction" => "outbound",
+        "phase" => "commentary",
+        "status" => "completed",
+        "content" => "",
+        "run_id" => payload_value(payload, :run_id),
+        "turn_number" => payload_value(payload, :turn_number),
+        "tool_call_id" => tool_use_id,
+        "parent_tool_call_id" => payload_value(payload, :parent_tool_call_id),
+        "attachments" => media
+      })
+    else
+      socket
+    end
+  end
+
+  defp maybe_project_published_media(socket, _payload, _status), do: socket
 
   def do_handle_run_end(payload, status, socket) do
     turns = payload_value(payload, :turns, 0)

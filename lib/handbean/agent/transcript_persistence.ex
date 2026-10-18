@@ -218,6 +218,7 @@ defmodule Handbean.Agent.TranscriptPersistence do
     tool_use_id = payload_value(payload, :tool_use_id) || tool_name
     error = payload_value(payload, :error)
     status = tool_status(payload, error)
+    published_media = Handbean.Media.project(payload_value(payload, :published_media, []))
 
     details =
       payload
@@ -264,7 +265,20 @@ defmodule Handbean.Agent.TranscriptPersistence do
       })
       |> Map.merge(patch)
 
-    with {:ok, _saved} <- persist_tool_end(conversation_id, entry, opts), do: :ok
+    media_entry =
+      media_entry(conversation_id, tool_use_id, status, published_media, payload, opts)
+
+    with {:ok, result} <-
+           complete_tool_call(
+             conversation_id,
+             entry,
+             media_entry,
+             Handbean.Media.ids(published_media),
+             opts
+           ),
+         :ok <- maybe_deliver_media(result.media_entry, opts) do
+      :ok
+    end
   end
 
   def handle_event(conversation_id, {:candidate_message_injected, %{message_ids: ids}}, opts)
@@ -383,6 +397,69 @@ defmodule Handbean.Agent.TranscriptPersistence do
         {:error, reason}
     end
   end
+
+  defp media_entry(_conversation_id, _tool_use_id, status, _media, _payload, _opts)
+       when status != "done",
+       do: nil
+
+  defp media_entry(_conversation_id, _tool_use_id, "done", [], _payload, _opts), do: nil
+
+  defp media_entry(conversation_id, tool_use_id, "done", media, payload, opts)
+       when is_binary(tool_use_id) do
+    base_entry(conversation_id, opts)
+    |> Map.merge(%{
+      "id" => "msg-media-#{tool_use_id}",
+      "content_type" => "assistant_msg",
+      "message_type" => "assistant",
+      "role" => "assistant",
+      "direction" => "outbound",
+      "phase" => "commentary",
+      "status" => "completed",
+      "content" => "",
+      "turn_number" =>
+        payload_value(payload, :turn_number) || Process.get(turn_key(conversation_id)),
+      "tool_call_id" => tool_use_id,
+      "parent_tool_call_id" => payload_value(payload, :parent_tool_call_id),
+      "attachments" => media
+    })
+  end
+
+  defp media_entry(_conversation_id, _tool_use_id, _status, _media, _payload, _opts), do: nil
+
+  defp complete_tool_call(conversation_id, tool_entry, nil, [], opts) do
+    with {:ok, saved_tool} <- persist_tool_end(conversation_id, tool_entry, opts) do
+      {:ok, %{tool_entry: saved_tool, media_entry: nil}}
+    end
+  end
+
+  defp complete_tool_call(conversation_id, tool_entry, media_entry, media_ids, opts) do
+    store = Handbean.ConversationTranscriptStore.impl(opts)
+
+    if function_exported?(store, :complete_tool_call, 5) do
+      store.complete_tool_call(conversation_id, tool_entry, media_entry, media_ids, opts)
+    else
+      complete_tool_call_fallback(conversation_id, tool_entry, media_entry, media_ids, opts)
+    end
+  end
+
+  defp complete_tool_call_fallback(conversation_id, tool_entry, media_entry, media_ids, opts) do
+    tool_use_id = tool_entry["tool_use_id"]
+
+    with {:ok, saved_tool} <- persist_tool_end(conversation_id, tool_entry, opts),
+         {:ok, _ready} <-
+           Handbean.Media.mark_ready(
+             conversation_id,
+             tool_use_id,
+             media_entry["id"],
+             media_ids
+           ),
+         {:ok, saved_media} <- append_or_update(conversation_id, media_entry, opts) do
+      {:ok, %{tool_entry: saved_tool, media_entry: saved_media}}
+    end
+  end
+
+  defp maybe_deliver_media(nil, _opts), do: :ok
+  defp maybe_deliver_media(entry, opts), do: deliver(entry, opts)
 
   # CLI backends such as Droid emit tool_result without a name. Updating the
   # existing row must not replace the start name with the "unknown" placeholder.

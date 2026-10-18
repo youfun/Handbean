@@ -52,6 +52,7 @@ defmodule HandbeanWeb.Router do
     error_tracker_dashboard("/errors")
 
     get "/uploads/:conversation_id/:file", UploadsController, :show
+    get "/media/:conversation_id/:media_id/content", MediaController, :show
     get "/workspace-files/:workspace_id/*path", WorkspaceMediaController, :show
 
     get "/preview/:id", PreviewController, :show

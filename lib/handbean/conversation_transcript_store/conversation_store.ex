@@ -129,6 +129,73 @@ defmodule Handbean.ConversationTranscriptStore.ConversationStore do
     end
   end
 
+  @impl true
+  def complete_tool_call(conversation_id, tool_entry, media_entry, media_ids, _opts)
+      when is_binary(conversation_id) and is_map(tool_entry) and is_list(media_ids) do
+    Repo.transaction(fn ->
+      with {:ok, saved_tool} <- upsert_entry_in_tx(conversation_id, stringify_keys(tool_entry)),
+           {:ok, saved_media} <-
+             complete_media_in_tx(conversation_id, saved_tool, media_entry, media_ids) do
+        %{tool_entry: saved_tool, media_entry: saved_media}
+      else
+        {:error, reason} -> Repo.rollback(reason)
+      end
+    end)
+    |> case do
+      {:ok, result} -> {:ok, result}
+      {:error, reason} -> {:error, normalize_constraint(reason)}
+    end
+  rescue
+    error in Ecto.ConstraintError -> {:error, normalize_constraint(error)}
+  end
+
+  defp complete_media_in_tx(_conversation_id, _tool_entry, nil, []), do: {:ok, nil}
+
+  defp complete_media_in_tx(conversation_id, tool_entry, media_entry, media_ids)
+       when is_map(media_entry) and media_ids != [] do
+    attachments = Handbean.Media.project(media_entry["attachments"] || media_entry[:attachments])
+    projected_ids = Handbean.Media.ids(attachments)
+    tool_use_id = tool_entry["tool_use_id"]
+    media_entry = media_entry |> stringify_keys() |> Map.put("attachments", attachments)
+    media_entry_id = media_entry["id"]
+
+    cond do
+      tool_entry["tool_status"] != "done" ->
+        {:error, :media_tool_not_succeeded}
+
+      projected_ids != media_ids ->
+        {:error, :media_descriptor_mismatch}
+
+      not is_binary(tool_use_id) or not is_binary(media_entry_id) ->
+        {:error, :invalid_media_entry}
+
+      true ->
+        with {:ok, _ready} <-
+               Handbean.Media.mark_ready_in_tx(
+                 conversation_id,
+                 tool_use_id,
+                 media_entry_id,
+                 media_ids
+               ),
+             {:ok, saved_media} <- upsert_entry_in_tx(conversation_id, media_entry) do
+          {:ok, saved_media}
+        end
+    end
+  end
+
+  defp complete_media_in_tx(_conversation_id, _tool_entry, _media_entry, _media_ids),
+    do: {:error, :invalid_media_completion}
+
+  defp upsert_entry_in_tx(conversation_id, %{"id" => id} = entry) do
+    case update_cas(conversation_id, id, entry, 32) do
+      {:ok, updated} -> {:ok, updated}
+      {:error, :not_found} -> {:ok, insert_entry(conversation_id, entry)}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp upsert_entry_in_tx(_conversation_id, _entry), do: {:error, :invalid_entry}
+
   defp insert_entry(conversation_id, entry) do
     sequence = allocate_sequence(conversation_id)
     normalized = normalize_entry(conversation_id, entry, sequence)

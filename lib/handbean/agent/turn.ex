@@ -214,6 +214,7 @@ defmodule Handbean.Agent.Turn do
           details: bounded_tool_details(details),
           file_path: file_path,
           images: Handbean.Tool.Images.project(ui_block && ui_block[:images]),
+          published_media: Handbean.Media.project(ui_block && ui_block[:published_media]),
           output: bounded_tool_output(ui_block && block_content(ui_block))
         }
         |> Map.merge(tool_timing_payload(details))
@@ -1768,6 +1769,7 @@ defmodule Handbean.Agent.Turn do
         details: bounded_tool_details(details),
         file_path: tool_end_file_path(details, call),
         images: Handbean.Tool.Images.project(ui_block && ui_block[:images]),
+        published_media: Handbean.Media.project(ui_block && ui_block[:published_media]),
         output: bounded_tool_output(ui_block && ui_block[:content])
       }
       |> Map.merge(tool_timing_payload(details))
@@ -2033,6 +2035,9 @@ defmodule Handbean.Agent.Turn do
 
   defp model_label(_provider_id, model) when is_binary(model) and model != "", do: model
   defp model_label(_provider_id, _), do: nil
+
+  defp redact_tool_input("publish_media", input) when is_map(input),
+    do: Handbean.Tool.Builtin.PublishMedia.public_input(input)
 
   defp redact_tool_input("browser", input) when is_map(input) do
     input = Handbean.Log.Redactor.redact(input)

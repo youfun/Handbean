@@ -39,6 +39,7 @@ defmodule Handbean.Application do
         Handbean.Workspace.MixOwner,
         Handbean.Platform.WorkspaceEnvironment,
         Handbean.Jobs.Cleaner,
+        Handbean.Media.Cleaner,
         {DynamicSupervisor, name: Handbean.Jobs.BeamSupervisor, strategy: :one_for_one},
         Handbean.Jobs.Server,
         {Handbean.Extension.Registry, name: Handbean.Extension.Registry},

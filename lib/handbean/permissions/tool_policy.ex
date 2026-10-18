@@ -56,7 +56,7 @@ defmodule Handbean.Permissions.ToolPolicy do
   def from_workspace(_workspace_root, checkout_root, overrides, session_allow) do
     %__MODULE__{
       default_mode: :deny,
-      allow: ["mem_*", "web_fetch", "browser", "open_url"],
+      allow: ["mem_*", "web_fetch", "browser", "open_url", "publish_media"],
       overrides: normalize_overrides(overrides),
       session_allow: string_list(session_allow),
       workspace_root: checkout_root
@@ -284,6 +284,9 @@ defmodule Handbean.Permissions.ToolPolicy do
     case name do
       name when name in ["read", "write", "edit"] ->
         sensitive_input_path?(input, ["file_path"], root)
+
+      "publish_media" ->
+        sensitive_input_path?(input, ["path"], root)
 
       "grep" ->
         path = input_value(input, "path") || input_value(input, "file_path") || root

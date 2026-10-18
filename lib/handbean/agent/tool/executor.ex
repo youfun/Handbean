@@ -107,7 +107,15 @@ defmodule Handbean.Agent.Tool.Executor do
 
           hook_result ->
             call = apply_hook_args(call, hook_result)
-            emit_nested(opts, :tool_start, hook_payload)
+
+            start_payload =
+              call
+              |> tool_hook_payload(session_id, parent_tool_call_id)
+              |> Map.put(:turn_number, state.turn)
+              |> Map.put(:input, public_tool_input(call.name, call.input || %{}))
+              |> Map.update!(:args, &public_tool_input(call.name, &1))
+
+            emit_nested(opts, :tool_start, start_payload)
 
             {block, _revised} =
               execute_one_with_timeout(
@@ -227,7 +235,9 @@ defmodule Handbean.Agent.Tool.Executor do
   conversation history or sent to the LLM.
   """
   def strip_details(block) when is_map(block) do
-    Map.delete(block, :details)
+    block
+    |> Map.delete(:details)
+    |> Map.delete(:published_media)
   end
 
   defp execute_one(call, tool_fns, context) do
@@ -559,6 +569,7 @@ defmodule Handbean.Agent.Tool.Executor do
 
     Message.tool_result_block(tool_use_id, result.content, result.is_error, details)
     |> Map.put(:images, result.images)
+    |> Map.put(:published_media, result.published_media)
   end
 
   defp normalize_outcome(%Result{} = result, _tool_fns, _name), do: result
@@ -599,7 +610,8 @@ defmodule Handbean.Agent.Tool.Executor do
         code: detail_value(details, :code, result.code),
         side_effect: detail_value(details, :side_effect, result.side_effect),
         recovery: detail_value(details, :recovery, result.recovery),
-        artifacts: detail_value(details, :artifacts, result.artifacts)
+        artifacts: detail_value(details, :artifacts, result.artifacts),
+        published_media: detail_value(details, :published_media, result.published_media)
     }
   end
 
@@ -793,6 +805,11 @@ defmodule Handbean.Agent.Tool.Executor do
     "nested-" <> Integer.to_string(System.unique_integer([:positive]))
   end
 
+  defp public_tool_input("publish_media", input) when is_map(input),
+    do: Handbean.Tool.Builtin.PublishMedia.public_input(input)
+
+  defp public_tool_input(_name, input), do: Handbean.Log.Redactor.redact(input)
+
   defp tool_hook_payload(call, session_id, parent_tool_call_id) do
     %{
       tool_use_id: call.id,
@@ -832,6 +849,7 @@ defmodule Handbean.Agent.Tool.Executor do
       completed_at: detail_value(details, :completed_at, nil),
       timing_fidelity: detail_value(details, :timing_fidelity, nil),
       details: Handbean.Agent.Tool.ResultContract.project_details(details) || %{},
+      published_media: Handbean.Media.project(block[:published_media]),
       output: String.slice(to_string(block[:content] || ""), 0, 16_000)
     }
 

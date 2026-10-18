@@ -63,7 +63,8 @@ defmodule Handbean.Agent.Tool.ResultContract do
         details: details,
         recovery: bound_recovery(result.recovery),
         artifacts: bound_artifacts(result.artifacts),
-        images: Handbean.Tool.Images.project(result.images)
+        images: Handbean.Tool.Images.project(result.images),
+        published_media: Handbean.Media.project(result.published_media)
     }
   end
 
@@ -104,7 +105,8 @@ defmodule Handbean.Agent.Tool.ResultContract do
       code: result.code,
       side_effect: side_effect(result.side_effect),
       recovery: bound_recovery(result.recovery),
-      artifacts: bound_artifacts(result.artifacts)
+      artifacts: bound_artifacts(result.artifacts),
+      published_media: Handbean.Media.project(result.published_media)
     }
     |> Enum.reject(fn {_key, value} -> is_nil(value) or value == [] end)
     |> Map.new()

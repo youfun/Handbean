@@ -205,6 +205,7 @@ defmodule Handbean.Tool.Registry do
       Handbean.Tool.Builtin.TaskStatus,
       Handbean.Tool.Builtin.ToolSearch,
       Handbean.Tool.Builtin.ListModels,
+      Handbean.Tool.Builtin.PublishMedia,
       Handbean.Tool.Builtin.ReadContext,
       Handbean.Tool.Builtin.EditContext,
       Handbean.Tool.Builtin.WebFetch,

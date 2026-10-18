@@ -8,6 +8,50 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
 
   import HandbeanWeb.WorkspaceLive.ViewComponents
 
+  attr :attachments, :any, default: []
+  attr :entry_id, :any, required: true
+
+  def attachment_gallery(assigns) do
+    attachments = if is_list(assigns.attachments), do: assigns.attachments, else: []
+    {images, files} = Enum.split_with(attachments, &image_attachment?/1)
+
+    assigns =
+      assigns
+      |> assign(:images, images)
+      |> assign(:files, files)
+
+    ~H"""
+    <div :if={@images != []} class="msg-shots">
+      <button
+        :for={{att, index} <- Enum.with_index(@images)}
+        type="button"
+        class="msg-shot"
+        data-shot-open
+        data-shot-id={"#{@entry_id}-#{index}"}
+        data-shot-src={attachment_url(att)}
+        data-shot-name={attachment_filename(att)}
+        title={attachment_filename(att)}
+        aria-label={gettext("查看图片 %{name}", name: attachment_filename(att))}
+      >
+        <img
+          src={attachment_url(att)}
+          alt={attachment_filename(att)}
+          decoding="async"
+        />
+      </button>
+    </div>
+    <a
+      :for={att <- @files}
+      href={attachment_url(att)}
+      target="_blank"
+      rel="noreferrer"
+      class="msg-file"
+    >
+      {attachment_filename(att)}
+    </a>
+    """
+  end
+
   attr :id, :string, required: true
   attr :report, :map, required: true
 
@@ -524,38 +568,11 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
                 class="msg-row flex w-full msg-user justify-end"
                 data-user-msg={entry["id"]}
               >
-                <% attachments =
-                  if(is_list(entry["attachments"]), do: entry["attachments"], else: []) %>
-                <% {images, files} = Enum.split_with(attachments, &image_attachment?/1) %>
-                <div class="msg-user-stack">
-                  <div :if={images != []} class="msg-shots">
-                    <button
-                      :for={{att, index} <- Enum.with_index(images)}
-                      type="button"
-                      class="msg-shot"
-                      data-shot-open
-                      data-shot-id={"#{entry["id"]}-#{index}"}
-                      data-shot-src={attachment_url(att)}
-                      data-shot-name={attachment_filename(att)}
-                      title={attachment_filename(att)}
-                      aria-label={gettext("查看图片 %{name}", name: attachment_filename(att))}
-                    >
-                      <img
-                        src={attachment_url(att)}
-                        alt={attachment_filename(att)}
-                        decoding="async"
-                      />
-                    </button>
-                  </div>
-                  <a
-                    :for={att <- files}
-                    href={attachment_url(att)}
-                    target="_blank"
-                    rel="noreferrer"
-                    class="msg-file"
-                  >
-                    {attachment_filename(att)}
-                  </a>
+                <div class="msg-attachment-stack">
+                  <.attachment_gallery
+                    attachments={entry["attachments"]}
+                    entry_id={entry["id"]}
+                  />
                   <div
                     :if={
                       String.trim(to_string(entry["content"] || "")) != "" or
@@ -614,53 +631,63 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
               <div
                 :if={entry["content_type"] == "assistant_msg"}
                 class="msg-row flex w-full msg-assistant justify-start"
+                data-assistant-msg={entry["id"]}
               >
-                <div class="msg-bubble msg-assistant">
-                  <span class="sr-only">{entry["content"]}</span>
+                <div class="msg-attachment-stack">
+                  <.attachment_gallery
+                    attachments={entry["attachments"]}
+                    entry_id={entry["id"]}
+                  />
                   <div
-                    id={"assistant-md-wrapper-#{entry["id"]}"}
-                    data-entry-id={entry["id"]}
-                    data-source={entry["content"] || ""}
-                    data-final={
-                      to_string(
-                        assistant_message_final?(entry, @running, @current_assistant_entry_id)
-                      )
-                    }
-                    data-streaming={
-                      to_string(
-                        assistant_message_streaming?(entry, @running, @current_assistant_entry_id)
-                      )
-                    }
-                    class="msg-markdown-wrapper"
-                    phx-hook="StreamingMarkdown"
+                    :if={String.trim(to_string(entry["content"] || "")) != ""}
+                    class="msg-bubble msg-assistant"
                   >
-                    <button
-                      class="msg-copy-btn"
-                      title="复制回复"
-                      aria-label="复制回复"
-                    >
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      >
-                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                      </svg>
-                    </button>
+                    <span class="sr-only">{entry["content"]}</span>
                     <div
-                      id={"assistant-md-content-#{entry["id"]}"}
-                      data-markdown-target
-                      phx-update="ignore"
-                      class="markdown-body prose prose-sm max-w-none break-words"
+                      id={"assistant-md-wrapper-#{entry["id"]}"}
+                      data-entry-id={entry["id"]}
+                      data-source={entry["content"] || ""}
+                      data-final={
+                        to_string(
+                          assistant_message_final?(entry, @running, @current_assistant_entry_id)
+                        )
+                      }
+                      data-streaming={
+                        to_string(
+                          assistant_message_streaming?(entry, @running, @current_assistant_entry_id)
+                        )
+                      }
+                      class="msg-markdown-wrapper"
+                      phx-hook="StreamingMarkdown"
                     >
-                      <div class="markdown-noscript-fallback">{entry["content"]}</div>
-                      <noscript>{entry["content"]}</noscript>
+                      <button
+                        class="msg-copy-btn"
+                        title="复制回复"
+                        aria-label="复制回复"
+                      >
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                      </button>
+                      <div
+                        id={"assistant-md-content-#{entry["id"]}"}
+                        data-markdown-target
+                        phx-update="ignore"
+                        class="markdown-body prose prose-sm max-w-none break-words"
+                      >
+                        <div class="markdown-noscript-fallback">{entry["content"]}</div>
+                        <noscript>{entry["content"]}</noscript>
+                      </div>
                     </div>
                   </div>
                 </div>

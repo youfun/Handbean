@@ -278,11 +278,52 @@ defmodule HandbeanProbe.NativeTimelineTest do
       running: false
     }
 
-    encoded = inspect(render(chat, MapSet.new()), limit: :infinity)
+    tree = render(chat, MapSet.new())
+    encoded = inspect(tree, limit: :infinity)
+    assistant_text = Enum.find(text_nodes(tree), &(&1.props[:id] == "plan"))
+
+    assert assistant_text.props.text == "I will read the file"
+    assert assistant_text.props.markdown == true
     assert encoded =~ "I will read the file"
     assert encoded =~ "continue"
+    refute encoded =~ gettext("Attachment")
     refute encoded =~ gettext("Show Work")
     refute encoded =~ gettext("Hide Work")
+  end
+
+  test "empty assistant media renders a public metadata card without a blank text node" do
+    chat = %{
+      entries: [
+        %{
+          "id" => "media-message",
+          "role" => "assistant",
+          "content" => "",
+          "attachments" => [
+            %{
+              "media_id" => "media-1",
+              "conversation_id" => "conversation-1",
+              "kind" => "image",
+              "mime_type" => "image/png",
+              "filename" => "result.png",
+              "size_bytes" => 238_104,
+              "sha256" => "public-checksum",
+              "source" => "agent"
+            }
+          ]
+        }
+      ],
+      stream: "",
+      running: false
+    }
+
+    tree = render(chat, MapSet.new())
+    texts = text_nodes(tree) |> Enum.map(& &1.props.text)
+
+    assert gettext("Attachment") in texts
+    assert "result.png" in texts
+    assert "image/png · 238104 B" in texts
+    refute "" in texts
+    assert match_image_nodes(tree) == []
   end
 
   test "multiple sent images cap at four" do

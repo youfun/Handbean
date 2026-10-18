@@ -2359,10 +2359,10 @@ msgstr "More actions"
 msgid "有效记忆"
 msgstr ""
 
-#: lib/handbean_web/live/workspace_live/chat_components.ex:521
-#, elixir-autogen, elixir-format, fuzzy
+#: lib/handbean_web/live/workspace_live/chat_components.ex:23
+#, elixir-autogen, elixir-format
 msgid "查看图片 %{name}"
-msgstr "Remove %{name}"
+msgstr "View image %{name}"
 
 #: lib/handbean_web/live/workspace_memory_live.ex:101
 #, elixir-autogen, elixir-format

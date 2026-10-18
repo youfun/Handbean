@@ -108,6 +108,34 @@ defmodule Handbean.Agent.Tool.ResultTest do
     end
   end
 
+  describe "published media projection" do
+    test "keeps validated public media on the UI block and strips it from model history" do
+      descriptor = %{
+        media_id: "media-1",
+        conversation_id: "conversation-1",
+        kind: "image",
+        mime_type: "image/png",
+        filename: "result.png",
+        size_bytes: 8,
+        sha256: String.duplicate("a", 64),
+        source: "agent"
+      }
+
+      result =
+        Result.contract("published",
+          side_effect: :committed,
+          published_media: [descriptor]
+        )
+
+      block = Handbean.Agent.Tool.Executor.result_to_block(result, "tool-1")
+      assert block.published_media == [descriptor]
+
+      model_block = Handbean.Agent.Tool.Executor.strip_details(block)
+      refute Map.has_key?(model_block, :published_media)
+      refute Map.has_key?(model_block, :details)
+    end
+  end
+
   describe "details preservation" do
     test "error result preserves details even though provider only sees content" do
       result = Result.error("Permission denied", %{file_path: "/etc/shadow"})

@@ -34,6 +34,20 @@ defmodule Handbean.Permissions.ToolPolicyTest do
     end
   end
 
+  test "free chat allows bounded media publication but sensitive paths still deny" do
+    policy = ToolPolicy.from_workspace(nil)
+
+    assert ToolPolicy.decision(
+             policy,
+             call("publish_media", %{"path" => "/tmp/browser/result.png"})
+           ) == :auto
+
+    assert ToolPolicy.decision(
+             policy,
+             call("publish_media", %{"path" => "/tmp/.ssh/secret.png"})
+           ) == :deny
+  end
+
   # Failure list for bash `unsandboxed: true` (written before the implementation):
   #   - full-access workspaces (`default_mode: auto`) still prompt;
   #   - read-only workspaces (`default_mode: deny`) deny;

@@ -11,7 +11,9 @@ defmodule Handbean.ConversationTranscriptStore do
 
   @callback list(String.t(), keyword()) :: {:ok, [entry()]} | {:error, term()}
   @callback page(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
-  @optional_callbacks page: 2
+  @callback complete_tool_call(String.t(), entry(), entry() | nil, [String.t()], keyword()) ::
+              {:ok, %{tool_entry: entry(), media_entry: entry() | nil}} | {:error, term()}
+  @optional_callbacks page: 2, complete_tool_call: 5
   @callback append(String.t(), entry(), keyword()) :: {:ok, entry()} | {:error, term()}
   @callback update(String.t(), String.t(), map(), keyword()) :: {:ok, entry()} | {:error, term()}
   @callback delete(String.t(), String.t(), keyword()) :: :ok | {:error, term()}
