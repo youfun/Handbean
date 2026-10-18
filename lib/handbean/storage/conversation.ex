@@ -20,6 +20,8 @@ defmodule Handbean.Storage.Conversation do
     field :collaboration, :map
     field :last_run_result, :string
     field :loaded_tools, :string
+    field :status, :string, default: "active"
+    field :pending_delete_at, :utc_datetime_usec
     field :archived_at, :utc_datetime_usec
     field :pinned_at, :utc_datetime_usec
     field :next_entry_sequence, :integer, default: 1

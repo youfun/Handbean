@@ -419,7 +419,7 @@ defmodule Handbean.ConversationTranscriptStore.ConversationStore do
     sql = """
     UPDATE conversations
     SET next_entry_sequence = next_entry_sequence + 1
-    WHERE id = ?
+    WHERE id = ? AND status = 'active'
     RETURNING next_entry_sequence - 1
     """
 

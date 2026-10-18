@@ -503,6 +503,90 @@ defmodule HandbeanWeb.WorkspaceLive.OverlayComponents do
             <span>{gettext("MCP / Skills")}</span>
             <strong>{@mcp_count} / {@skills_count}</strong>
           </div>
+          <button
+            :if={@current_conversation_id}
+            id="mobile-delete-conversation"
+            type="button"
+            phx-click="open_delete_conversation"
+            phx-value-id={@current_conversation_id}
+            phx-value-ws_id={@current_workspace_id}
+            class="mobile-settings-delete"
+          >
+            <span>{gettext("删除当前线程")}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  attr :delete_conversation, :any, required: true
+
+  def delete_conversation_dialog(assigns) do
+    ~H"""
+    <div
+      :if={@delete_conversation}
+      id="delete-conversation-overlay"
+      class="absolute inset-0 z-50 flex items-center justify-center"
+      phx-window-keydown="cancel_delete_conversation"
+      phx-key="Escape"
+    >
+      <button
+        type="button"
+        class="absolute inset-0 bg-transparent border-0"
+        phx-click="cancel_delete_conversation"
+        aria-label={gettext("取消")}
+      ></button>
+      <div
+        id="delete-conversation-dialog"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="delete-conversation-title"
+        class="relative add-project-dialog bg-surface border rounded-xl shadow-2xl w-[420px] p-5"
+      >
+        <h3 id="delete-conversation-title" class="text-base font-semibold text-primary mb-2">
+          {gettext("删除线程")}
+        </h3>
+        <p class="text-xs text-secondary mb-2">
+          {gettext("“%{title}”将立即从列表中隐藏，删除后无法恢复。",
+            title: @delete_conversation.title
+          )}
+        </p>
+        <p
+          :if={@delete_conversation.descendant_count > 0}
+          id="delete-conversation-descendants"
+          class="text-xs text-error mb-2"
+        >
+          {gettext("同时删除 %{count} 个子线程。",
+            count: @delete_conversation.descendant_count
+          )}
+        </p>
+        <p class="text-xs text-secondary mb-4">
+          {gettext("受管媒体会在后台删除；失败时系统会保留定位信息并自动重试。")}
+        </p>
+        <p
+          :if={@delete_conversation.error}
+          id="delete-conversation-error"
+          class="text-xs text-error bg-error-subtle rounded px-3 py-2 mb-4"
+        >
+          {@delete_conversation.error}
+        </p>
+        <div class="flex justify-end gap-3">
+          <button
+            type="button"
+            phx-click="cancel_delete_conversation"
+            class="text-xs text-secondary border rounded px-3 py-1.5 transition-colors hover:text-primary hover:border-hover"
+          >
+            {gettext("取消")}
+          </button>
+          <button
+            type="button"
+            id="confirm-delete-conversation"
+            phx-click="confirm_delete_conversation"
+            class="text-xs bg-error text-white rounded px-4 py-1.5 transition-colors"
+          >
+            {gettext("删除")}
+          </button>
         </div>
       </div>
     </div>

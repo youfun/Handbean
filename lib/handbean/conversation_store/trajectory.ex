@@ -14,7 +14,8 @@ defmodule Handbean.ConversationStore.Trajectory do
     workspace_conversations =
       from conversation in Conversation,
         where:
-          conversation.scope == "workspace" and conversation.workspace_id == ^workspace_id and
+          conversation.status == "active" and conversation.scope == "workspace" and
+            conversation.workspace_id == ^workspace_id and
             conversation.visibility not in ["internal", "task"],
         select: conversation.id
 

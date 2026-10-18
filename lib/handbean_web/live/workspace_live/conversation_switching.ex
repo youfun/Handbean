@@ -266,6 +266,56 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
     |> reload_conversation_stream()
   end
 
+  def conversations_pending_delete(socket, ids, opts \\ []) when is_list(ids) do
+    conversations_by_ws =
+      socket.assigns.workspaces
+      |> build_conversations_by_workspace(include_archived?: true)
+      |> Map.put(@free_key, load_free_conversations(include_archived?: true))
+
+    socket =
+      socket
+      |> assign(:conversations_by_workspace, conversations_by_ws)
+      |> assign(:conversation_menu_id, nil)
+      |> assign(:rename_conversation, nil)
+      |> reload_conversation_stream()
+
+    if socket.assigns.current_conversation_id in ids do
+      select_after_delete(socket, opts)
+    else
+      {socket, nil}
+    end
+  end
+
+  defp select_after_delete(%{assigns: %{chat_scope: :free}} = socket, opts) do
+    {socket, next} = ensure_active_free_conversation(socket)
+    next_id = ConversationState.conversation_id(next)
+
+    socket =
+      socket
+      |> assign_free(next_id)
+      |> reload_conversation_stream()
+      |> ConversationState.sync_conv_state(opts)
+      |> ConversationState.sync_conv_to()
+
+    {socket, next_id}
+  end
+
+  defp select_after_delete(socket, opts) do
+    workspace_id = socket.assigns.current_workspace_id
+    {socket, next} = ensure_active_conversation(socket, workspace_id)
+    next_id = ConversationState.conversation_id(next)
+    {:ok, workspace} = refreshed_workspace(workspace_id)
+
+    socket =
+      socket
+      |> assign_current(workspace, next_id)
+      |> reload_conversation_stream()
+      |> ConversationState.sync_conv_state(opts)
+      |> ConversationState.sync_conv_to()
+
+    {socket, next_id}
+  end
+
   def remove_workspace(socket, ws_id) do
     with {:ok, removed} <- Handbean.WorkspaceStore.remove(ws_id),
          {:ok, _archived} <- Handbean.ConversationStore.archive_for_workspace(ws_id) do

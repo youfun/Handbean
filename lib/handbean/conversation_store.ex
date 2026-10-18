@@ -54,6 +54,7 @@ defmodule Handbean.ConversationStore do
     include_internal? = Keyword.get(opts, :include_internal?, false)
 
     Conversation
+    |> where([conversation], conversation.status == "active")
     |> maybe_exclude_internal(include_internal?)
     |> order_by([conversation], desc: conversation.updated_at, desc: conversation.id)
     |> Repo.all()
@@ -74,6 +75,7 @@ defmodule Handbean.ConversationStore do
 
   def list_metadata(workspace_id) when is_binary(workspace_id) do
     Conversation
+    |> where([conversation], conversation.status == "active")
     |> where([conversation], conversation.scope == "workspace")
     |> where([conversation], conversation.workspace_id == ^workspace_id)
     |> where([conversation], conversation.visibility != "internal")
@@ -109,6 +111,7 @@ defmodule Handbean.ConversationStore do
 
   def list_free_metadata do
     Conversation
+    |> where([conversation], conversation.status == "active")
     |> where([conversation], conversation.scope == "free")
     |> where([conversation], conversation.visibility != "internal")
     |> order_by([conversation], desc: conversation.updated_at, desc: conversation.id)
@@ -119,6 +122,7 @@ defmodule Handbean.ConversationStore do
   def fetch_summaries do
     summaries =
       Conversation
+      |> where([conversation], conversation.status == "active")
       |> where([conversation], conversation.visibility != "internal")
       |> order_by([conversation], desc: conversation.updated_at, desc: conversation.id)
       |> Repo.all()
@@ -181,7 +185,10 @@ defmodule Handbean.ConversationStore do
   def internal?(%{visibility: "internal"}), do: true
 
   def internal?(id) when is_binary(id) do
-    case Repo.get(Conversation, id) do
+    case Repo.one(
+           from conversation in Conversation,
+             where: conversation.id == ^id and conversation.status == "active"
+         ) do
       %Conversation{visibility: "internal"} -> true
       _ -> false
     end
@@ -205,7 +212,31 @@ defmodule Handbean.ConversationStore do
   def get_meta(id) when is_binary(id), do: get_metadata(id)
 
   def exists?(id) when is_binary(id),
-    do: Repo.exists?(from conversation in Conversation, where: conversation.id == ^id)
+    do:
+      Repo.exists?(
+        from conversation in Conversation,
+          where: conversation.id == ^id and conversation.status == "active"
+      )
+
+  def active?(id) when is_binary(id), do: exists?(id)
+  def active?(_id), do: false
+
+  def lifecycle_status(id) when is_binary(id) do
+    case Repo.one(
+           from conversation in Conversation,
+             where: conversation.id == ^id,
+             select: conversation.status
+         ) do
+      "active" -> :active
+      "pending_delete" -> :pending_delete
+      nil -> :missing
+    end
+  end
+
+  def lifecycle_status(_id), do: :missing
+
+  def delete_preview(id), do: Handbean.ConversationStore.Deletion.preview(id)
+  def request_delete(id), do: Handbean.ConversationStore.Deletion.request(id)
 
   def create(workspace_id, opts \\ []) when is_binary(workspace_id) do
     create_conversation("workspace", workspace_id, opts)
@@ -240,7 +271,10 @@ defmodule Handbean.ConversationStore do
   def free?(%{scope: scope}) when scope in ["free", :free], do: true
 
   def free?(id) when is_binary(id) do
-    case Repo.get(Conversation, id) do
+    case Repo.one(
+           from conversation in Conversation,
+             where: conversation.id == ^id and conversation.status == "active"
+         ) do
       %Conversation{scope: "free"} -> true
       _ -> false
     end
@@ -323,7 +357,8 @@ defmodule Handbean.ConversationStore do
     id = string_value(conversation, "id") || Ecto.UUID.generate()
     existing = Repo.get(Conversation, id)
 
-    with :ok <- validate_upsert_checkout(existing, conversation) do
+    with false <- match?(%Conversation{status: "pending_delete"}, existing),
+         :ok <- validate_upsert_checkout(existing, conversation) do
       normalized = normalize_conversation(conversation, id, existing)
 
       Repo.transaction(fn ->
@@ -337,9 +372,13 @@ defmodule Handbean.ConversationStore do
         conversation_map(row, include_timeline?: true)
       end)
       |> unwrap_transaction()
+    else
+      true -> {:error, :not_found}
+      error -> error
     end
   rescue
     error in Ecto.ConstraintError -> {:error, constraint_reason(error)}
+    _error in Exqlite.Error -> {:error, :constraint}
   end
 
   def ensure_for_workspaces(workspaces) do
@@ -616,6 +655,7 @@ defmodule Handbean.ConversationStore do
   rescue
     error in Ecto.ConstraintError -> {:error, constraint_reason(error)}
     error in Ecto.InvalidChangesetError -> {:error, error.changeset}
+    _error in Exqlite.Error -> {:error, :constraint}
   end
 
   defp checkout_path_for_create("free", _workspace_id, _opts), do: {:ok, nil}
@@ -700,6 +740,7 @@ defmodule Handbean.ConversationStore do
     include_internal? = Keyword.get(opts, :include_internal?, false)
 
     Conversation
+    |> where([conversation], conversation.status == "active")
     |> maybe_exclude_internal(include_internal?)
     |> maybe_exclude_archived(include_archived?)
     |> order_by([conversation], desc: conversation.updated_at, desc: conversation.id)
@@ -716,7 +757,10 @@ defmodule Handbean.ConversationStore do
     do: where(query, [conversation], is_nil(conversation.archived_at))
 
   defp fetch_row(id) do
-    case Repo.get(Conversation, id) do
+    case Repo.one(
+           from conversation in Conversation,
+             where: conversation.id == ^id and conversation.status == "active"
+         ) do
       nil -> {:error, :not_found}
       row -> {:ok, row}
     end
@@ -765,6 +809,7 @@ defmodule Handbean.ConversationStore do
       "selected_reasoning_level" => row.selected_reasoning_level,
       "collaboration" => row.collaboration,
       "last_run_result" => row.last_run_result,
+      "status" => row.status,
       "loaded_tools" => decode_list(row.loaded_tools),
       "archived_at" => iso8601(row.archived_at),
       "pinned_at" => iso8601(row.pinned_at),

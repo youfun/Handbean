@@ -351,8 +351,25 @@
     text-align: right;
   }
 
+  .mobile-settings-delete {
+    width: 100%;
+    min-height: 44px;
+    padding: 8px 6px;
+    border: 0;
+    border-bottom: 1px solid var(--color-border);
+    background: transparent;
+    color: var(--color-error);
+    font-size: 13px;
+    text-align: left;
+  }
+
+  .mobile-settings-delete:active {
+    background: var(--color-error-bg);
+  }
+
   #add-project-overlay,
   #rename-conversation-overlay,
+  #delete-conversation-overlay,
   #file-browser-overlay {
     position: fixed;
     inset: 0;
@@ -360,6 +377,7 @@
 
   .add-project-dialog,
   #rename-conversation-dialog,
+  #delete-conversation-dialog,
   #file-browser-dialog {
     width: calc(100vw - 24px) !important;
     max-width: calc(100vw - 24px) !important;

@@ -12,7 +12,7 @@ defmodule Handbean.Media do
   alias Handbean.Media.{BackendRegistry, Image}
   alias Handbean.Repo
   alias Handbean.Security.PathValidator
-  alias Handbean.Storage.ConversationMedia
+  alias Handbean.Storage.{Conversation, ConversationMedia}
 
   @spec stage_file(String.t(), keyword()) :: {:ok, ConversationMedia.t()} | {:error, term()}
   def stage_file(path, opts) when is_binary(path) and is_list(opts) do
@@ -127,11 +127,15 @@ defmodule Handbean.Media do
   def mark_ready_in_tx(conversation_id, tool_call_id, producing_entry_id, media_ids)
       when is_binary(conversation_id) and is_binary(tool_call_id) and
              is_binary(producing_entry_id) and is_list(media_ids) do
-    with :ok <- valid_media_ids(media_ids),
+    with true <- Handbean.ConversationStore.active?(conversation_id),
+         :ok <- valid_media_ids(media_ids),
          {:ok, media} <- media_for_transition(conversation_id, tool_call_id, media_ids),
          :ok <- ready_transition_allowed(media, producing_entry_id),
          :ok <- update_staged(media_ids, producing_entry_id) do
       {:ok, ordered_reload(media_ids)}
+    else
+      false -> {:error, :conversation_pending_delete}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -182,20 +186,52 @@ defmodule Handbean.Media do
       when status in ["staged", "pending_delete"] and is_struct(before, DateTime) do
     limit = opts |> Keyword.get(:limit, 100) |> min(500) |> max(1)
 
-    from(media in ConversationMedia,
-      where: media.status == ^status and media.updated_at < ^before,
-      order_by: [asc: media.updated_at, asc: media.id],
-      limit: ^limit
-    )
-    |> Repo.all()
+    query =
+      from(media in ConversationMedia,
+        where: media.status == ^status and media.updated_at < ^before,
+        order_by: [asc: media.updated_at, asc: media.id],
+        limit: ^limit
+      )
+
+    query =
+      if Keyword.get(opts, :active_conversation_only?, false) do
+        from(media in query,
+          join: conversation in Conversation,
+          on: conversation.id == media.conversation_id,
+          where: conversation.status == "active"
+        )
+      else
+        query
+      end
+
+    Repo.all(query)
   end
+
+  @doc false
+  def pending_for_conversations(conversation_ids) when is_list(conversation_ids) do
+    Repo.all(
+      from media in ConversationMedia,
+        where: media.conversation_id in ^conversation_ids and media.status == "pending_delete",
+        order_by: [asc: media.conversation_id, asc: media.id]
+    )
+  end
+
+  @doc false
+  def delete_object(media, opts \\ [])
+
+  def delete_object(%ConversationMedia{status: "pending_delete"} = media, opts) do
+    with {:ok, backend} <- backend(media.backend, opts) do
+      backend.delete(media.storage_key, metadata(media))
+    end
+  end
+
+  def delete_object(%ConversationMedia{}, _opts), do: {:error, :media_not_pending_delete}
 
   @spec delete_pending(ConversationMedia.t(), keyword()) :: :ok | {:error, term()}
   def delete_pending(media, opts \\ [])
 
   def delete_pending(%ConversationMedia{status: "pending_delete"} = media, opts) do
-    with {:ok, backend} <- backend(media.backend, opts),
-         :ok <- backend.delete(media.storage_key, metadata(media)),
+    with :ok <- delete_object(media, opts),
          {:ok, _deleted} <- Repo.delete(media) do
       :ok
     end
@@ -204,30 +240,33 @@ defmodule Handbean.Media do
   def delete_pending(%ConversationMedia{}, _opts), do: {:error, :media_not_pending_delete}
 
   defp stage_verified(bytes, attrs, backend, opts) do
-    case existing_idempotent(attrs) do
-      %ConversationMedia{status: status} = media when status in ["staged", "ready"] ->
-        {:ok, media}
+    if Handbean.ConversationStore.active?(attrs.conversation_id) do
+      case existing_idempotent(attrs) do
+        %ConversationMedia{status: status} = media when status in ["staged", "ready"] ->
+          {:ok, media}
 
-      %ConversationMedia{status: "pending_delete"} ->
-        {:error, :media_pending_delete}
+        %ConversationMedia{status: "pending_delete"} ->
+          {:error, :media_pending_delete}
 
-      nil ->
-        persist_staged(bytes, attrs, backend, opts)
+        nil ->
+          persist_staged(bytes, attrs, backend, opts)
+      end
+    else
+      {:error, :conversation_pending_delete}
     end
   end
 
   defp persist_staged(bytes, attrs, backend, opts) do
     object_metadata = metadata(attrs)
 
-    with :ok <- backend.put(attrs.storage_key, bytes, object_metadata),
-         {:ok, media} <- insert_staged(attrs) do
-      {:ok, media}
-    else
-      {:error, %Ecto.Changeset{} = changeset} ->
-        compensate_insert_failure(attrs, backend, object_metadata, changeset, opts)
+    with :ok <- backend.put(attrs.storage_key, bytes, object_metadata) do
+      case insert_staged(attrs) do
+        {:ok, media} ->
+          {:ok, media}
 
-      {:error, reason} ->
-        {:error, reason}
+        {:error, reason} ->
+          compensate_insert_failure(attrs, backend, object_metadata, reason, opts)
+      end
     end
   end
 
@@ -235,9 +274,11 @@ defmodule Handbean.Media do
     %ConversationMedia{}
     |> ConversationMedia.create_changeset(Map.from_struct(attrs))
     |> Repo.insert()
+  rescue
+    error in [Ecto.ConstraintError, Exqlite.Error] -> {:error, error}
   end
 
-  defp compensate_insert_failure(attrs, backend, object_metadata, changeset, _opts) do
+  defp compensate_insert_failure(attrs, backend, object_metadata, insert_error, _opts) do
     existing = existing_idempotent(attrs)
 
     delete_result =
@@ -259,10 +300,10 @@ defmodule Handbean.Media do
         {:error, :media_pending_delete}
 
       {_existing, :ok} ->
-        {:error, changeset}
+        {:error, insert_error}
 
       {_existing, {:error, reason}} ->
-        {:error, {:stage_insert_failed, changeset, {:compensation_failed, reason}}}
+        {:error, {:stage_insert_failed, insert_error, {:compensation_failed, reason}}}
     end
   end
 

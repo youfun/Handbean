@@ -25,11 +25,11 @@ defmodule Handbean.Agent.Coordinator do
     {content, opts} = stamp_message_ids(content, opts)
 
     with :ok <- Handbean.Storage.Health.check_write(),
-         :ok <- reserve_operation(conversation_id, content, opts),
-         :ok <- validate_conversation_access(conversation_id, opts),
          :ok <- validate_required_opts(opts),
          :ok <- validate_model_policy(opts),
          :ok <- validate_advisor_policy(opts),
+         :ok <- validate_conversation_access(conversation_id, opts),
+         :ok <- reserve_operation(conversation_id, content, opts),
          opts <- ensure_run_id(opts),
          {:ok, _pid} <- Session.start_or_get(session_id: conversation_id, model: opts[:model]) do
       admit_message(conversation_id, content, opts, 2)
@@ -282,12 +282,16 @@ defmodule Handbean.Agent.Coordinator do
       when is_binary(conversation_id) and
              (is_binary(content) or is_struct(content, Handbean.Agent.Message)) and
              is_list(opts) do
-    {content, opts} = stamp_message_ids(content, opts)
-
-    case Session.enqueue_candidate(conversation_id, content, opts) do
-      :ok -> {:ok, %{action: :enqueued, run_id: nil, run_pid: nil}}
-      {:ok, ack} -> {:ok, ack}
-      {:error, reason} -> {:error, reason}
+    with true <- Handbean.ConversationStore.active?(conversation_id),
+         {content, opts} <- stamp_message_ids(content, opts),
+         result <- Session.enqueue_candidate(conversation_id, content, opts) do
+      case result do
+        :ok -> {:ok, %{action: :enqueued, run_id: nil, run_pid: nil}}
+        {:ok, ack} -> {:ok, ack}
+        {:error, reason} -> {:error, reason}
+      end
+    else
+      false -> {:error, :not_found}
     end
   catch
     :exit, reason -> {:error, reason}
@@ -381,6 +385,9 @@ defmodule Handbean.Agent.Coordinator do
 
   defp do_resume(conversation_id, decisions, opts) do
     cond do
+      not Handbean.ConversationStore.active?(conversation_id) ->
+        {:error, :not_found}
+
       Handbean.ConversationStore.internal?(conversation_id) ->
         {:error, :internal_conversation}
 
@@ -536,12 +543,21 @@ defmodule Handbean.Agent.Coordinator do
   end
 
   defp validate_conversation_access(id, opts) do
-    if Handbean.ConversationStore.internal?(id) and
-         not (opts[:delegated?] == true and is_pid(opts[:delegation_owner]) and
-                opts[:delegation_owner] == Process.whereis(Handbean.Agent.Delegation)) do
-      {:error, :internal_conversation}
-    else
-      :ok
+    case Handbean.ConversationStore.lifecycle_status(id) do
+      :pending_delete ->
+        {:error, :not_found}
+
+      :active ->
+        if Handbean.ConversationStore.internal?(id) and
+             not (opts[:delegated?] == true and is_pid(opts[:delegation_owner]) and
+                    opts[:delegation_owner] == Process.whereis(Handbean.Agent.Delegation)) do
+          {:error, :internal_conversation}
+        else
+          :ok
+        end
+
+      :missing ->
+        :ok
     end
   end
 

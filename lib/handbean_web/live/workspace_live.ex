@@ -39,7 +39,14 @@ defmodule HandbeanWeb.WorkspaceLive do
   import SidebarComponents, only: [mobile_header: 1, projects_sidebar: 1]
   import ChatComponents, only: [chat_panel: 1]
   import WorkspaceComponents, only: [workspace_panel: 1]
-  import OverlayComponents, only: [mobile_sheets: 1, approval_overlay: 1, status_bar: 1]
+
+  import OverlayComponents,
+    only: [
+      mobile_sheets: 1,
+      delete_conversation_dialog: 1,
+      approval_overlay: 1,
+      status_bar: 1
+    ]
 
   alias Handbean.Platform.FileManager
   alias Handbean.WorkspaceFiles
@@ -162,6 +169,7 @@ defmodule HandbeanWeb.WorkspaceLive do
       |> assign(:conversation_menu_id, nil)
       |> assign(:checkout_picker, nil)
       |> assign(:rename_conversation, nil)
+      |> assign(:delete_conversation, nil)
       |> assign(:pending_approval, nil)
       |> Schedules.defaults()
       |> assign(:show_permission_menu, false)
@@ -1052,6 +1060,68 @@ defmodule HandbeanWeb.WorkspaceLive do
     {:noreply, assign(socket, :rename_conversation, nil)}
   end
 
+  def handle_event("open_delete_conversation", %{"id" => conv_id} = params, socket) do
+    case Handbean.ConversationStore.delete_preview(conv_id) do
+      {:ok, preview} ->
+        workspace_matches? =
+          preview.scope == "free" or preview.workspace_id == params["ws_id"] or
+            preview.workspace_id == socket.assigns.current_workspace_id
+
+        if workspace_matches? do
+          {:noreply,
+           socket
+           |> assign(:conversation_menu_id, nil)
+           |> assign(:rename_conversation, nil)
+           |> assign(:show_settings_sheet, false)
+           |> assign(:delete_conversation, Map.put(preview, :error, nil))}
+        else
+          {:noreply, assign(socket, :conversation_menu_id, nil)}
+        end
+
+      {:error, :not_found} ->
+        {:noreply, assign(socket, :conversation_menu_id, nil)}
+    end
+  end
+
+  def handle_event("cancel_delete_conversation", _params, socket) do
+    {:noreply, assign(socket, :delete_conversation, nil)}
+  end
+
+  def handle_event("confirm_delete_conversation", _params, socket) do
+    case socket.assigns.delete_conversation do
+      %{id: conv_id} = pending ->
+        case Handbean.ConversationStore.request_delete(conv_id) do
+          {:ok, ids} ->
+            {socket, next_id} =
+              ConversationSwitching.conversations_pending_delete(
+                socket,
+                ids,
+                ModelSelection.state_opts()
+              )
+
+            socket =
+              socket
+              |> assign(:delete_conversation, nil)
+              |> navigate_after_delete(next_id)
+
+            {:noreply, socket}
+
+          {:error, :not_found} ->
+            {:noreply, assign(socket, :delete_conversation, nil)}
+
+          {:error, _reason} ->
+            {:noreply,
+             assign(socket, :delete_conversation, %{
+               pending
+               | error: gettext("删除请求失败，请重试")
+             })}
+        end
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
   def handle_event("confirm_rename_conversation", %{"title" => title}, socket) do
     case socket.assigns.rename_conversation do
       %{id: conv_id} = rename ->
@@ -1667,6 +1737,20 @@ defmodule HandbeanWeb.WorkspaceLive do
     end
   end
 
+  def handle_info({:conversations_pending_delete, ids}, socket) when is_list(ids) do
+    {socket, next_id} =
+      ConversationSwitching.conversations_pending_delete(
+        socket,
+        ids,
+        ModelSelection.state_opts()
+      )
+
+    {:noreply,
+     socket
+     |> assign(:delete_conversation, nil)
+     |> navigate_after_delete(next_id)}
+  end
+
   def handle_info({:conversation_updated, conv_id}, socket) do
     socket =
       socket
@@ -1848,6 +1932,28 @@ defmodule HandbeanWeb.WorkspaceLive do
   def handle_info(msg, socket) do
     Logger.debug("[WorkspaceLive] unhandled message: #{inspect(msg)}")
     {:noreply, socket}
+  end
+
+  defp navigate_after_delete(socket, nil), do: socket
+
+  defp navigate_after_delete(%{assigns: %{chat_scope: :free}} = socket, conversation_id) do
+    socket
+    |> WorkspaceNavigation.enter_free_chat()
+    |> RuntimeProjection.subscribe_session()
+    |> restore_session()
+    |> WorkspaceNavigation.close_mobile_sheets()
+    |> push_patch(to: "/c/#{conversation_id}")
+  end
+
+  defp navigate_after_delete(socket, conversation_id) do
+    workspace_id = socket.assigns.current_workspace_id
+
+    socket
+    |> WorkspaceNavigation.after_switch()
+    |> RuntimeProjection.subscribe_session()
+    |> restore_session()
+    |> WorkspaceNavigation.close_mobile_sheets()
+    |> push_patch(to: "/w/#{workspace_id}/c/#{conversation_id}")
   end
 
   defp terminal_scope?(socket, workspace_id, checkout_key) do

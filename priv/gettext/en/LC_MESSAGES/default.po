@@ -2041,12 +2041,13 @@ msgstr ""
 msgid "关闭"
 msgstr ""
 
+#: lib/handbean_web/live/workspace_live/overlay_components.ex
 #: lib/handbean_web/live/workspace_live/schedules.ex:171
 #: lib/handbean_web/live/workspace_live/schedules.ex:179
 #: lib/handbean_web/live/workspace_live/schedules.ex:268
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "删除"
-msgstr "Delete Model"
+msgstr "Delete"
 
 #: lib/handbean_web/live/available_models_live.html.heex:179
 #, elixir-autogen, elixir-format
@@ -2583,3 +2584,28 @@ msgstr "More"
 #: lib/handbean_web/live/workspace_live/sidebar_components.ex
 msgid "显示更多对话"
 msgstr "Show more conversations"
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex
+msgid "删除线程"
+msgstr "Delete thread"
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex
+msgid "删除当前线程"
+msgstr "Delete current thread"
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex
+msgid "“%{title}”将立即从列表中隐藏，删除后无法恢复。"
+msgstr "“%{title}” will be hidden immediately and cannot be recovered after deletion."
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex
+msgid "同时删除 %{count} 个子线程。"
+msgstr "Also delete %{count} child thread(s)."
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex
+msgid "受管媒体会在后台删除；失败时系统会保留定位信息并自动重试。"
+msgstr "Managed media will be deleted in the background. Failed deletions retain their storage locators and retry automatically."
+
+#: lib/handbean_web/live/workspace_live.ex
+msgid "删除请求失败，请重试"
+msgstr "The delete request failed. Please try again."

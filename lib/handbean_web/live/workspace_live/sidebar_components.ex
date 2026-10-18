@@ -1455,7 +1455,7 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarComponents do
           phx-value-id={@conv.id}
           phx-value-ws_id={@conv.workspace_id}
           id={"conversation-action-archive-#{menu_scope_id(@conv)}-#{@conv.id}"}
-          class="conversation-menu-item danger"
+          class="conversation-menu-item"
         >
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
             <path
@@ -1467,6 +1467,26 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarComponents do
             />
           </svg>
           <span>{gettext("归档")}</span>
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          phx-click="open_delete_conversation"
+          phx-value-id={@conv.id}
+          phx-value-ws_id={@conv.workspace_id}
+          id={"conversation-action-delete-#{menu_scope_id(@conv)}-#{@conv.id}"}
+          class="conversation-menu-item danger"
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path
+              d="M2 3.5h8M4.5 3.5V2.75a.75.75 0 0 1 .75-.75h1.5a.75.75 0 0 1 .75.75V3.5M3 3.5l.5 6.75a.75.75 0 0 0 .75.75h3.5a.75.75 0 0 0 .75-.75L9 3.5"
+              stroke="currentColor"
+              stroke-width="1.1"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          <span>{gettext("删除线程")}</span>
         </button>
       </div>
     </div>

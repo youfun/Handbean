@@ -2661,3 +2661,28 @@ msgstr "更多"
 #: lib/handbean_web/live/workspace_live/sidebar_components.ex
 msgid "显示更多对话"
 msgstr "显示更多对话"
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex
+msgid "删除线程"
+msgstr "删除线程"
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex
+msgid "删除当前线程"
+msgstr "删除当前线程"
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex
+msgid "“%{title}”将立即从列表中隐藏，删除后无法恢复。"
+msgstr "“%{title}”将立即从列表中隐藏，删除后无法恢复。"
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex
+msgid "同时删除 %{count} 个子线程。"
+msgstr "同时删除 %{count} 个子线程。"
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex
+msgid "受管媒体会在后台删除；失败时系统会保留定位信息并自动重试。"
+msgstr "受管媒体会在后台删除；失败时系统会保留定位信息并自动重试。"
+
+#: lib/handbean_web/live/workspace_live.ex
+msgid "删除请求失败，请重试"
+msgstr "删除请求失败，请重试"

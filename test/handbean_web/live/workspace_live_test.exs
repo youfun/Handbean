@@ -6935,5 +6935,47 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
 
       assert has_element?(view, "#free-conversation-#{conv["id"]}", "Renamed free")
     end
+
+    test "free chats can be deleted after confirmation and switch to a remaining chat", %{
+      conn: conn
+    } do
+      isolate_conversation_home!()
+      {:ok, doomed} = Handbean.ConversationStore.create_free(title: "Delete me")
+      {:ok, kept} = Handbean.ConversationStore.create_free(title: "Keep me")
+
+      {:ok, view, _html} = live(conn, "/c/#{doomed["id"]}")
+
+      view |> element("#conversation-menu-free-#{doomed["id"]}") |> render_click()
+
+      view
+      |> element("#conversation-action-delete-free-#{doomed["id"]}")
+      |> render_click()
+
+      assert has_element?(view, "#delete-conversation-dialog")
+      assert has_element?(view, "#confirm-delete-conversation")
+
+      view |> element("#confirm-delete-conversation") |> render_click()
+
+      assert_patch(view, "/c/#{kept["id"]}")
+      refute has_element?(view, "#free-conversation-#{doomed["id"]}")
+      refute Handbean.ConversationStore.exists?(doomed["id"])
+
+      assert %Handbean.Storage.Conversation{status: "pending_delete"} =
+               Handbean.Repo.get(Handbean.Storage.Conversation, doomed["id"])
+    end
+
+    test "mobile conversation info exposes the same confirmed delete flow", %{conn: conn} do
+      isolate_conversation_home!()
+      {:ok, conversation} = Handbean.ConversationStore.create_free(title: "Mobile delete")
+      {:ok, view, _html} = live(conn, "/c/#{conversation["id"]}")
+
+      view
+      |> element("button[phx-click='open_sheet'][phx-value-type='settings']")
+      |> render_click()
+
+      assert has_element?(view, "#mobile-delete-conversation")
+      view |> element("#mobile-delete-conversation") |> render_click()
+      assert has_element?(view, "#delete-conversation-dialog")
+    end
   end
 end

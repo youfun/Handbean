@@ -167,12 +167,16 @@ defmodule Handbean.Agent.Runner do
           {:error, reason}
       end
     else
-      case Handbean.Agent.OperationReceipt.complete(
-             {:message, conversation_id},
-             opts[:request_id],
-             receipt
-           ) do
-        :ok -> {:ok, content, opts}
+      with true <- Handbean.ConversationStore.active?(conversation_id),
+           :ok <-
+             Handbean.Agent.OperationReceipt.complete(
+               {:message, conversation_id},
+               opts[:request_id],
+               receipt
+             ) do
+        {:ok, content, opts}
+      else
+        false -> {:error, :not_found}
         {:error, reason} -> {:error, reason}
       end
     end

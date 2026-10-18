@@ -24,6 +24,12 @@ defmodule Handbean.Media.Cleaner do
     GenServer.call(__MODULE__, :run_now, 30_000)
   end
 
+  @doc false
+  def schedule_pending_delete do
+    Process.send_after(__MODULE__, :cleanup_once, (@default_pending_ttl_seconds + 1) * 1_000)
+    :ok
+  end
+
   @impl true
   def init(opts) do
     state = %{
@@ -42,6 +48,11 @@ defmodule Handbean.Media.Cleaner do
   end
 
   @impl true
+  def handle_info(:cleanup_once, state) do
+    _result = cleanup(state)
+    {:noreply, state}
+  end
+
   def handle_info(:cleanup, state) do
     _result = cleanup(state)
     schedule(state.interval_ms)
@@ -67,8 +78,9 @@ defmodule Handbean.Media.Cleaner do
 
     result =
       "pending_delete"
-      |> Handbean.Media.gc_candidates(pending_before)
+      |> Handbean.Media.gc_candidates(pending_before, active_conversation_only?: true)
       |> Enum.reduce(staged_result, &delete_one/2)
+      |> cleanup_pending_conversations(pending_before)
 
     if result.failed > 0 do
       Logger.warning(
@@ -77,6 +89,36 @@ defmodule Handbean.Media.Cleaner do
     end
 
     result
+  end
+
+  defp cleanup_pending_conversations(counts, pending_before) do
+    pending_before
+    |> Handbean.ConversationStore.Deletion.pending_groups()
+    |> Enum.reduce(counts, fn group, acc ->
+      conversation_ids = Enum.map(group.conversations, & &1.id)
+
+      if Handbean.ConversationStore.Deletion.runtime_active?(conversation_ids) do
+        Handbean.ConversationStore.Deletion.force_quiesce(conversation_ids)
+        Map.update!(acc, :failed, &(&1 + 1))
+      else
+        Handbean.ConversationStore.Deletion.force_quiesce(conversation_ids)
+        media = Handbean.Media.pending_for_conversations(conversation_ids)
+        delete_results = Enum.map(media, &Handbean.Media.delete_object/1)
+
+        if Enum.all?(delete_results, &(&1 == :ok)) do
+          case Handbean.ConversationStore.Deletion.finalize(
+                 group.root_id,
+                 conversation_ids,
+                 Enum.map(media, & &1.id)
+               ) do
+            :ok -> Map.update!(acc, :deleted, &(&1 + length(media)))
+            {:error, _reason} -> Map.update!(acc, :failed, &(&1 + 1))
+          end
+        else
+          Map.update!(acc, :failed, &(&1 + 1))
+        end
+      end
+    end)
   end
 
   defp delete_one(media, counts) do
