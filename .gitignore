@@ -42,6 +42,7 @@ modejs.json
 # Database files
 *.db
 *.db-*
+*.db.lock
 /node_modules/
 
 # Generated Mix/Hex/ExUnit toolchain for mobile packaging
