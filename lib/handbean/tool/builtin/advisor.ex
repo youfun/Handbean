@@ -14,12 +14,13 @@ defmodule Handbean.Tool.Builtin.Advisor do
   @impl true
   def description do
     "Ask the configured read-only Advisor for a judgment. Every call creates a new advisor " <>
-      "conversation. Never call advisor for a follow-up or revised version of an issue already " <>
-      "reviewed by an advisor. A successful result begins with that advisor's " <>
-      "child_conversation_id; continue the exact advisor by calling task_status with action " <>
-      "\"message\", that child_conversation_id, and the follow-up message. Provide the question, " <>
-      "necessary context, relevant files, and the decision you need. The advisor cannot modify " <>
-      "files, browse, delegate, or authorize actions."
+      "conversation. For a follow-up or revised version of an issue, first continue the exact " <>
+      "advisor by calling task_status with action \"message\" and the returned " <>
+      "child_conversation_id. If task_status reports that advisor is unavailable to this " <>
+      "conversation, a new advisor may be created with the prior review and current changes in " <>
+      "context. Do not replace an accessible advisor merely to seek a different judgment. " <>
+      "Provide the question, necessary context, relevant files, and the decision you need. The " <>
+      "advisor cannot modify files, browse, delegate, or authorize actions."
   end
 
   @impl true
@@ -99,9 +100,12 @@ defmodule Handbean.Tool.Builtin.Advisor do
 
   defp reusable_result(text, %{child_conversation_id: id}) when is_binary(id) do
     "Reusable advisor conversation: child_conversation_id #{id}. " <>
-      "For every follow-up or revised version of this issue, continue this exact advisor with " <>
+      "For a follow-up or revised version of this issue, first continue this exact advisor with " <>
       "task_status(action: \"message\", child_conversation_id: \"#{id}\", message: <follow-up>). " <>
-      "Do not call advisor again for the same issue.\n\n" <> text
+      "If task_status reports that this advisor is unavailable to the current conversation, a " <>
+      "new advisor may be created only with this review and the current changes included as " <>
+      "context. Do not replace an accessible advisor merely to seek a different judgment.\n\n" <>
+      text
   end
 
   defp reusable_result(text, _data), do: text

@@ -5,6 +5,7 @@ defmodule Handbean.Agent.AdvisorTest do
   alias Handbean.Agent.Delegation.Policy
   alias Handbean.Agent.Subagent.Profile
   alias Handbean.Tool.Builtin.Advisor, as: AdvisorTool
+  alias Handbean.Tool.Builtin.TaskStatus
 
   # Failure list:
   # - the Delegation wrapper JSON is not the advisor verdict
@@ -37,5 +38,20 @@ defmodule Handbean.Agent.AdvisorTest do
 
   test "a wrapper without a report is not treated as advisor text" do
     assert Advisor.child_text({:ok, ~s({"status":"completed"}), %{status: :completed}}) == nil
+  end
+
+  test "follow-up guidance permits replacement only when the original advisor is unavailable" do
+    for description <- [AdvisorTool.description(), TaskStatus.description()] do
+      assert description =~ "first"
+      assert description =~ "exact"
+      assert description =~ "unavailable to this conversation"
+      assert description =~ "prior review"
+      assert description =~ "current changes"
+      refute description =~ "Never call advisor"
+      refute description =~ "do not create a new advisor"
+    end
+
+    assert AdvisorTool.description() =~
+             "Do not replace an accessible advisor merely to seek a different judgment"
   end
 end

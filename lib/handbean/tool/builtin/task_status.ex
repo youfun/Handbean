@@ -16,9 +16,10 @@ defmodule Handbean.Tool.Builtin.TaskStatus do
       "cancel: stop a running subagent. message: send the subagent a message using its " <>
       "child_conversation_id; a running subagent receives it as a steer, while a finished task " <>
       "or advisor starts a follow-up run in the same conversation with its existing history, " <>
-      "model, and tool permissions, and its reply arrives later as a follow-up message. Always " <>
-      "use message with the exact child_conversation_id returned by advisor when asking that " <>
-      "advisor to review a follow-up or revised version; do not create a new advisor. resume: " <>
+      "model, and tool permissions, and its reply arrives later as a follow-up message. For an " <>
+      "advisor follow-up, first use message with the exact returned child_conversation_id. If " <>
+      "that advisor is unavailable to this conversation, you may call advisor to create a " <>
+      "replacement only when given the prior review and current changes as context. resume: " <>
       "restart an interrupted child in the same conversation and worktree after reviewing its " <>
       "prior transcript. apply / discard: take or drop a write subagent's worktree diff (apply " <>
       "needs approval). child_conversation_id may also be a subagent_type, meaning the most " <>
