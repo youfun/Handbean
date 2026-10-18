@@ -44,7 +44,10 @@ defmodule Handbean.Tool.Memory.MemLearn do
          {:ok, safe_content} <- Policy.validate_candidate_memory(content) do
       opts =
         Scope.options(context) ++
-          [short_term: Map.get(input, "short_term", true), metadata: %{source: "agent_tool"}]
+          [
+            short_term: Map.get(input, "short_term", true),
+            metadata: provenance_metadata(context)
+          ]
 
       case Handbean.Memory.MemoryStore.learn(safe_content, kind, opts) do
         {:ok, engram} ->
@@ -63,6 +66,19 @@ defmodule Handbean.Tool.Memory.MemLearn do
   end
 
   def execute(_input, _context), do: {:error, "content and kind are required"}
+
+  defp provenance_metadata(context) do
+    %{"source" => "agent_tool"}
+    |> put_context_value("conversation_id", context, :conversation_id)
+    |> put_context_value("run_id", context, :run_id)
+  end
+
+  defp put_context_value(metadata, metadata_key, context, context_key) do
+    case Map.get(context, context_key) || Map.get(context, Atom.to_string(context_key)) do
+      value when is_binary(value) and value != "" -> Map.put(metadata, metadata_key, value)
+      _other -> metadata
+    end
+  end
 
   defp parse_kind(kind_str) when is_binary(kind_str) do
     kind = String.to_existing_atom(kind_str)

@@ -28,6 +28,19 @@ defmodule Handbean.Memory.PromptPolicyTest do
       assert prompt =~ "mem_reflect"
     end
 
+    test "lists only relationships accepted by mem_associate" do
+      {:ok, policy} = Policy.new(profile: :balanced)
+      prompt = PromptPolicy.generate(policy)
+
+      for relationship <- ~w(contradicts context_for example_of reinforces related) do
+        assert prompt =~ relationship
+      end
+
+      for unsupported <- ~w(requires depends_on implements related_to) do
+        refute prompt =~ unsupported
+      end
+    end
+
     test "includes guidance on when to recall" do
       {:ok, policy} = Policy.new(profile: :balanced)
       prompt = PromptPolicy.generate(policy)

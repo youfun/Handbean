@@ -11,7 +11,7 @@ defmodule Handbean.Repo do
       |> Keyword.put(:journal_mode, :wal)
       |> Keyword.put(:synchronous, :full)
       |> Keyword.put(:foreign_keys, :on)
-      |> Keyword.put_new(:busy_timeout, 2_000)
+      |> Keyword.put_new(:busy_timeout, 5_000)
       |> Keyword.put_new(:wal_auto_check_point, 1_000)
 
     {:ok, config}

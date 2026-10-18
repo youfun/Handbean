@@ -34,7 +34,9 @@ defmodule Handbean.Memory.MemoryStore do
   Recall engrams matching a keyword query.
 
   The query is downcased, punctuation is treated as whitespace, and tokens are
-  deduped. At most the first #{@recall_token_limit} usable tokens are kept.
+  deduped. At most #{@recall_token_limit} usable tokens are kept. By default they
+  come from the start; `token_window: :head_tail` keeps an even split from the
+  start and end for long natural-language prompts.
   Tokens shorter than 2 graphemes and stop words (common English function words,
   plus a few common Chinese ones) are dropped. A CJK run (`\\p{Han}`) of 2 to 4
   graphemes stays one token; a longer CJK run is replaced by its overlapping
@@ -58,10 +60,12 @@ defmodule Handbean.Memory.MemoryStore do
     * `:limit` — max results after scoring (default 10)
     * `:min_matches` — base token overlap required, before the proportional floor
     * `:match_percent` — proportional token-overlap floor, 1..100 (default 30)
+    * `:max_required_matches` — optional cap for the final overlap threshold
+    * `:token_window` — `:head` (default) or `:head_tail` for long prompts
   """
   @spec recall(String.t(), keyword()) :: [Engram.t()]
   def recall(query, opts \\ []) do
-    case recall_tokens(query) do
+    case recall_tokens(query, opts) do
       [] ->
         []
 
@@ -210,7 +214,7 @@ defmodule Handbean.Memory.MemoryStore do
 
   def reinforce(id, opts) when is_integer(id) do
     with :ok <- validate_mutation_scope(opts) do
-      reinforce_query(scoped_id_query(id, opts))
+      reinforce_query(active_scoped_id_query(id, opts))
     end
   end
 
@@ -241,17 +245,11 @@ defmodule Handbean.Memory.MemoryStore do
 
   def associate(source_id, target_id, kind, opts)
       when is_integer(source_id) and is_integer(target_id) do
-    with :ok <- validate_mutation_scope(opts) do
-      Repo.transaction(fn ->
-        with {:ok, source} <- fetch_scoped(source_id, opts),
-             {:ok, target} <- fetch_scoped(target_id, opts),
-             :ok <- ensure_same_identity(source, target),
-             {:ok, synapse} <- insert_synapse(source_id, target_id, kind) do
-          synapse
-        else
-          {:error, reason} -> Repo.rollback(reason)
-        end
-      end)
+    with :ok <- validate_mutation_scope(opts),
+         {:ok, source} <- fetch_active_scoped(source_id, opts),
+         {:ok, target} <- fetch_active_scoped(target_id, opts),
+         :ok <- ensure_same_identity(source, target) do
+      insert_synapse(source_id, target_id, kind)
     end
   end
 
@@ -308,7 +306,7 @@ defmodule Handbean.Memory.MemoryStore do
 
   def update(id, attrs, opts) when is_integer(id) and is_map(attrs) do
     with :ok <- validate_mutation_scope(opts),
-         {:ok, engram} <- fetch_scoped(id, opts) do
+         {:ok, engram} <- fetch_active_scoped(id, opts) do
       attrs = Map.take(attrs, [:content, "content", :kind, "kind"])
 
       engram
@@ -364,6 +362,19 @@ defmodule Handbean.Memory.MemoryStore do
       nil -> {:error, :not_found}
       engram -> {:ok, engram}
     end
+  end
+
+  defp fetch_active_scoped(id, opts) do
+    case Repo.one(active_scoped_id_query(id, opts)) do
+      nil -> {:error, :not_found}
+      engram -> {:ok, engram}
+    end
+  end
+
+  defp active_scoped_id_query(id, opts) do
+    id
+    |> scoped_id_query(opts)
+    |> apply_lifecycle_filter(:active, DateTime.utc_now())
   end
 
   defp scoped_id_query(id, opts) do
@@ -497,32 +508,36 @@ defmodule Handbean.Memory.MemoryStore do
     {count, nil}
   end
 
-  defp recall_tokens(query) when is_binary(query) do
-    pieces =
+  defp recall_tokens(query, opts) when is_binary(query) do
+    tokens =
       query
       |> String.downcase()
       |> String.replace(@recall_separators, " ")
       |> String.split(~r/\s+/u, trim: true)
       |> Enum.flat_map(&expand_recall_token/1)
-
-    {tokens, _seen, _count} =
-      Enum.reduce_while(pieces, {[], MapSet.new(), 0}, fn token, {tokens, seen, count} ->
-        cond do
-          count >= @recall_token_limit ->
-            {:halt, {tokens, seen, count}}
-
-          not usable_recall_token?(token) or MapSet.member?(seen, token) ->
-            {:cont, {tokens, seen, count}}
-
-          true ->
-            {:cont, {[token | tokens], MapSet.put(seen, token), count + 1}}
-        end
+      |> Enum.reduce({[], MapSet.new()}, fn token, {tokens, seen} ->
+        if usable_recall_token?(token) and not MapSet.member?(seen, token),
+          do: {[token | tokens], MapSet.put(seen, token)},
+          else: {tokens, seen}
       end)
+      |> elem(0)
+      |> Enum.reverse()
 
-    Enum.reverse(tokens)
+    select_recall_tokens(tokens, Keyword.get(opts, :token_window, :head))
   end
 
-  defp recall_tokens(_query), do: []
+  defp recall_tokens(_query, _opts), do: []
+
+  defp select_recall_tokens(tokens, :head_tail) do
+    if length(tokens) <= @recall_token_limit do
+      tokens
+    else
+      half = div(@recall_token_limit, 2)
+      Enum.take(tokens, half) ++ Enum.take(tokens, -half)
+    end
+  end
+
+  defp select_recall_tokens(tokens, _strategy), do: Enum.take(tokens, @recall_token_limit)
 
   defp expand_recall_token(token) do
     token
@@ -613,7 +628,12 @@ defmodule Handbean.Memory.MemoryStore do
       end
 
     proportional = div(count * percent + 99, 100)
-    min(count, max(min(base, count), proportional))
+    required = min(count, max(min(base, count), proportional))
+
+    case Keyword.get(opts, :max_required_matches) do
+      value when is_integer(value) and value > 0 -> min(required, value)
+      _other -> required
+    end
   end
 
   defp matched_token_count(content, tokens) do

@@ -98,7 +98,7 @@ conversation trajectory
 - [x] 删除 `ObservationStore`、`Observation` 和对应中间件。
 - [x] 删除未实现且与 Compactor 重复的 Observer 配置和设置字段。
 - [x] 删除对应测试，不添加兼容 shim、双写或启动迁移。
-- [ ] 备份 `~/.handbean_dev/handbean_dev.db` 与旧 observation JSONL；只使用一次性运维命令，不添加迁移脚本。
+- [x] 备份 `~/.handbean_dev/handbean_dev.db` 与旧 observation JSONL；在线备份、quick/FK 与 SHA-256 校验通过，未添加迁移脚本。
 
 ### 阶段 1E：Web 与 mobile 管理投影
 
@@ -108,7 +108,7 @@ conversation trajectory
 - [x] native memory projection 复用同一 owner，提供与平台交互能力相符的 promote/edit/delete。
 - [x] Web LiveView 行为测试覆盖操作成功、失败、筛选刷新和隔离。
 - [x] mobile host tests 覆盖状态、事件和持久结果；不把 host tests 声称为设备验收。
-- [ ] 真实 Web 页面检查列表、编辑态、窄屏、空态和错误态，并保存截图证据。
+- [x] 真实 Web 页面检查列表、编辑态、窄屏、删除确认和错误态，并保存截图证据。
 - [ ] 原生界面若有视觉变化，检查代表性状态；本轮未运行模拟器或真机。
 
 ### 阶段 2：compaction-driven Reflector
@@ -134,19 +134,28 @@ conversation trajectory
 - [ ] 运行根项目 `mix test`：相关测试与 Runner/Compactor 全部通过；全仓沙箱运行因系统工具/当前 workspace 污染终止，不作为通过结论。
 - [x] 在 `mobile/` 运行相关 host tests 和 `mix test`。
 - [x] 明确报告未运行的 simulator、Android 真机和 iOS 真机层级。
-- [ ] 核对 git diff，只包含本任务文件，不覆盖工作区已有改动。
-- [ ] 回写本清单最终状态、验证命令和已知未覆盖项。
+- [x] 核对 git diff，只提交本任务文件，不覆盖工作区已有改动。
+- [x] 回写本清单最终状态、验证命令和已知未覆盖项。
 
 ### 阶段 4：开发环境真实模型验收
 
-- [ ] 在备份完成后启动 `PORT=5002 mix phx.server`。
-- [ ] 只使用 `default` 工作区（`~/.handbean_dev/.handbean/workspace`）和唯一测试标记。
-- [ ] 真实 LLM 触发并核对 `mem_learn`、`mem_recall`、`mem_update`、`mem_reinforce`。
-- [ ] 真实 LLM 触发并核对 `mem_associate`、`mem_forget`。
-- [ ] 准备持久化 compaction checkpoint，真实触发 `mem_reflect` 并核对 168h candidate 与 internal audit。
-- [ ] 新会话验证长期规则/偏好无关键词投影，事实仍按查询召回。
-- [ ] 清理带唯一标记的测试记忆、对话和临时 checkpoint；保留脱敏验证记录。
-- [ ] Web 桌面与 390px 窄屏截图检查记忆卡片、编辑态、删除确认和反思设置。
+- [x] 在备份完成后启动 `PORT=5002 mix phx.server`。
+- [x] 只使用 `default` 工作区（`~/.handbean_dev/.handbean/workspace`）和唯一测试标记。
+- [x] 真实 LLM 触发并核对 `mem_learn`、`mem_recall`、`mem_update`、`mem_reinforce`。
+- [x] 真实 LLM 触发并核对 `mem_associate`、`mem_forget`。
+- [x] 准备持久化 compaction checkpoint，真实触发 `mem_reflect` 并核对 168h candidate 与 internal audit。
+- [x] 新会话验证长期规则/偏好无关键词投影，事实按查询自动召回。
+- [x] 清理带唯一标记的测试记忆、关联、测试对话和临时 checkpoint；保留脱敏验证记录。
+- [x] Web 桌面与 390px 窄屏截图检查记忆卡片、编辑态、删除确认和反思设置。
+
+### 阶段 5：顾问优化复审
+
+- [x] 修正 PromptPolicy 与 `mem_associate` 实际关系枚举不一致。
+- [x] 移除 associate 的 SQLite deferred read→write 事务升级，并把 busy timeout 提高到 5 秒；保留 `synchronous: full` 耐久性。
+- [x] 禁止 update、reinforce 和 associate 使用已过期的短期记忆，delete 仍可清理过期项。
+- [x] 自动投影同时使用 head/tail token、20% floor 和最多 3 个必需命中；显式 `mem_recall` 默认语义不变。
+- [x] `mem_learn` 自动附加可信 conversation/run provenance metadata。
+- [x] 明确延期跨 Session execution search、synapse 图召回、embedding 和 provenance schema 列。
 
 ## 验收标准
 

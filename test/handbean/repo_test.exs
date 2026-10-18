@@ -13,6 +13,16 @@ defmodule Handbean.RepoTest do
     :ok
   end
 
+  test "uses WAL durability settings with a bounded local contention wait" do
+    assert {:ok, config} =
+             Handbean.Repo.init(:runtime, database: "/tmp/handbean_dev.db", pool_size: 1)
+
+    assert config[:journal_mode] == :wal
+    assert config[:synchronous] == :full
+    assert config[:busy_timeout] == 5_000
+    assert config[:foreign_keys] == :on
+  end
+
   test "keeps an explicit database when the host also sets data_dir" do
     Handbean.Host.put!(%{data_dir: "/tmp/handbean-dev-data"})
 

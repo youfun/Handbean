@@ -27,10 +27,16 @@ defmodule Handbean.Tool.MemoryTest do
 
   describe "mem_learn" do
     test "stores scoped content with fixed default ttl and agent provenance" do
+      context =
+        Map.merge(@context, %{
+          conversation_id: "conversation-provenance",
+          run_id: "run-provenance"
+        })
+
       assert {:ok, output, data} =
                MemLearn.execute(
                  %{"content" => "User prefers spaces over tabs", "kind" => "preference"},
-                 @context
+                 context
                )
 
       assert output =~ "Learned"
@@ -38,6 +44,8 @@ defmodule Handbean.Tool.MemoryTest do
       assert engram.metadata["scope"] == "workspace"
       assert engram.metadata["workspace_id"] == "tool-memory-test"
       assert engram.metadata["source"] == "agent_tool"
+      assert engram.metadata["conversation_id"] == "conversation-provenance"
+      assert engram.metadata["run_id"] == "run-provenance"
       assert_in_delta DateTime.diff(engram.expires_at, DateTime.utc_now()), 24 * 3600, 10
       refute Map.has_key?(MemLearn.input_schema().properties, :ttl_hours)
     end

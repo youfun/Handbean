@@ -401,6 +401,33 @@ defmodule Handbean.Memory.MemoryStoreTest do
       refute Handbean.Repo.get(Engram, engram.id)
     end
 
+    test "expired memories cannot be updated, reinforced, or associated but can be deleted" do
+      expired_at =
+        DateTime.utc_now() |> DateTime.add(-60, :second) |> DateTime.truncate(:second)
+
+      {:ok, expired} =
+        Handbean.Repo.insert(%Engram{
+          content: "Expired scoped mutation target",
+          kind: :fact,
+          short_term: true,
+          expires_at: expired_at,
+          metadata: %{"scope" => "workspace", "workspace_id" => "memory-store-test"}
+        })
+
+      {:ok, active} = learn("Active association endpoint", :fact)
+
+      assert {:error, :not_found} = MemoryStore.reinforce(expired.id, @scope_opts)
+
+      assert {:error, :not_found} =
+               MemoryStore.update(expired.id, %{content: "Resurrected content"}, @scope_opts)
+
+      assert {:error, :not_found} =
+               MemoryStore.associate(expired.id, active.id, :related, @scope_opts)
+
+      assert {:ok, _deleted} = MemoryStore.delete(expired.id, @scope_opts)
+      refute Handbean.Repo.get(Engram, expired.id)
+    end
+
     test "local_only rejects global writes and mutations" do
       global_opts = [memory_scope: :global, privacy_mode: :standard]
       {:ok, global} = MemoryStore.learn("Global scoped memory", :fact, global_opts)

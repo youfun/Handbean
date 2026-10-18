@@ -60,6 +60,24 @@ defmodule Handbean.Memory.MemoryUsefulnessTest do
       assert result.config.system_prompt =~ "测试数字是8427"
     end
 
+    test "automatic recall keeps the question at the tail of a long prompt" do
+      {:ok, _} =
+        learn_scoped("Run tests with mise exec mix test", :fact,
+          workspace_id: "useful-workspace",
+          short_term: true
+        )
+
+      preamble =
+        Enum.map_join(1..24, " ", fn index -> "unrelated-context-#{index}" end)
+
+      result =
+        "#{preamble} At the end: how should I run tests with mise?"
+        |> build_state(workspace_id: "useful-workspace")
+        |> then(&MemoryProjection.call(:session_start, &1))
+
+      assert result.config.system_prompt =~ "Run tests with mise exec mix test"
+    end
+
     test "query recall keeps short-term preferences discoverable" do
       {:ok, _} =
         learn_scoped("For release notes use British spelling", :preference,

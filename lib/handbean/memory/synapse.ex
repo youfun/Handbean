@@ -30,6 +30,8 @@ defmodule Handbean.Memory.Synapse do
     synapse
     |> cast(attrs, [:source_id, :target_id, :kind, :strength, :metadata])
     |> validate_required([:source_id, :target_id, :kind])
+    |> foreign_key_constraint(:source_id)
+    |> foreign_key_constraint(:target_id)
     |> unique_constraint([:source_id, :target_id, :kind])
   end
 end

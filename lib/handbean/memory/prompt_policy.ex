@@ -67,8 +67,8 @@ defmodule Handbean.Memory.PromptPolicy do
 
     ### When to associate
     - When two concepts are related, call mem_associate to link them.
-    - Use strong predicates (requires, depends_on, implements) over weak ones
-      (related_to) for better recall.
+    - Use only supported relationships: contradicts, context_for, example_of,
+      reinforces, or related.
 
     ### When to correct or forget
     - When the user corrects remembered information, call mem_update.
@@ -109,7 +109,8 @@ defmodule Handbean.Memory.PromptPolicy do
     - Call mem_reinforce to promote important short-term memories to long-term.
 
     ### When to associate
-    - Call mem_associate to link related concepts using strong predicates.
+    - Call mem_associate only with a supported relationship: contradicts,
+      context_for, example_of, reinforces, or related.
 
     ### When to correct or forget
     - Call mem_update only to apply an explicit correction to a memory.
