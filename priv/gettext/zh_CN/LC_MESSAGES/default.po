@@ -2619,3 +2619,15 @@ msgstr "非安全上下文"
 #: lib/handbean_web/live/workspace_live/sidebar_components.ex
 msgid "Choose a checkout"
 msgstr "当前 worktree 列表"
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex
+msgid "新建对话"
+msgstr "新建对话"
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex
+msgid "选择项目"
+msgstr "选择项目"
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex
+msgid "添加工作区"
+msgstr "添加工作区"

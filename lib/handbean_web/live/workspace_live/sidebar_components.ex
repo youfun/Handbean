@@ -205,13 +205,61 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarComponents do
           <img src={~p"/images/logo.svg"} class="brand-mark" width="16" height="16" alt="" />
           <span>{gettext("专案")}</span>
         </h2>
-        <button
-          phx-click="open_add_project"
-          class="text-xs text-tertiary hover:text-primary transition-colors leading-none"
-          title={gettext("添加项目")}
-        >
-          +
-        </button>
+        <div class="projects-panel-new-conversation">
+          <button
+            id="new-conversation-picker-toggle"
+            type="button"
+            phx-click="toggle_new_conversation_picker"
+            class="text-xs text-tertiary hover:text-primary transition-colors leading-none"
+            title={gettext("新建对话")}
+            aria-label={gettext("新建对话")}
+            aria-haspopup="menu"
+            aria-expanded={to_string(match?(%{source: :header}, @checkout_picker))}
+          >
+            +
+          </button>
+          <div
+            :if={match?(%{source: :header}, @checkout_picker)}
+            id="new-conversation-picker"
+            class="workspace-checkout-menu projects-panel-new-conversation-menu"
+            role="menu"
+            phx-click-away="close_checkout_picker"
+          >
+            <%= if is_nil(@checkout_picker.workspace_id) do %>
+              <div class="workspace-checkout-heading">{gettext("选择项目")}</div>
+              <button
+                :for={ws <- @workspaces}
+                id={"new-conversation-project-#{ws["id"]}"}
+                type="button"
+                role="menuitem"
+                phx-click="new_conversation_in_workspace"
+                phx-value-ws_id={ws["id"]}
+                phx-value-source="header"
+                class="workspace-checkout-item"
+                title={ws["path"]}
+              >
+                <span class="workspace-checkout-name">{ws["name"]}</span>
+              </button>
+            <% else %>
+              <div class="workspace-checkout-heading">{gettext("Choose a checkout")}</div>
+              <button
+                :for={checkout <- @checkout_picker.checkouts}
+                type="button"
+                role="menuitem"
+                phx-click="new_conversation_on_checkout"
+                phx-value-ws_id={@checkout_picker.workspace_id}
+                phx-value-path={checkout.path}
+                class="workspace-checkout-item"
+                title={checkout.path}
+              >
+                <span class="workspace-checkout-name">{Path.basename(checkout.path)}</span>
+                <span :if={checkout_ref(checkout)} class="workspace-checkout-ref">
+                  {checkout_ref(checkout)}
+                </span>
+              </button>
+            <% end %>
+          </div>
+        </div>
       </div>
       <div
         class="flex-1 overflow-y-auto"
@@ -540,13 +588,6 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarComponents do
               <span class="truncate flex-1">{ws["name"]}</span>
             </button>
             <span class="workspace-title-rule" aria-hidden="true"></span>
-            <div class="workspace-row-actions">
-              <.checkout_picker
-                workspace_id={ws["id"]}
-                picker={@checkout_picker}
-                source={:sidebar}
-              />
-            </div>
             <button
               type="button"
               id={"workspace-toggle-#{ws["id"]}"}
@@ -698,6 +739,32 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarComponents do
               <.conversation_menu conv={conv} conversation_menu_id={@conversation_menu_id} />
             </div>
           </div>
+        </div>
+
+        <div class="workspace-group workspace-add-entry">
+          <button
+            id="add-workspace"
+            type="button"
+            phx-click="open_add_project"
+            class="workspace-add-entry-button"
+            title={gettext("添加工作区")}
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <path d="M12 11v5M9.5 13.5h5" />
+            </svg>
+            <span>{gettext("添加工作区")}</span>
+          </button>
         </div>
 
         <!-- Archived conversations -->

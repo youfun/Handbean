@@ -141,21 +141,20 @@ defmodule HandbeanWeb.Feature.WorkspaceFeatureTest do
   end
 
   describe "new conversation" do
-    test "workspace new conversation button is present", %{conn: conn} do
+    test "global new conversation button and in-list add workspace button are present", %{
+      conn: conn
+    } do
       conn
       |> visit("/")
-      |> assert_has(
-        "button[phx-click='new_conversation_in_workspace'][title='New conversation in workspace']"
-      )
+      |> assert_has("#new-conversation-picker-toggle[title='New conversation']")
+      |> assert_has("#add-workspace[title='Add workspace']")
     end
 
     test "clicking new conversation clears messages and resets UI", %{conn: conn} do
       conn
       |> visit("/")
-      |> click_button(
-        "button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']",
-        ""
-      )
+      |> click_button("#new-conversation-picker-toggle", "")
+      |> click_button("#new-conversation-project-default", "")
       |> assert_has("#no-messages", "No messages yet")
       |> assert_has("#status-label", "idle")
       |> assert_path("/w/default/c/*")
@@ -167,10 +166,8 @@ defmodule HandbeanWeb.Feature.WorkspaceFeatureTest do
       |> fill_in("#ai-input", "Message", with: "Previous message", exact: false)
       |> click_button("#send-button", "")
       |> assert_has(".msg-bubble.msg-user", "Previous message")
-      |> click_button(
-        "button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']",
-        ""
-      )
+      |> click_button("#new-conversation-picker-toggle", "")
+      |> click_button("#new-conversation-project-default", "")
       |> assert_has("#no-messages", "No messages yet")
       |> refute_has(".msg-bubble.msg-user", "Previous message")
     end
@@ -207,10 +204,8 @@ defmodule HandbeanWeb.Feature.WorkspaceFeatureTest do
     test "archive button exists on conversation list", %{conn: conn} do
       conn
       |> visit("/")
-      |> click_button(
-        "button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']",
-        ""
-      )
+      |> click_button("#new-conversation-picker-toggle", "")
+      |> click_button("#new-conversation-project-default", "")
       |> assert_has("button[phx-click='toggle_conversation_menu']", "More actions")
       |> click_button("button[phx-click='toggle_conversation_menu']", "More actions")
       |> assert_has(".conversation-menu-item[phx-click='archive_conversation']", "Archive")
@@ -220,10 +215,8 @@ defmodule HandbeanWeb.Feature.WorkspaceFeatureTest do
       session =
         conn
         |> visit("/")
-        |> click_button(
-          "button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']",
-          ""
-        )
+        |> click_button("#new-conversation-picker-toggle", "")
+        |> click_button("#new-conversation-project-default", "")
         |> click_button("button[phx-click='toggle_conversation_menu']", "More actions")
 
       [conv] = Handbean.ConversationStore.list(include_timeline?: false)
@@ -234,10 +227,8 @@ defmodule HandbeanWeb.Feature.WorkspaceFeatureTest do
     test "archive conversation removes it from active list", %{conn: conn} do
       conn
       |> visit("/")
-      |> click_button(
-        "button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']",
-        ""
-      )
+      |> click_button("#new-conversation-picker-toggle", "")
+      |> click_button("#new-conversation-project-default", "")
       |> assert_has("button", "New chat")
       |> click_button("button[phx-click='toggle_conversation_menu']", "More actions")
       |> click_button(".conversation-menu-item[phx-click='archive_conversation']", "Archive")
@@ -248,10 +239,8 @@ defmodule HandbeanWeb.Feature.WorkspaceFeatureTest do
       session =
         conn
         |> visit("/")
-        |> click_button(
-          "button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']",
-          ""
-        )
+        |> click_button("#new-conversation-picker-toggle", "")
+        |> click_button("#new-conversation-project-default", "")
         |> fill_in("#ai-input", "Message", with: "Archive this conversation", exact: false)
         |> click_button("#send-button", "")
         |> assert_has(".msg-bubble.msg-assistant", "Hello! I am a fake provider response.",
@@ -289,10 +278,8 @@ defmodule HandbeanWeb.Feature.WorkspaceFeatureTest do
     test "pin and unpin from the conversation menu", %{conn: conn} do
       conn
       |> visit("/")
-      |> click_button(
-        "button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']",
-        ""
-      )
+      |> click_button("#new-conversation-picker-toggle", "")
+      |> click_button("#new-conversation-project-default", "")
       |> within("#workspace-conversations-default", fn session ->
         session
         |> click_button("button[phx-click='toggle_conversation_menu']", "More actions")
@@ -321,10 +308,8 @@ defmodule HandbeanWeb.Feature.WorkspaceFeatureTest do
     test "rename from the conversation menu updates the sidebar", %{conn: conn} do
       conn
       |> visit("/")
-      |> click_button(
-        "button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']",
-        ""
-      )
+      |> click_button("#new-conversation-picker-toggle", "")
+      |> click_button("#new-conversation-project-default", "")
       |> fill_in("#ai-input", "Message", with: "Need a title", exact: false)
       |> click_button("#send-button", "")
       |> within("#workspace-conversations-default", fn s ->
@@ -350,10 +335,8 @@ defmodule HandbeanWeb.Feature.WorkspaceFeatureTest do
       session =
         conn
         |> visit("/")
-        |> click_button(
-          "button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']",
-          ""
-        )
+        |> click_button("#new-conversation-picker-toggle", "")
+        |> click_button("#new-conversation-project-default", "")
         |> fill_in("#ai-input", "Message", with: "Restore this conversation", exact: false)
         |> click_button("#send-button", "")
         |> assert_has(".msg-bubble.msg-assistant", "Hello! I am a fake provider response.",

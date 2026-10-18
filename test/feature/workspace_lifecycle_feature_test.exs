@@ -24,7 +24,7 @@ defmodule HandbeanWeb.Feature.WorkspaceLifecycleFeatureTest do
     page =
       conn
       |> visit("/")
-      |> click_button("button[phx-click='open_add_project']", "+")
+      |> click_button("#add-workspace", "Add workspace")
       |> unwrap(fn view ->
         render_click(view, "update_add_path", %{"value" => project})
         render_click(view, "update_add_name", %{"value" => "Lifecycle"})

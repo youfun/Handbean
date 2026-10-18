@@ -20,6 +20,8 @@
 }
 
 .projects-panel-header {
+  position: relative;
+  z-index: 60;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -74,6 +76,53 @@
 .projects-panel-header button:hover {
   background-color: var(--color-surface-hover);
   color: var(--color-text-primary);
+}
+
+.projects-panel-new-conversation {
+  position: relative;
+}
+
+.workspace-checkout-menu.projects-panel-new-conversation-menu {
+  right: 0;
+  left: auto;
+  width: 208px;
+}
+
+.projects-panel-new-conversation-menu .workspace-checkout-item {
+  width: 100%;
+  height: auto;
+  justify-content: space-between;
+  font-size: var(--font-size-xs);
+}
+
+.workspace-add-entry {
+  padding-top: 0.25rem;
+  padding-bottom: 0.35rem;
+}
+
+.workspace-add-entry-button {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  min-height: 2rem;
+  padding: 0.35rem 0.5rem;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+  text-align: left;
+  cursor: pointer;
+}
+
+.workspace-add-entry-button:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+}
+
+.workspace-add-entry-button svg {
+  flex: 0 0 20px;
 }
 
 /* ── Workspace group ── */

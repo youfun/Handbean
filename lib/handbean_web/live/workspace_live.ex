@@ -1270,6 +1270,10 @@ defmodule HandbeanWeb.WorkspaceLive do
     )
   end
 
+  def handle_event("toggle_new_conversation_picker", _params, socket) do
+    {:noreply, ConversationSwitching.toggle_new_conversation_picker(socket)}
+  end
+
   @impl true
   def handle_event("new_free_conversation", _params, socket) do
     socket = drop_composer_for_switch(socket)
@@ -1308,8 +1312,9 @@ defmodule HandbeanWeb.WorkspaceLive do
   end
 
   @impl true
-  def handle_event("new_conversation_in_workspace", %{"ws_id" => ws_id}, socket) do
-    begin_conversation_in_workspace(socket, ws_id, source: :sidebar, close_sheets?: false)
+  def handle_event("new_conversation_in_workspace", %{"ws_id" => ws_id} = params, socket) do
+    source = if params["source"] == "header", do: :header, else: :sidebar
+    begin_conversation_in_workspace(socket, ws_id, source: source, close_sheets?: false)
   end
 
   @impl true

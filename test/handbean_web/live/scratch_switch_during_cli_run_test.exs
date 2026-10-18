@@ -31,15 +31,23 @@ defmodule HandbeanWeb.ScratchSwitchDuringCliRunTest do
     :sys.get_state(view.pid).socket.assigns.current_conversation_id
   end
 
+  defp create_default_conversation(view) do
+    view
+    |> element("#new-conversation-picker-toggle")
+    |> render_click()
+
+    view
+    |> element("#new-conversation-project-default")
+    |> render_click()
+  end
+
   test "switching to an existing conversation while a CLI run is active", %{conn: conn} do
     Registry.register(Handbean.Agent.CliAgentTest.FakeBackend)
     Application.put_env(:handbean, :fake_cli_notify, self())
     {:ok, view, _html} = live(conn, "/")
 
     # Conversation B: an existing conversation with a completed Handbean run.
-    view
-    |> element("button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']")
-    |> render_click()
+    create_default_conversation(view)
 
     conv_b = first_conversation_id(view)
     :ok = Session.subscribe(conv_b)
@@ -53,9 +61,7 @@ defmodule HandbeanWeb.ScratchSwitchDuringCliRunTest do
     assert Session.whereis(conv_b) != nil
 
     # Conversation A: a new conversation that starts a slow CLI run.
-    view
-    |> element("button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']")
-    |> render_click()
+    create_default_conversation(view)
 
     conv_a = first_conversation_id(view)
     view |> element("#cli-picker") |> render_change(%{"cli" => "fake-cli"})
@@ -79,7 +85,11 @@ defmodule HandbeanWeb.ScratchSwitchDuringCliRunTest do
       |> render_click()
 
     current = first_conversation_id(view)
-    IO.inspect({:switched_to, current, :expected, conv_b, :path_patched?, html =~ "prior exchange"}, label: "switch-result")
+
+    IO.inspect(
+      {:switched_to, current, :expected, conv_b, :path_patched?, html =~ "prior exchange"},
+      label: "switch-result"
+    )
 
     # Switching back to A must also work and show the still-running state.
     html =

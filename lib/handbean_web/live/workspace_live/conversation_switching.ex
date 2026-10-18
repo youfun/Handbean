@@ -491,6 +491,16 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
     end
   end
 
+  def toggle_new_conversation_picker(socket) do
+    case socket.assigns[:checkout_picker] do
+      %{source: :header} ->
+        close_checkout_picker(socket)
+
+      _other ->
+        assign(socket, :checkout_picker, %{workspace_id: nil, checkouts: [], source: :header})
+    end
+  end
+
   def toggle_thread(socket, conversation_id) when is_binary(conversation_id) do
     update(socket, :collapsed_thread_ids, fn collapsed ->
       collapsed = collapsed || MapSet.new()

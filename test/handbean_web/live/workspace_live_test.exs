@@ -191,10 +191,18 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
       raise "no data-session-id in html"
   end
 
-  defp create_default_conversation(view) do
+  defp choose_new_conversation_project(view, workspace_id) do
     view
-    |> element("button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']")
+    |> element("#new-conversation-picker-toggle")
     |> render_click()
+
+    view
+    |> element("#new-conversation-project-#{workspace_id}")
+    |> render_click()
+  end
+
+  defp create_default_conversation(view) do
+    choose_new_conversation_project(view, "default")
 
     view |> render() |> session_id_from_html()
   end
@@ -4028,10 +4036,8 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
         view |> element("form") |> render_submit(%{"message" => "Hello"})
         assert render(view) =~ "Hello"
 
-        # Click the current workspace's inline new conversation button.
-        view
-        |> element("button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']")
-        |> render_click()
+        # Create from the global new-conversation project picker.
+        choose_new_conversation_project(view, "default")
 
         rendered = render(view)
         assert has_element?(view, "#no-messages")
@@ -4045,9 +4051,7 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
     test "new_session preserves OpenAI model in status bar", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/")
 
-      view
-      |> element("button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']")
-      |> render_click()
+      choose_new_conversation_project(view, "default")
 
       rendered = render(view)
       assert rendered =~ "step-router-v1"
@@ -4120,24 +4124,19 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
                    Handbean.Security.PathValidator.resolve_symlink(linked)
                  ])
 
-        view
-        |> element(
-          "button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='#{main_workspace["id"]}']"
-        )
-        |> render_click()
+        choose_new_conversation_project(view, main_workspace["id"])
 
         html = render(view)
-        assert html =~ "checkout-picker-sidebar-#{main_workspace["id"]}"
+        assert html =~ ~s(id="new-conversation-picker")
         assert html =~ Path.basename(repo)
         assert html =~ Path.basename(linked)
-        refute html =~ "checkout-picker-sidebar-default"
 
         linked_path = Handbean.Security.PathValidator.resolve_symlink(linked)
         before = Handbean.ConversationStore.list_for_workspace(main_workspace["id"])
 
         view
         |> element(
-          "#checkout-picker-sidebar-#{main_workspace["id"]} button[phx-click='new_conversation_on_checkout'][phx-value-path='#{linked_path}']"
+          "#new-conversation-picker button[phx-click='new_conversation_on_checkout'][phx-value-path='#{linked_path}']"
         )
         |> render_click()
 
@@ -4148,7 +4147,7 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
 
         assert length(Enum.reject(Handbean.WorkspaceStore.list(), & &1["default"])) == 1
         html = render(view)
-        refute html =~ "checkout-picker-sidebar-#{main_workspace["id"]}"
+        refute html =~ ~s(id="new-conversation-picker")
         assert html =~ ~s(data-checkout-path="#{linked_path}")
       after
         File.rm_rf!(base)
@@ -4161,11 +4160,9 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
       {:ok, view, _html} = live(conn, "/")
       before = Handbean.ConversationStore.list_for_workspace("default")
 
-      view
-      |> element("button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']")
-      |> render_click()
+      choose_new_conversation_project(view, "default")
 
-      refute render(view) =~ "checkout-picker-sidebar-default"
+      refute render(view) =~ ~s(id="new-conversation-picker")
       after_list = Handbean.ConversationStore.list_for_workspace("default")
       assert length(after_list) == length(before) + 1
     end
@@ -4567,9 +4564,7 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
 
       assert has_element?(view, "#model-picker option[value='sui2api/gpt-5.5'][selected]")
 
-      view
-      |> element("button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']")
-      |> render_click()
+      choose_new_conversation_project(view, "default")
 
       second_html = render(view)
       second_conversation_id = session_id_from_html(second_html)
@@ -4697,11 +4692,7 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
         assert [initial] = Handbean.ConversationStore.list_for_workspace(added_ws["id"])
         {:ok, _archived} = Handbean.ConversationStore.archive(initial["id"])
 
-        view
-        |> element(
-          "button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='#{added_ws["id"]}']"
-        )
-        |> render_click()
+        choose_new_conversation_project(view, added_ws["id"])
 
         rendered = render(view)
         assert rendered =~ "Archived Project"
@@ -5108,9 +5099,7 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
     test "model display persists across new_session", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/")
 
-      view
-      |> element("button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']")
-      |> render_click()
+      choose_new_conversation_project(view, "default")
 
       rendered = render(view)
       assert rendered =~ "step-router-v1"
@@ -5130,9 +5119,7 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
       assert html =~ "workspace-group"
       assert html =~ "conversations-list"
 
-      view
-      |> element("button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']")
-      |> render_click()
+      choose_new_conversation_project(view, "default")
 
       assert render(view) =~ "conversation-row"
     end
@@ -5152,9 +5139,7 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
     test "new_conversation_in_workspace renders inside grouped workspace list", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/")
 
-      view
-      |> element("button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']")
-      |> render_click()
+      choose_new_conversation_project(view, "default")
 
       html = render(view)
       assert html =~ "conversations-list"

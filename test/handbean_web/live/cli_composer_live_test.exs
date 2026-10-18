@@ -36,6 +36,16 @@ defmodule HandbeanWeb.CliComposerLiveTest do
     :ok
   end
 
+  defp create_default_conversation(view) do
+    view
+    |> element("#new-conversation-picker-toggle")
+    |> render_click()
+
+    view
+    |> element("#new-conversation-project-default")
+    |> render_click()
+  end
+
   test "CLI picker labels capitalize the first letter of the backend id" do
     assert CliSelection.display_name("droid") == "Droid"
     assert CliSelection.display_name("grok") == "Grok"
@@ -88,15 +98,11 @@ defmodule HandbeanWeb.CliComposerLiveTest do
     Registry.register(HandbeanWeb.CliComposerLiveTest.TwoModels)
     {:ok, view, _html} = live(conn, "/")
 
-    view
-    |> element("button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']")
-    |> render_click()
+    create_default_conversation(view)
 
     other_id = first_conversation_id(view)
 
-    view
-    |> element("button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']")
-    |> render_click()
+    create_default_conversation(view)
 
     cli_id = first_conversation_id(view)
     refute cli_id == other_id
@@ -133,15 +139,11 @@ defmodule HandbeanWeb.CliComposerLiveTest do
     Application.put_env(:handbean, :slow_cli_models_notify, self())
     {:ok, view, _html} = live(conn, "/")
 
-    view
-    |> element("button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']")
-    |> render_click()
+    create_default_conversation(view)
 
     other_id = first_conversation_id(view)
 
-    view
-    |> element("button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']")
-    |> render_click()
+    create_default_conversation(view)
 
     cli_id = first_conversation_id(view)
 
@@ -169,15 +171,11 @@ defmodule HandbeanWeb.CliComposerLiveTest do
     Application.put_env(:handbean, :slow_cli_models_notify, self())
     {:ok, view, _html} = live(conn, "/")
 
-    view
-    |> element("button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']")
-    |> render_click()
+    create_default_conversation(view)
 
     first_conversation_id = first_conversation_id(view)
 
-    view
-    |> element("button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']")
-    |> render_click()
+    create_default_conversation(view)
 
     refute first_conversation_id(view) == first_conversation_id
 
@@ -304,9 +302,7 @@ defmodule HandbeanWeb.CliComposerLiveTest do
     Application.put_env(:handbean, :fake_cli_notify, self())
     {:ok, view, _html} = live(conn, "/")
 
-    view
-    |> element("button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']")
-    |> render_click()
+    create_default_conversation(view)
 
     conversation_id = first_conversation_id(view)
     :ok = Session.subscribe(conversation_id)
@@ -359,9 +355,7 @@ defmodule HandbeanWeb.CliComposerLiveTest do
     Application.put_env(:handbean, :fake_cli_notify, self())
     {:ok, view, _html} = live(conn, "/")
 
-    view
-    |> element("button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']")
-    |> render_click()
+    create_default_conversation(view)
 
     conversation_id = first_conversation_id(view)
     :ok = Session.subscribe(conversation_id)
@@ -401,9 +395,7 @@ defmodule HandbeanWeb.CliComposerLiveTest do
     Application.put_env(:handbean, :fake_cli_notify, self())
     {:ok, view, _html} = live(conn, "/")
 
-    view
-    |> element("button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']")
-    |> render_click()
+    create_default_conversation(view)
 
     conversation_id = first_conversation_id(view)
     :ok = Session.subscribe(conversation_id)
@@ -447,9 +439,7 @@ defmodule HandbeanWeb.CliComposerLiveTest do
     Application.put_env(:handbean, :fake_cli_notify, self())
     {:ok, view, _html} = live(conn, "/")
 
-    view
-    |> element("button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']")
-    |> render_click()
+    create_default_conversation(view)
 
     conversation_id = first_conversation_id(view)
     :ok = Session.subscribe(conversation_id)
@@ -510,9 +500,7 @@ defmodule HandbeanWeb.CliComposerLiveTest do
     Application.put_env(:handbean, :fake_cli_notify, self())
     {:ok, view, _html} = live(conn, "/")
 
-    view
-    |> element("button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']")
-    |> render_click()
+    create_default_conversation(view)
 
     conversation_id = first_conversation_id(view)
     :ok = Session.subscribe(conversation_id)
@@ -603,9 +591,7 @@ defmodule HandbeanWeb.CliComposerLiveTest do
     task_ref = Process.monitor(task)
     conversation_id = first_conversation_id(view)
 
-    view
-    |> element("button[phx-click='new_conversation_in_workspace'][phx-value-ws_id='default']")
-    |> render_click()
+    create_default_conversation(view)
 
     refute first_conversation_id(view) == conversation_id
     assert Process.alive?(task)

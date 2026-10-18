@@ -2514,3 +2514,15 @@ msgstr ""
 #: lib/handbean_web/live/workspace_live/sidebar_components.ex
 msgid "Choose a checkout"
 msgstr ""
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex
+msgid "新建对话"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex
+msgid "选择项目"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex
+msgid "添加工作区"
+msgstr ""
