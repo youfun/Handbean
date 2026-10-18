@@ -733,14 +733,14 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarComponents do
                 aria-expanded={to_string(not thread_collapsed?(@collapsed_thread_ids, conv.id))}
                 aria-label={
                   if(thread_collapsed?(@collapsed_thread_ids, conv.id),
-                    do: gettext("展开子线程"),
-                    else: gettext("收起子线程")
+                    do: gettext("展开子对话"),
+                    else: gettext("收起子对话")
                   )
                 }
                 title={
                   if(thread_collapsed?(@collapsed_thread_ids, conv.id),
-                    do: gettext("展开子线程"),
-                    else: gettext("收起子线程")
+                    do: gettext("展开子对话"),
+                    else: gettext("收起子对话")
                   )
                 }
               >
@@ -1426,7 +1426,7 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarComponents do
           class="conversation-menu-item"
           phx-hook="CopyText"
           data-copy={@conv.id}
-          title={gettext("复制会话 ID，用于线程通讯")}
+          title={gettext("复制对话 ID，用于对话协作")}
         >
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
             <rect
@@ -1486,7 +1486,7 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarComponents do
               stroke-linejoin="round"
             />
           </svg>
-          <span>{gettext("删除线程")}</span>
+          <span>{gettext("删除对话")}</span>
         </button>
       </div>
     </div>

@@ -386,11 +386,6 @@ msgstr "Workspace"
 msgid "Status"
 msgstr "Status"
 
-#: lib/handbean_web/live/workspace_live/overlay_components.ex:495
-#, elixir-autogen
-msgid "Session"
-msgstr "Session"
-
 #: lib/handbean_web/live/workspace_live/overlay_components.ex:503
 #, elixir-autogen
 msgid "MCP / Skills"
@@ -412,14 +407,14 @@ msgstr "Conversation navigation"
 msgid "用户消息"
 msgstr "User messages"
 
-#: lib/handbean_web/workspace_helper.ex:320
-#: lib/handbean_web/workspace_helper.ex:326
+#: lib/handbean_web/workspace_helper.ex:321
+#: lib/handbean_web/workspace_helper.ex:327
 #, elixir-autogen
 msgid "（图片）"
 msgstr "(image)"
 
-#: lib/handbean_web/workspace_helper.ex:321
-#: lib/handbean_web/workspace_helper.ex:326
+#: lib/handbean_web/workspace_helper.ex:322
+#: lib/handbean_web/workspace_helper.ex:327
 #, elixir-autogen
 msgid "（空消息）"
 msgstr "(empty message)"
@@ -1000,7 +995,7 @@ msgstr "Report failed"
 msgid "Report unavailable"
 msgstr "Report unavailable"
 
-#: lib/handbean_web/workspace_helper.ex:509
+#: lib/handbean_web/workspace_helper.ex:510
 #, elixir-autogen, elixir-format
 msgid "%{count} action"
 msgid_plural "%{count} actions"
@@ -1274,7 +1269,7 @@ msgstr "Edit"
 msgid "Edit MCP Server"
 msgstr "Edit MCP Server"
 
-#: lib/handbean_web/workspace_helper.ex:499
+#: lib/handbean_web/workspace_helper.ex:500
 #, elixir-autogen, elixir-format
 msgid "Edited %{count} file"
 msgid_plural "Edited %{count} files"
@@ -1291,12 +1286,12 @@ msgstr "Email"
 msgid "Enabled"
 msgstr "Enabled"
 
-#: lib/handbean_web/workspace_helper.ex:465
+#: lib/handbean_web/workspace_helper.ex:466
 #, elixir-autogen, elixir-format
 msgid "Explored %{details}"
 msgstr "Explored %{details}"
 
-#: lib/handbean_web/workspace_helper.ex:448
+#: lib/handbean_web/workspace_helper.ex:449
 #, elixir-autogen, elixir-format
 msgid "Called advisor model"
 msgstr "Called advisor model"
@@ -1533,7 +1528,7 @@ msgstr ""
 msgid "Queued · when this run finishes"
 msgstr "Queued · when this run finishes"
 
-#: lib/handbean_web/workspace_helper.ex:468
+#: lib/handbean_web/workspace_helper.ex:469
 #, elixir-autogen, elixir-format
 msgid "Ran %{details}"
 msgstr "Ran %{details}"
@@ -1732,8 +1727,8 @@ msgstr "Use global"
 msgid "Use the model selected above"
 msgstr "Use the model selected above"
 
-#: lib/handbean_web/workspace_helper.ex:471
-#: lib/handbean_web/workspace_helper.ex:510
+#: lib/handbean_web/workspace_helper.ex:472
+#: lib/handbean_web/workspace_helper.ex:511
 #, elixir-autogen, elixir-format
 msgid "Used %{details}"
 msgstr "Used %{details}"
@@ -1971,11 +1966,6 @@ msgstr "Copy ID"
 #, elixir-autogen, elixir-format
 msgid "复制 ID"
 msgstr "Copy ID"
-
-#: lib/handbean_web/live/workspace_live/sidebar_components.ex:1429
-#, elixir-autogen, elixir-format
-msgid "复制会话 ID，用于线程通讯"
-msgstr "Copy conversation ID for thread messaging"
 
 #: lib/handbean_web/live/workspace_memory_live.html.heex:264
 #, elixir-autogen, elixir-format
@@ -2389,26 +2379,10 @@ msgstr "More"
 msgid "显示更多对话"
 msgstr "Show more conversations"
 
-#: lib/handbean_web/live/workspace_live/overlay_components.ex:548
-#: lib/handbean_web/live/workspace_live/sidebar_components.ex:1489
-#, elixir-autogen
-msgid "删除线程"
-msgstr "Delete thread"
-
-#: lib/handbean_web/live/workspace_live/overlay_components.ex:515
-#, elixir-autogen
-msgid "删除当前线程"
-msgstr "Delete current thread"
-
 #: lib/handbean_web/live/workspace_live/overlay_components.ex:551
 #, elixir-autogen
 msgid "“%{title}”将立即从列表中隐藏，删除后无法恢复。"
 msgstr "“%{title}” will be hidden immediately and cannot be recovered after deletion."
-
-#: lib/handbean_web/live/workspace_live/overlay_components.ex:560
-#, elixir-autogen
-msgid "同时删除 %{count} 个子线程。"
-msgstr "Also delete %{count} child thread(s)."
 
 #: lib/handbean_web/live/workspace_live/overlay_components.ex:565
 #, elixir-autogen
@@ -2741,13 +2715,6 @@ msgstr ""
 msgid "在上方描述一个任务，Agent 会确认时间和执行内容。"
 msgstr ""
 
-#: lib/handbean_web/live/workspace_live/overlay_components.ex:344
-#: lib/handbean_web/live/workspace_live/sidebar_components.ex:736
-#: lib/handbean_web/live/workspace_live/sidebar_components.ex:742
-#, elixir-autogen, elixir-format
-msgid "展开子线程"
-msgstr ""
-
 #: lib/handbean_web/live/workspace_memory_live.ex:216
 #, elixir-autogen, elixir-format
 msgid "工作区范围"
@@ -2832,13 +2799,6 @@ msgstr ""
 #: lib/handbean_web/live/settings_live.html.heex:182
 #, elixir-autogen, elixir-format
 msgid "搜索模型或供应商"
-msgstr ""
-
-#: lib/handbean_web/live/workspace_live/overlay_components.ex:345
-#: lib/handbean_web/live/workspace_live/sidebar_components.ex:737
-#: lib/handbean_web/live/workspace_live/sidebar_components.ex:743
-#, elixir-autogen, elixir-format
-msgid "收起子线程"
 msgstr ""
 
 #: lib/handbean_web/live/workspace_live/schedules.ex:158
@@ -2945,3 +2905,43 @@ msgstr "Current workspace"
 msgctxt "memory context"
 msgid "当前工作区："
 msgstr "Current workspace: "
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:495
+#, elixir-autogen, elixir-format
+msgid "Conversation"
+msgstr "Conversation"
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:548
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:1489
+#, elixir-autogen, elixir-format
+msgid "删除对话"
+msgstr "Delete conversation"
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:515
+#, elixir-autogen, elixir-format
+msgid "删除当前对话"
+msgstr "Delete current conversation"
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:560
+#, elixir-autogen, elixir-format
+msgid "同时删除 %{count} 个子对话。"
+msgstr "Also delete %{count} child conversation(s)."
+
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:1429
+#, elixir-autogen, elixir-format
+msgid "复制对话 ID，用于对话协作"
+msgstr "Copy conversation ID for conversation collaboration"
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:344
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:736
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:742
+#, elixir-autogen, elixir-format
+msgid "展开子对话"
+msgstr "Expand child conversations"
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:345
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:737
+#: lib/handbean_web/live/workspace_live/sidebar_components.ex:743
+#, elixir-autogen, elixir-format
+msgid "收起子对话"
+msgstr "Collapse child conversations"

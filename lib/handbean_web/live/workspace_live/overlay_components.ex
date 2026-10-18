@@ -341,8 +341,8 @@ defmodule HandbeanWeb.WorkspaceLive.OverlayComponents do
                   aria-expanded={to_string(not thread_collapsed?(@collapsed_thread_ids, conv.id))}
                   aria-label={
                     if(thread_collapsed?(@collapsed_thread_ids, conv.id),
-                      do: gettext("展开子线程"),
-                      else: gettext("收起子线程")
+                      do: gettext("展开子对话"),
+                      else: gettext("收起子对话")
                     )
                   }
                 >
@@ -492,7 +492,7 @@ defmodule HandbeanWeb.WorkspaceLive.OverlayComponents do
             <strong>{@status_info.status}</strong>
           </div>
           <div class="mobile-settings-row">
-            <span>{gettext("Session")}</span>
+            <span>{gettext("Conversation")}</span>
             <strong class="truncate font-mono text-[11px]">
               {if @current_conversation_id,
                 do: String.slice(@current_conversation_id, 0, 8),
@@ -512,7 +512,7 @@ defmodule HandbeanWeb.WorkspaceLive.OverlayComponents do
             phx-value-ws_id={@current_workspace_id}
             class="mobile-settings-delete"
           >
-            <span>{gettext("删除当前线程")}</span>
+            <span>{gettext("删除当前对话")}</span>
           </button>
         </div>
       </div>
@@ -545,7 +545,7 @@ defmodule HandbeanWeb.WorkspaceLive.OverlayComponents do
         class="relative add-project-dialog bg-surface border rounded-xl shadow-2xl w-[420px] p-5"
       >
         <h3 id="delete-conversation-title" class="text-base font-semibold text-primary mb-2">
-          {gettext("删除线程")}
+          {gettext("删除对话")}
         </h3>
         <p class="text-xs text-secondary mb-2">
           {gettext("“%{title}”将立即从列表中隐藏，删除后无法恢复。",
@@ -557,7 +557,7 @@ defmodule HandbeanWeb.WorkspaceLive.OverlayComponents do
           id="delete-conversation-descendants"
           class="text-xs text-error mb-2"
         >
-          {gettext("同时删除 %{count} 个子线程。",
+          {gettext("同时删除 %{count} 个子对话。",
             count: @delete_conversation.descendant_count
           )}
         </p>
@@ -748,6 +748,8 @@ defmodule HandbeanWeb.WorkspaceLive.OverlayComponents do
             {format_tokens(@status_info.output_tokens)}
           </span>
         </span>
+        <%!-- Cache read/write totals are temporarily hidden because providers do not
+        report the write side consistently. Keep this block for an easy restore.
         <span
           :if={has_cache_tokens?(@status_info)}
           id="status-cache-tokens"
@@ -763,6 +765,7 @@ defmodule HandbeanWeb.WorkspaceLive.OverlayComponents do
             {format_tokens(@status_info.cache_write_tokens)}
           </span>
         </span>
+        --%>
         <span
           id="status-cache-hit-rate"
           class="whitespace-nowrap"

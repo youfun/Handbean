@@ -1397,7 +1397,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
     conversations
     |> Enum.filter(&is_nil(Map.get(parent_by_id, ConversationState.conversation_id(&1))))
     |> Enum.sort_by(&family_activity_key(&1, children_by_parent), :desc)
-    |> Enum.flat_map(fn conversation ->
+    |> Enum.map(fn conversation ->
       flatten_thread_tree(conversation, 0, nil, [], children_by_parent, row_fun)
     end)
   end
