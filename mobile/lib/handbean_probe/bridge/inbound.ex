@@ -247,6 +247,7 @@ defmodule HandbeanProbe.Bridge.Inbound do
   """
   @spec snapshot(map()) :: Snapshot.t()
   def snapshot(%Snapshot{} = snap), do: snap
+  def snapshot(%_{}), do: %Snapshot{}
   def snapshot(map) when is_map(map), do: struct(Snapshot, take(map, @snapshot_keys))
   def snapshot(_), do: %Snapshot{}
 

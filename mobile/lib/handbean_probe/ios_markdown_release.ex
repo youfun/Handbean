@@ -94,17 +94,17 @@ defmodule HandbeanProbe.IosMarkdownRelease do
   # past the type checker's default time limit ("unable to type-check this
   # expression in reasonable time"). The limit is milliseconds.
   defp raise_solver_budget(text) do
-    flag = "        -Xfrontend -solver-expression-time-threshold=20000 \\\n"
-
-    old =
-      "    xcrun -sdk iphoneos swiftc \\\n        -target arm64-apple-ios17.0 \\\n        -module-name \"$APP_NAME\" \\\n"
+    module_name = ~s(-module-name "$APP_NAME" \\)
 
     cond do
       String.contains?(text, "solver-expression-time-threshold=") ->
         text
 
-      String.contains?(text, old) ->
-        String.replace(text, old, old <> flag, global: false)
+      String.contains?(text, module_name) ->
+        indent = indent_of(text, module_name)
+        anchor = indent <> module_name <> "\n"
+        flag = indent <> "-Xfrontend -solver-expression-time-threshold=20000 \\\n"
+        String.replace(text, anchor, anchor <> flag, global: false)
 
       true ->
         text

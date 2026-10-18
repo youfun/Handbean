@@ -51,8 +51,8 @@ impl = ensure(
 nif = load("mob_nif.m").replace('#import "MobDemo-Bridging-Header.h"\n', "", 1)
 nif = ensure(
     nif,
-    "    MOB_PROP_width,\n    MOB_PROP__COUNT\n",
-    "    MOB_PROP_width,\n"
+    "    MOB_PROP_side_offset,\n    MOB_PROP__COUNT\n",
+    "    MOB_PROP_side_offset,\n"
     "    MOB_PROP_markdown,\n"
     "    MOB_PROP_markdown_streaming,\n"
     "    MOB_PROP__COUNT\n",
@@ -91,6 +91,12 @@ root_old = """                let textShouldFill = node.fillWidth || node.textAl
                     .multilineTextAlignment(node.textAlignEnum)
                     .lineSpacing(node.computedLineSpacing)
                     .kerning(node.letterSpacing)
+                    // `max_lines`: cap and tail-ellipsise, matching Android's
+                    // TextOverflow.Ellipsis. Unset (0) leaves the default
+                    // unlimited wrap exactly as it was.
+                    .ifLet(node.maxLines > 0 ? node.maxLines : nil) { view, lines in
+                        view.lineLimit(lines).truncationMode(.tail)
+                    }
                     .ifLet(textShouldFill ? () : nil) { view, _ in
                         view.frame(maxWidth: .infinity, alignment: node.frameTextAlignment)
                     }
@@ -115,6 +121,9 @@ root_new = """                let textShouldFill = node.fillWidth || node.textAl
                             .multilineTextAlignment(node.textAlignEnum)
                             .lineSpacing(node.computedLineSpacing)
                             .kerning(node.letterSpacing)
+                            .ifLet(node.maxLines > 0 ? node.maxLines : nil) { view, lines in
+                                view.lineLimit(lines).truncationMode(.tail)
+                            }
                             .ifLet(textShouldFill ? () : nil) { view, _ in
                                 view.frame(maxWidth: .infinity, alignment: node.frameTextAlignment)
                             }

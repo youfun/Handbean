@@ -59,12 +59,14 @@ defmodule HandbeanProbe.NativeApprovalTest do
     Handbean.Host.put!(%{data_dir: path, shell: false, mcp: false})
     System.put_env("HOME", path)
 
+    {:ok, workspace} = Handbean.WorkspaceStore.add(path, name: "Approval fixture")
+
     File.write!(
       Handbean.WorkspaceSettings.path(path),
       Jason.encode!(%{"tools" => %{"default_mode" => "prompt"}})
     )
 
-    {:ok, conversation} = Handbean.ConversationStore.create("default")
+    {:ok, conversation} = Handbean.ConversationStore.create(workspace["id"])
     id = conversation["id"]
     :ok = Session.subscribe(id)
 
@@ -99,7 +101,7 @@ defmodule HandbeanProbe.NativeApprovalTest do
     assert chat.pending_approval
     assert is_integer(chat.approval_seq)
 
-    %{chat: chat, workspace: %{"path" => path}, path: path}
+    %{chat: chat, workspace: workspace, path: path}
   end
 
   test "deny/once resumes the Runner without writing the file", %{
@@ -302,14 +304,14 @@ defmodule HandbeanProbe.NativeApprovalTest do
       input: %{"url" => "https://example.com/doc"}
     }
 
-    setup %{path: path} do
+    setup %{path: path, workspace: workspace} do
       # Full access: the strongest case — the intent still asks until remembered.
       File.write!(
         Handbean.WorkspaceSettings.path(path),
         Jason.encode!(%{"tools" => %{"default_mode" => "auto"}})
       )
 
-      {:ok, conversation} = Handbean.ConversationStore.create("default")
+      {:ok, conversation} = Handbean.ConversationStore.create(workspace["id"])
       id = conversation["id"]
       :ok = Session.subscribe(id)
 

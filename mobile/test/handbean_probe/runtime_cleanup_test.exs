@@ -15,7 +15,7 @@ defmodule HandbeanProbe.RuntimeCleanupTest do
     def stream(messages, tools, config, _on_chunk), do: complete(messages, tools, config)
   end
 
-  test "cleanup stops an unlinked provider and drains lifecycle writes before the home is removed" do
+  test "cleanup stops an active provider and drains lifecycle writes before the home is removed" do
     dir = Path.join(System.tmp_dir!(), "mobile_cleanup_#{System.unique_integer([:positive])}")
     host = Application.fetch_env!(:handbean, :host)
     Handbean.Host.put!(Map.put(host, :data_dir, dir))
@@ -26,6 +26,7 @@ defmodule HandbeanProbe.RuntimeCleanupTest do
       File.rm_rf!(dir)
     end)
 
+    {:ok, _workspace} = Handbean.WorkspaceStore.ensure_default!()
     {:ok, conversation} = Handbean.ConversationStore.create("default")
     id = conversation["id"]
 
@@ -42,7 +43,6 @@ defmodule HandbeanProbe.RuntimeCleanupTest do
 
     assert_receive {:provider_waiting, task}, 1_000
     ref = Process.monitor(task)
-    :ok = Handbean.AgentRunSupervisor.stop_run(id)
     assert Process.alive?(task)
     assert :ok = HandbeanProbe.RuntimeCleanup.stop!()
     assert_receive {:DOWN, ^ref, :process, ^task, _}, 1_000
@@ -50,11 +50,6 @@ defmodule HandbeanProbe.RuntimeCleanupTest do
 
     File.rm_rf!(dir)
     GenServer.call(Handbean.Runtime.TaskTracker, :snapshot)
-
-    :ok =
-      Handbean.ConversationTranscriptStore.Journal.invalidate(
-        Handbean.ConversationStore.index_path()
-      )
 
     refute File.exists?(dir)
   end

@@ -58,6 +58,43 @@ defmodule HandbeanProbe.ScreenSettle do
   end
 end
 
+defmodule HandbeanProbe.RuntimeCleanup do
+  @moduledoc false
+
+  def stop! do
+    Enum.each(Handbean.AgentRunSupervisor.which_runs(), fn {_, pid, _, _} ->
+      _ = Handbean.AgentRunSupervisor.stop_run(pid)
+    end)
+
+    Enum.each(Task.Supervisor.children(Handbean.AgentRunTaskSupervisor), fn pid ->
+      _ = Task.Supervisor.terminate_child(Handbean.AgentRunTaskSupervisor, pid)
+    end)
+
+    Enum.each(Handbean.SessionSupervisor.which_sessions(), fn {_, pid, _, _} ->
+      _ = GenServer.call(pid, :snapshot)
+      _ = DynamicSupervisor.terminate_child(Handbean.SessionSupervisor, pid)
+    end)
+
+    # Drain lifecycle events already forwarded by Session before a test restores
+    # its host data directory or removes temporary files.
+    _ = GenServer.call(Handbean.Runtime.TaskTracker, :snapshot)
+
+    home = Handbean.Home.path()
+
+    for path <- registered_ids(ExFff.Registry),
+        path == home or String.starts_with?(path, home <> "/"),
+        {pid, _} <- Registry.lookup(ExFff.Registry, path) do
+      GenServer.stop(pid)
+    end
+
+    :ok
+  end
+
+  defp registered_ids(registry) do
+    Registry.select(registry, [{{:"$1", :_, :_}, [], [:"$1"]}])
+  end
+end
+
 data_dir =
   Path.join(System.tmp_dir!(), "handbean_probe_test_#{System.unique_integer([:positive])}")
 

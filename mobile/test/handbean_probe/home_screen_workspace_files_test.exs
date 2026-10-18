@@ -73,6 +73,7 @@ defmodule HandbeanProbe.HomeScreenWorkspaceFilesTest do
     Application.put_env(:handbean_probe, :file_tree_max_entries, 2)
 
     on_exit(fn ->
+      HandbeanProbe.RuntimeCleanup.stop!()
       Application.delete_env(:handbean_probe, :file_tree_max_entries)
 
       if host,
@@ -316,10 +317,22 @@ defmodule HandbeanProbe.HomeScreenWorkspaceFilesTest do
                }
              })
 
+    view =
+      view
+      |> render_info({:models_updated})
+      |> HandbeanProbe.ScreenSettle.settle()
+
     workspace = assigns(view).workspace
     File.write!(Path.join(workspace["path"], "note.txt"), "hi")
+    {:ok, conversation} = Handbean.ConversationStore.create(workspace["id"], title: "Viewer run")
 
-    view = view |> render_info({:change, :draft, "run please"}) |> render_info({:tap, :send})
+    view =
+      view
+      |> render_info({:tap, {:conversation, conversation["id"]}})
+      |> HandbeanProbe.ScreenSettle.settle()
+      |> render_info({:change, :draft, "run please"})
+      |> render_info({:tap, :send})
+
     assert assigns(view).chat.running
     assert_receive {:provider_request, request, _body}, 5_000
 

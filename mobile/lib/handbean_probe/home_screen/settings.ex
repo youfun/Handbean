@@ -91,7 +91,7 @@ defmodule HandbeanProbe.HomeScreen.Settings do
 
   def handle({:models_updated}, socket) do
     # Do not replace an unsaved form when another entry point updates models.
-    if socket.assigns.models.form or is_nil(socket.assigns.workspace),
+    if not is_nil(socket.assigns.models.form) or is_nil(socket.assigns.workspace),
       do: socket,
       else: load_models(socket)
   end

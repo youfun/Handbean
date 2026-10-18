@@ -150,7 +150,7 @@ defmodule HandbeanProbe.NativeTimelineTest do
     tree = render(chat, MapSet.new(["r", "b", "e"]))
     encoded = inspect(tree, limit: :infinity)
 
-    assert encoded =~ "Read lib/a.ex"
+    assert encoded =~ "read lib/a.ex"
     assert encoded =~ "$ mix test"
 
     refute encoded =~ " · done"
@@ -196,7 +196,7 @@ defmodule HandbeanProbe.NativeTimelineTest do
     tree = render(chat, MapSet.new(["r"]))
     encoded = inspect(tree, limit: :infinity)
 
-    assert encoded =~ "Read lib/a.ex"
+    assert encoded =~ "read lib/a.ex"
     assert encoded =~ "$ mix test"
     assert encoded =~ "+1"
     assert encoded =~ "−1"
@@ -514,7 +514,7 @@ defmodule HandbeanProbe.NativeTimelineTest do
   defp text_nodes(_), do: []
 
   defp diff_line?(%{props: %{text: text}}) when is_binary(text) do
-    Regex.match?(~r/^[+−]L\d+$/, text) or String.ends_with?(text, "line not shown") or
+    Regex.match?(~r/^[+−]L\d+$/u, text) or String.ends_with?(text, "line not shown") or
       String.ends_with?(text, "lines not shown")
   end
 
