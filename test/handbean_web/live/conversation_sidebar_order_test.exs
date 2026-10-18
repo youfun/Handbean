@@ -264,11 +264,6 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSidebarOrderTest do
            |> Floki.find("#thread-toggle-parent")
            |> Floki.attribute("aria-expanded") == ["true"]
 
-    assert desktop
-           |> Floki.find("#thread-toggle-parent .thread-child-count")
-           |> Floki.text()
-           |> String.trim() == "1"
-
     assert Floki.find(desktop, "#thread-toggle-child") == []
 
     mobile =

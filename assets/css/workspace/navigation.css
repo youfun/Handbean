@@ -549,7 +549,6 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.15rem;
   min-width: 1.75rem;
   height: 1.75rem;
   padding: 0 0.2rem;
@@ -558,8 +557,6 @@
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-text-tertiary);
-  font-size: 0.65rem;
-  font-variant-numeric: tabular-nums;
   cursor: pointer;
   transition: color 0.15s ease, background-color 0.15s ease;
 }
@@ -577,11 +574,6 @@
 
 .thread-toggle-icon.is-collapsed {
   transform: rotate(180deg);
-}
-
-.thread-child-count {
-  min-width: 0.65rem;
-  text-align: center;
 }
 
 .sheet-conv-row.sheet-thread-row {

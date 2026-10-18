@@ -337,7 +337,6 @@ defmodule HandbeanWeb.WorkspaceLive.OverlayComponents do
                   >
                     <polyline points="6 15 12 9 18 15" />
                   </svg>
-                  <span class="thread-child-count">{conv.child_count}</span>
                 </button>
               </div>
             <% end %>

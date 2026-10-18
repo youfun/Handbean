@@ -732,9 +732,6 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarComponents do
                 >
                   <polyline points="6 15 12 9 18 15" />
                 </svg>
-                <span class="thread-child-count" title={gettext("子线程数量")}>
-                  {conv.child_count}
-                </span>
               </button>
               <.conversation_menu conv={conv} conversation_menu_id={@conversation_menu_id} />
             </div>
