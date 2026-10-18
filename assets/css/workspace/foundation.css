@@ -439,6 +439,8 @@ textarea::placeholder {
 
 /* ── Workspace structure ── */
 #activity-bar {
+  position: relative;
+  z-index: 40;
   width: 280px;
   min-width: 280px;
   height: 100%;
