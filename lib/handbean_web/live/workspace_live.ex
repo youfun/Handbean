@@ -1695,14 +1695,7 @@ defmodule HandbeanWeb.WorkspaceLive do
       if socket.assigns.current_conversation_id == conv_id do
         case Handbean.ConversationTranscriptStore.list(conv_id) do
           {:ok, entries} ->
-            entries
-            |> Enum.filter(
-              &(&1["content_type"] == "thread_handoff" or
-                  get_in(&1, ["origin", "kind"]) == "thread")
-            )
-            |> Enum.reduce(socket, fn entry, acc ->
-              RuntimeProjection.timeline_insert(acc, entry)
-            end)
+            RuntimeProjection.reconcile_handoffs(socket, entries)
 
           _ ->
             socket

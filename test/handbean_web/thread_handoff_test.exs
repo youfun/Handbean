@@ -151,6 +151,95 @@ defmodule HandbeanWeb.ThreadHandoffTest do
     assert Handbean.Agent.Runner.status(c.child) == {:error, :not_found}
   end
 
+  test "conversation updates do not append handoffs from an unloaded history page", c do
+    old_handoff = %{
+      "id" => "old-window-handoff",
+      "handoff_id" => "old-window",
+      "role" => "system",
+      "content_type" => "thread_handoff",
+      "target" => c.child,
+      "delivery_status" => "enqueued",
+      "content" => "Old delegated task"
+    }
+
+    newer =
+      for n <- 1..105 do
+        %{
+          "id" => "newer-#{n}",
+          "role" => "user",
+          "content_type" => "user_msg",
+          "content" => "Newer message #{n}"
+        }
+      end
+
+    :ok = ConversationTranscriptStore.replace_all(c.parent, [old_handoff | newer])
+    {:ok, view, _html} = live(c.conn, "/w/#{c.ws}/c/#{c.parent}")
+
+    assert has_element?(view, "#ai-messages[data-history-has-more='true']")
+    refute has_element?(view, "[data-thread-handoff='old-window']")
+
+    send(view.pid, {:conversation_handoffs, c.parent})
+    refute has_element?(view, "[data-thread-handoff='old-window']")
+
+    render_hook(view, "load_older_history", %{})
+    timeline = view |> element("#timeline-stream") |> render()
+
+    assert has_element?(view, "[data-thread-handoff='old-window']")
+    assert {handoff_position, _} = :binary.match(timeline, "data-thread-handoff=\"old-window\"")
+    assert {message_position, _} = :binary.match(timeline, "data-user-msg=\"newer-1\"")
+    assert handoff_position < message_position
+  end
+
+  test "a delayed handoff is inserted before a newer live user message", c do
+    {:ok, view, _html} = live(c.conn, "/w/#{c.ws}/c/#{c.parent}")
+
+    {:ok, handoff} =
+      ConversationTranscriptStore.append(c.parent, %{
+        "id" => "delayed-handoff",
+        "handoff_id" => "delayed",
+        "role" => "system",
+        "content_type" => "thread_handoff",
+        "target" => c.child,
+        "delivery_status" => "enqueued",
+        "content" => "Persisted before the live message"
+      })
+
+    live_user = %{
+      "id" => "newer-live-user",
+      "role" => "user",
+      "content_type" => "user_msg",
+      "content" => "Newer live message"
+    }
+
+    send(view.pid, {:schedule_notice, c.parent, live_user})
+    assert has_element?(view, "[data-user-msg='newer-live-user']")
+
+    send(view.pid, {:conversation_handoffs, c.parent})
+    timeline = view |> element("#timeline-stream") |> render()
+
+    assert {handoff_position, _} = :binary.match(timeline, "data-thread-handoff=\"delayed\"")
+    assert {message_position, _} = :binary.match(timeline, "data-user-msg=\"newer-live-user\"")
+    assert handoff_position < message_position
+
+    {:ok, _updated} =
+      ConversationTranscriptStore.update(c.parent, handoff["id"], %{
+        "delivery_status" => "accepted"
+      })
+
+    send(view.pid, {:conversation_handoffs, c.parent})
+    updated_timeline = view |> element("#timeline-stream") |> render()
+
+    assert updated_timeline =~ "accepted · not completion"
+
+    assert {updated_handoff_position, _} =
+             :binary.match(updated_timeline, "data-thread-handoff=\"delayed\"")
+
+    assert {updated_message_position, _} =
+             :binary.match(updated_timeline, "data-user-msg=\"newer-live-user\"")
+
+    assert updated_handoff_position < updated_message_position
+  end
+
   test "thread wakeup is allowed without a per-conversation switch", c do
     {:ok, view, _} = live(c.conn, "/w/#{c.ws}/c/#{c.parent}")
     refute has_element?(view, "button[phx-click='toggle_thread_collaboration']")

@@ -2,7 +2,7 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
   @moduledoc false
 
   import Phoenix.Component, only: [assign: 3]
-  import Phoenix.LiveView, only: [connected?: 1, stream_insert: 3]
+  import Phoenix.LiveView, only: [connected?: 1, stream_insert: 3, stream_insert: 4]
 
   require Logger
 
@@ -11,19 +11,32 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
 
   def timeline_insert(socket, entry) do
     expanded = Map.get(socket.assigns, :expanded_tool_groups, MapSet.new())
+    previous_timeline = socket.assigns.timeline
 
-    timeline =
-      socket.assigns.timeline
-      |> replace_or_append(entry)
-      |> HandbeanWeb.WorkspaceHelper.apply_tool_work_collapse(expanded)
+    {timeline, position, inserted?} =
+      previous_timeline
+      |> upsert_in_sequence(entry)
+      |> then(fn {entries, position, inserted?} ->
+        {HandbeanWeb.WorkspaceHelper.apply_tool_work_collapse(entries, expanded), position,
+         inserted?}
+      end)
 
     entry_id = Map.get(entry, "id")
     projected = Enum.find(timeline, &(Map.get(&1, "id") == entry_id)) || entry
 
     socket
     |> assign(:timeline, timeline)
-    |> stream_insert(:timeline, projected)
-    |> stream_related_tool_work(timeline, projected)
+    |> stream_timeline_entry(projected, position, inserted?)
+    |> stream_changed_entries(previous_timeline, timeline, entry_id)
+    |> stream_related_handoffs(timeline, projected, inserted?)
+  end
+
+  def reconcile_handoffs(socket, entries) when is_list(entries) do
+    entries
+    |> Enum.filter(&thread_entry?/1)
+    |> Enum.filter(&entry_in_loaded_window?(socket, &1))
+    |> Enum.reject(&timeline_entry_unchanged?(socket.assigns.timeline, &1))
+    |> Enum.reduce(socket, fn entry, acc -> timeline_insert(acc, entry) end)
   end
 
   def mark_revert_confirm(socket, change_id) do
@@ -251,16 +264,108 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
     [head | replace_or_append(rest, entry)]
   end
 
-  defp stream_related_tool_work(socket, timeline, %{"work_group_id" => group_id, "id" => id})
-       when is_binary(group_id) and group_id != "" do
-    Enum.reduce(timeline, socket, fn other, acc ->
-      if Map.get(other, "work_group_id") == group_id and Map.get(other, "id") != id,
-        do: stream_insert(acc, :timeline, other),
+  defp upsert_in_sequence(timeline, %{"id" => id} = entry) do
+    case Enum.find_index(timeline, &(Map.get(&1, "id") == id)) do
+      nil ->
+        position = sequence_insert_position(timeline, Map.get(entry, "sequence"))
+        {List.insert_at(timeline, position, entry), position, true}
+
+      position ->
+        {List.replace_at(timeline, position, entry), position, false}
+    end
+  end
+
+  defp upsert_in_sequence(timeline, entry), do: {timeline ++ [entry], length(timeline), true}
+
+  defp sequence_insert_position(timeline, sequence) when is_integer(sequence) do
+    timeline
+    |> Enum.with_index()
+    |> Enum.reduce(nil, fn {entry, index}, position ->
+      case Map.get(entry, "sequence") do
+        current when is_integer(current) and current <= sequence -> index + 1
+        _ -> position
+      end
+    end)
+    |> Kernel.||(0)
+  end
+
+  defp sequence_insert_position(timeline, _sequence), do: length(timeline)
+
+  defp stream_timeline_entry(socket, entry, position, true),
+    do: stream_insert(socket, :timeline, entry, at: position)
+
+  defp stream_timeline_entry(socket, entry, _position, false),
+    do: stream_insert(socket, :timeline, entry)
+
+  defp stream_changed_entries(socket, previous, timeline, inserted_id) do
+    previous_by_id = Map.new(previous, &{Map.get(&1, "id"), &1})
+
+    Enum.reduce(timeline, socket, fn entry, acc ->
+      id = Map.get(entry, "id")
+
+      if id != inserted_id and Map.get(previous_by_id, id) != entry,
+        do: stream_insert(acc, :timeline, entry),
         else: acc
     end)
   end
 
-  defp stream_related_tool_work(socket, _timeline, _entry), do: socket
+  defp stream_related_handoffs(socket, timeline, inserted, true) do
+    if thread_entry?(inserted) do
+      association = handoff_association(inserted)
+
+      Enum.reduce(timeline, socket, fn entry, acc ->
+        if Map.get(entry, "id") != Map.get(inserted, "id") and thread_entry?(entry) and
+             handoff_association(entry) == association,
+           do: stream_insert(acc, :timeline, entry),
+           else: acc
+      end)
+    else
+      socket
+    end
+  end
+
+  defp stream_related_handoffs(socket, _timeline, _inserted, false), do: socket
+
+  defp timeline_entry_unchanged?(timeline, entry), do: Enum.any?(timeline, &(&1 == entry))
+
+  defp entry_in_loaded_window?(socket, entry) do
+    timeline = socket.assigns.timeline
+    id = Map.get(entry, "id")
+
+    cond do
+      Enum.any?(timeline, &(Map.get(&1, "id") == id)) ->
+        true
+
+      not Map.get(socket.assigns, :history_has_more?, false) ->
+        true
+
+      true ->
+        with sequence when is_integer(sequence) <- Map.get(entry, "sequence"),
+             oldest when is_integer(oldest) <- oldest_loaded_sequence(timeline) do
+          sequence >= oldest
+        else
+          _ -> false
+        end
+    end
+  end
+
+  defp oldest_loaded_sequence(timeline) do
+    timeline
+    |> Enum.map(&Map.get(&1, "sequence"))
+    |> Enum.filter(&is_integer/1)
+    |> Enum.min(fn -> nil end)
+  end
+
+  defp thread_entry?(entry) do
+    Map.get(entry, "content_type") == "thread_handoff" or
+      get_in(entry, ["origin", "kind"]) == "thread"
+  end
+
+  defp handoff_association(entry) do
+    Map.get(entry, "handoff_id") || get_in(entry, ["origin", "handoff_id"]) ||
+      get_in(entry, ["origin", "request_id"]) || Map.get(entry, "id")
+  end
+
   defp truthy?(value), do: value in [true, "true", 1, "1"]
 
   alias HandbeanWeb.WorkspaceLive.Composer
