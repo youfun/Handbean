@@ -54,7 +54,8 @@ defmodule Handbean.Agent.Middleware.MemoryProjection do
         query
         |> MemoryStore.recall(
           Keyword.merge(scope_opts(state),
-            limit: @max_relevant_memories + MapSet.size(persistent_ids)
+            limit: @max_relevant_memories + MapSet.size(persistent_ids),
+            match_percent: 20
           )
         )
         |> Enum.reject(&MapSet.member?(persistent_ids, &1.id))

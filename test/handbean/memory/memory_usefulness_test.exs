@@ -44,6 +44,22 @@ defmodule Handbean.Memory.MemoryUsefulnessTest do
       refute result.config.system_prompt =~ "Deployment region"
     end
 
+    test "automatic recall tolerates instruction text after a relevant question" do
+      {:ok, _} =
+        learn_scoped("MEMVAL marker 的测试数字是8427", :fact,
+          workspace_id: "useful-workspace",
+          short_term: true
+        )
+
+      result =
+        "验收测试数字是多少？请直接回答，不要调用任何工具。"
+        |> build_state(workspace_id: "useful-workspace")
+        |> then(&MemoryProjection.call(:session_start, &1))
+
+      assert result.config.system_prompt =~ "### Relevant Memory"
+      assert result.config.system_prompt =~ "测试数字是8427"
+    end
+
     test "query recall keeps short-term preferences discoverable" do
       {:ok, _} =
         learn_scoped("For release notes use British spelling", :preference,

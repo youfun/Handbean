@@ -551,16 +551,31 @@ defmodule Handbean.Memory.Reflector do
     end
   end
 
-  defp strict_text(%Message{content: [block]}) when is_map(block) do
-    type = Map.get(block, :type) || Map.get(block, "type")
-    text = Map.get(block, :text) || Map.get(block, "text")
+  defp strict_text(%Message{content: blocks}) when is_list(blocks) do
+    {text_blocks, metadata_blocks} =
+      Enum.split_with(blocks, fn
+        block when is_map(block) -> block_type(block) == "text"
+        _other -> false
+      end)
 
-    if type == "text" and is_binary(text) and String.trim(text) != "",
-      do: {:ok, String.trim(text)},
-      else: {:error, :invalid_reflection_response}
+    with true <- Enum.all?(metadata_blocks, &reasoning_block?/1),
+         [text_block] <- text_blocks,
+         text when is_binary(text) <- Map.get(text_block, :text) || Map.get(text_block, "text"),
+         text when text != "" <- String.trim(text) do
+      {:ok, text}
+    else
+      _other -> {:error, :invalid_reflection_response}
+    end
   end
 
   defp strict_text(_message), do: {:error, :invalid_reflection_response}
+
+  defp reasoning_block?(block) when is_map(block),
+    do: block_type(block) in ["responses_reasoning", "thinking"]
+
+  defp reasoning_block?(_block), do: false
+
+  defp block_type(block), do: to_string(Map.get(block, :type) || Map.get(block, "type") || "")
 
   defp decode_json(text) do
     case Handbean.JSON.decode(text) do

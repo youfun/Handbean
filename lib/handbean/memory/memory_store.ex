@@ -48,7 +48,8 @@ defmodule Handbean.Memory.MemoryStore do
   when that option is a positive integer, otherwise 2 when there are at least
   two usable tokens and 1 when there is one. The base is capped to the usable
   token count. The effective threshold is
-  `max(base, ceil(0.3 * token_count))`, also capped to the token count.
+  `max(base, ceil(match_percent / 100 * token_count))`, also capped to the token count.
+  `match_percent` defaults to 30.
   Results are then ordered by how many tokens matched, FTS bm25, long-term
   first, reinforcement, and recency.
 
@@ -56,6 +57,7 @@ defmodule Handbean.Memory.MemoryStore do
 
     * `:limit` — max results after scoring (default 10)
     * `:min_matches` — base token overlap required, before the proportional floor
+    * `:match_percent` — proportional token-overlap floor, 1..100 (default 30)
   """
   @spec recall(String.t(), keyword()) :: [Engram.t()]
   def recall(query, opts \\ []) do
@@ -604,8 +606,13 @@ defmodule Handbean.Memory.MemoryStore do
         _ -> if(count >= 2, do: 2, else: 1)
       end
 
-    # ceil(0.3 * count). Exact for the 16-token cap.
-    proportional = div(count * 3 + 9, 10)
+    percent =
+      case Keyword.get(opts, :match_percent, 30) do
+        value when is_integer(value) and value in 1..100 -> value
+        _other -> 30
+      end
+
+    proportional = div(count * percent + 99, 100)
     min(count, max(min(base, count), proportional))
   end
 

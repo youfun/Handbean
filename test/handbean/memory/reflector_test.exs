@@ -387,6 +387,25 @@ defmodule Handbean.Memory.ReflectorTest do
       end
     end
 
+    test "accepts one strict JSON text block alongside provider reasoning metadata", context do
+      checkpoint = put_checkpoint(context.conversation_id, "Reasoned strict JSON summary")
+
+      response_message =
+        Message.assistant([
+          %{type: "responses_reasoning", id: "reasoning-1", summary: []},
+          %{type: "text", text: json(%{"type" => "ignore", "reason" => "No durable memory"})}
+        ])
+
+      assert {:ok, :ignored} =
+               Reflector.run(
+                 context.conversation_id,
+                 checkpoint,
+                 opts(context, {:messages, [response_message]})
+               )
+
+      assert audit_entry(context.conversation_id, checkpoint)["outcome"] == "ignore"
+    end
+
     test "provider errors, exceptions, and tool calls do not audit or write", context do
       checkpoint = put_checkpoint(context.conversation_id, "Provider failure summary")
       before_count = count_memories(context.workspace_id)
