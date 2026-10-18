@@ -4,7 +4,7 @@
       <div>
         <h1 class="memory-title">{gettext("工作区记忆")}</h1>
         <div :if={@workspace} class="memory-context">
-          {gettext("当前工作区：")}<strong>{@workspace["name"]}</strong>
+          {pgettext("memory context", "当前工作区：")}<strong>{@workspace["name"]}</strong>
           <span class="memory-path">{@workspace["path"]}</span>
         </div>
         <div :if={!@workspace} class="memory-context">{gettext("仅查看全局记忆")}</div>
@@ -98,7 +98,7 @@
               disabled={is_nil(@workspace_id)}
             >
               <option value="workspace" selected={@scope_filter == :workspace}>
-                {gettext("当前工作区")}
+                {pgettext("memory scope", "当前工作区")}
               </option>
               <option value="both" selected={@scope_filter == :both}>
                 {gettext("包含全局记忆")}

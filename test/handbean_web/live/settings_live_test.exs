@@ -720,6 +720,17 @@ defmodule HandbeanWeb.SettingsLiveTest do
       refute has_element?(child, "#memory-engram-#{memory.id} .memory-kind", "fact")
     end
 
+    test "English memory browser uses memory-specific filter translations", %{conn: conn} do
+      {:ok, _workspace} = Handbean.WorkspaceStore.ensure_default!()
+      {:ok, view, _html} = live(conn, "/settings?tab=workspace_memory&locale=en")
+      child = find_live_child(view, "settings-workspace-memory")
+
+      assert has_element?(child, "#memory-kind-all", "All")
+      assert has_element?(child, "#memory-scope option[value=workspace]", "Current workspace")
+      refute render(child) =~ "Disable all"
+      refute render(child) =~ "Current workspace models"
+    end
+
     test "uses URL query param to set initial tab", %{conn: conn} do
       {:ok, _view, html} = live(conn, "/settings?tab=available_models")
 

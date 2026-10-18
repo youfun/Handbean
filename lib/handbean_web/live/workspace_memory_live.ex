@@ -168,7 +168,7 @@ defmodule HandbeanWeb.WorkspaceMemoryLive do
 
   def kind_filters, do: [:all | @kinds]
 
-  def kind_label(:all), do: gettext("全部")
+  def kind_label(:all), do: pgettext("memory kind filter", "全部")
   def kind_label(:preference), do: gettext("偏好")
   def kind_label(:rule), do: gettext("规则")
   def kind_label(:pattern), do: gettext("模式")
