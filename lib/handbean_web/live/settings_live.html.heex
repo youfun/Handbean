@@ -23,7 +23,9 @@
   <div class="settings-topbar h-9 border-b bg-surface flex items-center px-3 flex-shrink-0 gap-2">
     <a
       href={
-        if @conversation_id, do: ~p"/w/#{@workspace["id"]}/c/#{@conversation_id}", else: ~p"/"
+        if @conversation_id,
+          do: ~p"/w/#{@return_workspace_id}/c/#{@conversation_id}",
+          else: ~p"/"
       }
       class="settings-back-link text-secondary hover:text-primary transition-colors flex items-center gap-1.5 no-underline"
     >
@@ -94,10 +96,37 @@
       <div :if={@active_tab == :workspace_models} class="settings-content-wrap">
         <div class="settings-content-card">
           <div class="settings-form-section">
-            <div class="settings-section-title">{gettext("当前工作区模型")}</div>
-            <div class="settings-help-text">
-              <div>{@workspace["name"]}</div>
-              <div class="settings-path">{@workspace_root}</div>
+            <div class="settings-workspace-heading">
+              <div class="settings-section-heading">
+                <div class="settings-section-title">{gettext("当前工作区模型")}</div>
+                <div class="settings-help-text">
+                  <div>{@workspace["name"]}</div>
+                  <div class="settings-path">{@workspace_root}</div>
+                </div>
+              </div>
+
+              <form
+                id="workspace-models-workspace-form"
+                phx-change="select_workspace_models"
+                class="settings-workspace-select"
+              >
+                <label class="sr-only" for="workspace-models-workspace">
+                  {gettext("选择工作区")}
+                </label>
+                <select
+                  id="workspace-models-workspace"
+                  name="workspace[id]"
+                  class="settings-input"
+                >
+                  <option
+                    :for={workspace <- @workspaces}
+                    value={workspace["id"]}
+                    selected={@workspace["id"] == workspace["id"]}
+                  >
+                    {workspace["name"]}
+                  </option>
+                </select>
+              </form>
             </div>
 
             <div class="settings-card">

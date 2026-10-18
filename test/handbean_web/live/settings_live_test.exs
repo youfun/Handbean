@@ -352,6 +352,94 @@ defmodule HandbeanWeb.SettingsLiveTest do
              ]
     end
 
+    test "Workspace Models can switch workspaces and saves the selected workspace policy", %{
+      conn: conn
+    } do
+      {:ok, default_workspace} = Handbean.WorkspaceStore.ensure_default!()
+
+      other_path =
+        Path.join(System.tmp_dir!(), "handbean_models_ws_#{System.unique_integer([:positive])}")
+
+      File.mkdir_p!(other_path)
+      on_exit(fn -> File.rm_rf!(other_path) end)
+
+      {:ok, other_workspace} =
+        Handbean.WorkspaceStore.add(other_path, name: "Other Models Project")
+
+      default_settings_path = Handbean.WorkspaceSettings.path(default_workspace["path"])
+      other_settings_path = Handbean.WorkspaceSettings.path(other_workspace["path"])
+
+      File.write!(
+        default_settings_path,
+        Jason.encode!(%{
+          "models" => %{
+            "allow" => %{
+              "providers" => %{"stepfun" => %{"models" => ["step-router-v1"]}}
+            }
+          }
+        })
+      )
+
+      File.write!(
+        other_settings_path,
+        Jason.encode!(%{
+          "models" => %{
+            "allow" => %{"providers" => %{"openai" => %{"models" => ["gpt-4o"]}}}
+          }
+        })
+      )
+
+      {:ok, view, _html} =
+        live(
+          conn,
+          "/settings?tab=workspace_models&workspace_id=#{default_workspace["id"]}&conversation_id=origin-conversation"
+        )
+
+      assert has_element?(
+               view,
+               "#workspace-models-workspace option[value='#{default_workspace["id"]}'][selected]"
+             )
+
+      view
+      |> form("#workspace-models-workspace-form", %{
+        "workspace" => %{"id" => other_workspace["id"]}
+      })
+      |> render_change()
+
+      assert has_element?(
+               view,
+               "#workspace-models-workspace option[value='#{other_workspace["id"]}'][selected]"
+             )
+
+      assert has_element?(view, ".settings-help-text", "Other Models Project")
+      assert has_element?(view, ".settings-path", other_path)
+
+      assert has_element?(
+               view,
+               ~s|a[href="/w/#{default_workspace["id"]}/c/origin-conversation"]|
+             )
+
+      assert has_element?(view, ~s|input[phx-value-model="gpt-4o"][checked]|)
+      refute has_element?(view, ~s|input[phx-value-model="step-router-v1"][checked]|)
+
+      view
+      |> element(~s|button[phx-click="set_workspace_model_mode"][phx-value-mode="unrestricted"]|)
+      |> render_click()
+
+      view
+      |> element(~s|button[phx-click="save_workspace_models"]|)
+      |> render_click()
+
+      {:ok, default_settings} = default_settings_path |> File.read!() |> Jason.decode()
+      {:ok, other_settings} = other_settings_path |> File.read!() |> Jason.decode()
+
+      assert get_in(default_settings, ["models", "allow", "providers"]) == %{
+               "stepfun" => %{"models" => ["step-router-v1"]}
+             }
+
+      assert get_in(other_settings, ["models", "allow", "providers"]) == %{}
+    end
+
     test "restricted workspace models can be searched and selected by provider", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/settings?tab=workspace_models")
 

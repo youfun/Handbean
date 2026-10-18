@@ -795,6 +795,23 @@ select.settings-input {
   margin-top: 0;
 }
 
+.settings-workspace-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.settings-workspace-select {
+  flex: 0 1 280px;
+  min-width: 190px;
+  max-width: 280px;
+}
+
+.settings-workspace-select .settings-input {
+  width: 100%;
+}
+
 .settings-path {
   font-family: var(--sig-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: 11px;
@@ -893,6 +910,18 @@ select.settings-input {
 }
 
 @media (max-width: 720px) {
+  .settings-workspace-heading {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .settings-workspace-select {
+    flex: none;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+  }
+
   .settings-field-row {
     flex-direction: column;
     align-items: flex-start;

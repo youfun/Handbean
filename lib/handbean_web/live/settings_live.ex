@@ -41,18 +41,9 @@ defmodule HandbeanWeb.SettingsLive do
     active_tab = tab_from_params(params)
 
     {:ok, default_ws} = Handbean.WorkspaceStore.ensure_default!()
+    workspaces = Handbean.WorkspaceStore.list()
 
-    workspace =
-      case Map.get(params, "workspace_id") do
-        ws_id when is_binary(ws_id) ->
-          case Handbean.WorkspaceStore.get(ws_id) do
-            {:ok, ws} -> ws
-            {:error, :not_found} -> default_ws
-          end
-
-        _ ->
-          default_ws
-      end
+    workspace = workspace_from_params(params, workspaces, default_ws)
 
     workspace_root = workspace["path"] || Path.expand(".")
     conversation_id = Map.get(params, "conversation_id")
@@ -72,7 +63,9 @@ defmodule HandbeanWeb.SettingsLive do
       |> assign(:page_title, gettext("Settings"))
       |> assign(:active_tab, active_tab)
       |> assign(:tabs, @tabs)
+      |> assign(:workspaces, workspaces)
       |> assign(:workspace, workspace)
+      |> assign(:return_workspace_id, workspace["id"])
       |> assign(:workspace_root, workspace_root)
       |> assign(:conversation_id, conversation_id)
       |> assign(:all_models, ModelConfig.all_global_models())
@@ -93,7 +86,14 @@ defmodule HandbeanWeb.SettingsLive do
   @impl true
   def handle_params(params, _uri, socket) do
     active_tab = tab_from_params(params)
-    {:noreply, assign(socket, :active_tab, active_tab)}
+
+    workspace =
+      workspace_from_params(params, socket.assigns.workspaces, socket.assigns.workspace)
+
+    {:noreply,
+     socket
+     |> assign(:active_tab, active_tab)
+     |> assign_workspace_model_context(workspace)}
   end
 
   @impl true
@@ -206,6 +206,28 @@ defmodule HandbeanWeb.SettingsLive do
       end
 
     {:noreply, assign(socket, :workspace_model_policy, policy)}
+  end
+
+  def handle_event(
+        "select_workspace_models",
+        %{"workspace" => %{"id" => workspace_id}},
+        socket
+      ) do
+    case Enum.find(socket.assigns.workspaces, &(&1["id"] == workspace_id)) do
+      nil ->
+        {:noreply, socket}
+
+      workspace ->
+        query =
+          %{
+            "tab" => "workspace_models",
+            "workspace_id" => workspace["id"],
+            "conversation_id" => socket.assigns.conversation_id
+          }
+          |> Map.reject(fn {_key, value} -> is_nil(value) end)
+
+        {:noreply, push_patch(socket, to: ~p"/settings?#{query}")}
+    end
   end
 
   def handle_event("filter_workspace_models", %{"query" => query}, socket) do
@@ -422,6 +444,35 @@ defmodule HandbeanWeb.SettingsLive do
   end
 
   defp tab_from_params(_params), do: :model_ai
+
+  defp workspace_from_params(params, workspaces, current_workspace) do
+    default_workspace =
+      Enum.find(workspaces, current_workspace, &(&1["default"] == true))
+
+    case Map.get(params, "workspace_id") do
+      workspace_id when is_binary(workspace_id) ->
+        Enum.find(workspaces, default_workspace, &(&1["id"] == workspace_id))
+
+      _ ->
+        default_workspace
+    end
+  end
+
+  defp assign_workspace_model_context(socket, workspace) do
+    if socket.assigns.workspace["id"] == workspace["id"] do
+      socket
+    else
+      workspace_root = workspace["path"] || Path.expand(".")
+
+      socket
+      |> assign(:workspace, workspace)
+      |> assign(:workspace_root, workspace_root)
+      |> assign(:workspace_model_policy, load_workspace_model_policy_form(workspace_root))
+      |> assign(:workspace_model_query, "")
+      |> assign(:workspace_models_saving, false)
+      |> update(:errors, &Map.delete(&1, :general))
+    end
+  end
 
   defp extract_field_value(params) do
     field =
