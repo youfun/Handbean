@@ -172,6 +172,7 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarComponents do
 
   attr :chat_scope, :any, required: true
   attr :collapsed_workspace_ids, :any, required: true
+  attr :collapsed_thread_ids, :any, default: MapSet.new()
   attr :conversation_menu_id, :any, required: true
   attr :checkout_picker, :any, default: nil
   attr :conversations_by_workspace, :any, required: true
@@ -602,7 +603,12 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarComponents do
             <div
               :for={
                 conv <-
-                  workspace_conversations(@conversations_by_workspace, ws["id"], @workspaces)
+                  visible_workspace_conversations(
+                    @conversations_by_workspace,
+                    ws["id"],
+                    @workspaces,
+                    @collapsed_thread_ids
+                  )
               }
               :if={!conv.archived and not conv.pinned}
               id={"conversation-#{conv.id}"}
@@ -646,6 +652,48 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarComponents do
                   state={Map.get(@run_states, conv.id)}
                 />
                 <span class="truncate flex-1">{conv.title}</span>
+              </button>
+              <button
+                :if={conv.child_count > 0}
+                id={"thread-toggle-#{conv.id}"}
+                type="button"
+                phx-click="toggle_thread"
+                phx-value-id={conv.id}
+                class="thread-toggle"
+                aria-expanded={to_string(not thread_collapsed?(@collapsed_thread_ids, conv.id))}
+                aria-label={
+                  if(thread_collapsed?(@collapsed_thread_ids, conv.id),
+                    do: gettext("展开子线程"),
+                    else: gettext("收起子线程")
+                  )
+                }
+                title={
+                  if(thread_collapsed?(@collapsed_thread_ids, conv.id),
+                    do: gettext("展开子线程"),
+                    else: gettext("收起子线程")
+                  )
+                }
+              >
+                <svg
+                  class={[
+                    "thread-toggle-icon",
+                    thread_collapsed?(@collapsed_thread_ids, conv.id) && "is-collapsed"
+                  ]}
+                  width="10"
+                  height="10"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <polyline points="6 15 12 9 18 15" />
+                </svg>
+                <span class="thread-child-count" title={gettext("子线程数量")}>
+                  {conv.child_count}
+                </span>
               </button>
               <.conversation_menu conv={conv} conversation_menu_id={@conversation_menu_id} />
             </div>

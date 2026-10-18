@@ -491,6 +491,16 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
     end
   end
 
+  def toggle_thread(socket, conversation_id) when is_binary(conversation_id) do
+    update(socket, :collapsed_thread_ids, fn collapsed ->
+      collapsed = collapsed || MapSet.new()
+
+      if MapSet.member?(collapsed, conversation_id),
+        do: MapSet.delete(collapsed, conversation_id),
+        else: MapSet.put(collapsed, conversation_id)
+    end)
+  end
+
   def close_checkout_picker(socket), do: assign(socket, :checkout_picker, nil)
 
   def checkout_picker_open?(picker, workspace_id, source \\ :sidebar)
@@ -885,6 +895,24 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
     tree_rows ++ pinned_rows
   end
 
+  def visible_workspace_conversations(
+        conversations_by_workspace,
+        ws_id,
+        workspaces,
+        collapsed_thread_ids
+      ) do
+    collapsed_thread_ids =
+      if is_struct(collapsed_thread_ids, MapSet),
+        do: collapsed_thread_ids,
+        else: MapSet.new()
+
+    conversations_by_workspace
+    |> workspace_conversations(ws_id, workspaces)
+    |> Enum.reject(fn row ->
+      Enum.any?(row.tree_ancestor_ids, &MapSet.member?(collapsed_thread_ids, &1))
+    end)
+  end
+
   defp conversation_row(conv, workspace_id, workspace_name, scope) do
     row = %{
       id: ConversationState.conversation_id(conv),
@@ -895,6 +923,8 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
       parent_id: Handbean.ConversationStore.parent_conversation_id(conv),
       tree_depth: 0,
       tree_branch: nil,
+      tree_ancestor_ids: [],
+      child_count: 0,
       archived: archived_conversation?(conv),
       pinned: pinned_conversation?(conv),
       pinned_at: ConversationState.conv_value(conv, "pinned_at", nil),
@@ -1148,7 +1178,9 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
     conversations
     |> Enum.filter(&is_nil(Map.get(parent_by_id, ConversationState.conversation_id(&1))))
     |> Enum.sort_by(&family_activity_key(&1, children_by_parent), :desc)
-    |> Enum.flat_map(&flatten_thread_tree(&1, 0, nil, children_by_parent, row_fun))
+    |> Enum.flat_map(fn conversation ->
+      flatten_thread_tree(conversation, 0, nil, [], children_by_parent, row_fun)
+    end)
   end
 
   defp effective_parent_id(conversation, id, by_id) do
@@ -1190,23 +1222,45 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
     end
   end
 
-  defp flatten_thread_tree(conversation, depth, branch, children_by_parent, row_fun) do
-    row =
-      conversation
-      |> row_fun.()
-      |> Map.merge(%{tree_depth: depth, tree_branch: branch})
+  defp flatten_thread_tree(
+         conversation,
+         depth,
+         branch,
+         ancestor_ids,
+         children_by_parent,
+         row_fun
+       ) do
+    id = ConversationState.conversation_id(conversation)
 
     children =
       children_by_parent
-      |> Map.get(ConversationState.conversation_id(conversation), [])
+      |> Map.get(id, [])
       |> Enum.sort_by(&family_activity_key(&1, children_by_parent), :desc)
+
+    row =
+      conversation
+      |> row_fun.()
+      |> Map.merge(%{
+        tree_depth: depth,
+        tree_branch: branch,
+        tree_ancestor_ids: ancestor_ids,
+        child_count: length(children)
+      })
 
     descendants =
       children
       |> Enum.with_index()
       |> Enum.flat_map(fn {child, index} ->
         child_branch = if index == length(children) - 1, do: :last, else: :middle
-        flatten_thread_tree(child, depth + 1, child_branch, children_by_parent, row_fun)
+
+        flatten_thread_tree(
+          child,
+          depth + 1,
+          child_branch,
+          [id | ancestor_ids],
+          children_by_parent,
+          row_fun
+        )
       end)
 
     [row | descendants]

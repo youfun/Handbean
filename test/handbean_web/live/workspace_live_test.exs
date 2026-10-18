@@ -4724,6 +4724,41 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
       end
     end
 
+    test "parent thread toggle collapses descendants without selecting the parent", %{conn: conn} do
+      {:ok, workspace} = Handbean.WorkspaceStore.ensure_default!()
+
+      {:ok, parent} =
+        Handbean.ConversationStore.create(workspace["id"],
+          id: "thread-collapse-parent",
+          title: "Collapsible parent"
+        )
+
+      {:ok, child} =
+        Handbean.ConversationStore.create(workspace["id"],
+          id: "thread-collapse-child",
+          title: "Nested child",
+          parent_conversation_id: parent["id"]
+        )
+
+      {:ok, view, _html} = live(conn, "/")
+      render_async(view, 5_000)
+
+      assert has_element?(view, "#conversation-#{child["id"]}")
+      assert has_element?(view, "#thread-toggle-#{parent["id"]}[aria-expanded='true']")
+
+      selected_before = view |> render() |> session_id_from_html()
+      view |> element("#thread-toggle-#{parent["id"]}") |> render_click()
+
+      refute has_element?(view, "#conversation-#{child["id"]}")
+      assert has_element?(view, "#thread-toggle-#{parent["id"]}[aria-expanded='false']")
+      assert view |> render() |> session_id_from_html() == selected_before
+
+      view |> element("#thread-toggle-#{parent["id"]}") |> render_click()
+
+      assert has_element?(view, "#conversation-#{child["id"]}")
+      assert has_element?(view, "#thread-toggle-#{parent["id"]}[aria-expanded='true']")
+    end
+
     test "workspace group shows conversation count and collapses", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/")
       {:ok, workspace} = Handbean.WorkspaceStore.ensure_default!()

@@ -28,6 +28,14 @@ defmodule HandbeanWeb.WorkspaceLive.ViewComponents do
   defdelegate workspace_conversations(conversations_by_workspace, ws_id, workspaces),
     to: ConversationSwitching
 
+  defdelegate visible_workspace_conversations(
+                conversations_by_workspace,
+                ws_id,
+                workspaces,
+                collapsed_thread_ids
+              ),
+              to: ConversationSwitching
+
   defdelegate attachment_url(attachment), to: Composer
   defdelegate attachment_filename(attachment), to: Composer
   defdelegate image_attachment?(attachment), to: Composer
@@ -67,6 +75,12 @@ defmodule HandbeanWeb.WorkspaceLive.ViewComponents do
   end
 
   def workspace_group_collapsed?(_, _), do: false
+
+  def thread_collapsed?(collapsed, id) when is_struct(collapsed, MapSet) do
+    MapSet.member?(collapsed, id)
+  end
+
+  def thread_collapsed?(_, _), do: false
 
   def active_conversation_count(conversations_by_workspace, ws_id, workspaces) do
     conversations_by_workspace

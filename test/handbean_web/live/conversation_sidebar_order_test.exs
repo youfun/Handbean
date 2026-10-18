@@ -39,6 +39,41 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSidebarOrderTest do
     assert Enum.map(rows, & &1.id) == ["parent", "child-b", "child-a", "unrelated"]
     assert Enum.map(rows, & &1.tree_depth) == [0, 1, 1, 0]
     assert Enum.map(rows, & &1.tree_branch) == [nil, :middle, :last, nil]
+    assert Enum.map(rows, & &1.child_count) == [2, 0, 0, 0]
+    assert Enum.map(rows, & &1.tree_ancestor_ids) == [[], ["parent"], ["parent"], []]
+  end
+
+  test "collapsing a thread hides every descendant while nested parents remain independent" do
+    parent = conversation("parent", "2026-01-01T00:00:00Z")
+
+    child =
+      conversation("child", "2026-02-01T00:00:00Z", %{
+        "parent_conversation_id" => "parent"
+      })
+
+    grandchild =
+      conversation("grandchild", "2026-03-01T00:00:00Z", %{
+        "parent_conversation_id" => "child"
+      })
+
+    conversations = %{"ws" => [parent, child, grandchild]}
+    workspaces = [%{"id" => "ws", "name" => "WS"}]
+
+    assert conversations
+           |> ConversationSwitching.visible_workspace_conversations(
+             "ws",
+             workspaces,
+             MapSet.new(["child"])
+           )
+           |> Enum.map(& &1.id) == ["parent", "child"]
+
+    assert conversations
+           |> ConversationSwitching.visible_workspace_conversations(
+             "ws",
+             workspaces,
+             MapSet.new(["parent"])
+           )
+           |> Enum.map(& &1.id) == ["parent"]
   end
 
   test "a child becomes a root when its parent is outside the active unpinned list" do
@@ -221,6 +256,21 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSidebarOrderTest do
            |> Floki.find("#conversation-child")
            |> Floki.attribute("data-thread-depth") == ["1"]
 
+    assert desktop
+           |> Floki.find("#thread-toggle-parent")
+           |> Floki.attribute("phx-click") == ["toggle_thread"]
+
+    assert desktop
+           |> Floki.find("#thread-toggle-parent")
+           |> Floki.attribute("aria-expanded") == ["true"]
+
+    assert desktop
+           |> Floki.find("#thread-toggle-parent .thread-child-count")
+           |> Floki.text()
+           |> String.trim() == "1"
+
+    assert Floki.find(desktop, "#thread-toggle-child") == []
+
     mobile =
       Phoenix.LiveViewTest.render_component(
         &HandbeanWeb.WorkspaceLive.OverlayComponents.mobile_sheets/1,
@@ -248,6 +298,10 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSidebarOrderTest do
     assert mobile
            |> Floki.find("[phx-value-id='child']")
            |> Floki.attribute("data-thread-depth") == ["1"]
+
+    assert mobile
+           |> Floki.find("#sheet-thread-toggle-parent")
+           |> Floki.attribute("phx-click") == ["toggle_thread"]
   end
 
   test "refresh state preserves existing conversation rows" do

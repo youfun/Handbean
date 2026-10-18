@@ -155,6 +155,7 @@ defmodule HandbeanWeb.WorkspaceLive do
       |> assign(:expanded_tool_groups, MapSet.new())
       |> assign(:show_archive, false)
       |> assign(:collapsed_workspace_ids, SessionMemory.collapsed_groups())
+      |> assign(:collapsed_thread_ids, MapSet.new())
       |> assign(:remove_workspace, nil)
       |> assign(:rename_workspace, nil)
       |> assign(:conversation_menu_id, nil)
@@ -1150,6 +1151,11 @@ defmodule HandbeanWeb.WorkspaceLive do
   def handle_event("toggle_workspace_group", %{"id" => id}, socket)
       when is_binary(id) do
     {:noreply, WorkspaceNavigation.toggle_group(socket, id)}
+  end
+
+  @impl true
+  def handle_event("toggle_thread", %{"id" => id}, socket) when is_binary(id) do
+    {:noreply, ConversationSwitching.toggle_thread(socket, id)}
   end
 
   def handle_event("open_rename_workspace", %{"id" => ws_id}, socket) do

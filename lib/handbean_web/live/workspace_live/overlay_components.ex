@@ -11,6 +11,7 @@ defmodule HandbeanWeb.WorkspaceLive.OverlayComponents do
   attr :available_reasoning_levels, :any, required: true
   attr :chat_scope, :any, required: true
   attr :collapsed_workspace_ids, :any, required: true
+  attr :collapsed_thread_ids, :any, default: MapSet.new()
   attr :checkout_picker, :any, default: nil
   attr :conversations_by_workspace, :any, required: true
   attr :current_conversation_id, :any, required: true
@@ -267,41 +268,78 @@ defmodule HandbeanWeb.WorkspaceLive.OverlayComponents do
             />
           </div>
           <%= if not workspace_group_collapsed?(@collapsed_workspace_ids, ws["id"]) do %>
-            <%= for conv <- workspace_conversations(@conversations_by_workspace, ws["id"], @workspaces) |> Enum.reject(&(&1[:archived] or &1.pinned)) do %>
-              <button
-                phx-click="select_conversation"
-                phx-value-id={conv.id}
-                phx-value-ws_id={conv.workspace_id}
-                class={[
-                  "sheet-conv-row",
-                  conv.tree_depth > 0 && "conversation-row-child",
-                  if(
-                    @current_conversation_id == conv.id and
-                      @current_workspace_id == conv.workspace_id,
-                    do: "active",
-                    else: ""
-                  )
-                ]}
-                data-parent-conversation-id={conv.parent_id}
-                data-thread-depth={conv.tree_depth}
-              >
-                <span
-                  :if={conv.tree_depth > 0}
-                  class={[
-                    "thread-tree-connector",
-                    conv.tree_branch == :middle && "is-middle",
-                    conv.tree_branch == :last && "is-last"
-                  ]}
-                  style={"--thread-indent: #{(conv.tree_depth - 1) * 12}px"}
-                  aria-hidden="true"
-                ></span>
-                <SidebarComponents.run_indicator
-                  id={conv.id}
-                  state={Map.get(@run_states, conv.id)}
-                />
-                <span class="truncate flex-1">{conv.title}</span>
-                <span class="sheet-conv-time">{relative_time(conv)}</span>
-              </button>
+            <%= for conv <- visible_workspace_conversations(@conversations_by_workspace, ws["id"], @workspaces, @collapsed_thread_ids) |> Enum.reject(&(&1[:archived] or &1.pinned)) do %>
+              <div class={[
+                "sheet-conv-row sheet-thread-row",
+                conv.tree_depth > 0 && "conversation-row-child",
+                if(
+                  @current_conversation_id == conv.id and
+                    @current_workspace_id == conv.workspace_id,
+                  do: "active",
+                  else: ""
+                )
+              ]}>
+                <button
+                  type="button"
+                  phx-click="select_conversation"
+                  phx-value-id={conv.id}
+                  phx-value-ws_id={conv.workspace_id}
+                  class="sheet-thread-select"
+                  data-parent-conversation-id={conv.parent_id}
+                  data-thread-depth={conv.tree_depth}
+                >
+                  <span
+                    :if={conv.tree_depth > 0}
+                    class={[
+                      "thread-tree-connector",
+                      conv.tree_branch == :middle && "is-middle",
+                      conv.tree_branch == :last && "is-last"
+                    ]}
+                    style={"--thread-indent: #{(conv.tree_depth - 1) * 12}px"}
+                    aria-hidden="true"
+                  ></span>
+                  <SidebarComponents.run_indicator
+                    id={conv.id}
+                    state={Map.get(@run_states, conv.id)}
+                  />
+                  <span class="truncate flex-1">{conv.title}</span>
+                  <span class="sheet-conv-time">{relative_time(conv)}</span>
+                </button>
+                <button
+                  :if={conv.child_count > 0}
+                  id={"sheet-thread-toggle-#{conv.id}"}
+                  type="button"
+                  phx-click="toggle_thread"
+                  phx-value-id={conv.id}
+                  class="thread-toggle thread-toggle-mobile"
+                  aria-expanded={to_string(not thread_collapsed?(@collapsed_thread_ids, conv.id))}
+                  aria-label={
+                    if(thread_collapsed?(@collapsed_thread_ids, conv.id),
+                      do: gettext("展开子线程"),
+                      else: gettext("收起子线程")
+                    )
+                  }
+                >
+                  <svg
+                    class={[
+                      "thread-toggle-icon",
+                      thread_collapsed?(@collapsed_thread_ids, conv.id) && "is-collapsed"
+                    ]}
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <polyline points="6 15 12 9 18 15" />
+                  </svg>
+                  <span class="thread-child-count">{conv.child_count}</span>
+                </button>
+              </div>
             <% end %>
           <% end %>
         <% end %>

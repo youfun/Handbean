@@ -496,6 +496,72 @@
   border-top: 1px solid currentColor;
 }
 
+.thread-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  padding: 0 0.2rem;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  font-size: 0.65rem;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.thread-toggle:hover,
+.thread-toggle:focus-visible {
+  background: var(--color-surface-active);
+  color: var(--color-text-primary);
+}
+
+.thread-toggle-icon {
+  flex: 0 0 auto;
+  transition: transform 0.15s ease;
+}
+
+.thread-toggle-icon.is-collapsed {
+  transform: rotate(180deg);
+}
+
+.thread-child-count {
+  min-width: 0.65rem;
+  text-align: center;
+}
+
+.sheet-conv-row.sheet-thread-row {
+  gap: 0;
+  padding: 0 12px 0 0;
+  cursor: default;
+}
+
+.sheet-thread-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 11px 0 11px 20px;
+  flex: 1 1 auto;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.thread-toggle-mobile {
+  min-width: 44px;
+  min-height: 44px;
+}
+
 .conversation-row-child .conversation-item,
 .sheet-conv-row.conversation-row-child {
   min-width: 0;
