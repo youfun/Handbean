@@ -35,8 +35,10 @@ defmodule Handbean.Tool.Builtin.JobStatus do
   def max_result_chars, do: 105_000
   @impl true
   def execute(input, context) do
+    job_id = if input["job_id"] == "", do: nil, else: input["job_id"]
+
     Handbean.Jobs.status(
-      input["job_id"],
+      job_id,
       Map.get(input, "cursor", 0),
       Map.get(input, "wait_ms", 1_000),
       context

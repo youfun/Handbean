@@ -52,6 +52,25 @@ defmodule Handbean.JobsTest do
     assert get_in(JobStatus.input_schema(), [:properties, :wait_ms, :maximum]) == 30_000
   end
 
+  test "job status recovers handles when the tool binding supplies an empty job id", %{
+    context: context
+  } do
+    assert {:ok, completed} =
+             Jobs.start_beam(
+               :script,
+               fn _sink -> {:ok, "done"} end,
+               30_000,
+               5_000,
+               %{context | tool_call_id: "recover-empty-id"}
+             )
+
+    for input <- [%{"wait_ms" => 0}, %{"job_id" => "", "wait_ms" => 0}] do
+      assert {:ok, text, %{job: %{jobs: jobs}}} = JobStatus.execute(input, context)
+      assert Enum.any?(jobs, &(&1.job_id == completed.job_id))
+      assert text =~ completed.job_id
+    end
+  end
+
   test "managed Bash returns executor-compatible text and a recoverable job handle", %{
     context: context
   } do
