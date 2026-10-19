@@ -1,0 +1,5 @@
+build/
+dist/
+resources/handbean-web/
+Handbean-windows-amd64.zip
+Handbean-windows-amd64.zip.sha256

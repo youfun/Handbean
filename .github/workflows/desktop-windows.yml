@@ -1,0 +1,44 @@
+# Unsigned Handbean Windows GUI shell (system WebView2 + bundled Windows web
+# release). Dispatch-only so main CI does not upload a large OTP artifact on
+# every push.
+name: Windows app
+
+on:
+  workflow_dispatch:
+    inputs:
+      web_tag:
+        description: Release tag containing handbean-web-windows-amd64.zip
+        default: web-latest
+        type: string
+
+jobs:
+  app:
+    name: Handbean Windows GUI
+    runs-on: windows-2025
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: desktop/windows/go.mod
+
+      - name: Test shell
+        working-directory: desktop/windows
+        run: go test ./...
+
+      - name: Fetch web release
+        working-directory: desktop/windows
+        shell: pwsh
+        run: ./scripts/fetch_web_release.ps1 "${{ inputs.web_tag }}"
+
+      - name: Build app
+        working-directory: desktop/windows
+        shell: pwsh
+        run: ./scripts/build_app.ps1
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Handbean-windows-amd64
+          path: desktop/windows/Handbean-windows-amd64.zip*
+          retention-days: 7
