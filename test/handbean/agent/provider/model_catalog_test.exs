@@ -109,9 +109,81 @@ defmodule Handbean.Agent.Provider.ModelCatalogTest do
     assert mini["reasoningLevels"] == ["low", "high"]
     assert mini["defaultReasoning"] == "high"
     assert mini["upstream"]["display_name"] == "Remote mini"
-    assert deepseek["name"] == "DeepSeek-V3.2 (Non-thinking Mode)"
-    assert is_integer(deepseek["contextWindow"])
+    assert deepseek["name"] == "DeepSeek Chat"
+    refute Map.has_key?(deepseek, "contextWindow")
     assert gone["unavailable"] == true
+  end
+
+  test "ZenMux 1017 uses provider-specific llm_db reasoning options missing upstream" do
+    :ok =
+      ModelConfig.add_provider("deepseek-z", %{
+        "name" => "deepseek-z",
+        "provider" => "deepseek-z",
+        "api" => "openai-responses",
+        "baseUrl" => "https://zenmux.ai/api/v1/responses",
+        "apiKey" => "zenmux-key",
+        "models" => []
+      })
+
+    Process.put(
+      :model_catalog_response,
+      {:ok,
+       %{
+         status: 200,
+         body: %{
+           "data" => [
+             %{
+               "id" => "deepseek/deepseek-v4.1-flash",
+               "object" => "model",
+               "display_name" => "DeepSeek: DeepSeek V4.1 Flash 1017",
+               "owned_by" => "deepseek",
+               "publish_time" => "2026-10-17",
+               "context_length" => 1_000_000,
+               "max_tokens" => 384_000,
+               "input_modalities" => ["image", "text"],
+               "output_modalities" => ["text"],
+               "capabilities" => %{"reasoning" => true}
+             }
+           ]
+         }
+       }}
+    )
+
+    assert {:ok, %{added: 1, total: 1}} =
+             ModelCatalog.discover("deepseek-z", req_module: ReqMock)
+
+    {:ok, config} = ModelConfig.read_config()
+    [model] = config["providers"]["deepseek-z"]["models"]
+
+    assert model["id"] == "deepseek/deepseek-v4.1-flash"
+    assert model["name"] == "DeepSeek: DeepSeek V4.1 Flash 1017"
+    assert model["reasoning"] == true
+    assert model["reasoningLevels"] == ["none", "low", "high", "max"]
+    assert model["contextWindow"] == 1_000_000
+    assert model["maxTokens"] == 384_000
+    assert model["upstream"]["publish_time"] == "2026-10-17"
+
+    assert Handbean.Agent.Reasoning.supported_levels(model) == [
+             "off",
+             "none",
+             "low",
+             "high",
+             "max"
+           ]
+  end
+
+  test "remote API base URLs resolve to their llm_db provider without using the local id" do
+    assert Handbean.LlmDbDefaults.resolve_provider_id(
+             "custom-router",
+             "Custom Router",
+             "https://openrouter.ai/api/v1/chat/completions"
+           ) == "openrouter"
+
+    assert Handbean.LlmDbDefaults.resolve_provider_id(
+             "custom-zenmux",
+             "Custom ZenMux",
+             "https://zenmux.ai/api/v1/responses"
+           ) == "zenmux"
   end
 
   test "normalizes provider-declared facts without inventing reasoning levels" do
@@ -234,7 +306,7 @@ defmodule Handbean.Agent.Provider.ModelCatalogTest do
            ]
   end
 
-  test "fresh discovery keeps explicit modalities and exact built-in capabilities" do
+  test "unknown remote APIs reuse intrinsic model capabilities but not supplier facts" do
     :ok =
       ModelConfig.add_provider("magpie", %{
         "name" => "Magpie",
@@ -269,7 +341,12 @@ defmodule Handbean.Agent.Provider.ModelCatalogTest do
     {:ok, config} = ModelConfig.read_config()
     models = config["providers"]["magpie"]["models"]
 
-    assert Enum.find(models, &(&1["id"] == "gpt-5.6-luna"))["input"] == ["text", "image"]
+    luna = Enum.find(models, &(&1["id"] == "gpt-5.6-luna"))
+    assert luna["input"] == ["text", "image"]
+    refute Map.has_key?(luna, "contextWindow")
+    refute Map.has_key?(luna, "maxTokens")
+    refute Map.has_key?(luna, "cost")
+
     assert Enum.find(models, &(&1["id"] == "direct-vision"))["input"] == ["text", "image"]
 
     assert Enum.find(models, &(&1["id"] == "openrouter-vision"))["input"] == [
@@ -278,7 +355,61 @@ defmodule Handbean.Agent.Provider.ModelCatalogTest do
              "audio"
            ]
 
-    assert Enum.find(models, &(&1["id"] == "unknown-model"))["input"] == ["text"]
+    refute Map.has_key?(Enum.find(models, &(&1["id"] == "unknown-model")), "input")
+  end
+
+  test "provider-scoped discovery keeps remote rows when llm_db cannot load" do
+    :ok =
+      ModelConfig.add_provider("remote-only", %{
+        "name" => "Remote only",
+        "api" => "openai-responses",
+        "baseUrl" => "https://unknown.example/v1/responses",
+        "apiKey" => "remote-key",
+        "models" => []
+      })
+
+    Process.put(
+      :model_catalog_response,
+      {:ok,
+       %{
+         status: 200,
+         body: %{
+           "data" => [
+             %{
+               "id" => "future/model",
+               "display_name" => "Future Remote Model",
+               "capabilities" => %{"reasoning" => true}
+             }
+           ]
+         }
+       }}
+    )
+
+    assert {:ok, %{added: 1, total: 1}} =
+             ModelCatalog.discover("remote-only",
+               req_module: ReqMock,
+               llm_db_load: fn -> raise ArgumentError, "unknown application: :llm_db" end
+             )
+
+    {:ok, config} = ModelConfig.read_config()
+    [model] = config["providers"]["remote-only"]["models"]
+
+    assert model["name"] == "Future Remote Model"
+    assert model["reasoning"] == true
+    refute Map.has_key?(model, "reasoningLevels")
+    assert model["upstream"]["id"] == "future/model"
+  end
+
+  test "Chat Completions does not turn an llm_db toggle into the Responses none effort" do
+    model =
+      Handbean.LlmDbDefaults.enrich_models(
+        [{"deepseek/deepseek-v4.1-flash", nil}],
+        provider_id: "zenmux",
+        api: "openai-chat-completions",
+        provider_scoped: true
+      )["deepseek/deepseek-v4.1-flash"]
+
+    assert model["reasoningLevels"] == ["low", "high", "max"]
   end
 
   test "llm_db input modalities are mapped into model input capabilities" do

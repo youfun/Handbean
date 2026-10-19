@@ -161,6 +161,19 @@ defmodule Handbean.Agent.ReasoningTest do
                }
     end
 
+    test "sends explicit none for a Responses model that declares it" do
+      config = %{api: :openai_responses, model: "deepseek/deepseek-v4.1-flash"}
+      model = %{reasoning: true, reasoning_levels: ["none", "low", "high", "max"]}
+
+      assert Reasoning.apply_provider_options(config, model, "none") ==
+               %{
+                 api: :openai_responses,
+                 model: "deepseek/deepseek-v4.1-flash",
+                 reasoning: %{effort: "none"},
+                 include: ["reasoning.encrypted_content"]
+               }
+    end
+
     test "adds xAI Responses reasoning effort for grok" do
       config = %{api: :openai_responses, provider: "openai", model: "grok-4.7"}
 

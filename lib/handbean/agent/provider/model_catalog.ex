@@ -66,7 +66,7 @@ defmodule Handbean.Agent.Provider.ModelCatalog do
   defp discover_compatible(provider_id, provider, opts) do
     with :ok <- ensure_fetchable(provider),
          {:ok, url, api_key} <- request_target(provider),
-         {:ok, remote} <- fetch_remote(url, api_key, opts) do
+         {:ok, remote} <- fetch_remote(url, api_key, provider, opts) do
       models = merge(Map.get(provider, "models", []), remote)
       :ok = ModelConfig.update_provider(provider_id, %{"models" => models})
       {:ok, %{added: added_count(provider, remote), total: length(models)}}
@@ -195,7 +195,7 @@ defmodule Handbean.Agent.Provider.ModelCatalog do
   defp resolve_api_key(%{"apiKey" => key}) when is_binary(key), do: key
   defp resolve_api_key(_provider), do: nil
 
-  defp fetch_remote(url, api_key, opts) do
+  defp fetch_remote(url, api_key, provider, opts) do
     req = Keyword.get(opts, :req_module, Req)
 
     case req.get(url,
@@ -210,7 +210,7 @@ defmodule Handbean.Agent.Provider.ModelCatalog do
            inet6: true
          ) do
       {:ok, %{status: 200, body: body}} ->
-        parse_models(body)
+        parse_models(body, provider, opts)
 
       {:ok, %{status: status}} ->
         {:error, "Model list request failed (HTTP #{status}). The existing list was kept."}
@@ -220,7 +220,7 @@ defmodule Handbean.Agent.Provider.ModelCatalog do
     end
   end
 
-  defp parse_models(%{"data" => data}) when is_list(data) do
+  defp parse_models(%{"data" => data}, provider, opts) when is_list(data) do
     entries =
       data
       |> Enum.flat_map(fn
@@ -232,10 +232,38 @@ defmodule Handbean.Agent.Provider.ModelCatalog do
       end)
       |> Enum.uniq_by(&elem(&1, 0))
 
+    llm_db_load = Keyword.get(opts, :llm_db_load)
+
+    fallback_provider_id =
+      if is_function(llm_db_load, 0) do
+        LlmDbDefaults.resolve_provider_id(
+          provider["provider"],
+          provider["name"],
+          provider["baseUrl"],
+          llm_db_load
+        )
+      else
+        LlmDbDefaults.resolve_provider_id(
+          provider["provider"],
+          provider["name"],
+          provider["baseUrl"]
+        )
+      end
+
+    enrichment_load = if is_function(llm_db_load, 0), do: llm_db_load, else: fn -> :ok end
+
+    enrichment_opts =
+      [
+        provider_id: fallback_provider_id,
+        api: provider["api"],
+        provider_scoped: true,
+        load: enrichment_load
+      ]
+
     enriched =
       entries
       |> Enum.map(fn {id, name, _raw} -> {id, name} end)
-      |> LlmDbDefaults.enrich_models()
+      |> LlmDbDefaults.enrich_models(enrichment_opts)
 
     models =
       Enum.map(entries, fn {id, _name, raw} ->
@@ -248,14 +276,14 @@ defmodule Handbean.Agent.Provider.ModelCatalog do
     end
   end
 
-  defp parse_models(body) when is_binary(body) do
+  defp parse_models(body, provider, opts) when is_binary(body) do
     case Handbean.JSON.decode(body) do
-      {:ok, decoded} -> parse_models(decoded)
+      {:ok, decoded} -> parse_models(decoded, provider, opts)
       _ -> {:error, "The provider returned an unreadable model list. The existing list was kept."}
     end
   end
 
-  defp parse_models(_body) do
+  defp parse_models(_body, _provider, _opts) do
     {:error, "The provider returned an unreadable model list. The existing list was kept."}
   end
 

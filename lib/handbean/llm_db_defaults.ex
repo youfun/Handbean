@@ -60,6 +60,26 @@ defmodule Handbean.LlmDbDefaults do
     end
   end
 
+  @doc "Resolve a remote API provider to its llm_db catalog id."
+  @spec resolve_provider_id(
+          String.t() | nil,
+          String.t() | nil,
+          String.t() | nil,
+          (-> :ok | {:error, term()})
+        ) :: String.t() | nil
+  def resolve_provider_id(provider_id, name, base_url, load \\ &ensure_loaded/0)
+
+  def resolve_provider_id(provider_id, name, base_url, load) when is_function(load, 0) do
+    with :ok <- load.(),
+         %{} = provider <- resolve_provider(provider_id, name, base_url) do
+      Atom.to_string(provider.id)
+    else
+      _ -> nil
+    end
+  rescue
+    ArgumentError -> nil
+  end
+
   @spec provider_defaults(String.t() | nil) :: provider_defaults()
   def provider_defaults(provider_id) do
     with {:ok, provider_atom} <- normalize_provider(provider_id),
@@ -130,9 +150,20 @@ defmodule Handbean.LlmDbDefaults do
     |> String.trim()
     |> String.trim_trailing("/")
     |> String.downcase()
+    |> strip_api_operation()
   end
 
   defp normalize_url(_value), do: ""
+
+  defp strip_api_operation(url) do
+    Enum.find_value(
+      ["/chat/completions", "/responses", "/messages", "/models"],
+      url,
+      fn suffix ->
+        if String.ends_with?(url, suffix), do: String.replace_suffix(url, suffix, "")
+      end
+    )
+  end
 
   @spec model_defaults(String.t() | nil, String.t() | nil) :: model_defaults()
   def model_defaults(provider_id, model_id) do
@@ -165,46 +196,78 @@ defmodule Handbean.LlmDbDefaults do
   @doc """
   Catalog fields for a discovered model id.
 
-  Gateway ids are `provider/model`. The prefix is tried as an llm_db provider,
-  then the bare id is tried across the loaded catalog. A miss returns only the
-  id and display name so discovery can still save the row.
+  When `:provider_id` is supplied, the matching remote API provider is queried
+  first. Exact ids and llm_db aliases are resolved by llm_db itself. A model's
+  explicit `canonical_model_id` may fill fields missing from that revision; ids
+  are never rewritten heuristically. Without a provider, the existing
+  cross-catalog lookup remains available for forms and subscription adapters.
   """
   @spec enrich_model(String.t(), String.t() | nil, (-> :ok | {:error, term()})) :: map()
   def enrich_model(model_id, name \\ nil, load \\ &ensure_loaded/0)
 
   def enrich_model(model_id, name, load) when is_binary(model_id) and is_function(load, 0) do
-    enrich_models([{model_id, name}], load) |> Map.fetch!(model_id)
+    enrich_models([{model_id, name}], load: load) |> Map.fetch!(model_id)
   end
 
   @doc """
   Enrich many discovered model ids from one catalog load.
 
-  `enrich_model/3` reloads and scans the catalog per id. A provider list of a
-  few dozen models then spends about a second per row, so discovery looks stuck.
+  Options:
+
+    * `:provider_id` - exact llm_db provider id for the remote API
+    * `:provider_scoped` - keep supplier-specific fields scoped while allowing
+      intrinsic model capabilities to fall back across explicit model identity
+    * `:api` - remote wire API, used only for protocol-specific projection
+    * `:load` - catalog loader used by tests and constrained runtimes
   """
-  @spec enrich_models([{String.t(), String.t() | nil}], (-> :ok | {:error, term()})) :: %{
-          optional(String.t()) => map()
-        }
-  def enrich_models(entries, load \\ &ensure_loaded/0) when is_list(entries) do
+  @spec enrich_models(
+          [{String.t(), String.t() | nil}],
+          keyword() | (-> :ok | {:error, term()})
+        ) :: %{optional(String.t()) => map()}
+  def enrich_models(entries, opts \\ [])
+
+  def enrich_models(entries, load) when is_list(entries) and is_function(load, 0) do
+    enrich_models(entries, load: load)
+  end
+
+  def enrich_models(entries, opts) when is_list(entries) and is_list(opts) do
+    load = Keyword.get(opts, :load, &ensure_loaded/0)
     index = catalog_index(load)
+    provider = catalog_provider(Keyword.get(opts, :provider_id))
+    api = Keyword.get(opts, :api)
+    provider_scoped? = Keyword.get(opts, :provider_scoped, false)
 
     Map.new(entries, fn {model_id, name} ->
-      {model_id, enriched_model(index, model_id, name)}
+      {model_id, enriched_model(index, provider, api, provider_scoped?, model_id, name)}
     end)
   end
 
-  defp enriched_model(_index, model_id, name) when not is_binary(model_id) do
+  defp enriched_model(_index, _provider, _api, _provider_scoped?, model_id, name)
+       when not is_binary(model_id) do
     %{"id" => model_id, "name" => present_name(name, to_string(model_id)), "input" => ["text"]}
   end
 
-  defp enriched_model(index, model_id, name) do
-    builtin_fields = model_id |> BuiltinModels.find() |> catalog_fields()
-    catalog_fields = index |> find_catalog_model(model_id) |> catalog_fields()
+  defp enriched_model(index, provider, api, provider_scoped?, model_id, name) do
+    builtin_fields = model_id |> BuiltinModels.find() |> catalog_fields(api, :intrinsic)
+
+    fallback_fields =
+      fallback_catalog_fields(index, provider, api, provider_scoped?, model_id)
+
+    builtin_fields =
+      if provider_scoped?, do: intrinsic_fields(builtin_fields), else: builtin_fields
 
     model =
-      %{"id" => model_id, "input" => ["text"]}
+      if provider_scoped? do
+        %{"id" => model_id}
+      else
+        %{"id" => model_id, "input" => ["text"]}
+      end
+
+    model =
+      model
       |> Map.merge(builtin_fields)
-      |> Map.merge(catalog_fields)
+      |> Map.merge(fallback_fields)
+      |> clear_disabled_reasoning()
 
     Map.put(model, "name", present_name(name, model["name"] || model_id))
   end
@@ -216,11 +279,7 @@ defmodule Handbean.LlmDbDefaults do
       case load.() do
         :ok ->
           LLMDB.models()
-          |> Enum.reduce(%{}, fn model, index ->
-            index
-            |> Map.put_new(model.id, model)
-            |> put_aliases(model)
-          end)
+          |> Enum.reduce(%{}, fn model, index -> put_model_keys(index, model) end)
 
         _ ->
           %{}
@@ -234,22 +293,206 @@ defmodule Handbean.LlmDbDefaults do
     end
   end
 
-  defp put_aliases(index, model) do
-    Enum.reduce(model.aliases || [], index, fn alias_id, index ->
-      if is_binary(alias_id) and alias_id != "",
-        do: Map.put_new(index, alias_id, model),
-        else: index
+  defp put_model_keys(index, model) do
+    canonical_id = get_in(model.extra || %{}, ["canonical_model_id"])
+
+    [model.id, canonical_id | model.aliases || []]
+    |> Enum.filter(&(is_binary(&1) and &1 != ""))
+    |> Enum.uniq()
+    |> Enum.reduce(index, fn key, index ->
+      Map.update(index, key, [model], &[model | &1])
     end)
+  end
+
+  defp catalog_provider(nil), do: nil
+
+  defp catalog_provider(provider_id) do
+    case normalize_provider(provider_id) do
+      {:ok, provider} -> provider
+      _ -> nil
+    end
+  rescue
+    ArgumentError -> nil
+  end
+
+  defp fallback_catalog_fields(index, nil, api, true, model_id),
+    do: intrinsic_catalog_fields(index, model_id, api)
+
+  defp fallback_catalog_fields(index, nil, api, false, model_id) do
+    index
+    |> find_catalog_model(model_id)
+    |> catalog_fields(api, nil)
+  end
+
+  defp fallback_catalog_fields(index, provider, api, _provider_scoped?, model_id) do
+    intrinsic = intrinsic_catalog_fields(index, model_id, api, provider)
+
+    case LLMDB.model(provider, model_id) do
+      {:ok, model} ->
+        intrinsic
+        |> Map.merge(inherited_catalog_fields(provider, model, api))
+        |> clear_disabled_reasoning()
+
+      _ ->
+        intrinsic
+    end
+  end
+
+  defp inherited_catalog_fields(provider, model, api, visited \\ MapSet.new()) do
+    if MapSet.member?(visited, model.id) do
+      %{}
+    else
+      visited = MapSet.put(visited, model.id)
+      exact = catalog_fields(model, api, provider)
+      canonical_id = get_in(model.extra || %{}, ["canonical_model_id"])
+
+      if is_binary(canonical_id) and canonical_id != "" and canonical_id != model.id do
+        case LLMDB.model(provider, canonical_id) do
+          {:ok, canonical} ->
+            provider
+            |> inherited_catalog_fields(canonical, api, visited)
+            |> Map.merge(exact)
+            |> clear_disabled_reasoning()
+
+          _ ->
+            exact
+        end
+      else
+        exact
+      end
+    end
+  end
+
+  @intrinsic_fields ~w(name input reasoning reasoningLevels defaultReasoning)
+  @reasoning_level_order ~w(none minimal low medium high xhigh max ultra)
+
+  defp intrinsic_catalog_fields(index, model_id, api, provider \\ nil) do
+    intrinsic_catalog_fields(index, model_id, api, provider, MapSet.new())
+  end
+
+  defp intrinsic_catalog_fields(index, model_id, api, provider, visited) do
+    if MapSet.member?(visited, model_id) do
+      %{}
+    else
+      visited = MapSet.put(visited, model_id)
+
+      index
+      |> equivalent_models(model_id)
+      |> Enum.map(fn model ->
+        exact = model |> catalog_fields(api, provider) |> intrinsic_fields()
+        canonical_id = get_in(model.extra || %{}, ["canonical_model_id"])
+
+        if is_binary(canonical_id) and canonical_id != "" and canonical_id != model.id do
+          index
+          |> intrinsic_catalog_fields(canonical_id, api, provider, visited)
+          |> Map.merge(exact)
+          |> clear_disabled_reasoning()
+        else
+          exact
+        end
+      end)
+      |> consensus_fields()
+    end
+  end
+
+  # Aliases are equivalent identities. Canonical links are directional and are
+  # merged only as missing-field defaults by intrinsic_catalog_fields/5.
+  defp equivalent_models(index, model_id) do
+    expand_aliases(index, MapSet.new([model_id]), MapSet.new(), %{})
+    |> Map.values()
+  end
+
+  defp expand_aliases(index, pending, visited, models) do
+    keys = MapSet.difference(pending, visited)
+
+    if MapSet.size(keys) == 0 do
+      models
+    else
+      matched =
+        keys
+        |> Enum.flat_map(&Map.get(index, &1, []))
+        |> Enum.filter(fn model ->
+          identity_keys(model)
+          |> Enum.any?(&MapSet.member?(keys, &1))
+        end)
+
+      models =
+        Enum.reduce(matched, models, fn model, acc ->
+          Map.put(acc, {model.provider, model.id}, model)
+        end)
+
+      discovered =
+        matched
+        |> Enum.flat_map(&identity_keys/1)
+        |> Enum.filter(&(is_binary(&1) and &1 != ""))
+        |> MapSet.new()
+
+      expand_aliases(index, discovered, MapSet.union(visited, keys), models)
+    end
+  end
+
+  defp identity_keys(model), do: [model.id | model.aliases || []]
+
+  defp intrinsic_fields(fields), do: Map.take(fields, @intrinsic_fields)
+
+  defp consensus_fields([]), do: %{}
+
+  defp consensus_fields(fields) do
+    Enum.reduce(@intrinsic_fields, %{}, fn key, consensus ->
+      values =
+        fields
+        |> Enum.map(&Map.get(&1, key))
+        |> Enum.reject(&is_nil/1)
+        |> Enum.map(&normalize_consensus_value(key, &1))
+
+      case unambiguous_mode(values) do
+        nil -> consensus
+        value -> Map.put(consensus, key, value)
+      end
+    end)
+  end
+
+  defp normalize_consensus_value("input", values) when is_list(values) do
+    order = ModelCapabilities.supported_input_types()
+    Enum.sort_by(Enum.uniq(values), &Enum.find_index(order, fn type -> type == &1 end))
+  end
+
+  defp normalize_consensus_value("reasoningLevels", values) when is_list(values) do
+    Enum.sort_by(
+      Enum.uniq(values),
+      &Enum.find_index(@reasoning_level_order, fn level -> level == &1 end)
+    )
+  end
+
+  defp normalize_consensus_value(_key, value), do: value
+
+  defp unambiguous_mode([]), do: nil
+
+  defp unambiguous_mode(values) do
+    ranked =
+      values
+      |> Enum.frequencies()
+      |> Enum.sort_by(fn {value, count} -> {-count, inspect(value)} end)
+
+    case ranked do
+      [{value, _count}] -> value
+      [{value, count}, {_other, next_count} | _] when count > next_count -> value
+      _ -> nil
+    end
   end
 
   defp find_catalog_model(index, model_id) when is_map(index) do
     {provider_hint, bare_id} = split_gateway_id(model_id)
 
-    cond do
-      model = Map.get(index, model_id) -> model
-      model = hinted_model(index, provider_hint, bare_id) -> model
-      true -> Map.get(index, bare_id)
-    end
+    first_catalog_model(index, model_id) || hinted_model(index, provider_hint, bare_id) ||
+      first_catalog_model(index, bare_id)
+  end
+
+  defp first_catalog_model(index, model_id) do
+    models = Map.get(index, model_id, [])
+
+    Enum.find(models, &(&1.id == model_id)) ||
+      Enum.find(models, &(model_id in (&1.aliases || [])))
   end
 
   defp hinted_model(_index, nil, _bare_id), do: nil
@@ -257,17 +500,25 @@ defmodule Handbean.LlmDbDefaults do
   defp hinted_model(index, provider_hint, bare_id) do
     index
     |> Map.values()
+    |> List.flatten()
     |> Enum.find(fn model ->
       Atom.to_string(model.provider) == provider_hint and
         (model.id == bare_id or bare_id in (model.aliases || []))
     end)
   end
 
-  defp catalog_fields(nil), do: %{}
+  defp catalog_fields(nil, _api, _provider), do: %{}
 
-  defp catalog_fields(%LLMDB.Model{} = model) do
+  defp catalog_fields(%LLMDB.Model{} = model, api, provider) do
     limits = model.limits || %{}
-    reasoning = reasoning_fields(model.capabilities && model.capabilities.reasoning)
+
+    reasoning =
+      reasoning_fields(
+        model.capabilities && model.capabilities.reasoning,
+        model.extra,
+        api,
+        provider
+      )
 
     %{}
     |> maybe_put("name", model.name)
@@ -278,7 +529,7 @@ defmodule Handbean.LlmDbDefaults do
     |> Map.merge(reasoning)
   end
 
-  defp catalog_fields(%{} = model) do
+  defp catalog_fields(%{} = model, _api, _provider) do
     Map.take(model, [
       "name",
       "input",
@@ -291,7 +542,7 @@ defmodule Handbean.LlmDbDefaults do
     ])
   end
 
-  defp catalog_fields(_model), do: %{}
+  defp catalog_fields(_model, _api, _provider), do: %{}
 
   defp input_modalities(%{input: modalities}) when is_list(modalities) do
     modalities
@@ -306,16 +557,72 @@ defmodule Handbean.LlmDbDefaults do
 
   defp input_modalities(_modalities), do: nil
 
-  defp reasoning_fields(%{enabled: true} = reasoning) do
+  defp reasoning_fields(%{enabled: true} = reasoning, extra, api, provider) do
     effort = Map.get(reasoning, :effort) || %{}
+
+    levels =
+      present_list(Map.get(effort, :values)) || reasoning_option_levels(extra, api, provider)
+
+    default = Map.get(effort, :default) || reasoning_option_default(extra)
 
     %{}
     |> Map.put("reasoning", true)
-    |> maybe_put("reasoningLevels", present_list(Map.get(effort, :values)))
-    |> maybe_put("defaultReasoning", Map.get(effort, :default))
+    |> maybe_put("reasoningLevels", levels)
+    |> maybe_put("defaultReasoning", default)
   end
 
-  defp reasoning_fields(_reasoning), do: %{}
+  defp reasoning_fields(%{enabled: false}, _extra, _api, _provider),
+    do: %{"reasoning" => false}
+
+  defp reasoning_fields(_reasoning, _extra, _api, _provider), do: %{}
+
+  defp reasoning_option_levels(extra, api, provider) when is_map(extra) do
+    options = Map.get(extra, "reasoning_options") || Map.get(extra, :reasoning_options) || []
+
+    efforts =
+      options
+      |> Enum.find_value([], fn option ->
+        if option_value(option, "type") == "effort",
+          do: present_list(option_value(option, "values"))
+      end)
+      |> List.wrap()
+
+    toggle? = Enum.any?(options, &(option_value(&1, "type") == "toggle"))
+
+    if toggle? and provider == :zenmux and api in ["openai", "openai-responses"] do
+      Enum.uniq(["none" | efforts])
+    else
+      efforts
+    end
+    |> case do
+      [] -> nil
+      levels -> levels
+    end
+  end
+
+  defp reasoning_option_levels(_extra, _api, _provider), do: nil
+
+  defp reasoning_option_default(extra) when is_map(extra) do
+    reasoning = Map.get(extra, "reasoning") || Map.get(extra, :reasoning) || %{}
+    Map.get(reasoning, "default_effort") || Map.get(reasoning, :default_effort)
+  end
+
+  defp reasoning_option_default(_extra), do: nil
+
+  defp option_value(option, key) when is_map(option) do
+    Map.get(option, key) || Map.get(option, String.to_existing_atom(key))
+  end
+
+  defp option_value(_option, _key), do: nil
+
+  defp clear_disabled_reasoning(%{"reasoning" => false} = fields) do
+    fields
+    |> Map.delete("reasoningLevels")
+    |> Map.delete("defaultReasoning")
+    |> Map.delete("thinkingLevelMap")
+  end
+
+  defp clear_disabled_reasoning(fields), do: fields
 
   defp maybe_put_cost(fields, model) do
     case catalog_cost(model) do
