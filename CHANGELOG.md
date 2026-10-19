@@ -1,5 +1,20 @@
 # 更新日志 (CHANGELOG)
 
+## [0.3.2] - 聊天交互、扩展与可信局域网
+
+### 新增与改进
+- 工作区插件补齐开发文档和随包技能 `developing-handbean-extensions`。release 会加载 `priv/skills`，工作区扩展仍须显式开启 project trust 才会执行。
+- Mermaid 图改由 Pele 1.6.0 Worker 渲染，以 blob 图片显示并可切换源码；生成的 SVG 不进入应用 DOM。
+- 新增可信局域网启动参数：Unix 使用 `--lan`，Windows 使用 `-LanHost`；同步更新启动脚本、部署文档和安全说明。
+
+### 修复
+- checkout 对话框展示完整 worktree 分支名，不再被 208px 侧栏截断。
+- 排队消息按真实发送顺序写入 transcript；撤销尚未发送的排队消息时，会立即从 live timeline 移除，避免重新排队后出现重复气泡。
+
+### 版本
+- Handbean 与 Handbean Probe 升至 `0.3.2`。
+- 构建号升至 `22`。
+
 ## [0.3.1] - 工作区检出与会话协作
 
 ### 新增与改进
