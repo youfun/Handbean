@@ -154,7 +154,6 @@
                   disabled={@selected_provider.is_default}
                   phx-click={unless(@selected_provider.is_default, do: "toggle_default_provider")}
                   phx-value-id={@selected_provider.id}
-                  phx-value-value="true"
                 />
                 <span class="settings-toggle-slider"></span>
               </label>

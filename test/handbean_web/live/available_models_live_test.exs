@@ -430,7 +430,7 @@ defmodule HandbeanWeb.AvailableModelsLiveTest do
     assert provider["models"] == []
   end
 
-  test "changing the default provider from a stale page keeps providers added later", %{
+  test "default provider browser payload without value keeps providers added after mount", %{
     conn: conn
   } do
     {:ok, view, _html} =
@@ -448,7 +448,7 @@ defmodule HandbeanWeb.AvailableModelsLiveTest do
     assert {:noreply, _socket} =
              HandbeanWeb.AvailableModelsLive.handle_event(
                "toggle_default_provider",
-               %{"id" => "stepfun", "value" => "true"},
+               %{"id" => "stepfun"},
                stale_socket
              )
 

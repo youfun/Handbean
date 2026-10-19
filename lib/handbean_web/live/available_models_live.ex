@@ -238,25 +238,20 @@ defmodule HandbeanWeb.AvailableModelsLive do
   # ── Default provider toggle ────────────────────────────────────────────
 
   @impl true
-  def handle_event("toggle_default_provider", %{"id" => id, "value" => value}, socket) do
-    if value == "true" do
-      case ModelConfig.set_default_provider(id) do
-        :ok ->
-          toast = %{
-            type: :success,
-            message: gettext("默认供应商已更改"),
-            id: System.unique_integer([:positive])
-          }
+  def handle_event("toggle_default_provider", %{"id" => id}, socket) do
+    case ModelConfig.set_default_provider(id) do
+      :ok ->
+        toast = %{
+          type: :success,
+          message: gettext("默认供应商已更改"),
+          id: System.unique_integer([:positive])
+        }
 
-          Process.send_after(self(), :clear_toast, 3000)
-          {:noreply, assign(socket, :toast, toast)}
+        Process.send_after(self(), :clear_toast, 3000)
+        {:noreply, assign(socket, :toast, toast)}
 
-        {:error, reason} ->
-          {:noreply, assign(socket, :form_error, reason)}
-      end
-    else
-      # Cannot uncheck default — at least for now, require one default
-      {:noreply, socket}
+      {:error, reason} ->
+        {:noreply, assign(socket, :form_error, reason)}
     end
   end
 
