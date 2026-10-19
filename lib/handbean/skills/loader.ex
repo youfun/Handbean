@@ -10,6 +10,13 @@ defmodule Handbean.Skills.Loader do
 
   Skill files are limited to 64 KiB of UTF-8 text. Configured roots may not
   redirect through symlinks outside their trusted workspace/home anchor.
+  The release also loads bundled skills from this application's `priv/skills`
+  (OTP app `:handbean`). That directory is part of the installed BEAM release,
+  not a workspace or home path. Project, user, and explicit skills win on name
+  collision. Mix may copy or link the whole `priv` directory into `_build`;
+  that install-path link is resolved to a canonical priv anchor. The `skills`
+  directory under that anchor, and every path in the skill tree, must not be
+  a symlink.
   Symlinks within a skill tree are conservatively unsupported, including
   links whose targets are inside the tree. This is not an OS filesystem sandbox.
   Validation and file opening are separate operations, not an atomic guarantee
@@ -36,8 +43,10 @@ defmodule Handbean.Skills.Loader do
 
   Project skill directories are loaded before user-level directories so a project
   skill wins when it has the same name as a global skill.
-  Trusted `:skill_paths` are loaded last, only within the workspace or the
-  allowed global skill roots. Arbitrary host paths are not skill sources.
+  Trusted `:skill_paths` are loaded after those defaults, only within the
+  workspace or the allowed global skill roots. Arbitrary host paths are not
+  skill sources. Bundled `priv/skills` are loaded last so any of the above
+  override a shipped skill of the same name.
   """
   @spec load(keyword()) :: load_result()
   def load(opts \\ []) do
@@ -122,7 +131,24 @@ defmodule Handbean.Skills.Loader do
           ),
           do: {expanded, :explicit}
 
-    dirs ++ explicit_dirs
+    dirs ++ explicit_dirs ++ bundled_dirs()
+  end
+
+  defp bundled_dirs do
+    bundled_dirs_from_priv(Application.app_dir(:handbean, "priv"))
+  end
+
+  @doc false
+  def bundled_dirs_from_priv(priv) when is_binary(priv) do
+    with {:ok, priv_anchor} <- PathValidator.canonicalize(priv),
+         {:ok, %{type: :directory}} <- File.lstat(priv_anchor),
+         skills = Path.join(priv_anchor, "skills"),
+         :ok <- validate_unlinked(skills),
+         {:ok, %{type: :directory}} <- File.lstat(skills) do
+      [{skills, :bundled}]
+    else
+      _ -> []
+    end
   end
 
   defp validate_name(name) when is_binary(name) do

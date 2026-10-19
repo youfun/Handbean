@@ -140,7 +140,7 @@ defmodule Handbean.Skills.NamedLoadingTest do
     File.ln_s!(Path.dirname(outside), Path.join(root, "linked-directory"))
     File.ln_s!(root, Path.join(root, "loop"))
 
-    assert Loader.load(c.opts).skills == []
+    assert Enum.reject(Loader.load(c.opts).skills, &(&1.source == :bundled)) == []
     assert {:error, _} = Loader.load_named("secret", c.opts)
   end
 
@@ -154,7 +154,7 @@ defmodule Handbean.Skills.NamedLoadingTest do
       Path.join(c.workspace, ".agents/skills")
     )
 
-    assert Loader.load(c.opts).skills == []
+    assert Enum.reject(Loader.load(c.opts).skills, &(&1.source == :bundled)) == []
     assert {:error, _} = Loader.load_named("secret", c.opts)
 
     opts = Keyword.put(c.opts, :skill_paths, [Path.dirname(outside)])

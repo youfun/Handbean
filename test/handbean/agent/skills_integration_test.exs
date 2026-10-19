@@ -198,7 +198,7 @@ defmodule Handbean.Agent.SkillsIntegrationTest do
 
     assert {:ok, state} = result
     assert state.status == :completed
-    refute state.config.system_prompt =~ "<available_skills>"
+    refute state.config.system_prompt =~ "<name>bad-skill</name>"
     assert log =~ "description is required"
   end
 end

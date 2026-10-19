@@ -35,6 +35,8 @@ completed、cancelled、error、timeout、max_turns、budget_exceeded、halted�
 `interrupted`/`awaiting_approval` 是等待，不结算终态 usage、不把 pending 标未送达。
 缺失或未知 status 也不推断为 completed。Runner 保留 Turn 的真实最终 status。
 
+如何编写工作区插件见 [`extensions.md`](extensions.md)。下面只约束 runtime 边界。
+
 ## Middleware 与扩展 Hook
 
 | 边界 | 所有者 | 可做什么 |

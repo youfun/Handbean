@@ -8,7 +8,7 @@
 - **权限管控**：细粒度工作区权限管理，支持自动执行（auto）、人工审批（prompt）与拒绝（deny）
 - **实时响应**：支持文本流式生成与工具执行状态实时反馈
 - **多模型支持**：支持 Anthropic 及各类 OpenAI 兼容接口（StepFun、Ollama、OpenCode Go、DeepSeek、OpenRouter 等）
-- **扩展与记忆**：支持 MCP（Model Context Protocol）、BEAM 虚拟机深度内省与跨会话记忆
+- **扩展与记忆**：支持 MCP（Model Context Protocol）、[工作区 Elixir 插件](docs/extensions.md)、BEAM 虚拟机深度内省与跨会话记忆
 - **多端同核**：Web 与 Android / iOS 移动端共用同一套 Coordinator 与 Runner 调度核心
 
 ## 聊天内 HTML / 交互组件（Web）

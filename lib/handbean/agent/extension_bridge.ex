@@ -11,7 +11,7 @@ defmodule Handbean.Agent.ExtensionBridge do
 
   Extension tools must:
   1. Implement `Handbean.Agent.Tool` behaviour
-  2. Be compiled in the project (via mix compile)
+  2. Come from the extension `entry` (`Code.compile_file/1`) or already be on the BEAM
   3. Use the naming convention `ext__<extension_name>__<tool_name>`
      as return value of `name/0`
   """

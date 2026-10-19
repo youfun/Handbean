@@ -18,7 +18,7 @@ defmodule Handbean.Skills.Skill do
     metadata: %{}
   ]
 
-  @type source :: :user | :project | :explicit
+  @type source :: :user | :project | :explicit | :bundled
 
   @type t :: %__MODULE__{
           name: String.t(),

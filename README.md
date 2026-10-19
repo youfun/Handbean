@@ -8,7 +8,7 @@ A local agent assistant for autonomous coding. Conversations, tool execution, an
 - **Granular permissions**: Fine-grained workspace permission policies (auto, prompt, or deny)
 - **Streaming & observability**: Real-time response streaming with live tool execution status
 - **Broad provider support**: Anthropic and OpenAI-compatible endpoints (StepFun, Ollama, OpenCode Go, DeepSeek, OpenRouter, and more)
-- **Extensible runtime**: MCP (Model Context Protocol), BEAM VM introspection, and cross-session memory
+- **Extensible runtime**: MCP (Model Context Protocol), [workspace Elixir extensions](docs/extensions.md), BEAM VM introspection, and cross-session memory
 - **Unified architecture**: Android, iOS, and Web all run on the same Coordinator and Runner lifecycle
 
 ## Inline HTML / interactive widgets (Web)
