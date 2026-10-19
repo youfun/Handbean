@@ -72,7 +72,7 @@ end
 #
 # Alternatively, you can use `mix phx.gen.release` to generate a `bin/server`
 # script that automatically sets the env var above.
-public_bind? = config_env() != :test and System.get_env("AMP_ORB") == "1"
+public_bind? = config_env() != :test and System.get_env("HANDBEAN_PUBLIC_BIND") == "1"
 
 http_opts =
   if config_env() == :test do
@@ -102,7 +102,7 @@ access_password = System.get_env("HANDBEAN_ACCESS_PASSWORD")
 
 if public_bind? and access_mode != :password do
   raise """
-  Refusing a non-loopback bind without authentication. AMP_ORB=1 requires
+  Refusing a non-loopback bind without authentication. HANDBEAN_PUBLIC_BIND=1 requires
   HANDBEAN_ACCESS_MODE=password and HANDBEAN_ACCESS_PASSWORD.
   """
 end
@@ -187,8 +187,15 @@ if config_env() == :prod do
 
   config :handbean, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
+  allow_http? = System.get_env("HANDBEAN_ALLOW_HTTP") == "1"
+
   config :handbean, HandbeanWeb.Endpoint,
-    url: [host: host, port: 443, scheme: "https"],
+    url: [
+      host: host,
+      port: if(allow_http?, do: Keyword.fetch!(http_opts, :port), else: 443),
+      scheme: if(allow_http?, do: "http", else: "https")
+    ],
+    allow_http: allow_http?,
     http: http_opts,
     secret_key_base: secret_key_base
 

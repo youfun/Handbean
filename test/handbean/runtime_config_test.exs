@@ -34,4 +34,52 @@ defmodule Handbean.RuntimeConfigTest do
       end)
     end
   end
+
+  test "production LAN HTTP is opt-in and cannot bypass password authentication" do
+    keys =
+      ~w(HANDBEAN_PUBLIC_BIND HANDBEAN_ALLOW_HTTP HANDBEAN_ACCESS_MODE HANDBEAN_ACCESS_PASSWORD HANDBEAN_FILE_MANAGER HANDBEAN_COMPUTER_PORT HANDBEAN_NOTIFY_PORT PHX_HOST PORT DATABASE_PATH SECRET_KEY_BASE)
+
+    originals = Map.new(keys, &{&1, System.get_env(&1)})
+
+    on_exit(fn ->
+      Enum.each(originals, fn
+        {key, nil} -> System.delete_env(key)
+        {key, value} -> System.put_env(key, value)
+      end)
+    end)
+
+    Enum.each(keys, &System.delete_env/1)
+
+    System.put_env(%{
+      "HANDBEAN_PUBLIC_BIND" => "1",
+      "HANDBEAN_ACCESS_PASSWORD" => "runtime-config-test-secret",
+      "PHX_HOST" => "192.0.2.10",
+      "PORT" => "51234",
+      "DATABASE_PATH" => Path.join(System.tmp_dir!(), "unused-runtime-config-test.db"),
+      "SECRET_KEY_BASE" => String.duplicate("runtime-config-fixture", 3)
+    })
+
+    read = fn ->
+      Config.Reader.read!(Path.expand("../../config/runtime.exs", __DIR__), env: :prod)
+    end
+
+    config = read.()
+    refute config[:handbean][HandbeanWeb.Endpoint][:allow_http]
+    assert config[:handbean][HandbeanWeb.Endpoint][:url][:scheme] == "https"
+    assert config[:handbean][HandbeanWeb.Endpoint][:url][:port] == 443
+
+    System.put_env("HANDBEAN_ALLOW_HTTP", "1")
+    config = read.()
+    endpoint = config[:handbean][HandbeanWeb.Endpoint]
+    assert endpoint[:allow_http]
+    assert endpoint[:url] == [host: "192.0.2.10", port: 51234, scheme: "http"]
+    assert endpoint[:http][:ip] == {0, 0, 0, 0}
+    assert config[:handbean][:access][:mode] == :password
+
+    System.delete_env("HANDBEAN_ACCESS_PASSWORD")
+    assert_raise RuntimeError, ~r/HANDBEAN_ACCESS_PASSWORD is required/, read
+
+    System.put_env("HANDBEAN_ACCESS_MODE", "local")
+    assert_raise RuntimeError, ~r/Refusing a non-loopback bind/, read
+  end
 end

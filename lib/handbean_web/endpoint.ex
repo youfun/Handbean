@@ -52,4 +52,9 @@ defmodule HandbeanWeb.Endpoint do
   # Phoenix dispatches socket transports independently of the router pipeline.
   plug HandbeanWeb.Access
   plug HandbeanWeb.Router
+
+  @doc false
+  def allow_http?(conn) do
+    config(:allow_http, false) or HandbeanWeb.Access.loopback_peer?(conn)
+  end
 end

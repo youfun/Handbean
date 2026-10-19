@@ -20,11 +20,11 @@ config :handbean, Handbean.Repo,
 # watchers to your application. For example, we can use it
 # to bundle .js and .css sources.
 config :handbean, HandbeanWeb.Endpoint,
-  # Bind all interfaces in Amp orbs so portal health checks can reach $PORT.
-  # Keep loopback-only on a normal local machine.
+  # Bind all IPv4 interfaces only when explicitly requested.
+  # Otherwise, keep the listener loopback-only.
   # runtime.exs overrides this for every env. Unset PORT listens on 5002.
   http: [
-    ip: if(System.get_env("AMP_ORB") == "1", do: {0, 0, 0, 0}, else: {127, 0, 0, 1}),
+    ip: if(System.get_env("HANDBEAN_PUBLIC_BIND") == "1", do: {0, 0, 0, 0}, else: {127, 0, 0, 1}),
     port: String.to_integer(System.get_env("PORT") || "5002")
   ],
   # Opening http://127.0.0.1 does not match url host "localhost".

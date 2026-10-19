@@ -172,8 +172,8 @@ data or existing windows should be modified during acceptance.
 ## Linux shared-runtime checks (not macOS acceptance)
 
 ```bash
-AMP_ORB=0 mix test --include e2e test/handbean/e2e/computer_use_test.exs
-AMP_ORB=0 mix test test/handbean/tool/builtin/read_test.exs test/handbean/tool/builtin/browser_test.exs
+HANDBEAN_PUBLIC_BIND=0 mix test --include e2e test/handbean/e2e/computer_use_test.exs
+HANDBEAN_PUBLIC_BIND=0 mix test test/handbean/tool/builtin/read_test.exs test/handbean/tool/builtin/browser_test.exs
 ```
 
 Use a separate process-level HOME for the test suite. FakeProvider asserts real

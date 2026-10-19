@@ -67,5 +67,7 @@ mix test --include e2e test/feature
 - 发布版本时加载 `releasing-handbean` 技能。
 - 修改或验收移动宿主时加载 `verifying-handbean-mobile` 技能，并遵守
   `mobile/AGENTS.md`。
+- 在受信任局域网部署 Web UI 时加载 `deploying-handbean-lan` 技能，并遵守
+  `docs/lan-deployment.md` 与 `docs/security.md`。
 - 持久化、跨客户端 runtime、安全和 macOS computer-use 的具体契约以 `docs/`
   中相应文档为准。

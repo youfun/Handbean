@@ -39,6 +39,9 @@ defmodule HandbeanWeb.Access do
   end
 
   @doc false
+  def loopback_peer?(%Plug.Conn{remote_ip: address}), do: loopback_address?(address)
+
+  @doc false
   def valid_authorization?(headers) do
     with value when is_binary(value) <- authorization_header(headers),
          "Basic " <> encoded <- value,

@@ -56,6 +56,39 @@ Prebuilt packages with a bundled OTP runtime are available on GitHub Releases un
 - **Windows terminal**: The in-browser terminal is omitted on Windows because Ghostty lacks a Windows native NIF.
 - Windows ARM64 builds are not currently published.
 
+### LAN access
+
+Step-by-step Windows / Linux / macOS notes: [LAN deployment](docs/lan-deployment.md)
+(Chinese).
+
+The default launcher accepts connections only from this machine. To allow other
+devices on a trusted LAN, pass the server's hostname or IPv4 address (not the
+client's address):
+
+```bash
+# Linux / macOS, from the extracted Web UI package
+./start.sh --lan 192.168.1.10
+```
+
+```powershell
+# Windows, from the extracted Web UI package
+.\start.bat -LanHost 192.168.1.10
+```
+
+The launcher displays Chinese and English reminders to set a long, random, unique
+strong password, then prompts without echoing it. The reminders also appear when
+a password is supplied through the environment. The username defaults to
+`handbean`; set `HANDBEAN_ACCESS_USERNAME` to override it. For unattended startup,
+supply `HANDBEAN_ACCESS_PASSWORD` through the host environment instead. No password
+is saved by the launcher. Open `http://192.168.1.10:5008` on the other device and
+allow the chosen port through the server's firewall if needed; `PORT` overrides 5008.
+
+LAN mode explicitly enables all-IPv4 binding, password authentication, and HTTP.
+HTTP does not encrypt passwords, sessions, or traffic: use this mode only on a
+trusted network. Internet-facing deployments need a TLS reverse proxy; do not use
+the LAN flag for them. HTTPS enforcement and origin checking remain enabled by
+default. See [deployment security](docs/security.md).
+
 ## Run from source
 
 ### Prerequisites
@@ -78,6 +111,44 @@ mix phx.server
 ```
 
 Open `http://localhost:5002` in your browser and select a workspace directory to begin.
+
+### Build and run a production Web UI
+
+On Linux or macOS, choose the target matching the build machine
+(`linux-x86_64`, `linux-arm64`, or `macos-arm64`):
+
+```bash
+bash scripts/pack_webui.sh linux-x86_64
+bash scripts/start.sh                     # local access only
+# Or, instead of the previous command:
+bash scripts/start.sh --lan 192.168.1.10   # trusted LAN, prompts for a password
+```
+
+On Windows:
+
+```powershell
+.\scripts\build_webui.bat                 # build and select a new local version
+.\start.bat                               # local access only
+# Or, instead of the previous command:
+.\start.bat -LanHost 192.168.1.10
+```
+
+On Windows, `scripts\build_webui.bat` (or `build_webui.ps1`) is the one-click
+local build: it checks the toolchain (Elixir/Mix, Node.js, tar, MSVC cl/nmake),
+prints a bilingual error with install hints when something is missing, loads the
+MSVC environment, and then runs the same `pack_webui.ps1` that CI uses. Every
+successful local build gets its own directory under `_build/local-webui/versions`;
+only `_build/local-webui/current.txt` is changed. A Web UI already running from an
+older directory is therefore never overwritten. Stop it and run the repository
+root `.\start.bat` again to activate the newly selected build. The launcher keeps
+a compatibility fallback for old `_build/prod/rel/handbean` builds.
+
+Extracted packages still run the release beside `start.sh` / `start.ps1`. Neither
+launcher starts a development server. The root launcher forwards arguments such as
+`-LanHost`.
+Production data defaults to `~/.handbean/handbean.db` (`%USERPROFILE%` on Windows);
+`DATABASE_PATH` can override it. Do not run GUI and Web UI against that database
+at the same time.
 
 ### Asset development
 

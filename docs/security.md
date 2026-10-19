@@ -25,9 +25,26 @@ HANDBEAN_ACCESS_PASSWORD="$(openssl rand -base64 32)" \
 PHX_SERVER=true bin/handbean start
 ```
 
-`AMP_ORB=1` binds to `0.0.0.0`, therefore Handbean automatically defaults to
+`HANDBEAN_PUBLIC_BIND=1` binds to `0.0.0.0`, therefore Handbean automatically defaults to
 `password` mode and refuses to start without a password. A non-loopback bind
 cannot be combined with `local` mode.
+
+## Trusted-LAN HTTP
+
+The Unix launcher `start.sh --lan HOST` and Windows launcher
+`start.bat -LanHost HOST` set `PHX_HOST`, `HANDBEAN_PUBLIC_BIND=1`,
+`HANDBEAN_ACCESS_MODE=password`, and `HANDBEAN_ALLOW_HTTP=1`. They prompt for a
+password unless `HANDBEAN_ACCESS_PASSWORD` is already supplied by the host.
+Credentials are not written to disk. The host must be the address other devices
+use; the scripts do not guess which network interface is trusted.
+
+`HANDBEAN_ALLOW_HTTP=1` explicitly disables the HTTPS redirect/HSTS for this
+instance and advertises HTTP on `PORT`. It does not disable authentication or
+origin checking, and `HANDBEAN_PUBLIC_BIND=1` alone does not enable HTTP.
+Only use this opt-in on a trusted network: Basic credentials and session traffic
+are readable by anyone who can observe unencrypted traffic. Browser-cached HSTS
+may still force HTTPS. For Internet-facing deployments, leave this setting unset
+and terminate TLS at a reverse proxy.
 
 ## Reverse proxies and TLS
 
@@ -43,8 +60,11 @@ responsibility, and password mode is required for every proxy deployment.
 
 Terminate TLS at the proxy (or configure HTTPS at the endpoint). Basic
 credentials are only transport-safe over TLS. Preserve the `Host`, `Origin`,
-and WebSocket upgrade headers. Phoenix origin checking remains enabled; set
-`PHX_HOST` to the externally visible host. Do not expose development mode:
+and WebSocket upgrade headers. Handbean does not trust `X-Forwarded-Proto`, so
+a direct client cannot forge HTTPS and bypass the redirect. A reverse proxy must
+reach Handbean over HTTPS or through a same-host loopback connection; do not expose
+the backend listener to untrusted clients. Phoenix origin checking remains enabled;
+set `PHX_HOST` to the externally visible host. Do not expose development mode:
 debug pages and code reload facilities are intended for a trusted machine.
 
 Basic authentication is handled on the initial HTTP request. Phoenix does not

@@ -54,6 +54,34 @@ GitHub Releases 的 `web-latest` 及各版本标签提供了开箱即用的自�
 - **Windows 终端说明**：由于内置 Web 终端引擎（Ghostty）暂无 Windows 原生 NIF 支持，Windows 发行包暂未内置浏览器终端组件。
 - 暂不提供 Windows ARM64 预编译包。
 
+### 局域网访问
+
+Windows / Linux / macOS 的逐步说明见[局域网部署](docs/lan-deployment.md)。
+
+默认启动只接受本机连接。需要让受信任局域网内的其他设备访问时，指定服务端的
+主机名或 IPv4 地址（不是访问设备的地址）：
+
+```bash
+# Linux / macOS，在解压后的 Web UI 包中运行
+./start.sh --lan 192.168.1.10
+```
+
+```powershell
+# Windows，在解压后的 Web UI 包中运行
+.\start.bat -LanHost 192.168.1.10
+```
+
+脚本会用中英文提醒设置足够长、随机且不重复使用的强密码，再提示输入且不回显；
+通过环境变量提供密码时也会显示提醒。用户名默认 `handbean`，可通过
+`HANDBEAN_ACCESS_USERNAME` 覆盖。无人值守启动时，通过宿主环境提供
+`HANDBEAN_ACCESS_PASSWORD`；脚本不保存密码。其他设备打开
+`http://192.168.1.10:5008` 即可；必要时在服务端防火墙放行端口，可用 `PORT` 修改默认 5008。
+
+局域网模式会显式开启全部 IPv4 网卡监听、密码认证和 HTTP。
+**HTTP 不加密密码、会话或通信内容，只用于受信任网络。** 公网部署需要 TLS
+反向代理，不要使用局域网参数。默认 HTTPS 强制策略和来源校验保持开启。
+详见[部署安全说明](docs/security.md)。
+
 ## 源码运行
 
 如果你希望参与开发或直接从源码构建，需满足以下环境要求：
@@ -76,6 +104,39 @@ mix phx.server
 ```
 
 启动后在浏览器打开 `http://localhost:5002`，选择工作区目录即可开始使用。
+
+### 编译并运行生产版 Web UI
+
+Linux/macOS 按构建机器选择 `linux-x86_64`、`linux-arm64` 或 `macos-arm64`：
+
+```bash
+bash scripts/pack_webui.sh linux-x86_64
+bash scripts/start.sh                     # 仅本机访问
+# 或者不执行上一条，改为：
+bash scripts/start.sh --lan 192.168.1.10   # 受信任局域网，提示输入密码
+```
+
+Windows：
+
+```powershell
+.\scripts\build_webui.bat                 # 编译并选中一个新的本地版本
+.\start.bat                               # 仅本机访问
+# 或者不执行上一条，改为：
+.\start.bat -LanHost 192.168.1.10
+```
+
+Windows 本机一键编译用 `scripts\build_webui.bat`（或 `build_webui.ps1`）：先检查
+工具链（Elixir/Mix、Node.js、tar、MSVC cl/nmake），缺失时用双语报错指出安装方法，
+然后加载 MSVC 环境，再调用与 CI 相同的 `pack_webui.ps1` 编译。每次成功的本地构建
+都会写入 `_build/local-webui/versions` 下的独立目录，只更新
+`_build/local-webui/current.txt` 指针，因此不会覆盖仍由当前 Web UI 进程占用的旧目录。
+退出旧实例后，再次运行仓库根目录的 `.\start.bat` 即切换到刚选中的新构建；启动器
+仍兼容以前位于 `_build/prod/rel/handbean` 的构建。
+
+解压包中的启动脚本仍运行自身所在目录的 release。两种启动方式都不会启动开发服务器；
+根目录启动器会透传 `-LanHost` 等参数。正式数据库默认位于
+`~/.handbean/handbean.db`（Windows 使用 `%USERPROFILE%`），可用 `DATABASE_PATH`
+覆盖；不要让 GUI 与 Web UI 同时使用同一个数据库。
 
 ### 静态资源开发说明
 

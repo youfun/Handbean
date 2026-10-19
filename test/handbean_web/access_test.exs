@@ -138,4 +138,45 @@ defmodule HandbeanWeb.AccessTest do
 
     assert websocket.status in [403, 401]
   end
+
+  test "LAN HTTP opt-in skips the production HTTPS redirect but not authentication" do
+    endpoint = HandbeanWeb.Endpoint
+    original = Application.fetch_env!(:handbean, endpoint)
+    on_exit(fn -> endpoint.config_change([{endpoint, original}], []) end)
+
+    ssl_options =
+      Config.Reader.read!(Path.expand("../../config/prod.exs", __DIR__), env: :prod)
+      |> get_in([:handbean, endpoint, :force_ssl])
+      |> Plug.SSL.init()
+
+    remote_request = fn ->
+      Plug.Test.conn(:get, "http://192.0.2.10:5008/")
+      |> Map.put(:remote_ip, {192, 0, 2, 20})
+      |> Plug.Test.put_peer_data(%{address: {192, 0, 2, 20}, port: 12_345, ssl_cert: nil})
+    end
+
+    assert remote_request.() |> Plug.SSL.call(ssl_options) |> Map.fetch!(:status) == 301
+
+    assert remote_request.()
+           |> Map.put(:host, "localhost")
+           |> Plug.SSL.call(ssl_options)
+           |> Map.fetch!(:status) == 301
+
+    assert remote_request.()
+           |> put_req_header("x-forwarded-proto", "https")
+           |> Plug.SSL.call(ssl_options)
+           |> Map.fetch!(:status) == 301
+
+    loopback = Plug.Test.conn(:get, "http://localhost:5008/") |> Plug.SSL.call(ssl_options)
+    refute loopback.halted
+
+    endpoint.config_change([{endpoint, Keyword.put(original, :allow_http, true)}], [])
+
+    conn = remote_request.() |> Plug.SSL.call(ssl_options)
+    refute conn.halted
+
+    conn = conn |> Plug.Test.init_test_session(%{}) |> HandbeanWeb.Access.call([])
+    assert conn.status == 401
+    assert get_resp_header(conn, "www-authenticate") != []
+  end
 end
