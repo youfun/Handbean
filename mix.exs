@@ -136,7 +136,9 @@ defmodule Handbean.MixProject do
             String.starts_with?(architecture, "x86_64-")) and
            String.ends_with?(architecture, "-linux-gnu"))
 
-    if supported?, do: [{:whisper_cpp, "~> 0.5.0", optional: true}], else: []
+    if supported?,
+      do: [{:whisper_cpp, "~> 0.5.0", optional: true, targets: :host}],
+      else: []
   end
 
   # Ghostty NIFs exist for Linux and macOS only. Windows Web UI packages
@@ -151,8 +153,9 @@ defmodule Handbean.MixProject do
          git: "https://github.com/youfun/ghostty_ex.git",
          branch: "upgrade/ghostty-22fa134",
          compile: ~s(bash "#{__DIR__}/scripts/compile_ghostty.sh"),
-         optional: true},
-        {:zigler, "~> 0.16.0", runtime: false, optional: true}
+         optional: true,
+         targets: :host},
+        {:zigler, "~> 0.16.0", runtime: false, optional: true, targets: :host}
       ]
     end
   end

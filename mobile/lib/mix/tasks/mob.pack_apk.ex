@@ -182,11 +182,17 @@ defmodule Mix.Tasks.Mob.PackApk do
 
   defp zip_path, do: Path.expand("android/app/src/debug/assets/otp.zip")
 
+  @doc false
+  def handbean_assets_command do
+    {"mix", ["assets.build"], [{"MIX_TARGET", "mobile"}]}
+  end
+
   defp ensure_handbean_assets! do
     sigil = Path.expand("..", File.cwd!())
+    {command, args, env} = handbean_assets_command()
     Mix.shell().info("  building Handbean assets…")
 
-    case System.cmd("mix", ["assets.build"], cd: sigil, stderr_to_stdout: true) do
+    case System.cmd(command, args, cd: sigil, env: env, stderr_to_stdout: true) do
       {_, 0} -> :ok
       {out, rc} -> Mix.raise("sigil asset build failed (#{rc}): #{out}")
     end

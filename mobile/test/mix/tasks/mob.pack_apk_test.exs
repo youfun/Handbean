@@ -25,6 +25,11 @@ defmodule Mix.Tasks.Mob.PackApkTest do
     assert phoenix_ecto in dirs
   end
 
+  test "root asset build uses the mobile target so desktop native deps stay out" do
+    assert Mix.Tasks.Mob.PackApk.handbean_assets_command() ==
+             {"mix", ["assets.build"], [{"MIX_TARGET", "mobile"}]}
+  end
+
   test "default assemble args do not select the foundation test app" do
     assert Mix.Tasks.Mob.PackApk.gradle_assemble_args("x86_64") ==
              ["assembleDebug", "--no-daemon", "-PmobAbi=x86_64"]
