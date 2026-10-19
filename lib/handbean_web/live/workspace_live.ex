@@ -1084,7 +1084,6 @@ defmodule HandbeanWeb.WorkspaceLive do
         |> WorkspaceNavigation.after_switch()
         |> RuntimeProjection.subscribe_session()
         |> restore_session()
-        |> Schedules.reload()
         |> WorkspaceNavigation.close_mobile_sheets()
 
       {:noreply, push_patch(socket, to: "/w/#{ws_id}/c/#{conv_id}")}
@@ -1688,6 +1687,27 @@ defmodule HandbeanWeb.WorkspaceLive do
       {:error, socket} ->
         {:noreply, socket}
     end
+  end
+
+  def handle_event("schedule_select", %{"id" => id}, socket) do
+    {:noreply, Schedules.select(socket, id)}
+  end
+
+  def handle_event("schedule_filter", %{"filter" => filter}, socket) do
+    {:noreply, Schedules.set_filter(socket, filter)}
+  end
+
+  def handle_event("schedule_search", params, socket) do
+    {:noreply,
+     Schedules.set_query(socket, Map.get(params, "query", Map.get(params, "value", "")))}
+  end
+
+  def handle_event("schedule_close_detail", _params, socket) do
+    {:noreply, Schedules.close_detail(socket)}
+  end
+
+  def handle_event("schedule_instruction_toggle", _params, socket) do
+    {:noreply, Schedules.toggle_instruction(socket)}
   end
 
   def handle_event("schedule_pause", %{"id" => id}, socket) do

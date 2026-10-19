@@ -16,7 +16,7 @@
     workspace_label={@workspace_label}
     workspaces={@workspaces}
     show_schedules={@show_schedules}
-    schedule_count={length(@schedules)}
+    schedule_count={@schedule_count}
   />
   <div class="flex flex-1 overflow-hidden workspace-main">
     <.projects_sidebar
@@ -35,7 +35,7 @@
       sidebar_visible_limits={@sidebar_visible_limits}
       show_archive={@show_archive}
       show_schedules={@show_schedules}
-      schedule_count={length(@schedules)}
+      schedule_count={@schedule_count}
       workspaces={@workspaces}
     />
     <%= if @show_schedules do %>
@@ -43,11 +43,18 @@
         chat_scope={@chat_scope}
         schedules={@schedules}
         runs={@schedule_runs}
+        views={@schedule_views}
+        count={@schedule_count}
         request={@schedule_request}
         error={@schedule_error}
         time_zone={@user_time_zone}
         workspace_label={@workspace_label}
         conversation_titles={@schedule_conversation_titles}
+        filter={@schedule_filter}
+        query={@schedule_query}
+        selected_id={@schedule_selected_id}
+        detail_open={@schedule_detail_open}
+        instruction_open={@schedule_instruction_open}
       />
     <% else %>
       <.chat_panel

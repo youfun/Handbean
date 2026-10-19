@@ -43,6 +43,10 @@ defmodule Handbean.Schedule.Store do
     end
   end
 
+  @doc "Count persisted schedules for a sidebar badge."
+  @spec count() :: non_neg_integer()
+  def count, do: Repo.aggregate(Entry, :count)
+
   @spec recent_runs(String.t(), pos_integer()) :: [Run.t()]
   def recent_runs(schedule_id, limit \\ 20) when is_binary(schedule_id) do
     from(r in Run,
@@ -51,6 +55,35 @@ defmodule Handbean.Schedule.Store do
       limit: ^limit
     )
     |> Repo.all()
+  end
+
+  @doc """
+  Load recent runs for many schedules in one query.
+
+  Each schedule keeps at most `limit` runs, newest first, so the result matches
+  `recent_runs/2` for the same ids. Unknown ids are absent from the result. The
+  `schedule_runs(schedule_id, inserted_at)` index serves the range scan; the
+  per-schedule trim happens in memory because the run history per schedule stays
+  small.
+  """
+  @spec recent_runs_by_schedule([String.t()], pos_integer()) :: %{String.t() => [Run.t()]}
+  def recent_runs_by_schedule(schedule_ids, limit \\ 20)
+
+  def recent_runs_by_schedule(schedule_ids, limit)
+      when is_list(schedule_ids) and is_integer(limit) and limit > 0 do
+    case schedule_ids |> Enum.filter(&present_id?/1) |> Enum.uniq() do
+      [] ->
+        %{}
+
+      ids ->
+        from(r in Run,
+          where: r.schedule_id in ^ids,
+          order_by: [asc: r.schedule_id, desc: r.inserted_at]
+        )
+        |> Repo.all()
+        |> Enum.group_by(& &1.schedule_id)
+        |> Map.new(fn {id, runs} -> {id, Enum.take(runs, limit)} end)
+    end
   end
 
   @spec due(DateTime.t()) :: [Entry.t()]
@@ -525,6 +558,8 @@ defmodule Handbean.Schedule.Store do
   defp planned_once?(schedule, run) do
     Rule.once?(schedule.rule) and run.kind == "scheduled" and not is_nil(run.slot_at)
   end
+
+  defp present_id?(id), do: is_binary(id) and id != ""
 
   defp notify_entry({:ok, %Entry{} = entry} = result) do
     Handbean.Schedule.notify(entry.conversation_id)

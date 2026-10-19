@@ -166,6 +166,31 @@ defmodule Handbean.ConversationStore do
 
   def get_metadata(_id), do: {:error, :not_found}
 
+  @doc """
+  Read titles for many conversations in one query.
+
+  Active conversations that exist are keyed by id; missing and non-active
+  conversations are absent, so callers keep their own fallback. A nil or blank
+  stored title projects to `""`.
+  """
+  @spec titles_for_ids([String.t()]) :: %{String.t() => String.t()}
+  def titles_for_ids(ids) when is_list(ids) do
+    case ids |> Enum.filter(&present?/1) |> Enum.uniq() do
+      [] ->
+        %{}
+
+      ids ->
+        from(conversation in Conversation,
+          where: conversation.id in ^ids and conversation.status == "active",
+          select: {conversation.id, conversation.title}
+        )
+        |> Repo.all()
+        |> Map.new(fn {id, title} -> {id, title_text(title)} end)
+    end
+  end
+
+  def titles_for_ids(_ids), do: %{}
+
   def transcript_empty?(id) when is_binary(id) do
     valid_id?(id) and exists?(id) and
       Repo.aggregate(
@@ -1169,6 +1194,16 @@ defmodule Handbean.ConversationStore do
 
   defp valid_id?(id), do: byte_size(id) in 1..128 and Regex.match?(~r/\A[A-Za-z0-9_-]+\z/, id)
   defp present?(value), do: is_binary(value) and value != ""
+
+  defp title_text(title) when is_binary(title) do
+    case String.trim(title) do
+      "" -> ""
+      trimmed -> trimmed
+    end
+  end
+
+  defp title_text(_title), do: ""
+
   defp map_value(map, key), do: Handbean.Utils.SafeMap.get(map, key)
 
   defp string_value(map, key) do
