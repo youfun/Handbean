@@ -687,6 +687,10 @@ defmodule HandbeanWeb.WorkspaceLive do
     do: MessageSubmission.resend_pending(socket, id)
 
   @impl true
+  def handle_event("delete_undelivered", %{"id" => id}, socket),
+    do: MessageSubmission.delete_undelivered(socket, id)
+
+  @impl true
   def handle_event("speech_error", %{"reason" => reason}, socket) do
     {:noreply,
      socket

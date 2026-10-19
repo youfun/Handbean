@@ -1810,6 +1810,45 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
       assert length(Handbean.Agent.CandidateQueue.get_messages(queue)) == queue_count
     end
 
+    test "delete_undelivered removes the durable message without restoring the draft", %{
+      conn: conn
+    } do
+      configure_test_models!()
+
+      {:ok, view, _html} = live(conn, "/")
+      sid = create_default_conversation(view)
+      {:ok, _session} = Handbean.PubSub.Session.start_or_get(session_id: sid)
+      {:ok, queue} = Handbean.Agent.CandidateQueue.start_link(session_id: sid, owner: self())
+      :ok = Handbean.PubSub.Session.attach_run(sid, self(), queue)
+      :ok = Handbean.PubSub.Session.broadcast_event(sid, :run_start, %{model: "step-router-v1"})
+
+      view
+      |> element("form")
+      |> render_submit(%{"message" => "delete me", "model" => "stepfun/step-router-v1"})
+
+      :ok = Handbean.PubSub.Session.broadcast_event(sid, :run_end, %{status: "cancelled"})
+
+      assert render(view) =~ "Not delivered"
+      [message_id] = Map.keys(:sys.get_state(view.pid).socket.assigns.pending_messages)
+      render_keyup(view, "update_input", %{"value" => "keep this draft"})
+
+      assert has_element?(view, "button[phx-click='delete_undelivered']", "Delete")
+
+      view
+      |> element("button[phx-click='delete_undelivered']")
+      |> render_click()
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.input_value == "keep this draft"
+      refute Map.has_key?(assigns.pending_messages, message_id)
+      refute Enum.any?(assigns.timeline, &(&1["id"] == message_id))
+      refute render(view) =~ "delete me"
+      assert {:ok, entries} = Handbean.ConversationTranscriptStore.list(sid)
+      refute Enum.any?(entries, &(&1["id"] == message_id))
+
+      _ = queue
+    end
+
     test "resend_pending keeps the undelivered item when send fails", %{conn: conn} do
       configure_test_models!()
 

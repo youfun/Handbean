@@ -175,6 +175,31 @@ defmodule HandbeanWeb.WorkspaceLive.MessageSubmission do
     end
   end
 
+  def delete_undelivered(socket, id) do
+    item = Map.get(socket.assigns.pending_messages, id)
+
+    if is_map(item) and item[:status] == :undelivered do
+      case drop_transcript_entry(socket.assigns.current_conversation_id, id) do
+        :ok ->
+          {:noreply,
+           socket
+           |> drop_pending_timeline(id)
+           |> assign_pending_messages(
+             Handbean.Agent.PendingMessages.drop(socket.assigns.pending_messages, id)
+           )
+           |> ConversationState.sync_conv_state(
+             Keyword.merge(ModelSelection.state_opts(), reload?: true)
+           )
+           |> assign(:composer_error, nil)}
+
+        {:error, _reason} ->
+          {:noreply, assign(socket, :composer_error, gettext("Could not delete that message."))}
+      end
+    else
+      {:noreply, socket}
+    end
+  end
+
   def stop(socket) do
     conv_id = socket.assigns.current_conversation_id
 

@@ -1205,6 +1205,11 @@ msgstr ""
 msgid "Could not save theme preference."
 msgstr ""
 
+#: lib/handbean_web/live/workspace_live/message_submission.ex:196
+#, elixir-autogen, elixir-format
+msgid "Could not delete that message."
+msgstr ""
+
 #: lib/handbean_web/live/workspace_live/message_submission.ex:129
 #, elixir-autogen, elixir-format
 msgid "Could not send that message now."
@@ -1229,6 +1234,7 @@ msgstr ""
 #: lib/handbean_web/live/git_settings_live.html.heex:135
 #: lib/handbean_web/live/mcp_settings_live.html.heex:72
 #: lib/handbean_web/live/mcp_settings_live.html.heex:97
+#: lib/handbean_web/live/workspace_live/chat_components.ex:644
 #, elixir-autogen, elixir-format
 msgid "Delete"
 msgstr ""

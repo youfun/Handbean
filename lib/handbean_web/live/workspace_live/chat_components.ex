@@ -634,6 +634,15 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
                       >
                         {gettext("Resend")}
                       </button>
+                      <button
+                        :if={item[:status] == :undelivered}
+                        type="button"
+                        phx-click="delete_undelivered"
+                        phx-value-id={entry["id"]}
+                        class="underline"
+                      >
+                        {gettext("Delete")}
+                      </button>
                     </div>
                   <% end %>
                 </div>
