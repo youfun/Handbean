@@ -143,17 +143,23 @@ defmodule Handbean.Agent.Provider.ModelCatalogTest do
                "input_modalities" => ["image", "text"],
                "output_modalities" => ["text"],
                "capabilities" => %{"reasoning" => true}
+             },
+             %{
+               "id" => "future/video-model",
+               "input_modalities" => ["text", "video"]
              }
            ]
          }
        }}
     )
 
-    assert {:ok, %{added: 1, total: 1}} =
+    assert {:ok, %{added: 2, total: 2}} =
              ModelCatalog.discover("deepseek-z", req_module: ReqMock)
 
     {:ok, config} = ModelConfig.read_config()
-    [model] = config["providers"]["deepseek-z"]["models"]
+    models = config["providers"]["deepseek-z"]["models"]
+    model = Enum.find(models, &(&1["id"] == "deepseek/deepseek-v4.1-flash"))
+    video_model = Enum.find(models, &(&1["id"] == "future/video-model"))
 
     assert model["id"] == "deepseek/deepseek-v4.1-flash"
     assert model["name"] == "DeepSeek: DeepSeek V4.1 Flash 1017"
@@ -162,6 +168,8 @@ defmodule Handbean.Agent.Provider.ModelCatalogTest do
     assert model["contextWindow"] == 1_000_000
     assert model["maxTokens"] == 384_000
     assert model["upstream"]["publish_time"] == "2026-10-17"
+    assert video_model["input"] == ["text"]
+    assert video_model["upstream"]["input_modalities"] == ["text", "video"]
 
     assert Handbean.Agent.Reasoning.supported_levels(model) == [
              "off",
@@ -205,7 +213,7 @@ defmodule Handbean.Agent.Provider.ModelCatalogTest do
            }) == %{
              "id" => "future/model",
              "name" => "Future Model",
-             "input" => ["text", "audio", "video"],
+             "input" => ["text", "audio"],
              "output" => ["text"],
              "contextWindow" => 1_000_000,
              "maxTokens" => 128_000,
@@ -278,6 +286,17 @@ defmodule Handbean.Agent.Provider.ModelCatalogTest do
 
     assert model["input"] == ["audio"]
     assert model["upstream"]["input_modalities"] == ["audio"]
+  end
+
+  test "keeps unsupported-only input in upstream without an invalid projection" do
+    model =
+      ModelCatalog.normalize_entry(
+        %{"id" => "video-only", "input_modalities" => ["video"]},
+        %{"id" => "video-only", "input" => ["text"]}
+      )
+
+    refute Map.has_key?(model, "input")
+    assert model["upstream"]["input_modalities"] == ["video"]
   end
 
   test "account-scoped refresh drops missing rows and preserves only enabled" do

@@ -310,13 +310,10 @@ defmodule Handbean.Agent.Provider.ModelCatalog do
         nil
 
       modalities ->
-        known =
-          Enum.filter(
-            Handbean.Agent.ModelCapabilities.supported_input_types(),
-            &(&1 in modalities)
-          )
-
-        known ++ Enum.reject(modalities, &(&1 in known))
+        Enum.filter(
+          Handbean.Agent.ModelCapabilities.supported_input_types(),
+          &(&1 in modalities)
+        )
     end
   end
 
