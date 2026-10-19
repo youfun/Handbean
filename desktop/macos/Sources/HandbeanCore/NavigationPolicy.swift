@@ -18,6 +18,23 @@ public struct AppOrigin: Equatable {
     }
 }
 
+public enum MediaCaptureDevice: Equatable {
+    case microphone
+    case camera
+    case cameraAndMicrophone
+}
+
+public enum MediaCapturePolicy {
+    public static func allows(
+        device: MediaCaptureDevice,
+        host: String,
+        port: Int,
+        origin: AppOrigin
+    ) -> Bool {
+        device == .microphone && origin.hosts.contains(host.lowercased()) && port == origin.port
+    }
+}
+
 public enum NavigationDecision: Equatable {
     case allow
     case openExternally

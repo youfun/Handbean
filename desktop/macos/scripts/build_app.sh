@@ -55,7 +55,8 @@ if [[ -e "${runtime_binary[0]}" ]]; then
   fi
 fi
 
-if ! codesign --force --sign - --identifier com.youfun.handbean "$APP"; then
+if ! codesign --force --sign - --identifier com.youfun.handbean \
+  --entitlements "$ROOT/entitlements.plist" "$APP"; then
   echo "warning: ad-hoc codesign failed; the app can still be opened locally" >&2
 fi
 

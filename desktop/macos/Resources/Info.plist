@@ -22,6 +22,8 @@
 	<string>15.0</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.developer-tools</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Handbean uses the microphone only when you start local voice input.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSSupportsAutomaticTermination</key>

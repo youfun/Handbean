@@ -24,6 +24,49 @@ final class NavigationPolicyTests: XCTestCase {
         XCTAssertEqual(decide("ws://evil.example/socket"), .cancel)
     }
 
+    func testMediaCaptureAllowsOnlyMicrophoneFromTheAppOrigin() {
+        XCTAssertTrue(
+            MediaCapturePolicy.allows(
+                device: .microphone,
+                host: "LOCALHOST",
+                port: 5008,
+                origin: origin
+            )
+        )
+        XCTAssertFalse(
+            MediaCapturePolicy.allows(
+                device: .camera,
+                host: "localhost",
+                port: 5008,
+                origin: origin
+            )
+        )
+        XCTAssertFalse(
+            MediaCapturePolicy.allows(
+                device: .cameraAndMicrophone,
+                host: "127.0.0.1",
+                port: 5008,
+                origin: origin
+            )
+        )
+        XCTAssertFalse(
+            MediaCapturePolicy.allows(
+                device: .microphone,
+                host: "evil.example",
+                port: 5008,
+                origin: origin
+            )
+        )
+        XCTAssertFalse(
+            MediaCapturePolicy.allows(
+                device: .microphone,
+                host: "localhost",
+                port: 5009,
+                origin: origin
+            )
+        )
+    }
+
     private func decide(_ raw: String, mainFrame: Bool = true) -> NavigationDecision {
         NavigationPolicy.decide(url: URL(string: raw)!, origin: origin, mainFrame: mainFrame)
     }

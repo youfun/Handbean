@@ -5,6 +5,7 @@ import {
   downsampleTo16Khz,
   encodeFloat32LittleEndian,
   limitRecordingDuration,
+  mergeFloat32Chunks,
   mixToMono,
 } from "../js/hooks/composer_speech.js";
 
@@ -25,6 +26,17 @@ import {
 {
   const source = new Float32Array(16_000 * 61);
   assert.equal(limitRecordingDuration(source).length, 16_000 * 60);
+}
+
+{
+  const merged = mergeFloat32Chunks([
+    new Float32Array([0.1, 0.2]),
+    new Float32Array([0.3]),
+  ]);
+  assert.equal(merged.length, 3);
+  assert.ok(Math.abs(merged[0] - 0.1) < 0.000001);
+  assert.ok(Math.abs(merged[1] - 0.2) < 0.000001);
+  assert.ok(Math.abs(merged[2] - 0.3) < 0.000001);
 }
 
 {
@@ -99,6 +111,96 @@ import {
     Object.defineProperty(globalThis, "navigator", navigatorDescriptor);
   } else {
     delete globalThis.navigator;
+  }
+}
+
+{
+  const dom = new JSDOM(`
+    <!doctype html>
+    <div id="pcm-speech" data-speech-upload-name="speech_audio">
+      <textarea id="ai-input"></textarea>
+      <button id="speech-input-button" type="button"></button>
+    </div>
+  `);
+
+  const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const mediaRecorderDescriptor = Object.getOwnPropertyDescriptor(globalThis, "MediaRecorder");
+  const uploads = [];
+  let trackStopped = false;
+
+  class FakeAudioNode {
+    constructor() {
+      this.channelCount = 1;
+      this.gain = { value: 1 };
+      this.onaudioprocess = null;
+    }
+    connect() {}
+    disconnect() {}
+  }
+
+  class FakeAudioContext {
+    constructor() {
+      this.sampleRate = 16_000;
+      this.destination = new FakeAudioNode();
+    }
+    async resume() {}
+    createMediaStreamSource() { return new FakeAudioNode(); }
+    createScriptProcessor() { return new FakeAudioNode(); }
+    createGain() { return new FakeAudioNode(); }
+    close() { return Promise.resolve(); }
+  }
+
+  globalThis.window = dom.window;
+  globalThis.document = dom.window.document;
+  window.AudioContext = FakeAudioContext;
+  Object.defineProperty(globalThis, "MediaRecorder", { value: undefined, configurable: true });
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: {
+      mediaDevices: {
+        getUserMedia: async () => ({
+          getTracks: () => [{ stop: () => { trackStopped = true; } }],
+        }),
+      },
+    },
+  });
+
+  const hook = {
+    ...ComposerSpeech,
+    el: document.querySelector("#pcm-speech"),
+    handleEvent: () => {},
+    pushEvent: () => {},
+    upload: (_name, files) => uploads.push(...files),
+  };
+
+  hook.mounted();
+  await hook.startRecording();
+  assert.equal(hook.pcmRecording, true);
+  hook.captureProcessor.onaudioprocess({
+    inputBuffer: {
+      length: 2,
+      numberOfChannels: 1,
+      getChannelData: () => new Float32Array([0.25, -0.25]),
+    },
+  });
+  hook.stopRecording();
+
+  assert.equal(uploads.length, 1);
+  assert.equal(uploads[0].size, 8);
+  assert.equal(trackStopped, true);
+  hook.destroyed();
+
+  delete globalThis.window;
+  delete globalThis.document;
+  if (navigatorDescriptor) {
+    Object.defineProperty(globalThis, "navigator", navigatorDescriptor);
+  } else {
+    delete globalThis.navigator;
+  }
+  if (mediaRecorderDescriptor) {
+    Object.defineProperty(globalThis, "MediaRecorder", mediaRecorderDescriptor);
+  } else {
+    delete globalThis.MediaRecorder;
   }
 }
 

@@ -150,6 +150,35 @@ final class WebWindowController: NSWindowController, WKNavigationDelegate, WKUID
 
     func webView(
         _ webView: WKWebView,
+        requestMediaCapturePermissionFor securityOrigin: WKSecurityOrigin,
+        initiatedByFrame frame: WKFrameInfo,
+        type: WKMediaCaptureType,
+        decisionHandler: @escaping (WKPermissionDecision) -> Void
+    ) {
+        let device: MediaCaptureDevice
+        switch type {
+        case .microphone:
+            device = .microphone
+        case .camera:
+            device = .camera
+        case .cameraAndMicrophone:
+            device = .cameraAndMicrophone
+        @unknown default:
+            decisionHandler(.deny)
+            return
+        }
+
+        let allowed = MediaCapturePolicy.allows(
+            device: device,
+            host: securityOrigin.host,
+            port: securityOrigin.port,
+            origin: origin
+        )
+        decisionHandler(allowed ? .grant : .deny)
+    }
+
+    func webView(
+        _ webView: WKWebView,
         createWebViewWith configuration: WKWebViewConfiguration,
         for navigationAction: WKNavigationAction,
         windowFeatures: WKWindowFeatures

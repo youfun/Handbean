@@ -40,7 +40,7 @@ The server binds `127.0.0.1` only. Phoenix `check_origin: true` compares the pag
 
 The app and `./start.sh` both use `~/.handbean/handbean.db`, the same default as the release `bin/handbean` via `rel/env.sh.eex`. `SECRET_KEY_BASE` is reused from the environment when set, otherwise stored at `~/.handbean/secret_key_base` (mode 0600) so cookies survive restarts. The app disables BEAM distribution because it owns the foreground child process directly and does not need an additional network listener.
 
-Links that leave the Handbean origin open in the system browser. The shell does not navigate its main frame to arbitrary URLs. There is no App Sandbox: the bundled server must bind localhost and read the workspace. Turning the sandbox on would need extra file and network entitlements and would still not cover every folder the tools touch.
+Links that leave the Handbean origin open in the system browser. The shell does not navigate its main frame to arbitrary URLs. Microphone capture is granted only to the current Handbean loopback origin and only for audio; camera and combined camera/microphone requests are denied. macOS still applies its normal microphone consent prompt. There is no App Sandbox: the bundled server must bind localhost and read the workspace. Turning the sandbox on would need extra file and network entitlements and would still not cover every folder the tools touch.
 
 Phase 1 quits when the window closes. `MenuBarController` is a stub for a later `NSStatusItem` menu (pinned/recent threads, keep-awake, Open Handbean). That phase should keep the backend alive until Quit.
 
@@ -77,7 +77,7 @@ bash desktop/macos/scripts/notarize_app.sh
 
 The script signs every Mach-O inside the bundle with Hardened Runtime, uploads the zip to `notarytool`, staples the ticket onto `Handbean.app`, and rewrites `Handbean-macos-arm64.zip`. Upload that second zip. The first zip, produced before stapling, does not carry the ticket.
 
-Apple Distribution certificates cannot be used for this. Create a Developer ID Application certificate and store a notarytool keychain profile named `handbean-notary` first; the script prints the exact commands when either is missing. Entitlements are `desktop/macos/entitlements.plist` (JIT and bundled NIFs). The app stays outside the App Sandbox, which is what lets it read a workspace.
+Apple Distribution certificates cannot be used for this. Create a Developer ID Application certificate and store a notarytool keychain profile named `handbean-notary` first; the script prints the exact commands when either is missing. Entitlements are `desktop/macos/entitlements.plist` (audio input, JIT, and bundled NIFs). The app stays outside the App Sandbox, which is what lets it read a workspace.
 
 GitHub Actions workflow `.github/workflows/desktop-macos.yml` is `workflow_dispatch` only. It builds an ad-hoc zip artifact; it does not notarize.
 

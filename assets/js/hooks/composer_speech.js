@@ -50,6 +50,19 @@ export function limitRecordingDuration(samples) {
   return samples.length > MAX_SAMPLES ? samples.subarray(0, MAX_SAMPLES) : samples;
 }
 
+export function mergeFloat32Chunks(chunks) {
+  const length = chunks.reduce((total, chunk) => total + chunk.length, 0);
+  const merged = new Float32Array(length);
+  let offset = 0;
+
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  return merged;
+}
+
 export function encodeFloat32LittleEndian(samples) {
   const buffer = new ArrayBuffer(samples.length * Float32Array.BYTES_PER_ELEMENT);
   const view = new DataView(buffer);
@@ -96,6 +109,10 @@ function errorReason(error) {
   }
 }
 
+function audioContextClass() {
+  return window.AudioContext || window.webkitAudioContext;
+}
+
 export const ComposerSpeech = {
   mounted() {
     this.textarea = this.el.querySelector("#ai-input");
@@ -103,6 +120,13 @@ export const ComposerSpeech = {
     this.mediaRecorder = null;
     this.stream = null;
     this.chunks = [];
+    this.pcmChunks = [];
+    this.pcmRecording = false;
+    this.captureContext = null;
+    this.captureSource = null;
+    this.captureProcessor = null;
+    this.captureGain = null;
+    this.captureSampleRate = TARGET_SAMPLE_RATE;
     this.discardRecording = false;
     this.localState = this.el.dataset.speechState || "idle";
     this.maxTimer = null;
@@ -151,16 +175,16 @@ export const ComposerSpeech = {
   destroyed() {
     this.el.removeEventListener("click", this.onClick);
     window.removeEventListener("keydown", this.onKeyDown);
-    this.cancelTimer();
     this.cancelRecording();
   },
 
   isRecording() {
-    return this.mediaRecorder?.state === "recording";
+    return this.mediaRecorder?.state === "recording" || this.pcmRecording;
   },
 
   async startRecording() {
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+    const AudioContextClass = audioContextClass();
+    if (!navigator.mediaDevices?.getUserMedia || (!AudioContextClass && typeof MediaRecorder === "undefined")) {
       this.reportError("unsupported");
       return;
     }
@@ -175,54 +199,112 @@ export const ComposerSpeech = {
       });
 
       this.chunks = [];
+      this.pcmChunks = [];
       this.discardRecording = false;
-      this.mediaRecorder = new MediaRecorder(this.stream, recorderOptions());
-      this.mediaRecorder.addEventListener("dataavailable", (event) => {
-        if (event.data?.size > 0) this.chunks.push(event.data);
-      });
-      this.mediaRecorder.addEventListener("stop", () => this.processRecording());
-      this.mediaRecorder.start();
+
+      if (typeof MediaRecorder !== "undefined") {
+        try {
+          this.startMediaRecorder();
+        } catch (error) {
+          if (!AudioContextClass) throw error;
+          this.mediaRecorder = null;
+          await this.startPcmRecorder(AudioContextClass);
+        }
+      } else {
+        await this.startPcmRecorder(AudioContextClass);
+      }
+
       this.setState("recording");
       this.maxTimer = window.setTimeout(() => this.stopRecording(), MAX_RECORDING_MS);
     } catch (error) {
+      this.cleanupPcmGraph();
       this.stopTracks();
       this.reportError(errorReason(error));
     }
+  },
+
+  startMediaRecorder() {
+    const options = recorderOptions();
+    this.mediaRecorder = options
+      ? new MediaRecorder(this.stream, options)
+      : new MediaRecorder(this.stream);
+    this.mediaRecorder.addEventListener("dataavailable", (event) => {
+      if (event.data?.size > 0) this.chunks.push(event.data);
+    });
+    this.mediaRecorder.addEventListener("stop", () => this.processMediaRecording());
+    this.mediaRecorder.start();
+  },
+
+  async startPcmRecorder(AudioContextClass) {
+    if (!AudioContextClass) throw new Error("AudioContext is unavailable");
+
+    this.captureContext = new AudioContextClass();
+    await this.captureContext.resume?.();
+    this.captureSampleRate = this.captureContext.sampleRate;
+    this.captureSource = this.captureContext.createMediaStreamSource(this.stream);
+
+    if (typeof this.captureContext.createScriptProcessor !== "function") {
+      throw new Error("PCM capture is unavailable");
+    }
+
+    const inputChannels = Math.max(1, Math.min(2, this.captureSource.channelCount || 1));
+    this.captureProcessor = this.captureContext.createScriptProcessor(4096, inputChannels, 1);
+    this.captureGain = this.captureContext.createGain();
+    this.captureGain.gain.value = 0;
+    this.captureProcessor.onaudioprocess = (event) => {
+      if (this.pcmRecording) this.pcmChunks.push(mixToMono(event.inputBuffer));
+    };
+    this.captureSource.connect(this.captureProcessor);
+    this.captureProcessor.connect(this.captureGain);
+    this.captureGain.connect(this.captureContext.destination);
+    this.pcmRecording = true;
   },
 
   stopRecording() {
     if (!this.isRecording()) return;
     this.cancelTimer();
     this.setState("processing");
-    this.mediaRecorder.stop();
+
+    if (this.mediaRecorder?.state === "recording") {
+      this.mediaRecorder.stop();
+      return;
+    }
+
+    const chunks = this.pcmChunks;
+    const sampleRate = this.captureSampleRate;
+    this.pcmRecording = false;
+    this.cleanupPcmGraph();
+    this.stopTracks();
+    this.processPcmRecording(chunks, sampleRate);
   },
 
   cancelRecording() {
     this.discardRecording = true;
     this.cancelTimer();
 
-    if (this.isRecording()) {
+    if (this.mediaRecorder?.state === "recording") {
       this.mediaRecorder.stop();
     } else {
+      this.pcmRecording = false;
+      this.cleanupPcmGraph();
       this.stopTracks();
-      this.mediaRecorder = null;
-      this.chunks = [];
+      this.resetCapture();
     }
 
     this.setState("idle");
   },
 
-  async processRecording() {
+  async processMediaRecording() {
     this.stopTracks();
 
     if (this.discardRecording) {
       this.discardRecording = false;
-      this.chunks = [];
-      this.mediaRecorder = null;
+      this.resetCapture();
       return;
     }
 
     if (this.chunks.length === 0) {
+      this.resetCapture();
       this.reportError("empty_recording");
       return;
     }
@@ -231,26 +313,65 @@ export const ComposerSpeech = {
 
     try {
       const blob = new Blob(this.chunks, { type: this.mediaRecorder?.mimeType || "audio/webm" });
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      const AudioContextClass = audioContextClass();
       if (!AudioContextClass) throw new Error("AudioContext is unavailable");
 
       context = new AudioContextClass();
       const decoded = await context.decodeAudioData(await blob.arrayBuffer());
-      const mono = mixToMono(decoded);
-      const samples = limitRecordingDuration(downsampleTo16Khz(mono, decoded.sampleRate));
-      const pcm = encodeFloat32LittleEndian(samples);
-      const file = new File([pcm], `dictation-${Date.now()}.pcm`, {
-        type: "application/octet-stream",
-      });
-
-      this.upload(this.uploadName, [file]);
+      this.uploadSamples(mixToMono(decoded), decoded.sampleRate);
     } catch (_error) {
       this.reportError("decode_failed");
     } finally {
       await context?.close?.();
-      this.chunks = [];
-      this.mediaRecorder = null;
+      this.resetCapture();
     }
+  },
+
+  processPcmRecording(chunks, sampleRate) {
+    if (this.discardRecording) {
+      this.discardRecording = false;
+      this.resetCapture();
+      return;
+    }
+
+    const samples = mergeFloat32Chunks(chunks);
+    if (samples.length === 0) {
+      this.resetCapture();
+      this.reportError("empty_recording");
+      return;
+    }
+
+    this.uploadSamples(samples, sampleRate);
+    this.resetCapture();
+  },
+
+  uploadSamples(samples, sampleRate) {
+    const normalized = limitRecordingDuration(downsampleTo16Khz(samples, sampleRate));
+    const pcm = encodeFloat32LittleEndian(normalized);
+    const file = new File([pcm], `dictation-${Date.now()}.pcm`, {
+      type: "application/octet-stream",
+    });
+
+    this.upload(this.uploadName, [file]);
+  },
+
+  cleanupPcmGraph() {
+    if (this.captureProcessor) this.captureProcessor.onaudioprocess = null;
+    for (const node of [this.captureSource, this.captureProcessor, this.captureGain]) {
+      try { node?.disconnect?.(); } catch (_error) {}
+    }
+    this.captureContext?.close?.().catch?.(() => {});
+    this.captureContext = null;
+    this.captureSource = null;
+    this.captureProcessor = null;
+    this.captureGain = null;
+  },
+
+  resetCapture() {
+    this.mediaRecorder = null;
+    this.chunks = [];
+    this.pcmChunks = [];
+    this.pcmRecording = false;
   },
 
   stopTracks() {
