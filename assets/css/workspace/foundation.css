@@ -438,9 +438,14 @@ textarea::placeholder {
    ═══════════════════════════════════════════════════════════════════ */
 
 /* ── Workspace structure ── */
+/* The sidebar owns a stacking context: its fixed flyouts (conversation and
+ * workspace hover cards, context menus, checkout picker) are positioned
+ * outside the column but trapped inside this layer. Keep it above the
+ * composer dock (.composer-dock, z-index 40) so those flyouts stay visible
+ * when they reach into the chat column, and below modal overlays. */
 #activity-bar {
   position: relative;
-  z-index: 40;
+  z-index: 50;
   width: 280px;
   min-width: 280px;
   height: 100%;
