@@ -1,17 +1,28 @@
 /**
  * Shows a fixed card to the right of a sidebar conversation row.
  * The card lives outside the scroll container so overflow cannot clip it.
+ *
+ * Both cards are server-rendered inside the sidebar subtree, but their open
+ * state is client-only. A LiveView patch of that subtree rewrites the server
+ * view of the card (hidden, no `is-open`, unfiltered meta rows) and does not
+ * call `updated()` on this hook, so the card is restored from the sidebar
+ * mutation itself while the pointer is still on the row.
  */
 export const ConversationHover = {
   mounted() {
     this.card = this.el.querySelector("#conversation-hover-card");
     this.scroll = this.el.querySelector("#projects-sidebar-scroll");
     this.row = null;
+    this.conversationId = null;
     this.hideTimer = null;
 
     this.workspaceCard = this.el.querySelector("#workspace-hover-card");
     this.workspaceRow = null;
     this.workspaceId = null;
+
+    this.bindCards();
+    this.observer = new MutationObserver(() => this.sync());
+    this.observe();
 
     this.onOver = (event) => {
       const row = event.target.closest("[data-conversation-id]");
@@ -22,7 +33,7 @@ export const ConversationHover = {
       }
 
       const title = event.target.closest(".workspace-title-row");
-      const group = title && title.closest("[data-workspace-path]");
+      const group = title && title.closest("[data-workspace-id]");
       if (group && this.el.contains(group) && !event.target.closest(".workspace-hover")) {
         this.hide();
         this.showWorkspace(group);
@@ -71,25 +82,19 @@ export const ConversationHover = {
     this.el.addEventListener("pointerdown", this.onPointerDown);
     this.el.addEventListener("click", this.onClick);
     if (this.scroll) this.scroll.addEventListener("scroll", this.onScroll, { passive: true });
-    if (this.card) {
-      this.card.addEventListener("pointerenter", () => this.clearHide());
-      this.card.addEventListener("pointerleave", () => this.scheduleHide());
-    }
-    if (this.workspaceCard) {
-      this.workspaceCard.addEventListener("pointerenter", () => this.clearHideWorkspace());
-      this.workspaceCard.addEventListener("pointerleave", () => this.scheduleHideWorkspace());
-    }
   },
 
   updated() {
-    this.card = this.el.querySelector("#conversation-hover-card");
-    this.workspaceCard = this.el.querySelector("#workspace-hover-card");
-    this.hide();
-    this.hideWorkspace();
+    this.sync();
   },
 
   destroyed() {
     this.clearHide();
+    this.clearHideWorkspace();
+    if (this.observer) {
+      this.observer.disconnect();
+      this.observer = null;
+    }
     this.el.removeEventListener("pointerover", this.onOver);
     this.el.removeEventListener("pointerout", this.onOut);
     this.el.removeEventListener("pointerdown", this.onPointerDown);
@@ -97,11 +102,110 @@ export const ConversationHover = {
     if (this.scroll) this.scroll.removeEventListener("scroll", this.onScroll);
   },
 
+  observe() {
+    if (!this.observer) return;
+    this.observer.observe(this.el, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["hidden", "class"]
+    });
+  },
+
+  /**
+   * Re-applies client-only card state after a sidebar patch. Writes made here
+   * are excluded from the observer so restoring a card cannot feed itself.
+   */
+  sync() {
+    this.card = this.el.querySelector("#conversation-hover-card");
+    this.workspaceCard = this.el.querySelector("#workspace-hover-card");
+    this.bindCards();
+    if (!this.row && !this.workspaceRow) return;
+
+    if (this.observer) this.observer.disconnect();
+    try {
+      this.restore();
+    } finally {
+      this.observe();
+    }
+  },
+
+  bindCards() {
+    if (this.card !== this.boundCard) {
+      this.unbindCard(this.boundCard, this.cardListeners);
+      this.boundCard = this.card;
+      this.cardListeners = this.bindCard(
+        this.card,
+        () => this.clearHide(),
+        () => this.scheduleHide()
+      );
+    }
+    if (this.workspaceCard !== this.boundWorkspaceCard) {
+      this.unbindCard(this.boundWorkspaceCard, this.workspaceCardListeners);
+      this.boundWorkspaceCard = this.workspaceCard;
+      this.workspaceCardListeners = this.bindCard(
+        this.workspaceCard,
+        () => this.clearHideWorkspace(),
+        () => this.scheduleHideWorkspace()
+      );
+    }
+  },
+
+  bindCard(card, onEnter, onLeave) {
+    if (!card) return null;
+    card.addEventListener("pointerenter", onEnter);
+    card.addEventListener("pointerleave", onLeave);
+    return { enter: onEnter, leave: onLeave };
+  },
+
+  unbindCard(card, listeners) {
+    if (!card || !listeners) return;
+    card.removeEventListener("pointerenter", listeners.enter);
+    card.removeEventListener("pointerleave", listeners.leave);
+  },
+
+  /**
+   * Re-applies an open card after a patch. A pending hide timer means the
+   * pointer already left, so that card stays hidden; a hovered row that the
+   * patch removed has nothing left to describe.
+   */
+  restore() {
+    if (this.row && !this.hideTimer) {
+      const row = this.findConversationRow(this.conversationId);
+      if (row) this.show(row);
+      else this.hide();
+    }
+    if (this.workspaceRow && !this.workspaceHideTimer) {
+      const group = this.findWorkspaceGroup(this.workspaceId);
+      if (group) this.showWorkspace(group);
+      else this.hideWorkspace();
+    }
+  },
+
+  findConversationRow(conversationId) {
+    if (!conversationId) return null;
+    return (
+      Array.from(this.el.querySelectorAll("[data-conversation-id]")).find(
+        (row) => row.dataset.conversationId === conversationId
+      ) || null
+    );
+  },
+
+  findWorkspaceGroup(workspaceId) {
+    if (!workspaceId) return null;
+    return (
+      Array.from(this.el.querySelectorAll(".workspace-group[data-workspace-id]")).find(
+        (group) => group.dataset.workspaceId === workspaceId
+      ) || null
+    );
+  },
+
   show(row) {
     if (!this.card) return;
     if (row.closest(".archived")) return this.hide();
     this.clearHide();
     this.row = row;
+    this.conversationId = row.dataset.conversationId || null;
 
     const title = this.card.querySelector("[data-hover-title]");
     const age = this.card.querySelector("[data-hover-age]");
@@ -129,6 +233,7 @@ export const ConversationHover = {
     if (!this.workspaceCard) return;
     this.clearHideWorkspace();
     this.workspaceRow = group;
+    this.workspaceId = group.dataset.workspaceId || "";
     const name = this.workspaceCard.querySelector("[data-workspace-hover-name]");
     const path = this.workspaceCard.querySelector("[data-workspace-hover-path]");
     const repo = this.workspaceCard.querySelector("[data-workspace-hover-repo]");
@@ -139,7 +244,6 @@ export const ConversationHover = {
     const repository = group.dataset.workspaceRepo || "";
     if (repoName) repoName.textContent = repository;
     if (repo) repo.hidden = repository === "";
-    this.workspaceId = group.dataset.workspaceId || "";
     if (rename) rename.dataset.workspaceId = this.workspaceId;
     const remove = this.workspaceCard.querySelector("[data-workspace-hover-remove]");
     if (remove) remove.hidden = group.dataset.workspaceDefault === "true";
@@ -207,6 +311,7 @@ export const ConversationHover = {
 
   hide() {
     this.row = null;
+    this.conversationId = null;
     if (!this.card) return;
     this.card.classList.remove("is-open");
     this.card.hidden = true;
