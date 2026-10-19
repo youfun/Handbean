@@ -4,6 +4,7 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
   use HandbeanWeb, :html
 
   alias HandbeanWeb.Components.ModelPicker
+  alias Handbean.Utils.SafeMap
   alias HandbeanWeb.FileChangeCard
 
   import HandbeanWeb.WorkspaceLive.ViewComponents
@@ -191,6 +192,10 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
     """
   end
 
+  defp file_move_plan_id(entry) do
+    entry |> SafeMap.get("details") |> SafeMap.get("file_move_plan_id")
+  end
+
   defp report_availability_label(:available), do: gettext("Report available")
   defp report_availability_label(:failed), do: gettext("Report failed")
   defp report_availability_label(_), do: gettext("Report unavailable")
@@ -205,6 +210,7 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
   attr :current_conversation_id, :any, required: true
   attr :current_workspace_id, :any, required: true
   attr :file_browser_path, :any, required: true
+  attr :file_move_plan_revision, :integer, default: 0
   attr :history_before, :any, required: true
   attr :history_has_more?, :any, required: true
   attr :input_value, :any, required: true
@@ -758,6 +764,21 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
                 <% install_prompt =
                   if(render_tool_details?, do: browser_install_prompt(entry), else: nil) %>
                 <% preview_card = if(render_tool_details?, do: preview_card(entry), else: nil) %>
+                <% move_plan_id = file_move_plan_id(entry) %>
+                <.live_component
+                  :if={is_binary(move_plan_id) && move_plan_id != ""}
+                  module={HandbeanWeb.FileMovePlanComponent}
+                  id={"file-move-plan-#{entry["id"]}"}
+                  plan_id={move_plan_id}
+                  context={
+                    %{
+                      conversation_id: @current_conversation_id,
+                      workspace_id: @current_workspace_id,
+                      working_directory: @workspace_root
+                    }
+                  }
+                  revision={@file_move_plan_revision}
+                />
                 <% browser_takeover =
                   if(render_tool_details?, do: browser_takeover_prompt(entry), else: nil) %>
                 <div
@@ -1318,4 +1339,6 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
       ModelPicker.option(model.id, model.display_name || model.id)
     end)
   end
+
+  defp file_move_plan_id(entry), do: HandbeanWeb.WorkspaceHelper.file_move_plan_id(entry)
 end

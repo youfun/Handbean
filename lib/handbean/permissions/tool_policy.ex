@@ -319,6 +319,20 @@ defmodule Handbean.Permissions.ToolPolicy do
         args = Handbean.Utils.SafeMap.get_any(input, "args", :args) || []
         BrowserPolicy.sensitive_local_path?(args, root)
 
+      "file_move_plan" ->
+        entries = input_value(input, "entries") || []
+
+        is_list(entries) and
+          Enum.any?(entries, fn entry ->
+            is_map(entry) and
+              Enum.any?(["source", "target"], fn key ->
+                case input_value(entry, key) do
+                  path when is_binary(path) and path != "" -> sensitive_path?(path, root)
+                  _ -> false
+                end
+              end)
+          end)
+
       _ ->
         false
     end

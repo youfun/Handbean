@@ -362,6 +362,18 @@ defmodule HandbeanWeb.WorkspaceHelper do
 
   def preview_card(_), do: nil
 
+  @doc "Plan id from a file_move_plan tool card, if present."
+  def file_move_plan_id(entry) when is_map(entry) do
+    details = Handbean.Utils.SafeMap.get_any(entry, "details", :details) || %{}
+
+    case Handbean.Utils.SafeMap.get_any(details, "file_move_plan_id", :file_move_plan_id) do
+      id when is_binary(id) and id != "" -> id
+      _ -> nil
+    end
+  end
+
+  def file_move_plan_id(_), do: nil
+
   @doc "Explicit takeover prompt from a browser tool result. Never auto-covers chat."
   def browser_takeover_prompt(entry) when is_map(entry) do
     details = Handbean.Utils.SafeMap.get_any(entry, "details", :details) || %{}

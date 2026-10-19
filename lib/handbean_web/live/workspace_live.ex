@@ -179,9 +179,11 @@ defmodule HandbeanWeb.WorkspaceLive do
       |> assign(:ext_status_text, nil)
       |> assign(:ext_notification, nil)
       |> assign(:ext_widget_data, nil)
+      |> assign(:file_move_plan_revision, 0)
       |> WorkspaceNavigation.load_permission_mode_into_socket()
       |> subscribe_to_conversation_updates()
       |> subscribe_schedules()
+      |> subscribe_file_move_plans()
       |> RuntimeProjection.subscribe_session()
       |> RuntimeProjection.subscribe_tasks()
       |> restore_session()
@@ -1880,6 +1882,29 @@ defmodule HandbeanWeb.WorkspaceLive do
     {:noreply, assign(socket, :ext_widget_data, %{event: event, data: data})}
   end
 
+  def handle_info({:file_move_plan_confirmed, id}, socket) do
+    context = file_move_plan_context(socket)
+
+    case Handbean.FileMovePlans.get(context, id) do
+      {:ok, %{status: "confirmed"}} ->
+        MessageSubmission.send_schedule_request(
+          socket,
+          "请调用 file_move_plan，action=execute，id=#{id}，执行我在文件整理卡片中确认的选项。"
+        )
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_info({:file_move_plan_changed, conversation_id}, socket) do
+    if socket.assigns.current_conversation_id == conversation_id do
+      {:noreply, refresh_file_move_plan_cards(socket)}
+    else
+      {:noreply, socket}
+    end
+  end
+
   def handle_info({:schedule_changed, _conv_id}, socket) do
     {:noreply, Schedules.reload(socket)}
   end
@@ -2137,6 +2162,35 @@ defmodule HandbeanWeb.WorkspaceLive do
     end
 
     socket
+  end
+
+  defp subscribe_file_move_plans(socket) do
+    if connected?(socket) do
+      Phoenix.PubSub.subscribe(Handbean.PubSub, "runtime:file_move_plans")
+    end
+
+    socket
+  end
+
+  defp file_move_plan_context(socket) do
+    %{
+      conversation_id: socket.assigns.current_conversation_id,
+      workspace_id: socket.assigns.current_workspace_id,
+      working_directory: socket.assigns.workspace_root
+    }
+  end
+
+  defp refresh_file_move_plan_cards(socket) do
+    revision = Map.get(socket.assigns, :file_move_plan_revision, 0) + 1
+
+    Enum.reduce(socket.assigns.timeline, assign(socket, :file_move_plan_revision, revision), fn
+      entry, acc ->
+        if HandbeanWeb.WorkspaceHelper.file_move_plan_id(entry) do
+          stream_insert(acc, :timeline, entry)
+        else
+          acc
+        end
+    end)
   end
 
   defp subscribe_workspace_import(socket) do
