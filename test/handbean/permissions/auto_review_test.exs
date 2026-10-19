@@ -407,6 +407,50 @@ defmodule Handbean.Permissions.AutoReviewTest do
     assert block.content =~ AutoReview.no_workaround()
   end
 
+  test "review prompt tells the reviewer when the host has no OS sandbox" do
+    prompt = AutoReview.build_prompt([], [], File.cwd!())
+
+    if Handbean.Platform.ProcessSandbox.os_enforced?() do
+      refute prompt =~ "Host sandbox: none"
+    else
+      assert prompt =~ "Host sandbox: none"
+      assert prompt =~ "Do not deny solely"
+      assert AutoReview.policy_text() =~ "Do not deny solely because that host cannot confine bash"
+    end
+  end
+
+  unless Handbean.Platform.ProcessSandbox.os_enforced?() do
+    test "checkout-local bash can be approved once by auto-review without unsandboxed=true" do
+      settings = %{
+        "tools" => %{
+          "default_mode" => "auto",
+          "approvals_reviewer" => "auto_review"
+        }
+      }
+
+      call = %{
+        type: "tool_use",
+        id: "w1",
+        name: "bash",
+        input: %{"command" => "ls"}
+      }
+
+      parent = self()
+
+      Process.put(AutoReview.transport_key(), fn request ->
+        send(parent, {:prompt, request.prompt})
+        {:ok, ~s({"decision":"approve","rationale":"checkout-local listing"})}
+      end)
+
+      assert %Handbean.Agent.State{status: status} =
+               ToolGuard.call(:after_tool_request, guard_state(settings, [call]))
+
+      refute status == :interrupted
+      assert_received {:prompt, prompt}
+      assert prompt =~ "Host sandbox: none"
+    end
+  end
+
   test "sensitive credential paths are denied and not sent to auto-review" do
     settings = %{
       "tools" => %{
@@ -551,8 +595,13 @@ defmodule Handbean.Permissions.AutoReviewTest do
         %{type: "tool_use", id: "b1", name: "bash", input: %{"command" => "mix test"}}
       ])
 
-    assert ToolGuard.call(:after_tool_request, state) == state
-    refute_received :reviewed
+    if Handbean.Platform.ProcessSandbox.os_enforced?() do
+      assert ToolGuard.call(:after_tool_request, state) == state
+      refute_received :reviewed
+    else
+      assert {:tool_guard_denied, _guarded} = ToolGuard.call(:after_tool_request, state)
+      assert_received :reviewed
+    end
   end
 
   test "default_mode deny does not call review" do

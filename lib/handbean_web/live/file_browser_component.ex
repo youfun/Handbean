@@ -49,6 +49,7 @@ defmodule HandbeanWeb.FileBrowserComponent do
           class="relative bg-surface border rounded-xl shadow-2xl max-w-2xl w-full mx-4 flex flex-col"
           style="max-height: 80vh;"
           phx-click="stop_propagation"
+          phx-target={@myself}
         >
           <!-- Header -->
           <div class="border-b p-4">

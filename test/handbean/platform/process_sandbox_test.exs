@@ -110,6 +110,13 @@ defmodule Handbean.Platform.ProcessSandboxTest do
     end
   end
 
+  describe "os_enforced?/0" do
+    test "is true only on Linux and macOS" do
+      expected = match?({:unix, os} when os in [:linux, :darwin], :os.type())
+      assert ProcessSandbox.os_enforced?() == expected
+    end
+  end
+
   describe "wrap/4 fail-closed" do
     test "missing sandbox executable is an error, not an unconfined shell", %{
       workspace: workspace

@@ -349,5 +349,64 @@ defmodule Handbean.Security.PathValidator.Test do
       assert PathValidator.reject_sensitive_command("ls #{sub}", @sandbox_dir) == :ok
       assert PathValidator.reject_sensitive_command("ls subdir", @sandbox_dir) == :ok
     end
+
+    test "does not raise on non-path tokens that Windows Path.expand/2 rejects" do
+      win_cwd = "f:/Fcode/saletool-webui"
+
+      assert PathValidator.reject_sensitive_command("echo [:0]", @sandbox_dir) == :ok
+      assert PathValidator.reject_sensitive_command("echo [:0]", win_cwd) == :ok
+      assert PathValidator.reject_sensitive_command("echo ./[:0]", @sandbox_dir) == :ok
+      assert PathValidator.reject_sensitive_command("echo ./[:0]", win_cwd) == :ok
+      assert PathValidator.reject_sensitive_command("echo /[:0]", @sandbox_dir) == :ok
+      assert PathValidator.reject_sensitive_command("echo /[:0]", win_cwd) == :ok
+
+      assert PathValidator.reject_sensitive_command(
+               "python -c \"print(s[:0])\"",
+               win_cwd
+             ) == :ok
+    end
+
+    test "volume-relative tokens follow the cwd drive on Windows" do
+      if match?({:win32, _}, :os.type()) do
+        key_root =
+          Path.join(System.tmp_dir!(), "sigil_sec_volrel_#{System.unique_integer([:positive])}")
+
+        File.mkdir_p!(key_root)
+        key = Path.join(key_root, "id_rsa")
+        File.write!(key, "SECRET_KEY_DO_NOT_LEAK")
+        on_exit(fn -> File.rm_rf!(key_root) end)
+
+        link = Path.join(@sandbox_dir, "innocent")
+
+        case File.ln_s(key, link) do
+          :ok ->
+            volrel =
+              link
+              |> Path.expand()
+              |> String.replace(~r/^[a-zA-Z]:/, "")
+
+            assert Path.type(volrel) == :volumerelative
+
+            assert PathValidator.reject_sensitive_command("cat #{volrel}", @sandbox_dir) ==
+                     {:error, "sensitive path blocked"}
+
+          {:error, reason} when reason in [:eperm, :eacces, :enotsup] ->
+            # This host cannot create symlinks, so the sensitive-target assertion
+            # is unverified here. Still require volume-relative expand not to raise.
+            volrel =
+              @sandbox_dir
+              |> Path.expand()
+              |> String.replace(~r/^[a-zA-Z]:/, "")
+
+            assert Path.type(volrel) == :volumerelative
+            assert PathValidator.reject_sensitive_command("ls #{volrel}", @sandbox_dir) == :ok
+
+          {:error, reason} ->
+            flunk("unexpected symlink failure: #{inspect(reason)}")
+        end
+      else
+        assert Path.type("/usr") == :absolute
+      end
+    end
   end
 end

@@ -26,11 +26,8 @@ defmodule Handbean.Tool.Builtin.Bash do
       "(ls, cat, grep, find, rm, ./scripts/test.sh) even on Windows — " <>
       "this tool always runs in a bash environment. " <>
       "Supports timeout control and working directory override. " <>
-      "Runs inside an OS sandbox (Linux Bubblewrap, macOS Seatbelt): the host filesystem " <>
-      "is readable, writes are allowed only in the workspace and $TMPDIR, network is not " <>
-      "restricted. Writes elsewhere fail with 'Operation not permitted' or 'Read-only file " <>
-      "system'. Only after such a sandbox denial, retry with unsandboxed=true; that asks " <>
-      "for approval unless the run is in yolo mode. Commands that name sensitive credential paths are " <>
+      sandbox_description() <>
+      "Commands that name sensitive credential paths are " <>
       "rejected before execution; unsandboxed=true does not bypass that, and the " <>
       "precheck is not a complete shell parser. " <>
       "Set job=true for a run-scoped job (Linux and macOS). Query job_status until finished before " <>
@@ -40,9 +37,15 @@ defmodule Handbean.Tool.Builtin.Bash do
 
   @impl true
   def hint do
-    "Read the command's stderr before retrying. Change the command, or its timeout and " <>
-      "working_directory, from that error. Retry with unsandboxed=true only after a sandbox " <>
-      "write denial; that asks the user for approval and does not bypass credential-path checks."
+    if Handbean.Platform.ProcessSandbox.os_enforced?() do
+      "Read the command's stderr before retrying. Change the command, or its timeout and " <>
+        "working_directory, from that error. Retry with unsandboxed=true only after a sandbox " <>
+        "write denial; that asks the user for approval and does not bypass credential-path checks."
+    else
+      "This platform has no OS sandbox. Do not retry the same command; that is not a write denial. " <>
+        "Bash already uses the unsandboxed approval gate here (yolo auto-approves). " <>
+        "job=true is not available. Credential-path checks still apply."
+    end
   end
 
   @impl true
@@ -75,9 +78,15 @@ defmodule Handbean.Tool.Builtin.Bash do
           type: "boolean",
           default: false,
           description:
-            "Run outside the OS sandbox. Use only after the sandbox denied a needed write; " <>
-              "requires approval unless the run is in yolo mode. Does not permit sensitive credential paths. " <>
-              "Not available for job=true."
+            if Handbean.Platform.ProcessSandbox.os_enforced?() do
+              "Run outside the OS sandbox. Use only after the sandbox denied a needed write; " <>
+                "requires approval unless the run is in yolo mode. Does not permit sensitive credential paths. " <>
+                "Not available for job=true."
+            else
+              "This platform has no OS sandbox; bash already uses the unsandboxed approval gate. " <>
+                "You can omit this flag. Requires approval unless the run is in yolo mode. " <>
+                "Does not permit sensitive credential paths. Not available for job=true."
+            end
         }
       },
       required: ["command"]
@@ -103,7 +112,8 @@ defmodule Handbean.Tool.Builtin.Bash do
 
       unsandboxed? =
         Map.get(input, "unsandboxed") == true or
-          (Handbean.Agent.Tool.outside_workspace_allowed?(context) and external_cwd?)
+          (Handbean.Agent.Tool.outside_workspace_allowed?(context) and external_cwd?) or
+          not Handbean.Platform.ProcessSandbox.os_enforced?()
 
       cond do
         unsandboxed? and Map.get(input, "job", false) == true ->
@@ -263,6 +273,20 @@ defmodule Handbean.Tool.Builtin.Bash do
 
       {:error, reason} ->
         {:error, reason}
+    end
+  end
+
+  defp sandbox_description do
+    if Handbean.Platform.ProcessSandbox.os_enforced?() do
+      "Runs inside an OS sandbox (Linux Bubblewrap, macOS Seatbelt): the host filesystem " <>
+        "is readable, writes are allowed only in the workspace and $TMPDIR, network is not " <>
+        "restricted. Writes elsewhere fail with 'Operation not permitted' or 'Read-only file " <>
+        "system'. Only after such a sandbox denial, retry with unsandboxed=true; that asks " <>
+        "for approval unless the run is in yolo mode. "
+    else
+      "This platform has no OS sandbox. Bash is not workspace-confined; every command uses " <>
+        "the unsandboxed approval gate (yolo auto-approves). Do not retry after a sandbox " <>
+        "write denial — there is none. You can omit unsandboxed=true. "
     end
   end
 

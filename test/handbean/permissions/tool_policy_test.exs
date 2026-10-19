@@ -2,8 +2,13 @@ defmodule Handbean.Permissions.ToolPolicyTest do
   use ExUnit.Case, async: true
 
   alias Handbean.Permissions.ToolPolicy
+  alias Handbean.Platform.ProcessSandbox
 
   defp call(name, input \\ %{}), do: %{id: "call_#{name}", name: name, input: input}
+
+  defp bash_without_flag_mode do
+    if ProcessSandbox.os_enforced?(), do: :auto, else: :prompt
+  end
 
   @tag :tmp_dir
   test "unreadable or malformed settings deny execution even with prior session grants", %{
@@ -95,7 +100,8 @@ defmodule Handbean.Permissions.ToolPolicyTest do
           ["bash(mix test*)"]
         )
 
-      assert ToolPolicy.decision(policy, call("bash", %{"command" => "mix test"})) == :auto
+      assert ToolPolicy.decision(policy, call("bash", %{"command" => "mix test"})) ==
+               bash_without_flag_mode()
       assert ToolPolicy.decision(policy, call("bash", %{"command" => "rm -rf tmp"})) == :prompt
       assert ToolPolicy.decision(policy, unsandboxed("mix test")) == :prompt
     end
@@ -113,12 +119,51 @@ defmodule Handbean.Permissions.ToolPolicyTest do
       assert ToolPolicy.decision(policy, unsandboxed()) == :prompt
     end
 
-    test "only the boolean true escalates" do
+    test "only the boolean true escalates when an OS sandbox exists" do
       policy = ToolPolicy.from_settings(%{})
+      expected = bash_without_flag_mode()
 
       for value <- ["true", 1, false, nil] do
         input = %{"command" => "ls", "unsandboxed" => value}
-        assert ToolPolicy.decision(policy, call("bash", input)) == :auto
+        assert ToolPolicy.decision(policy, call("bash", input)) == expected
+      end
+    end
+
+    test "per_tool deny still wins over yolo and auto" do
+      for mode <- ["auto", "yolo"] do
+        policy =
+          ToolPolicy.from_settings(%{
+            "tools" => %{"default_mode" => mode, "per_tool" => %{"bash" => "deny"}}
+          })
+
+        assert ToolPolicy.decision(policy, unsandboxed()) == :deny
+        assert ToolPolicy.decision(policy, call("bash", %{"command" => "ls"})) == :deny
+      end
+    end
+  end
+
+  describe "bash without an OS sandbox" do
+    unless ProcessSandbox.os_enforced?() do
+      test "prompts in full-access workspaces and auto-approves in yolo" do
+        auto = ToolPolicy.from_settings(%{"tools" => %{"default_mode" => "auto"}})
+        assert ToolPolicy.decision(auto, call("bash", %{"command" => "ls"})) == :prompt
+
+        yolo = ToolPolicy.from_settings(%{"tools" => %{"default_mode" => "yolo"}})
+        assert ToolPolicy.decision(yolo, call("bash", %{"command" => "ls"})) == :auto
+      end
+
+      test "deny still wins and sandboxed grants do not skip the prompt" do
+        denied = ToolPolicy.from_settings(%{"tools" => %{"default_mode" => "deny"}})
+        assert ToolPolicy.decision(denied, call("bash", %{"command" => "ls"})) == :deny
+
+        granted =
+          ToolPolicy.from_settings(
+            %{"tools" => %{"allow" => ["bash"], "per_tool" => %{"bash" => "auto"}}},
+            %{"bash" => :auto},
+            ["bash"]
+          )
+
+        assert ToolPolicy.decision(granted, call("bash", %{"command" => "ls"})) == :prompt
       end
     end
   end
@@ -154,7 +199,8 @@ defmodule Handbean.Permissions.ToolPolicyTest do
 
   describe "from_settings/2" do
     test "defaults to auto for missing or old settings" do
-      assert ToolPolicy.from_settings(%{}) |> ToolPolicy.decision(call("bash")) == :auto
+      assert ToolPolicy.from_settings(%{}) |> ToolPolicy.decision(call("bash")) ==
+               bash_without_flag_mode()
 
       old_settings = %{"tools" => %{"beam" => %{"auto" => true}, "explicit" => []}}
       assert ToolPolicy.from_settings(old_settings) |> ToolPolicy.decision(call("edit")) == :auto
@@ -173,7 +219,8 @@ defmodule Handbean.Permissions.ToolPolicyTest do
       policy = ToolPolicy.from_settings(settings)
 
       assert ToolPolicy.decision(policy, call("bash", %{"command" => "rm -rf tmp"})) == :deny
-      assert ToolPolicy.decision(policy, call("bash", %{"command" => "git status"})) == :auto
+      assert ToolPolicy.decision(policy, call("bash", %{"command" => "git status"})) ==
+               bash_without_flag_mode()
       assert ToolPolicy.decision(policy, call("write")) == :deny
       assert ToolPolicy.decision(policy, call("read")) == :prompt
       assert ToolPolicy.decision(policy, call("mem_recall")) == :auto
@@ -498,7 +545,8 @@ defmodule Handbean.Permissions.ToolPolicyTest do
                call("bash", %{"command" => "npx agent-browser snapshot -i"})
              ) == :deny
 
-      assert ToolPolicy.decision(policy, call("bash", %{"command" => "ls"})) == :auto
+      assert ToolPolicy.decision(policy, call("bash", %{"command" => "ls"})) ==
+               bash_without_flag_mode()
     end
   end
 
@@ -572,7 +620,8 @@ defmodule Handbean.Permissions.ToolPolicyTest do
       end
 
       assert ToolPolicy.decision(policy, call("read", %{"file_path" => "lib/app.ex"})) == :auto
-      assert ToolPolicy.decision(policy, call("bash", %{"command" => "ls lib"})) == :auto
+      assert ToolPolicy.decision(policy, call("bash", %{"command" => "ls lib"})) ==
+               bash_without_flag_mode()
     end
 
     test "browser file input and output paths cannot access credentials" do

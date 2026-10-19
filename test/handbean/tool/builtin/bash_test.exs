@@ -214,13 +214,22 @@ defmodule Handbean.Tool.Builtin.BashTest do
     end
 
     test "rejects cwd outside the workspace" do
-      {:error, reason} =
-        Bash.execute(
-          %{"command" => "ls", "cwd" => "/etc"},
-          %{working_directory: File.cwd!()}
-        )
+      outside =
+        Path.join(System.tmp_dir!(), "bash-cwd-outside-#{System.unique_integer([:positive])}")
 
-      assert reason =~ "Path traversal" or reason =~ "outside workspace"
+      File.mkdir_p!(outside)
+
+      try do
+        {:error, reason} =
+          Bash.execute(
+            %{"command" => "ls", "cwd" => outside},
+            %{working_directory: File.cwd!()}
+          )
+
+        assert reason =~ "Path traversal" or reason =~ "outside workspace"
+      after
+        File.rm_rf(outside)
+      end
     end
 
     test "rejects relative cwd traversal outside workspace" do
@@ -246,8 +255,14 @@ defmodule Handbean.Tool.Builtin.BashTest do
                  %{working_directory: File.cwd!(), approval_mode: :yolo}
                )
 
-      # macOS resolves /var to /private/var; normalize both sides before comparing.
-      normalize = &String.replace(&1, ~r{^/private}, "")
+      # macOS resolves /var to /private/var; Git Bash pwd uses POSIX /tmp.
+      normalize = fn path ->
+        path
+        |> String.replace(~r{^/private}, "")
+        |> String.replace("\\", "/")
+        |> Path.basename()
+      end
+
       assert normalize.(String.trim(output)) == normalize.(outside)
     end
 
@@ -527,6 +542,37 @@ defmodule Handbean.Tool.Builtin.BashTest do
         assert data.exit_code == 0
       after
         File.rm_rf(tmp_dir)
+      end
+    end
+  end
+
+  describe "native hosts without an OS sandbox" do
+    unless Handbean.Platform.ProcessSandbox.os_enforced?() do
+      test "runs a workspace command without unsandboxed=true" do
+        {:ok, output, data} =
+          Bash.execute(
+            %{"command" => "echo hello"},
+            %{working_directory: File.cwd!()}
+          )
+
+        assert output =~ "hello"
+        assert data.exit_code == 0
+      end
+
+      test "rejects job=true because there is no sandboxed job backend" do
+        assert {:error, reason} =
+                 Bash.execute(
+                   %{"command" => "echo hello", "job" => true},
+                   %{working_directory: File.cwd!()}
+                 )
+
+        assert reason =~ "unsandboxed is not available for job=true"
+      end
+
+      test "does not tell the model to retry after a sandbox write denial" do
+        assert Bash.description() =~ "no OS sandbox"
+        assert Bash.hint() =~ "no OS sandbox"
+        refute Bash.hint() =~ "Retry with unsandboxed=true only after a sandbox"
       end
     end
   end

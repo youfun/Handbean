@@ -86,7 +86,7 @@ defmodule Handbean.Permissions.AutoReview do
 
     This batch is out of bounds. These calls were not auto-approved. Review only this batch.
     Current checkout: #{workspace_path || "(none)"}
-
+    #{host_sandbox_note()}
     Recent visible conversation (hidden reasoning omitted):
     #{visible_excerpt(messages)}
 
@@ -543,6 +543,16 @@ defmodule Handbean.Permissions.AutoReview do
   end
 
   defp hidden_type?(_type), do: false
+
+  defp host_sandbox_note do
+    if Handbean.Platform.ProcessSandbox.os_enforced?() do
+      ""
+    else
+      """
+      Host sandbox: none. This OS cannot confine bash. Checkout-local bash uses the unsandboxed approval gate because there is no Bubblewrap/Seatbelt, not because the command opted out of an existing sandbox. Do not deny solely for that. Still deny credentials, irreversible destruction, and persisting allow rules.
+      """
+    end
+  end
 
   defp format_requests(requests) do
     Enum.map_join(requests, "\n", fn request ->

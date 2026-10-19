@@ -113,8 +113,17 @@ defmodule Handbean.Permissions.ToolPolicy do
       name == "schedule" ->
         schedule_decision(policy, call)
 
+      # Capability deny: wrapping agent-browser stays denied even when bash
+      # leaves the OS sandbox. YOLO skips this deny below.
+      bash_browser_mode = bash_browser_decision(policy, name, call) ->
+        bash_browser_mode
+
+      Map.get(policy.per_tool, name) == :deny ->
+        :deny
+
       # Allow rules and session grants were given for sandboxed execution.
       # Leaving the OS sandbox is a fresh decision, except in yolo.
+      # Native Windows has no OS sandbox, so every bash call uses this gate.
       unsandboxed_bash?(name, call) ->
         escalate(policy)
 
@@ -269,7 +278,9 @@ defmodule Handbean.Permissions.ToolPolicy do
 
   defp unsandboxed_bash?("bash", call) do
     input = Handbean.Utils.SafeMap.get_any(call, :input, "input") || %{}
-    Map.get(input, "unsandboxed") == true or Map.get(input, :unsandboxed) == true
+
+    Map.get(input, "unsandboxed") == true or Map.get(input, :unsandboxed) == true or
+      not Handbean.Platform.ProcessSandbox.os_enforced?()
   end
 
   defp unsandboxed_bash?(_name, _call), do: false

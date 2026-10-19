@@ -35,6 +35,24 @@ defmodule HandbeanWeb.FileBrowserComponentTest do
     assert html =~ "apps"
   end
 
+  test "clicking the dialog does not close the browser" do
+    root = unique_dir()
+    File.mkdir_p!(Path.join(root, "src"))
+
+    {:ok, view, _html} =
+      live_isolated(build_conn(), HandbeanWeb.FileBrowserHarness,
+        session: %{"path" => root, "show" => true}
+      )
+
+    assert has_element?(view, "#file-browser-dialog")
+
+    view
+    |> element("#file-browser-dialog")
+    |> render_click()
+
+    assert has_element?(view, "#file-browser-dialog")
+  end
+
   defp unique_dir do
     path = Path.join(System.tmp_dir!(), "handbean-browser-#{System.unique_integer([:positive])}")
     File.mkdir_p!(path)

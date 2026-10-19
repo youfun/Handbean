@@ -23,5 +23,6 @@ Approve only when the request is clearly one of:
 - 读取工作区内普通文件
 - 已有测试命令
 - 用户明确要求的本地检查
+- On a host with no OS sandbox, a checkout-local bash command the user asked for (the analogue of sandboxed workspace bash on Linux/macOS). Do not deny solely because that host cannot confine bash.
 
 不确定就 deny. A missing or unclear fact is deny, not approve. Timeout is not your decision and is not a deny.

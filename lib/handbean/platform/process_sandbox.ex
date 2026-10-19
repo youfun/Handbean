@@ -27,6 +27,17 @@ defmodule Handbean.Platform.ProcessSandbox do
           process_group?: boolean()
         }
 
+  @doc """
+  True when this OS can confine workspace bash with Bubblewrap or Seatbelt.
+
+  Native Windows has no such backend. Callers must not pass `workspace_path`
+  there; the bash tool routes through the unsandboxed approval gate instead.
+  """
+  @spec os_enforced?() :: boolean()
+  def os_enforced? do
+    match?({:unix, os} when os in [:linux, :darwin], :os.type())
+  end
+
   @spec wrap(map(), String.t(), Path.t() | nil, keyword()) ::
           {:ok, command()} | {:error, String.t()}
   def wrap(shell, command, cwd, opts) do
@@ -191,7 +202,9 @@ defmodule Handbean.Platform.ProcessSandbox do
 
   defp unsupported,
     do:
-      "Workspace-confined bash is not supported on this platform; refusing to run without an OS sandbox"
+      "Workspace-confined bash is not supported on this platform; refusing to run without an OS sandbox. " <>
+        "On this host, bash runs only through the unsandboxed approval gate (yolo auto-approves). " <>
+        "job=true is not available."
 
   defp validate_executable(path) do
     expanded = Path.expand(path)

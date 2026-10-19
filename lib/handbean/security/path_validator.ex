@@ -296,30 +296,55 @@ defmodule Handbean.Security.PathValidator do
   end
 
   defp existing_relative?(token, cwd) do
-    base = cwd_base(cwd)
-    expanded = expand_home(token)
-
-    path =
-      if Path.type(expanded) == :absolute do
-        Path.expand(expanded)
-      else
-        Path.expand(expanded, base)
-      end
-
-    File.exists?(path)
+    case token_absname(token, cwd) do
+      {:ok, path} -> File.exists?(path)
+      :error -> false
+    end
   end
 
   defp check_token_path(token, cwd) do
+    case token_absname(token, cwd) do
+      {:ok, path} -> reject_resolved(path)
+      :error -> :ok
+    end
+  end
+
+  # Command tokens are not always paths. Elixir 1.20 `Path.type/1` on Windows
+  # treats any `X:...` as `:volumerelative` (letter is unguarded), so `[:0]`
+  # looks expandable. `Path.expand/2` then raises `FunctionClauseError`.
+  # `expandable_token?/1` skips that case; `/[:0]` still matches a leading slash,
+  # so `expand_or_join/2` also rescues that one clause and joins onto cwd.
+  defp token_absname(token, cwd) do
     expanded = expand_home(token)
+    base = cwd_base(cwd)
 
-    absolute =
-      if Path.type(expanded) == :absolute do
-        Path.expand(expanded)
-      else
-        Path.expand(expanded, cwd_base(cwd))
-      end
+    cond do
+      not is_binary(expanded) or expanded == "" ->
+        :error
 
-    reject_resolved(absolute)
+      not is_binary(base) or base == "" ->
+        :error
+
+      expandable_token?(expanded) ->
+        expand_or_join(expanded, base)
+
+      true ->
+        {:ok, Path.join(base, expanded)}
+    end
+  end
+
+  defp expandable_token?(<<drive, ?:, _::binary>>)
+       when drive in ?A..?Z or drive in ?a..?z,
+       do: true
+
+  defp expandable_token?(<<sep, _::binary>>) when sep in [?/, ?\\], do: true
+  defp expandable_token?(_path), do: false
+
+  defp expand_or_join(path, base) do
+    {:ok, Path.expand(path, base)}
+  rescue
+    FunctionClauseError ->
+      {:ok, Path.join(base, path)}
   end
 
   defp cwd_base(cwd) when is_binary(cwd) and cwd != "", do: expand_home(cwd)
