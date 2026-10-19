@@ -38,7 +38,18 @@ try {
     Invoke-Native "mix local.rebar" { mix local.rebar --force }
     Invoke-Native "mix deps.get" { mix deps.get }
     Invoke-Native "npm ci" { npm ci }
+
+    # Release builds must not trust a restored _build tree. On Windows a cache
+    # archive can retain dependency ebin files while dropping priv links, so Mix
+    # skips recompilation and compile-time asset reads fail. Build from a clean,
+    # target-owned path while keeping downloaded dependency sources cached.
+    $mixBuildPath = Join-Path $root "_build\webui-pack\$Target\mix-build"
+    if (Test-Path -LiteralPath $mixBuildPath) {
+        Remove-Item -LiteralPath $mixBuildPath -Recurse -Force
+    }
+    $env:MIX_BUILD_PATH = $mixBuildPath
     $env:MIX_ENV = "prod"
+
     Invoke-Native "mix compile" { mix compile }
     Invoke-Native "mix esbuild.install" { mix esbuild.install --if-missing }
     Invoke-Native "mix assets.deploy" { mix assets.deploy }
