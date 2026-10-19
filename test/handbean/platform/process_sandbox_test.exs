@@ -35,7 +35,10 @@ defmodule Handbean.Platform.ProcessSandboxTest do
       Path.join(System.tmp_dir!(), "sbx-test-#{System.unique_integer([:positive])}")
       |> Path.expand()
 
-    workspace = Path.join(root, "ws (it's \"odd\")")
+    workspace_name =
+      if match?({:win32, _}, :os.type()), do: "ws (odd path)", else: "ws (it's \"odd\")"
+
+    workspace = Path.join(root, workspace_name)
     File.mkdir_p!(workspace)
     on_exit(fn -> File.rm_rf!(root) end)
     %{root: root, workspace: workspace}
@@ -92,13 +95,23 @@ defmodule Handbean.Platform.ProcessSandboxTest do
       link = Path.join(root, "link")
       file = Path.join(root, "file")
       File.mkdir_p!(real)
-      File.ln_s!(real, link)
       File.write!(file, "x")
+
+      paths =
+        case File.ln_s(real, link) do
+          :ok ->
+            [link, file, Path.join(root, "missing"), real]
+
+          {:error, reason} when reason in [:eperm, :eacces, :enotsup] ->
+            [file, Path.join(root, "missing"), real]
+
+          {:error, reason} ->
+            flunk("unexpected symlink failure: #{inspect(reason)}")
+        end
 
       resolved_real = Handbean.Security.PathValidator.resolve_symlink(real)
 
-      assert ProcessSandbox.writable_paths([link, file, Path.join(root, "missing"), real]) ==
-               [resolved_real]
+      assert ProcessSandbox.writable_paths(paths) == [resolved_real]
     end
 
     test "rejects the filesystem root and the home directory itself" do

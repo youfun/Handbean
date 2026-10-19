@@ -72,9 +72,11 @@ defmodule Handbean.Platform.ProcessSandbox do
     |> Enum.filter(&is_binary/1)
     |> Enum.map(&PathValidator.resolve_symlink(Path.expand(&1)))
     |> Enum.filter(&File.dir?/1)
-    |> Enum.reject(&(&1 in ["/", home]))
+    |> Enum.reject(&(&1 == home or filesystem_root?(&1)))
     |> Enum.uniq()
   end
+
+  defp filesystem_root?(path), do: Path.dirname(path) == path
 
   @doc """
   Seatbelt profile for `writable_count` extra directories. Paths are never
