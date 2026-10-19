@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import { FilePreview, FileTabs, FileImage } from "../js/hooks/file_preview.js";
+import { disposeMermaidBlocks, renderMermaidBlocks } from "../js/streaming_markdown/mermaid_blocks.js";
 
 const dom = new JSDOM("<!doctype html><body></body>", { url: "https://handbean.test" });
 const { document, MouseEvent, KeyboardEvent } = dom.window;
@@ -284,5 +285,28 @@ assert.equal(newError.hidden, true);
 imageEvent(brokenImage.image, "error");
 assert.equal(newError.hidden, true);
 for (const hook of [cachedImage.hook, brokenImage.hook]) hook.destroyed();
+
+const diagram = preview("```mermaid\ngraph TD\n  A-->B\n```\n");
+assert.ok(diagram.rendered.querySelector("[data-mermaid-preview]"));
+assert.match(diagram.rendered.querySelector("code.language-mermaid")?.textContent ?? "", /A-->B/);
+const oldRendered = diagram.rendered;
+const mermaidTarget = document.createElement("div");
+mermaidTarget.dataset.previewTarget = "rendered";
+oldRendered.replaceWith(mermaidTarget);
+diagram.hook.updated();
+let created = 0;
+renderMermaidBlocks(oldRendered, {
+  width: 640,
+  decodeImage: false,
+  createWorker: () => {
+    created += 1;
+    return { postMessage() {}, terminate() {} };
+  },
+  readPalette: () => ({ "--pele-bg": "#ffffff" })
+});
+assert.equal(created, 1, "replaced preview target must release the previous diagram");
+disposeMermaidBlocks(oldRendered);
+diagram.hook.destroyed();
+
 dom.window.close();
 console.log("file_preview_test passed");

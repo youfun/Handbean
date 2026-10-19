@@ -20,6 +20,12 @@ import typescript from "highlight.js/lib/languages/typescript";
 import xml from "highlight.js/lib/languages/xml";
 import yaml from "highlight.js/lib/languages/yaml";
 import { createMarkdownIt, renderMarkdown } from "../streaming_markdown/render_markdown.js";
+import {
+  decorateMermaidBlocks,
+  disposeMermaidBlocks,
+  handleMermaidPreviewClick,
+  renderMermaidBlocks
+} from "../streaming_markdown/mermaid_blocks.js";
 
 const languages = {
   bash, c, cpp, css, elixir, go, ini, java, javascript, json, kotlin,
@@ -118,6 +124,7 @@ export const FilePreview = {
     this.previewMode = this.el.dataset.kind === "markdown" ? "rendered" : "source";
     this.previewWrap = false;
     this.previewClick = event => {
+      handleMermaidPreviewClick(event);
       const button = event.target.closest("[data-preview-mode], [data-preview-wrap]");
       if (button && this.el.contains(button)) {
         event.preventDefault();
@@ -152,6 +159,7 @@ export const FilePreview = {
 
   destroyed() {
     this.el.removeEventListener("click", this.previewClick);
+    disposeMermaidBlocks(this.renderedTarget);
   },
 
   renderPreview() {
@@ -163,11 +171,18 @@ export const FilePreview = {
     const key = JSON.stringify([this.el.dataset.digest ?? source, kind, language, this.el.dataset.workspaceId, this.el.dataset.relativePath]);
 
     if (key !== this.previewKey || rendered !== this.renderedTarget || target !== this.sourceTarget) {
+      if (this.renderedTarget && this.renderedTarget !== rendered) {
+        disposeMermaidBlocks(this.renderedTarget);
+      }
       if (kind === "markdown" && rendered) {
         try {
+          disposeMermaidBlocks(rendered);
           rendered.innerHTML = previewMarkdown(source, this.el);
+          decorateMermaidBlocks(rendered);
+          renderMermaidBlocks(rendered);
           this.previewAnchors = headingAnchors(rendered, this.el);
         } catch {
+          disposeMermaidBlocks(rendered);
           rendered.textContent = source;
           this.previewAnchors = new Map();
         }

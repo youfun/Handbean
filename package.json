@@ -11,7 +11,7 @@
     "dompurify": "^3.4.16",
     "highlight.js": "^11.11.1",
     "markdown-it": "^14.3.2",
-    "mermaid": "11.17.2"
+    "pele": "1.6.0"
   },
   "devDependencies": {
     "jsdom": "^30.1.1"

@@ -207,30 +207,43 @@
   opacity: 1;
 }
 
-.code-block-wrapper:has(.mermaid-diagram) .code-block-copy,
-.code-block-wrapper:has(.mermaid-diagram):hover .code-block-copy {
+[data-mermaid-preview] {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+}
+
+[data-mermaid-preview] .code-block-copy {
   opacity: 1;
 }
 
+[data-mermaid-preview] [hidden] {
+  display: none;
+}
+
+[data-mermaid-preview] > pre {
+  max-height: 28rem;
+  overflow: auto;
+}
+
 .mermaid-diagram {
-  overflow-x: auto;
+  overflow: auto;
+  max-height: 28rem;
   padding: var(--spacing-sm);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
   background: var(--color-surface);
 }
 
-.mermaid-diagram svg {
+#ai-messages .msg-bubble.msg-assistant .mermaid-diagram img,
+.workspace-markdown-target .mermaid-diagram img,
+.mermaid-diagram img {
   display: block;
-  max-width: 100%;
+  max-width: none;
+  max-height: none;
+  width: auto;
   height: auto;
-  margin: 0 auto;
-}
-
-.mermaid-error {
-  margin: 0.35rem 0 0;
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-xs);
+  object-fit: none;
+  border-radius: 0;
 }
 
 /* ═══════════════════════════════════════════════════════════════════

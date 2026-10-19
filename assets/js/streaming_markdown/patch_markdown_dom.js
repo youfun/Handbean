@@ -1,3 +1,5 @@
+import { disposeMermaidBlock as mermaidDispose } from "./mermaid_blocks.js";
+
 const ELEMENT_NODE = 1;
 const TEXT_NODE = 3;
 
@@ -18,6 +20,8 @@ function patchChildren(parent, incomingChildren, selection) {
       used.add(match);
       if (match.dataset?.htmlPreview || incoming.dataset?.htmlPreview) {
         nextChildren.push(reuseHtmlPreview(match, incoming) || cloneNode(incoming));
+      } else if (match.dataset?.mermaidPreview || incoming.dataset?.mermaidPreview) {
+        nextChildren.push(reuseMermaidPreview(match, incoming) || cloneNode(incoming));
       } else {
         patchNode(match, incoming, selection);
         nextChildren.push(match);
@@ -86,14 +90,24 @@ function patchNode(current, incoming, selection) {
 
   if (!isElement(current) || !isElement(incoming)) return;
   if (tagName(current) !== tagName(incoming)) return;
-  if (shouldPreserveRendered(current)) return;
   copyAttributes(current, incoming);
   patchChildren(current, childList(incoming), selection);
 }
 
-function shouldPreserveRendered(node) {
-  const marker = node.getAttribute?.("data-mermaid-rendered") || node.dataset?.mermaidRendered;
-  return marker === "true" || marker === true;
+function reuseMermaidPreview(match, incoming) {
+  if (!match.dataset?.mermaidPreview || !incoming.dataset?.mermaidPreview) return null;
+  const code = match.querySelector?.("code");
+  const nextCode = incoming.querySelector?.("code");
+  if ((code?.textContent ?? "") !== (nextCode?.textContent ?? "")) return null;
+  return match;
+}
+
+function disposeTree(node) {
+  if (!isElement(node)) return;
+  if (node.dataset?.mermaidPreview) {
+    mermaidDispose(node);
+  }
+  for (const child of childList(node)) disposeTree(child);
 }
 
 function findReusable(currentChildren, incoming, used) {
@@ -115,12 +129,17 @@ function replaceChildren(parent, nextChildren) {
     }
     while (cursor) {
       const next = cursor.nextSibling;
+      disposeTree(cursor);
       parent.removeChild(cursor);
       cursor = next;
     }
     return;
   }
 
+  const previous = childList(parent);
+  for (const node of previous) {
+    if (!nextChildren.includes(node)) disposeTree(node);
+  }
   parent.childNodes = nextChildren;
   for (const child of nextChildren) child.parentNode = parent;
 }

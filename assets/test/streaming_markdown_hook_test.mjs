@@ -161,4 +161,25 @@ function after(fn) {
   el.remove();
 }
 
+{
+  const source = "```mermaid\ngraph TD\n  A-->B\n```\n";
+  const el = document.createElement("div");
+  el.dataset.source = source;
+  el.dataset.final = "false";
+  el.dataset.streaming = "true";
+  el.innerHTML = '<div data-markdown-target></div>';
+  document.body.appendChild(el);
+  const hook = { ...StreamingMarkdown, el };
+  hook.mounted();
+  const target = el.querySelector("[data-markdown-target]");
+  assert.equal(target.querySelector("[data-mermaid-preview]"), null);
+  assert.match(target.querySelector("code")?.className || "", /language-mermaid/);
+  el.dataset.streaming = "false";
+  el.dataset.final = "true";
+  hook.updated();
+  assert.ok(target.querySelector("[data-mermaid-preview]"));
+  hook.destroyed();
+  el.remove();
+}
+
 console.log("streaming_markdown_hook_test passed");

@@ -3,7 +3,12 @@ import { patchStreamingMarkdown } from "../streaming_markdown/patch_streaming_ma
 import { renderMarkdown } from "../streaming_markdown/render_markdown.js";
 import { injectCopyButtons } from "../streaming_markdown/code_block_copy.js";
 import { patchMarkdownDom } from "../streaming_markdown/patch_markdown_dom.js";
-import { renderMermaidBlocks } from "../streaming_markdown/mermaid_blocks.js";
+import {
+  decorateMermaidBlocks,
+  disposeMermaidBlocks,
+  handleMermaidPreviewClick,
+  renderMermaidBlocks
+} from "../streaming_markdown/mermaid_blocks.js";
 import { decorateHtmlPreviews, handleHtmlPreviewClick, resizeHtmlPreview } from "../streaming_markdown/html_previews.js";
 
 export const StreamingMarkdown = {
@@ -26,6 +31,7 @@ export const StreamingMarkdown = {
     // Event delegation for copy buttons
     this.clickHandler = (e) => {
       handleHtmlPreviewClick(e);
+      handleMermaidPreviewClick(e);
       const link = e.target.closest("a[href]");
       if (link && this.el.contains(link)) {
         const href = link.getAttribute("href");
@@ -55,6 +61,7 @@ export const StreamingMarkdown = {
     if (this.retryId) clearTimeout(this.retryId);
     if (this.unsubscribe) this.unsubscribe();
     if (this.controller) this.controller.destroy();
+    disposeMermaidBlocks(this.target);
     this.el.removeEventListener("click", this.clickHandler);
     window.removeEventListener("message", this.resizeHandler);
     this.retryId = null;
@@ -114,7 +121,9 @@ export const StreamingMarkdown = {
     const markdown = patchStreamingMarkdown(snapshot.visible, snapshot.final || this.readFinal());
     let html = renderMarkdown(markdown, { linkTargetBlank: true });
     html = injectCopyButtons(html);
-    applyRenderedHtml(this.target, html, snapshot.visible);
+    applyRenderedHtml(this.target, html, snapshot.visible, {
+      diagrams: !(this.readStreaming() && !snapshot.final)
+    });
 
     if (this.readStreaming() && !snapshot.final) {
       this.insertCursor();
@@ -126,7 +135,7 @@ export const StreamingMarkdown = {
 
   renderMermaid() {
     if (!this.target || this.readStreaming() || !this.readFinal()) return;
-    renderMermaidBlocks(this.target).catch(() => {});
+    renderMermaidBlocks(this.target);
   },
 
   insertCursor() {
@@ -243,7 +252,7 @@ export const StreamingMarkdown = {
   }
 };
 
-function applyRenderedHtml(target, html, markdown) {
+function applyRenderedHtml(target, html, markdown, options = {}) {
   if (typeof document === "undefined" || !target) {
     target.innerHTML = html;
     return;
@@ -253,10 +262,12 @@ function applyRenderedHtml(target, html, markdown) {
     const template = document.createElement("template");
     template.innerHTML = html;
     decorateHtmlPreviews(template.content, markdown);
+    if (options.diagrams) decorateMermaidBlocks(template.content);
     patchMarkdownDom(target, template.content, {
       selection: typeof window !== "undefined" ? window.getSelection?.() : null
     });
   } catch {
+    disposeMermaidBlocks(target);
     target.innerHTML = html;
   }
 }
