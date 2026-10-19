@@ -105,4 +105,33 @@ defmodule Handbean.Agent.PendingMessagesTest do
 
     assert pending["m1"].content == "hi"
   end
+
+  test "pin_pending keeps queued entries last without reordering the rest" do
+    entries = [
+      %{"id" => "u1"},
+      %{"id" => "q1"},
+      %{"id" => "a1"},
+      %{"id" => "q2"}
+    ]
+
+    pending = %{
+      "q1" => %{deliver_as: :follow_up, status: :queued},
+      "q2" => %{deliver_as: :follow_up, status: :queued}
+    }
+
+    assert Enum.map(PendingMessages.pin_pending(entries, pending), & &1["id"]) ==
+             ["u1", "a1", "q1", "q2"]
+  end
+
+  test "move_to_end follows the given id order and skips missing ids" do
+    entries = [
+      %{"id" => "q1"},
+      %{"id" => "a1"},
+      %{"id" => "q2"},
+      %{"id" => "t1"}
+    ]
+
+    assert Enum.map(PendingMessages.move_to_end(entries, ["q2", "q1", "gone"]), & &1["id"]) ==
+             ["a1", "t1", "q2", "q1"]
+  end
 end

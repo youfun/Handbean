@@ -13,7 +13,8 @@ defmodule Handbean.ConversationTranscriptStore do
   @callback page(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   @callback complete_tool_call(String.t(), entry(), entry() | nil, [String.t()], keyword()) ::
               {:ok, %{tool_entry: entry(), media_entry: entry() | nil}} | {:error, term()}
-  @optional_callbacks page: 2, complete_tool_call: 5
+  @callback consume(String.t(), [String.t()], map(), keyword()) :: :ok | {:error, term()}
+  @optional_callbacks page: 2, complete_tool_call: 5, consume: 4
   @callback append(String.t(), entry(), keyword()) :: {:ok, entry()} | {:error, term()}
   @callback update(String.t(), String.t(), map(), keyword()) :: {:ok, entry()} | {:error, term()}
   @callback delete(String.t(), String.t(), keyword()) :: :ok | {:error, term()}
@@ -53,6 +54,30 @@ defmodule Handbean.ConversationTranscriptStore do
   def update(conversation_id, entry_id, patch, opts \\ [])
       when is_binary(conversation_id) and is_binary(entry_id) and is_map(patch) do
     impl(opts).update(conversation_id, entry_id, patch, opts)
+  end
+
+  @doc """
+  Mark inbound entries consumed and move them to the end in `ids` order.
+
+  Send order can differ from enqueue order: a follow_up sits in the transcript
+  while later run entries are appended, then becomes the next user turn.
+  Adapters without `consume/4` patch in place and keep the original sequence.
+  """
+  @spec consume(String.t(), [String.t()], map(), keyword()) :: :ok | {:error, term()}
+  def consume(conversation_id, ids, patch, opts \\ [])
+      when is_binary(conversation_id) and is_list(ids) and is_map(patch) do
+    store = impl(opts)
+
+    if Code.ensure_loaded?(store) and function_exported?(store, :consume, 4) do
+      store.consume(conversation_id, ids, patch, opts)
+    else
+      Enum.reduce_while(ids, :ok, fn id, :ok ->
+        case update(conversation_id, id, patch, opts) do
+          {:ok, _entry} -> {:cont, :ok}
+          {:error, _reason} = error -> {:halt, error}
+        end
+      end)
+    end
   end
 
   @doc "Delete one entry atomically with respect to other transcript writes. Missing ids are a no-op."

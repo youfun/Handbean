@@ -32,6 +32,38 @@ defmodule Handbean.Agent.TranscriptPersistenceTest do
              Handbean.ConversationStore.load_messages(id)
   end
 
+  test "consuming a queued inbound moves it after later run entries" do
+    {:ok, conversation} = Handbean.ConversationStore.create("default", timeline: [])
+    id = conversation["id"]
+
+    assert {:ok, _} =
+             TranscriptPersistence.append_inbound(id, "queued later",
+               transcript_id: "queued",
+               deliver_as: :follow_up
+             )
+
+    assert {:ok, _} =
+             Handbean.ConversationTranscriptStore.append(id, %{
+               "id" => "assistant",
+               "role" => "assistant",
+               "content" => "still working"
+             })
+
+    assert :ok =
+             TranscriptPersistence.handle_event(
+               id,
+               {:candidate_message_injected, %{message_ids: ["queued"]}},
+               run_id: "next-run"
+             )
+
+    assert ["assistant", "queued"] =
+             id |> Handbean.ConversationStore.load_messages() |> Enum.map(& &1["id"])
+
+    queued = Enum.find(Handbean.ConversationStore.load_messages(id), &(&1["id"] == "queued"))
+    assert queued["consumption"] == "consumed"
+    assert queued["consumed_run_id"] == "next-run"
+  end
+
   test "an explicit failed run cannot finalize partial text as completed without an error string" do
     for status <- [:error, "error", :timeout, "timeout"] do
       {:ok, conversation} = Handbean.ConversationStore.create("default", timeline: [])

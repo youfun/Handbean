@@ -12,10 +12,11 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
   def timeline_insert(socket, entry) do
     expanded = Map.get(socket.assigns, :expanded_tool_groups, MapSet.new())
     previous_timeline = socket.assigns.timeline
+    pending_ids = pending_id_set(socket)
 
     {timeline, position, inserted?} =
       previous_timeline
-      |> upsert_in_sequence(entry)
+      |> upsert_in_sequence(entry, pending_ids)
       |> then(fn {entries, position, inserted?} ->
         {HandbeanWeb.WorkspaceHelper.apply_tool_work_collapse(entries, expanded), position,
          inserted?}
@@ -264,10 +265,10 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
     [head | replace_or_append(rest, entry)]
   end
 
-  defp upsert_in_sequence(timeline, %{"id" => id} = entry) do
+  defp upsert_in_sequence(timeline, %{"id" => id} = entry, pending_ids) do
     case Enum.find_index(timeline, &(Map.get(&1, "id") == id)) do
       nil ->
-        position = sequence_insert_position(timeline, Map.get(entry, "sequence"))
+        position = insert_position(timeline, entry, id, pending_ids)
         {List.insert_at(timeline, position, entry), position, true}
 
       position ->
@@ -275,7 +276,82 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
     end
   end
 
-  defp upsert_in_sequence(timeline, entry), do: {timeline ++ [entry], length(timeline), true}
+  defp upsert_in_sequence(timeline, entry, _pending_ids),
+    do: {timeline ++ [entry], length(timeline), true}
+
+  defp insert_position(timeline, entry, id, pending_ids) do
+    if MapSet.member?(pending_ids, id) do
+      length(timeline)
+    else
+      position = sequence_insert_position(timeline, Map.get(entry, "sequence"))
+      pinned_at = first_pending_index(timeline, pending_ids)
+      if is_integer(pinned_at), do: min(position, pinned_at), else: position
+    end
+  end
+
+  defp first_pending_index(timeline, pending_ids) do
+    timeline
+    |> Enum.with_index()
+    |> Enum.find_value(fn {entry, index} ->
+      if MapSet.member?(pending_ids, Map.get(entry, "id")), do: index
+    end)
+  end
+
+  defp pending_id_set(socket) do
+    socket.assigns
+    |> Map.get(:pending_messages, %{})
+    |> Kernel.||(%{})
+    |> Map.keys()
+    |> MapSet.new()
+  end
+
+  defp hydrate_timeline_entries(socket, ids) when is_list(ids) do
+    present = MapSet.new(socket.assigns.timeline || [], &Map.get(&1, "id"))
+    missing = Enum.filter(ids, &(is_binary(&1) and not MapSet.member?(present, &1)))
+
+    if missing == [] do
+      {:ok, socket}
+    else
+      conv_id = socket.assigns.current_conversation_id
+      missing_set = MapSet.new(missing)
+
+      with true <- is_binary(conv_id),
+           {:ok, entries} <- Handbean.ConversationTranscriptStore.list(conv_id) do
+        extras = Enum.filter(entries, &MapSet.member?(missing_set, Map.get(&1, "id")))
+
+        if length(extras) == length(missing) do
+          {:ok, Enum.reduce(extras, socket, fn entry, acc -> timeline_insert(acc, entry) end)}
+        else
+          {:error, :incomplete}
+        end
+      else
+        false -> {:error, :no_conversation}
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  defp durable_consumed?(timeline, ids) when is_list(ids) do
+    by_id = Map.new(List.wrap(timeline), &{Map.get(&1, "id"), &1})
+
+    ids != [] and
+      Enum.all?(ids, fn id ->
+        match?(%{"consumption" => "consumed"}, Map.get(by_id, id))
+      end)
+  end
+
+  defp refresh_history_cursor(socket, moved_ids) when is_list(moved_ids) do
+    before = Map.get(socket.assigns, :history_before)
+
+    if is_binary(before) and before in moved_ids do
+      case socket.assigns.timeline do
+        [%{"id" => id} | _] -> assign(socket, :history_before, id)
+        _ -> assign(socket, :history_before, nil)
+      end
+    else
+      socket
+    end
+  end
 
   defp sequence_insert_position(timeline, sequence) when is_integer(sequence) do
     timeline
@@ -574,10 +650,48 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
   end
 
   def handle_agent_event(%{kind: :candidate_message_injected, payload: payload}, socket) do
-    pending =
-      Handbean.Agent.PendingMessages.apply_injected(socket.assigns.pending_messages, payload)
+    case payload_value(payload, :message_ids, []) do
+      ids when is_list(ids) and ids != [] ->
+        cond do
+          durable_consumed?(socket.assigns.timeline, ids) ->
+            Composer.assign_pending(
+              socket,
+              Handbean.Agent.PendingMessages.apply_injected(
+                socket.assigns.pending_messages,
+                payload
+              )
+            )
 
-    Composer.assign_pending(socket, pending)
+          true ->
+            case hydrate_timeline_entries(socket, ids) do
+              {:ok, socket} ->
+                timeline =
+                  Handbean.Agent.PendingMessages.move_to_end(
+                    socket.assigns.timeline || [],
+                    ids
+                  )
+
+                socket
+                |> assign(:timeline, timeline)
+                |> refresh_history_cursor(ids)
+                |> Composer.assign_pending(
+                  Handbean.Agent.PendingMessages.apply_injected(
+                    socket.assigns.pending_messages,
+                    payload
+                  )
+                )
+
+              {:error, _reason} ->
+                socket
+            end
+        end
+
+      _ ->
+        Composer.assign_pending(
+          socket,
+          Handbean.Agent.PendingMessages.apply_injected(socket.assigns.pending_messages, payload)
+        )
+    end
   end
 
   def handle_agent_event(%{kind: :candidate_message_deleted, payload: payload}, socket) do
@@ -831,7 +945,7 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
             socket.assigns.timeline || []
           )
 
-        assign(socket, :pending_messages, pending)
+        Composer.assign_pending(socket, pending)
       else
         {:error, _} -> socket
       end

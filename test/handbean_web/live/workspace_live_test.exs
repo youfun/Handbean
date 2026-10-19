@@ -1497,6 +1497,65 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
       assert [] = Handbean.Agent.CandidateQueue.drain_follow_up(queue)
     end
 
+    test "queued follow-up stays last while the turn continues, then after inject", %{
+      conn: conn
+    } do
+      configure_test_models!()
+
+      {:ok, view, _html} = live(conn, "/")
+      sid = create_default_conversation(view)
+      {:ok, _session} = Handbean.PubSub.Session.start_or_get(session_id: sid)
+      {:ok, queue} = Handbean.Agent.CandidateQueue.start_link(session_id: sid, owner: self())
+      :ok = Handbean.PubSub.Session.attach_run(sid, self(), queue)
+      topic = "session:#{sid}"
+
+      send(
+        view.pid,
+        {:agent_event, agent_event(:run_start, %{model: "step-router-v1"}, 1, topic)}
+      )
+
+      view
+      |> element("#queue-button")
+      |> render_click(%{
+        "message" => "after this turn",
+        "model" => "stepfun/step-router-v1"
+      })
+
+      pending = :sys.get_state(view.pid).socket.assigns.pending_messages
+      [msg_id] = Map.keys(pending)
+
+      send(
+        view.pid,
+        {:agent_event,
+         agent_event(:tool_start, %{tool: "read", input: %{file_path: "later.txt"}}, 2, topic)}
+      )
+
+      html = render(view)
+      assert html =~ "after this turn"
+      assert html =~ "Queued"
+      timeline_ids = Enum.map(:sys.get_state(view.pid).socket.assigns.timeline, & &1["id"])
+      assert List.last(timeline_ids) == msg_id
+      assert Enum.find_index(timeline_ids, &(&1 == msg_id)) > 0
+
+      send(
+        view.pid,
+        {:agent_event,
+         agent_event(
+           :candidate_message_injected,
+           %{message_ids: [msg_id], count: 1, deliver_as: :follow_up},
+           3,
+           topic
+         )}
+      )
+
+      _ = render(view)
+      timeline_ids = Enum.map(:sys.get_state(view.pid).socket.assigns.timeline, & &1["id"])
+      assert List.last(timeline_ids) == msg_id
+      refute Map.has_key?(:sys.get_state(view.pid).socket.assigns.pending_messages, msg_id)
+
+      _ = queue
+    end
+
     test "idle queue_message starts a new run instead of erroring", %{conn: conn} do
       configure_test_models!()
 

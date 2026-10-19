@@ -50,6 +50,39 @@ defmodule Handbean.Agent.PendingMessages do
   def drop(pending, id) when is_binary(id), do: Map.delete(pending, id)
   def drop(pending, _), do: pending
 
+  @doc "Keep pending entries last while preserving the rest of the timeline."
+  @spec pin_pending([map()], t()) :: [map()]
+  def pin_pending(entries, pending) when is_list(entries) and is_map(pending) do
+    id_set = MapSet.new(Map.keys(pending))
+    {moved, rest} = Enum.split_with(entries, &(entry_id(&1) in id_set))
+    rest ++ moved
+  end
+
+  def pin_pending(entries, _), do: entries
+
+  @doc "Move `ids` to the end in the given order. Missing ids are skipped."
+  @spec move_to_end([map()], [String.t()]) :: [map()]
+  def move_to_end(entries, ids) when is_list(entries) and is_list(ids) do
+    by_id = Map.new(entries, &{entry_id(&1), &1})
+    id_set = MapSet.new(ids)
+    rest = Enum.reject(entries, &(entry_id(&1) in id_set))
+
+    moved =
+      ids
+      |> Enum.filter(&(is_binary(&1) and &1 != ""))
+      |> Enum.uniq()
+      |> Enum.flat_map(fn id ->
+        case Map.get(by_id, id) do
+          nil -> []
+          entry -> [entry]
+        end
+      end)
+
+    rest ++ moved
+  end
+
+  def move_to_end(entries, _), do: entries
+
   @spec apply_injected(t(), map()) :: t()
   def apply_injected(pending, payload) when is_map(payload) do
     payload = stringify(payload)
@@ -227,6 +260,10 @@ defmodule Handbean.Agent.PendingMessages do
   defp item_id(%{id: id}) when is_binary(id) and id != "", do: id
   defp item_id(%{"id" => id}) when is_binary(id) and id != "", do: id
   defp item_id(_), do: ""
+
+  defp entry_id(%{"id" => id}) when is_binary(id), do: id
+  defp entry_id(%{id: id}) when is_binary(id), do: id
+  defp entry_id(_), do: ""
 
   defp sanitize_extra(extra) do
     extra

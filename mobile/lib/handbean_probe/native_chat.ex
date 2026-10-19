@@ -422,7 +422,28 @@ defmodule HandbeanProbe.NativeChat do
   defp put_inbound_message_id(content, _id), do: content
 
   defp pending_event(state, %{kind: :candidate_message_injected, payload: payload}) do
-    %{state | pending: PendingMessages.apply_injected(state.pending, event_payload(payload))}
+    payload = event_payload(payload)
+
+    entries =
+      case payload["message_ids"] do
+        ids when is_list(ids) and ids != [] ->
+          if durable_consumed?(state.entries, ids) do
+            state.entries
+          else
+            PendingMessages.move_to_end(state.entries, ids)
+          end
+
+        _ ->
+          state.entries
+      end
+
+    pending = PendingMessages.apply_injected(state.pending, payload)
+
+    %{
+      state
+      | pending: pending,
+        entries: PendingMessages.pin_pending(entries, pending)
+    }
   end
 
   defp pending_event(state, %{kind: :candidate_message_deleted, payload: payload}) do
@@ -436,14 +457,26 @@ defmodule HandbeanProbe.NativeChat do
 
   defp pending_event(state, _event), do: state
 
+  defp durable_consumed?(entries, ids) when is_list(ids) do
+    by_id = Map.new(List.wrap(entries), &{&1["id"], &1})
+
+    ids != [] and
+      Enum.all?(ids, fn id ->
+        match?(%{"consumption" => "consumed"}, Map.get(by_id, id))
+      end)
+  end
+
   defp reconcile_pending(state) do
     id = state.conversation["id"]
     pending = Map.get(state, :pending) || PendingMessages.new()
 
+    pending =
+      PendingMessages.reconcile(pending, session_pending(id), state.running, state.entries)
+
     %{
       state
-      | pending:
-          PendingMessages.reconcile(pending, session_pending(id), state.running, state.entries)
+      | pending: pending,
+        entries: PendingMessages.pin_pending(state.entries, pending)
     }
   end
 
@@ -540,6 +573,7 @@ defmodule HandbeanProbe.NativeChat do
     id
     |> read_transcript(opts, state.entries)
     |> NativeLocalImage.resolve_entries(Map.get(state, :workspace_path), id)
+    |> PendingMessages.pin_pending(Map.get(state, :pending) || %{})
   end
 
   defp read_transcript(id, opts, existing) do
@@ -596,9 +630,11 @@ defmodule HandbeanProbe.NativeChat do
       case Projection.text_patch(state.entries, payload) do
         {:ok, entry} ->
           entries =
-            if Enum.any?(state.entries, &(&1["id"] == entry["id"])),
-              do: Enum.map(state.entries, &if(&1["id"] == entry["id"], do: entry, else: &1)),
-              else: state.entries ++ [entry]
+            if Enum.any?(state.entries, &(&1["id"] == entry["id"])) do
+              Enum.map(state.entries, &if(&1["id"] == entry["id"], do: entry, else: &1))
+            else
+              PendingMessages.pin_pending(state.entries ++ [entry], state.pending)
+            end
 
           %{state | entries: entries, stream: "", thinking: false}
 

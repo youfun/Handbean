@@ -228,6 +228,35 @@ defmodule Handbean.ConversationTranscriptStore.ConversationStore do
   end
 
   @impl true
+  def consume(conversation_id, ids, patch, _opts)
+      when is_binary(conversation_id) and is_list(ids) and is_map(patch) do
+    if ids == [] do
+      :ok
+    else
+      patch = stringify_keys(patch)
+
+      if Handbean.ConversationStore.exists?(conversation_id) do
+        Repo.transaction(fn ->
+          Enum.each(ids, fn id ->
+            case consume_cas(conversation_id, id, patch, 32) do
+              :ok -> :ok
+              {:error, reason} -> Repo.rollback(reason)
+            end
+          end)
+
+          :ok
+        end)
+        |> case do
+          {:ok, :ok} -> :ok
+          {:error, reason} -> {:error, reason}
+        end
+      else
+        {:error, :not_found}
+      end
+    end
+  end
+
+  @impl true
   def delete(conversation_id, entry_id, _opts) do
     if Handbean.ConversationStore.exists?(conversation_id) do
       Repo.delete_all(
@@ -376,6 +405,48 @@ defmodule Handbean.ConversationTranscriptStore.ConversationStore do
   end
 
   defp record_terminal_usage(_conversation_id, _run_id, _usage), do: :ok
+
+  defp consume_cas(_conversation_id, _entry_id, _patch, 0), do: {:error, :conflict}
+
+  defp consume_cas(conversation_id, entry_id, patch, attempts)
+       when is_binary(entry_id) and entry_id != "" do
+    case Repo.one(
+           from entry in ConversationEntry,
+             where: entry.conversation_id == ^conversation_id and entry.entry_id == ^entry_id
+         ) do
+      nil ->
+        {:error, :not_found}
+
+      row ->
+        sequence = allocate_sequence(conversation_id)
+
+        merged =
+          row
+          |> public_entry()
+          |> deep_merge(patch)
+          |> Map.put("sequence", sequence)
+          |> Map.put("updated_at", iso8601(now()))
+
+        attrs = entry_attrs(merged)
+
+        query =
+          from entry in ConversationEntry,
+            where: entry.id == ^row.id and entry.revision == ^row.revision
+
+        changes =
+          attrs
+          |> Map.drop([:conversation_id, :entry_id, :created_at])
+          |> Map.put(:revision, row.revision + 1)
+
+        case Repo.update_all(query, set: Map.to_list(changes)) do
+          {1, _} -> :ok
+          {0, _} -> consume_cas(conversation_id, entry_id, patch, attempts - 1)
+        end
+    end
+  end
+
+  defp consume_cas(_conversation_id, _entry_id, _patch, _attempts),
+    do: {:error, :invalid_entry_id}
 
   defp update_cas(_conversation_id, _entry_id, _patch, 0), do: {:error, :conflict}
 

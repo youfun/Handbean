@@ -168,9 +168,13 @@ defmodule HandbeanWeb.WorkspaceLive.Composer do
   def restore_draft(socket, _), do: socket
 
   def assign_pending(socket, pending) do
+    timeline =
+      Handbean.Agent.PendingMessages.pin_pending(socket.assigns.timeline || [], pending || %{})
+
     socket
     |> assign(:pending_messages, pending)
-    |> stream(:timeline, socket.assigns.timeline || [], reset: true)
+    |> assign(:timeline, timeline)
+    |> stream(:timeline, timeline, reset: true)
   end
 
   def drop_transcript_entry(conversation_id, id)

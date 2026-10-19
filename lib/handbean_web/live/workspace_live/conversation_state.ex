@@ -313,6 +313,8 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationState do
          {:ok, %{entries: entries, before: next_before, has_more?: has_more?}} <-
            Handbean.ConversationTranscriptStore.page(conv_id, limit: 100, before: before) do
       entries = Handbean.PubSub.Projection.visible_entries(entries)
+      loaded_ids = MapSet.new(socket.assigns.timeline, &conv_value(&1, "id", nil))
+      entries = Enum.reject(entries, &MapSet.member?(loaded_ids, conv_value(&1, "id", nil)))
 
       timeline =
         entries
@@ -329,6 +331,8 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationState do
           socket.assigns.running,
           timeline
         )
+
+      timeline = Handbean.Agent.PendingMessages.pin_pending(timeline, pending)
 
       socket
       |> assign(:timeline, timeline)

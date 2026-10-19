@@ -486,17 +486,12 @@ defmodule Handbean.Agent.TranscriptPersistence do
   end
 
   defp consume_messages(conversation_id, ids, opts) do
-    Enum.reduce_while(ids, :ok, fn id, :ok ->
-      case Handbean.ConversationTranscriptStore.update(
-             conversation_id,
-             id,
-             %{"consumption" => "consumed", "consumed_run_id" => opts[:run_id]},
-             opts
-           ) do
-        {:ok, _entry} -> {:cont, :ok}
-        {:error, _reason} = error -> {:halt, error}
-      end
-    end)
+    Handbean.ConversationTranscriptStore.consume(
+      conversation_id,
+      ids,
+      %{"consumption" => "consumed", "consumed_run_id" => opts[:run_id]},
+      opts
+    )
   end
 
   defp buffer_key(conversation_id), do: {__MODULE__, :buffer, conversation_id}

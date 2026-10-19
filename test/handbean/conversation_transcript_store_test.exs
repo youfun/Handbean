@@ -135,6 +135,43 @@ defmodule Handbean.ConversationTranscriptStoreTest do
     assert content == String.duplicate("x", 20)
   end
 
+  test "consume patches inbound entries and moves them to the end in id order", %{id: id} do
+    assert {:ok, _} = ConversationTranscriptStore.append(id, %{"id" => "queued"})
+    assert {:ok, _} = ConversationTranscriptStore.append(id, %{"id" => "later"})
+    assert {:ok, _} = ConversationTranscriptStore.append(id, %{"id" => "queued-2"})
+    assert {:ok, _} = ConversationTranscriptStore.append(id, %{"id" => "tail"})
+
+    assert :ok =
+             ConversationTranscriptStore.consume(id, ["queued-2", "queued"], %{
+               "consumption" => "consumed",
+               "consumed_run_id" => "run-1"
+             })
+
+    assert {:ok, entries} = ConversationTranscriptStore.list(id)
+
+    assert Enum.map(entries, & &1["id"]) == ["later", "tail", "queued-2", "queued"]
+    assert Enum.map(entries, & &1["sequence"]) == [2, 4, 5, 6]
+
+    queued = Enum.find(entries, &(&1["id"] == "queued"))
+    assert queued["consumption"] == "consumed"
+    assert queued["consumed_run_id"] == "run-1"
+  end
+
+  test "consume rolls back the batch when an id is missing", %{id: id} do
+    assert {:ok, _} = ConversationTranscriptStore.append(id, %{"id" => "queued"})
+    assert {:ok, _} = ConversationTranscriptStore.append(id, %{"id" => "later"})
+
+    assert {:error, :not_found} =
+             ConversationTranscriptStore.consume(id, ["queued", "missing"], %{
+               "consumption" => "consumed"
+             })
+
+    assert {:ok, entries} = ConversationTranscriptStore.list(id)
+    assert Enum.map(entries, & &1["id"]) == ["queued", "later"]
+    assert Enum.map(entries, & &1["sequence"]) == [1, 2]
+    refute Enum.any?(entries, &(&1["consumption"] == "consumed"))
+  end
+
   test "delete is idempotent and missing conversations map to not_found", %{id: id} do
     assert {:ok, _} = ConversationTranscriptStore.append(id, %{"id" => "remove"})
     assert :ok = ConversationTranscriptStore.delete(id, "remove")

@@ -78,6 +78,48 @@ defmodule HandbeanProbe.NativeChatTest do
     assert state.entries == entries_after_lead
   end
 
+  test "leading and deferred reloads keep a queued follow_up last" do
+    {:ok, conversation} = Handbean.ConversationStore.create("default")
+    id = conversation["id"]
+    topic = "session:#{id}"
+
+    queued = %{"id" => "q1", "content_type" => "user_msg", "content" => "later"}
+    later = %{"id" => "a1", "content_type" => "assistant_msg", "content" => "working"}
+    tool = %{"id" => "t1", "content_type" => "tool", "tool_name" => "read"}
+    extra = %{"id" => "t2", "content_type" => "tool", "tool_name" => "bash"}
+
+    state =
+      conversation
+      |> NativeChat.load()
+      |> NativeChat.note_enqueued("q1", :follow_up, %{content: "later"})
+
+    state =
+      NativeChat.project(AgentEvent.tool_start(topic, "read", %{}, 1), state,
+        now: 1_000,
+        transcript: fn _ -> [queued, later, tool] end
+      )
+
+    assert Enum.map(state.entries, & &1["id"]) == ["a1", "t1", "q1"]
+    refute state.transcript_dirty
+
+    state =
+      NativeChat.project(AgentEvent.tool_end(topic, "read", 1, nil, 2), state,
+        now: 1_040,
+        transcript: fn _ -> [queued, later, tool] end
+      )
+
+    assert state.transcript_dirty
+    assert Enum.map(state.entries, & &1["id"]) == ["a1", "t1", "q1"]
+
+    state =
+      NativeChat.apply_deferred_reload(state,
+        now: 1_200,
+        transcript: fn _ -> [queued, later, tool, extra] end
+      )
+
+    assert Enum.map(state.entries, & &1["id"]) == ["a1", "t1", "t2", "q1"]
+  end
+
   test "deltas between a deferred boundary and reload are kept once after apply" do
     {:ok, conversation} = Handbean.ConversationStore.create("default")
     id = conversation["id"]
