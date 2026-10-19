@@ -75,27 +75,6 @@
   position: relative;
 }
 
-.workspace-checkout-menu.projects-panel-new-conversation-menu {
-  right: 0;
-  left: auto;
-  width: 208px;
-}
-
-.projects-panel-new-conversation-menu .workspace-checkout-item {
-  width: 100%;
-  height: auto;
-  justify-content: space-between;
-  font-size: var(--font-size-xs);
-}
-
-.projects-panel-new-conversation-menu .workspace-checkout-project {
-  padding-top: 0.45rem;
-}
-
-.projects-panel-new-conversation-menu .workspace-checkout-item.is-checkout {
-  padding-left: 0.85rem;
-}
-
 .workspace-add-entry {
   padding-top: 0.25rem;
   padding-bottom: 0.35rem;
@@ -955,42 +934,105 @@
   position: static;
 }
 
-.workspace-checkout-menu {
+.checkout-picker-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+
+.checkout-picker-backdrop {
   position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  left: 0;
-  z-index: 50;
-  min-width: 0;
-  max-width: none;
-  width: auto;
-  padding: 0.3rem;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+}
+
+.checkout-picker-dialog {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: min(36rem, calc(100vw - 2rem));
+  max-height: min(80vh, 36rem);
+  overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface);
   box-shadow: var(--shadow);
+  animation: dialog-enter 150ms ease-out;
+}
+
+.checkout-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem 0.65rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.checkout-picker-title {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.checkout-picker-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.checkout-picker-close:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+}
+
+.checkout-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-height: 0;
+  padding: 0.55rem;
+  overflow: auto;
 }
 
 .workspace-checkout-heading {
-  padding: 0.25rem 0.45rem 0.35rem;
+  padding: 0.45rem 0.6rem 0.25rem;
   color: var(--color-text-tertiary);
-  font-size: 0.65rem;
+  font-size: 0.7rem;
   letter-spacing: 0.02em;
 }
 
 .workspace-checkout-item {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.5rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.15rem;
   width: 100%;
-  min-height: 1.75rem;
-  padding: 0.3rem 0.45rem;
+  min-height: 2.75rem;
+  padding: 0.55rem 0.7rem;
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-text-secondary);
-  font-size: var(--font-size-xs);
   text-align: left;
   cursor: pointer;
 }
@@ -1000,18 +1042,31 @@
   color: var(--color-text-primary);
 }
 
-.workspace-checkout-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.workspace-checkout-ref {
+  color: var(--color-text-primary);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
-.workspace-checkout-ref {
-  flex-shrink: 0;
+.workspace-checkout-name {
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.workspace-checkout-path {
   color: var(--color-text-tertiary);
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 0.65rem;
+  font-size: 0.7rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* ── Conversation badge (workspace label in trash) ── */

@@ -4420,8 +4420,10 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
 
         html = render(view)
         assert html =~ ~s(id="new-conversation-picker")
+        assert has_element?(view, "#new-conversation-picker[role='dialog']")
         assert html =~ Path.basename(repo)
         assert html =~ Path.basename(linked)
+        assert html =~ "feature"
 
         refute has_element?(
                  view,
@@ -4446,6 +4448,49 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
         html = render(view)
         refute html =~ ~s(id="new-conversation-picker")
         assert html =~ ~s(data-checkout-path="#{linked_path}")
+      after
+        File.rm_rf!(base)
+      end
+    end
+
+    test "checkout picker dialog keeps the full branch name", %{conn: conn} do
+      base =
+        Path.join(System.tmp_dir!(), "sigil_long_branch_#{System.unique_integer([:positive])}")
+
+      repo = Path.join(base, "bomeasy")
+      linked = Path.join(base, "feedback-70-5f9aa617fa")
+      branch = "feedback/70-5f9aa617fa-chore-code-security-hardening"
+      init_git_repo!(repo)
+      git!(repo, ["worktree", "add", "-b", branch, linked])
+
+      try do
+        {:ok, view, _html} = live(conn, "/")
+
+        for {path, name} <- [{repo, "bomeasy"}, {linked, "Linked"}] do
+          view |> element("#activity-bar button[phx-click='open_add_project']") |> render_click()
+          view |> render_keyup("update_add_path", %{"value" => path})
+          view |> render_keyup("update_add_name", %{"value" => name})
+          view |> element("button[phx-click='confirm_add_project']") |> render_click()
+        end
+
+        {:ok, workspace} = Handbean.WorkspaceStore.get_by_path(repo)
+
+        view
+        |> element(
+          "#workspace-group-#{workspace["id"]} button[phx-click='new_conversation_in_workspace']"
+        )
+        |> render_click()
+
+        html = render(view)
+        linked_path = Handbean.Security.PathValidator.resolve_symlink(linked)
+
+        assert has_element?(
+                 view,
+                 "#checkout-picker-sidebar-#{workspace["id"]}[role='dialog']"
+               )
+
+        assert html =~ branch
+        assert html =~ linked_path
       after
         File.rm_rf!(base)
       end

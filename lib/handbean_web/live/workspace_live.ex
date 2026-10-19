@@ -36,7 +36,9 @@ defmodule HandbeanWeb.WorkspaceLive do
   alias HandbeanWeb.WorkspaceLive.WorkspaceNavigation
   alias HandbeanWeb.WorkspaceLive.SessionMemory
 
-  import SidebarComponents, only: [mobile_header: 1, projects_sidebar: 1]
+  import SidebarComponents,
+    only: [mobile_header: 1, projects_sidebar: 1, checkout_picker_dialog: 1]
+
   import ChatComponents, only: [chat_panel: 1]
   import WorkspaceComponents, only: [workspace_panel: 1]
 
