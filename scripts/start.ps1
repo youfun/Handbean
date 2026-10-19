@@ -1,8 +1,32 @@
 $ErrorActionPreference = "Stop"
-Set-Location $PSScriptRoot
 
-function Add-ExperimentalToolchain($data) {
-  $toolchain = Join-Path $PSScriptRoot "toolchain"
+$releaseRoot = $PSScriptRoot
+if (-not (Test-Path (Join-Path $releaseRoot "bin\handbean.bat"))) {
+  $repoRoot = Split-Path -Parent $PSScriptRoot
+  $localRoot = Join-Path $repoRoot "_build\local-webui"
+  $current = Join-Path $localRoot "current.txt"
+
+  if (Test-Path $current) {
+    $releaseID = (Get-Content $current -Raw).Trim()
+    if ($releaseID -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$') {
+      throw "Invalid local Web UI version pointer: $current"
+    }
+    $releaseRoot = Join-Path $localRoot "versions\$releaseID"
+    if (-not (Test-Path (Join-Path $releaseRoot "bin\handbean.bat"))) {
+      throw "Local Web UI version '$releaseID' is incomplete or missing. Re-run scripts\build_webui.bat."
+    }
+  } else {
+    # Backward-compatible fallback for a release built before versioned local builds.
+    $releaseRoot = Join-Path $repoRoot "_build\prod\rel\handbean"
+  }
+}
+if (-not (Test-Path (Join-Path $releaseRoot "bin\handbean.bat"))) {
+  throw "Web UI release not found. Build one with scripts\build_webui.bat first."
+}
+Set-Location $releaseRoot
+
+function Add-ExperimentalToolchain($data, $releaseRoot) {
+  $toolchain = Join-Path $releaseRoot "toolchain"
   $mixBat = Join-Path $toolchain "elixir\bin\mix.bat"
   if (-not (Test-Path $mixBat)) { return }
 
@@ -13,7 +37,7 @@ function Add-ExperimentalToolchain($data) {
   $dirs += (Join-Path $toolchain "elixir\bin")
   $gitCmd = Join-Path $toolchain "git\cmd"
   if (Test-Path $gitCmd) { $dirs += $gitCmd }
-  $erts = Get-ChildItem -Directory -Path (Join-Path $PSScriptRoot "erts-*") -ErrorAction SilentlyContinue | Select-Object -First 1
+  $erts = Get-ChildItem -Directory -Path (Join-Path $releaseRoot "erts-*") -ErrorAction SilentlyContinue | Select-Object -First 1
   if ($erts) { $dirs += (Join-Path $erts.FullName "bin") }
 
   $existing = @()
@@ -44,7 +68,7 @@ if (-not $env:PHX_HOST) { $env:PHX_HOST = "localhost" }
 $data = Join-Path $env:USERPROFILE ".handbean"
 New-Item -ItemType Directory -Force -Path $data | Out-Null
 if (-not $env:DATABASE_PATH) { $env:DATABASE_PATH = Join-Path $data "handbean.db" }
-Add-ExperimentalToolchain $data
+Add-ExperimentalToolchain $data $releaseRoot
 if (-not $env:SECRET_KEY_BASE) {
   $bytes = New-Object byte[] 48
   [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
@@ -53,5 +77,5 @@ if (-not $env:SECRET_KEY_BASE) {
 
 Write-Host "Handbean http://localhost:$($env:PORT)"
 Write-Host "Stop with Ctrl+C"
-& "$PSScriptRoot\bin\handbean.bat" start
+& "$releaseRoot\bin\handbean.bat" start
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

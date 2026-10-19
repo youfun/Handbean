@@ -11,7 +11,9 @@ $GitUrl = "https://github.com/git-for-windows/git/releases/download/$GitTag/MinG
 $HexVersion = "2.4.1"
 
 $root = Split-Path -Parent $PSScriptRoot
-$release = Join-Path $root "_build\prod\rel\handbean"
+$tar = Join-Path $env:SystemRoot "System32\tar.exe"
+if (-not (Test-Path $tar)) { throw "Windows system tar not found at $tar" }
+$release = Join-Path $root "_build\webui-pack\windows-amd64\handbean"
 if (-not (Test-Path (Join-Path $release "bin\handbean.bat"))) {
   throw "OTP release missing at $release; run scripts/pack_webui.ps1 windows-amd64 first"
 }
@@ -30,7 +32,7 @@ function Get-PinnedZip($url, $name) {
 
 function Expand-PinnedZip($zip, $dest) {
   New-Item -ItemType Directory -Force -Path $dest | Out-Null
-  tar -xf $zip -C $dest
+  & $tar -xf $zip -C $dest
   if ($LASTEXITCODE -ne 0) { throw "failed to extract $zip" }
 }
 
@@ -64,7 +66,9 @@ try {
   $env:MIX_HOME = $seed
   Write-Host "install Hex $HexVersion and Rebar3 into toolchain seed"
   mix local.hex $HexVersion --force
+  if ($LASTEXITCODE -ne 0) { throw "mix local.hex failed: $LASTEXITCODE" }
   mix local.rebar --force
+  if ($LASTEXITCODE -ne 0) { throw "mix local.rebar failed: $LASTEXITCODE" }
   if ($previousMixHome) { $env:MIX_HOME = $previousMixHome } else { Remove-Item Env:MIX_HOME }
   if (-not (Get-ChildItem -Path $seed -Filter "hex-$HexVersion*" -Recurse -Directory -ErrorAction SilentlyContinue)) {
     throw "Hex $HexVersion was not installed into $seed"
@@ -85,7 +89,7 @@ There is no in-browser terminal.
   $sum = "$archive.sha256"
   if (Test-Path $archive) { Remove-Item $archive -Force }
   if (Test-Path $sum) { Remove-Item $sum -Force }
-  tar -a -c -f $archive -C $stage .
+  & $tar -a -c -f $archive -C $stage .
   if ($LASTEXITCODE -ne 0) { throw "failed to zip toolchain package" }
   $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLower()
   "$hash  $(Split-Path $archive -Leaf)" | Set-Content -Encoding ascii $sum

@@ -63,6 +63,10 @@ modejs.json
 handbea[mn]-web-macos-*.tar.gz
 handbea[mn]-web-macos-*.tar.gz.sha256
 
+# Windows
+handbea[mn]-web-windows-*.zip
+handbea[mn]-web-windows-*.zip.sha256
+
 # Local dev artifacts
 test_rendered.html
 mobile-ux-demo*.html
