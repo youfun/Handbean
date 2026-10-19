@@ -53,7 +53,8 @@ ARM64 预编译包。
 5. 用户名默认 `handbean`，可用 `HANDBEAN_ACCESS_USERNAME` 覆盖。密码必须足够
    长、随机、不复用；脚本不把密码写到磁盘。
 6. 正式库默认 `~/.handbean/handbean.db`（Windows 为 `%USERPROFILE%\.handbean\handbean.db`），
-   可用 `DATABASE_PATH` 覆盖。不要让本机 GUI 与 Web UI 同时打开同一个数据库。
+   可用 `DATABASE_PATH` 覆盖。工作区索引默认同目录 `workspaces.json`，可用
+   `HANDBEAN_WORKSPACES_FILE` 覆盖。不要让本机 GUI 与 Web UI 同时打开同一个数据库。
 
 查看本机 IPv4 时，选局域网那张网卡，不要用 `127.0.0.1`：
 

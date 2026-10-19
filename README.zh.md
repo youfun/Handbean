@@ -136,7 +136,8 @@ Windows 本机一键编译用 `scripts\build_webui.bat`（或 `build_webui.ps1`�
 解压包中的启动脚本仍运行自身所在目录的 release。两种启动方式都不会启动开发服务器；
 根目录启动器会透传 `-LanHost` 等参数。正式数据库默认位于
 `~/.handbean/handbean.db`（Windows 使用 `%USERPROFILE%`），可用 `DATABASE_PATH`
-覆盖；不要让 GUI 与 Web UI 同时使用同一个数据库。
+覆盖。工作区索引默认同目录 `workspaces.json`，可用 `HANDBEAN_WORKSPACES_FILE`
+覆盖。不要让 GUI 与 Web UI 同时使用同一个数据库。
 
 ### 静态资源开发说明
 

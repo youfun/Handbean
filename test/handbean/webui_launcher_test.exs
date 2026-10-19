@@ -64,6 +64,28 @@ defmodule Handbean.WebUILauncherTest do
     end
 
     @tag launcher: {command, prefix, script, lan_option}
+    test "#{name}: pins workspaces index next to the database", context do
+      for layout <- @layouts do
+        launcher = fixture(context.root, elem(context.launcher, 2), layout)
+        home = Path.join(context.root, "home")
+        workspaces = Path.join(home, ".handbean/workspaces.json")
+        database = Path.join(home, ".handbean/handbean.db")
+
+        assert {output, 0} = run(context, launcher, [])
+        assert contains_path?(output, workspaces)
+        assert contains_path?(output, database)
+
+        custom = Path.join(context.root, "custom-workspaces.json")
+
+        assert {custom_output, 0} =
+                 run(context, launcher, [], %{"HANDBEAN_WORKSPACES_FILE" => custom})
+
+        assert contains_path?(custom_output, custom)
+        refute contains_path?(custom_output, workspaces)
+      end
+    end
+
+    @tag launcher: {command, prefix, script, lan_option}
     test "#{name}: LAN startup fails closed without a password or with an invalid host",
          context do
       launcher = fixture(context.root, elem(context.launcher, 2), :package)
@@ -104,6 +126,24 @@ defmodule Handbean.WebUILauncherTest do
     end
   end
 
+  if match?({:win32, _}, :os.type()) and @powershell do
+    test "PowerShell fills HOME from USERPROFILE when HOME is unset", context do
+      launcher_context =
+        Map.put(
+          context,
+          :launcher,
+          {@powershell, ["-NoProfile", "-NonInteractive", "-File"], "start.ps1", "-LanHost"}
+        )
+
+      launcher = fixture(context.root, "start.ps1", :package)
+      home = Path.join(context.root, "home")
+
+      assert {output, 0} = run(launcher_context, launcher, [], %{"HOME" => nil})
+      assert contains_path?(output, Path.join(home, ".handbean/workspaces.json"))
+      assert contains_path?(output, "home=#{home}")
+    end
+  end
+
   defp fixture(root, script, layout) do
     checkout? = layout in [:checkout, :versioned_checkout]
     launcher_dir = Path.join(root, if(checkout?, do: "scripts", else: "package"))
@@ -140,7 +180,10 @@ defmodule Handbean.WebUILauncherTest do
         if not defined HANDBEAN_PUBLIC_BIND set HANDBEAN_PUBLIC_BIND=unset
         if not defined HANDBEAN_ALLOW_HTTP set HANDBEAN_ALLOW_HTTP=unset
         if not defined HANDBEAN_ACCESS_MODE set HANDBEAN_ACCESS_MODE=unset
-        echo LAUNCH %1 host=%PHX_HOST% port=%PORT% public=%HANDBEAN_PUBLIC_BIND% http=%HANDBEAN_ALLOW_HTTP% mode=%HANDBEAN_ACCESS_MODE% password_ok=%password_ok% layout=#{layout}
+        if not defined HANDBEAN_WORKSPACES_FILE set HANDBEAN_WORKSPACES_FILE=unset
+        if not defined DATABASE_PATH set DATABASE_PATH=unset
+        if not defined HOME set HOME=unset
+        echo LAUNCH %1 host=%PHX_HOST% port=%PORT% public=%HANDBEAN_PUBLIC_BIND% http=%HANDBEAN_ALLOW_HTTP% mode=%HANDBEAN_ACCESS_MODE% password_ok=%password_ok% layout=#{layout} workspaces=%HANDBEAN_WORKSPACES_FILE% database=%DATABASE_PATH% home=%HOME%
         if defined LAUNCH_TEST_EXIT exit /b %LAUNCH_TEST_EXIT%
         exit /b 0
         """
@@ -149,9 +192,10 @@ defmodule Handbean.WebUILauncherTest do
         #!/usr/bin/env bash
         password_ok=no
         if [[ "${HANDBEAN_ACCESS_PASSWORD:-}" == launcher-test-secret ]]; then password_ok=yes; fi
-        printf 'LAUNCH %s host=%s port=%s public=%s http=%s mode=%s password_ok=%s layout=#{layout}\n' \
+        printf 'LAUNCH %s host=%s port=%s public=%s http=%s mode=%s password_ok=%s layout=#{layout} workspaces=%s database=%s home=%s\n' \
           "$1" "$PHX_HOST" "$PORT" "${HANDBEAN_PUBLIC_BIND:-unset}" \
-          "${HANDBEAN_ALLOW_HTTP:-unset}" "${HANDBEAN_ACCESS_MODE:-unset}" "$password_ok"
+          "${HANDBEAN_ALLOW_HTTP:-unset}" "${HANDBEAN_ACCESS_MODE:-unset}" "$password_ok" \
+          "${HANDBEAN_WORKSPACES_FILE:-unset}" "${DATABASE_PATH:-unset}" "${HOME:-unset}"
         exit "${LAUNCH_TEST_EXIT:-0}"
         """
       end
@@ -165,7 +209,7 @@ defmodule Handbean.WebUILauncherTest do
     {command, prefix, _script, _lan_option} = context.launcher
 
     env =
-      ~w(PHX_SERVER PHX_HOST PORT DATABASE_PATH HANDBEAN_PUBLIC_BIND HANDBEAN_ALLOW_HTTP HANDBEAN_ACCESS_MODE HANDBEAN_ACCESS_PASSWORD HANDBEAN_ACCESS_USERNAME HANDBEAN_FILE_MANAGER LAUNCH_TEST_EXIT)
+      ~w(PHX_SERVER PHX_HOST PORT DATABASE_PATH HANDBEAN_WORKSPACES_FILE HANDBEAN_PUBLIC_BIND HANDBEAN_ALLOW_HTTP HANDBEAN_ACCESS_MODE HANDBEAN_ACCESS_PASSWORD HANDBEAN_ACCESS_USERNAME HANDBEAN_FILE_MANAGER LAUNCH_TEST_EXIT)
       |> Map.new(&{&1, nil})
       |> Map.merge(%{
         "HOME" => Path.join(context.root, "home"),
@@ -179,5 +223,15 @@ defmodule Handbean.WebUILauncherTest do
       stderr_to_stdout: true,
       env: Map.to_list(env)
     )
+  end
+
+  defp contains_path?(output, path) do
+    String.contains?(normalize_path(output), normalize_path(path))
+  end
+
+  defp normalize_path(path) do
+    path
+    |> to_string()
+    |> String.replace("\\", "/")
   end
 end

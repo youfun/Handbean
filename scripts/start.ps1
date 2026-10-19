@@ -49,7 +49,8 @@ function Add-ExperimentalToolchain($data, $releaseRoot) {
   $dirs += (Join-Path $toolchain "elixir\bin")
   $gitCmd = Join-Path $toolchain "git\cmd"
   if (Test-Path $gitCmd) { $dirs += $gitCmd }
-  $erts = Get-ChildItem -Directory -Path (Join-Path $releaseRoot "erts-*") -ErrorAction SilentlyContinue | Select-Object -First 1
+  $erts = Get-ChildItem -Directory -Path (Join-Path $releaseRoot "erts-*") -ErrorAction SilentlyContinue |
+    Select-Object -First 1
   if ($erts) { $dirs += (Join-Path $erts.FullName "bin") }
 
   $existing = @()
@@ -94,9 +95,11 @@ if ($env:HANDBEAN_PUBLIC_BIND -eq "1" -and -not $env:HANDBEAN_ACCESS_PASSWORD) {
   if (-not $env:HANDBEAN_ACCESS_PASSWORD) { throw "HANDBEAN_ACCESS_PASSWORD must not be empty." }
 }
 
+if (-not $env:HOME -and $env:USERPROFILE) { $env:HOME = $env:USERPROFILE }
 $data = Join-Path $env:USERPROFILE ".handbean"
 New-Item -ItemType Directory -Force -Path $data | Out-Null
 if (-not $env:DATABASE_PATH) { $env:DATABASE_PATH = Join-Path $data "handbean.db" }
+if (-not $env:HANDBEAN_WORKSPACES_FILE) { $env:HANDBEAN_WORKSPACES_FILE = Join-Path $data "workspaces.json" }
 Add-ExperimentalToolchain $data $releaseRoot
 if (-not $env:SECRET_KEY_BASE) {
   $bytes = New-Object byte[] 48

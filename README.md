@@ -147,8 +147,9 @@ Extracted packages still run the release beside `start.sh` / `start.ps1`. Neithe
 launcher starts a development server. The root launcher forwards arguments such as
 `-LanHost`.
 Production data defaults to `~/.handbean/handbean.db` (`%USERPROFILE%` on Windows);
-`DATABASE_PATH` can override it. Do not run GUI and Web UI against that database
-at the same time.
+`DATABASE_PATH` can override it. The workspace index defaults to `workspaces.json`
+beside that database (`HANDBEAN_WORKSPACES_FILE` overrides). Do not run GUI and
+Web UI against that database at the same time.
 
 ### Asset development
 

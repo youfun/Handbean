@@ -46,6 +46,7 @@ export PHX_SERVER=true
 export PORT="${PORT:-5008}"
 export PHX_HOST="${PHX_HOST:-localhost}"
 export DATABASE_PATH="${DATABASE_PATH:-$HOME/.handbean/handbean.db}"
+export HANDBEAN_WORKSPACES_FILE="${HANDBEAN_WORKSPACES_FILE:-$HOME/.handbean/workspaces.json}"
 
 if [[ "${HANDBEAN_PUBLIC_BIND:-0}" == 1 ]]; then
   echo "安全提醒：请设置足够长、随机且不重复使用的强密码，建议用密码管理器生成。"
