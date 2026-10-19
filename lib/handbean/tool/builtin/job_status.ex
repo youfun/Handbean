@@ -6,11 +6,15 @@ defmodule Handbean.Tool.Builtin.JobStatus do
   def name, do: "job_status"
   @impl true
   def description do
-    "Query a Bash or BEAM job's state and bounded output using its byte cursor. Omit job_id to " <>
-      "recover the most recent 32 handles in this conversation/workspace. Wait is capped at 5s and " <>
-      "half the tool timeout. Query completion before ending the run; unfinished jobs are " <>
-      "cancelled at run end. Later runs can inspect retained results, not resume execution. " <>
-      "cancelling with cleanup_error means termination is not yet confirmed."
+    "Query a Bash or BEAM job's state and bounded incremental output using its byte cursor. " <>
+      "Pass the returned cursor to the next query. A query returns early when new decodable output " <>
+      "or a terminal state arrives; otherwise it waits up to wait_ms. Omit job_id to recover the " <>
+      "most recent 32 handles in this conversation/workspace. Wait is capped at 30s and half the " <>
+      "tool timeout. Empty output does not establish a stall; use state, elapsed_ms, output_idle_ms, " <>
+      "and remaining_ms together. Do not launch a Bash sleep command just to wait for another job. " <>
+      "Query completion before ending the run; unfinished jobs are cancelled at run end. Later runs " <>
+      "can inspect retained results, not resume execution. cancelling with cleanup_error means " <>
+      "termination is not yet confirmed."
   end
 
   @impl true
@@ -20,7 +24,7 @@ defmodule Handbean.Tool.Builtin.JobStatus do
       properties: %{
         job_id: %{type: "string"},
         cursor: %{type: "integer", minimum: 0, default: 0},
-        wait_ms: %{type: "integer", minimum: 0, default: 1_000}
+        wait_ms: %{type: "integer", minimum: 0, maximum: 30_000, default: 1_000}
       }
     }
   end

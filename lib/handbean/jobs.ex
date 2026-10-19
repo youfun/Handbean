@@ -62,9 +62,9 @@ defmodule Handbean.Jobs do
 
   def status(id, cursor, wait_ms, context) when is_nil(id) or is_binary(id) do
     with {:ok, owner} <- owner(context),
-         {:ok, wait} <- wait_budget(wait_ms, context),
+         {:ok, wait} <- status_wait_budget(wait_ms, context),
          :ok <- valid_cursor(cursor) do
-      call({:status, owner, id, cursor, now() + wait}, wait)
+      call({:status, owner, id, cursor, now() + wait}, wait + 1_000)
     end
   end
 
@@ -99,6 +99,18 @@ defmodule Handbean.Jobs do
   end
 
   def wait_budget(_, _), do: {:error, "wait_ms must be a non-negative integer"}
+
+  def status_wait_budget(requested, context) when is_integer(requested) and requested >= 0 do
+    case context[:tool_timeout] do
+      timeout when is_integer(timeout) and timeout >= 200 ->
+        {:ok, min(requested, min(30_000, div(timeout, 2)))}
+
+      _ ->
+        {:error, "Job tools require a trusted tool_timeout of at least 200ms"}
+    end
+  end
+
+  def status_wait_budget(_, _), do: {:error, "wait_ms must be a non-negative integer"}
 
   defp owner(context) do
     case {context[:conversation_id], context[:run_id], context[:working_directory]} do

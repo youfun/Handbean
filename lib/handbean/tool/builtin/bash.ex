@@ -30,9 +30,11 @@ defmodule Handbean.Tool.Builtin.Bash do
       "Commands that name sensitive credential paths are " <>
       "rejected before execution; unsandboxed=true does not bypass that, and the " <>
       "precheck is not a complete shell parser. " <>
-      "Set job=true for a run-scoped job (Linux and macOS). Query job_status until finished before " <>
-      "ending this run: run completion cancels unfinished jobs. Not a detached dev server; " <>
-      "descendants that escape the process group are not contained."
+      "Set job=true for a run-scoped job (Linux and macOS). The launch wait is capped at 5s; " <>
+      "if it is still running, pass the returned cursor to job_status. Do not launch another Bash " <>
+      "sleep command just to wait for it. Query job_status until finished before ending this run: " <>
+      "run completion cancels unfinished jobs. Not a detached dev server; descendants that escape " <>
+      "the process group are not contained."
   end
 
   @impl true
@@ -64,6 +66,8 @@ defmodule Handbean.Tool.Builtin.Bash do
         job: %{type: "boolean", default: false, description: "Explicit run-scoped job mode"},
         wait_ms: %{
           type: "integer",
+          minimum: 1,
+          maximum: 5_000,
           default: 1_000,
           description:
             "Job response wait, capped at 5000ms and half the tool timeout. Must be positive for launch."

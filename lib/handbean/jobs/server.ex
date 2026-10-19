@@ -59,7 +59,7 @@ defmodule Handbean.Jobs.Server do
 
     cond do
       duplicate != nil ->
-        reply_or_wait(state, duplicate, 0, deadline, from)
+        reply_or_wait(state, duplicate, 0, deadline, from, :terminal)
 
       not match?(%{open?: true}, state.scopes[owner]) ->
         {:reply, {:error, "Run scope is not open"}, state}
@@ -91,7 +91,12 @@ defmodule Handbean.Jobs.Server do
           :state,
           :cursor,
           :cleanup_error,
-          :exit_code
+          :exit_code,
+          :elapsed_ms,
+          :output_idle_ms,
+          :remaining_ms,
+          :timeout_ms,
+          :total_output_bytes
         ])
       )
 
@@ -100,7 +105,7 @@ defmodule Handbean.Jobs.Server do
 
   def handle_call({:status, owner, id, cursor, deadline}, from, state) do
     case authorized_job(state, owner, id) do
-      {:ok, job} -> reply_or_wait(state, job, cursor, deadline, from)
+      {:ok, job} -> reply_or_wait(state, job, cursor, deadline, from, :activity)
       error -> {:reply, error, state}
     end
   end
@@ -118,8 +123,10 @@ defmodule Handbean.Jobs.Server do
 
   def handle_call({:beam_output, id, text}, _from, state) do
     case state.jobs[id] do
-      %{state: :running} = job ->
-        {:reply, :ok, put_in(state.jobs[id], %{job | buffer: Buffer.append(job.buffer, text)})}
+      %{state: status} = job when status in [:running, :cancelling] and is_binary(text) ->
+        job = append_output(job, text)
+        state = put_in(state.jobs[id], job)
+        {:reply, :ok, notify_output_waiters(state, id)}
 
       _ ->
         {:reply, :ok, state}
@@ -163,7 +170,7 @@ defmodule Handbean.Jobs.Server do
             finished_at: now()
           })
 
-        {:noreply, state |> put_in([:jobs, id], job) |> notify_waiters(id)}
+        {:noreply, state |> put_in([:jobs, id], job) |> notify_terminal_waiters(id)}
 
       _ ->
         {:noreply, state}
@@ -176,8 +183,9 @@ defmodule Handbean.Jobs.Server do
         {:noreply, state}
 
       job ->
-        job = %{job | buffer: Buffer.append(job.buffer, data)}
-        {:noreply, put_in(state.jobs[job.id], job)}
+        job = append_output(job, data)
+        state = put_in(state.jobs[job.id], job)
+        {:noreply, notify_output_waiters(state, job.id)}
     end
   end
 
@@ -227,7 +235,7 @@ defmodule Handbean.Jobs.Server do
           end
 
         state = put_in(state.jobs[id], job)
-        state = if job.state in @terminal, do: notify_waiters(state, id), else: state
+        state = if job.state in @terminal, do: notify_terminal_waiters(state, id), else: state
         {:noreply, state}
     end
   end
@@ -297,7 +305,7 @@ defmodule Handbean.Jobs.Server do
       {nil, _} ->
         {:noreply, state}
 
-      {{from, id, cursor}, waiters} ->
+      {{from, id, cursor, _mode, _timer}, waiters} ->
         GenServer.reply(from, {:ok, snapshot(state.jobs[id], cursor)})
         {:noreply, %{state | waiters: waiters}}
     end
@@ -336,6 +344,8 @@ defmodule Handbean.Jobs.Server do
           created_at: now(),
           sequence: System.unique_integer([:positive, :monotonic]),
           finished_at: nil,
+          timeout_ms: timeout,
+          last_output_at: nil,
           timer: Process.send_after(self(), {:expire, id}, timeout)
         }
 
@@ -343,7 +353,7 @@ defmodule Handbean.Jobs.Server do
 
         if now() < deadline and Process.alive?(state.scopes[owner].runner) do
           GenServer.cast(pid, :go)
-          reply_or_wait(state, job, 0, deadline, from)
+          reply_or_wait(state, job, 0, deadline, from, :terminal)
         else
           state = cancel_job(state, job, :cancelled)
           {:reply, {:ok, snapshot(state.jobs[id], 0)}, state}
@@ -380,6 +390,8 @@ defmodule Handbean.Jobs.Server do
               created_at: now(),
               sequence: System.unique_integer([:positive, :monotonic]),
               finished_at: nil,
+              timeout_ms: timeout,
+              last_output_at: nil,
               timer: Process.send_after(self(), {:expire, id}, timeout)
             }
 
@@ -387,7 +399,7 @@ defmodule Handbean.Jobs.Server do
 
             if now() < deadline and Process.alive?(state.scopes[owner].runner) do
               Port.command(port, "go\n")
-              reply_or_wait(state, job, 0, deadline, from)
+              reply_or_wait(state, job, 0, deadline, from, :terminal)
             else
               state = cancel_job(state, job, :cancelled)
               {:reply, {:ok, snapshot(state.jobs[id], 0)}, state}
@@ -404,29 +416,63 @@ defmodule Handbean.Jobs.Server do
     end
   end
 
-  defp reply_or_wait(state, job, cursor, deadline, from) do
+  defp reply_or_wait(state, job, cursor, deadline, from, mode)
+       when mode in [:terminal, :activity] do
     remaining = deadline - now()
+    result = snapshot(job, cursor)
 
-    if remaining <= 1 or job.state in @terminal or map_size(state.waiters) >= 128 do
-      {:reply, {:ok, snapshot(job, cursor)}, state}
+    if remaining <= 1 or job.state in @terminal or map_size(state.waiters) >= 128 or
+         (mode == :activity and result.cursor != cursor) do
+      {:reply, {:ok, result}, state}
     else
       ref = make_ref()
       # Leave a small reply margin inside the caller's absolute deadline.
-      Process.send_after(self(), {:wait_done, ref}, max(remaining - 10, 0))
-      {:noreply, put_in(state.waiters[ref], {from, job.id, cursor})}
+      timer = Process.send_after(self(), {:wait_done, ref}, max(remaining - 10, 0))
+      waiter = {from, job.id, cursor, mode, timer}
+      {:noreply, put_in(state.waiters[ref], waiter)}
     end
   end
 
-  defp notify_waiters(state, id) do
+  defp notify_output_waiters(state, id) do
     {ready, pending} =
-      Enum.split_with(state.waiters, fn {_ref, {_from, job_id, _cursor}} -> job_id == id end)
+      Enum.split_with(state.waiters, fn
+        {_ref, {_from, ^id, cursor, :activity, _timer}} ->
+          output_available?(state.jobs[id], cursor)
 
-    Enum.each(ready, fn {_ref, {from, _, cursor}} ->
+        _ ->
+          false
+      end)
+
+    reply_waiters(%{state | waiters: Map.new(pending)}, ready, id)
+  end
+
+  defp notify_terminal_waiters(state, id) do
+    {ready, pending} =
+      Enum.split_with(state.waiters, fn {_ref, {_from, job_id, _cursor, _mode, _timer}} ->
+        job_id == id
+      end)
+
+    reply_waiters(%{state | waiters: Map.new(pending)}, ready, id)
+  end
+
+  defp reply_waiters(state, waiters, id) do
+    Enum.each(waiters, fn {_ref, {from, _job_id, cursor, _mode, timer}} ->
+      Process.cancel_timer(timer)
       GenServer.reply(from, {:ok, snapshot(state.jobs[id], cursor)})
     end)
 
-    %{state | waiters: Map.new(pending)}
+    state
   end
+
+  defp output_available?(job, cursor) do
+    Buffer.read(job.buffer, cursor, false).cursor != cursor
+  end
+
+  defp append_output(job, data) when byte_size(data) > 0 do
+    %{job | buffer: Buffer.append(job.buffer, data), last_output_at: now()}
+  end
+
+  defp append_output(job, _data), do: job
 
   defp close_scope(state, owner) do
     state =
@@ -465,8 +511,24 @@ defmodule Handbean.Jobs.Server do
     do: Enum.find_value(state.jobs, fn {_id, job} -> if job[:port] == port, do: job end)
 
   defp snapshot(job, cursor) do
+    now_ms = now()
+    observed_until = job.finished_at || now_ms
+
+    timing = %{
+      elapsed_ms: max(observed_until - job.created_at, 0),
+      output_idle_ms: max(observed_until - (job.last_output_at || job.created_at), 0),
+      remaining_ms:
+        if(job.state in @terminal,
+          do: 0,
+          else: max(job.created_at + job.timeout_ms - now_ms, 0)
+        ),
+      timeout_ms: job.timeout_ms,
+      total_output_bytes: job.buffer.total
+    }
+
     Buffer.read(job.buffer, cursor, job.state in @terminal)
     |> Map.merge(%{job_id: job.id, state: job.state, cleanup_error: job.cleanup_error})
+    |> Map.merge(timing)
     |> Map.merge(Map.take(job, [:result, :result_truncated]))
     |> Map.merge(Map.get(job, :result_details, %{}))
     |> then(fn result ->

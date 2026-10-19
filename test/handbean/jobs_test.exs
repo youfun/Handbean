@@ -38,12 +38,18 @@ defmodule Handbean.JobsTest do
     %{context: context, runner: runner}
   end
 
-  test "wait budget respects request and actual outer timeout", %{context: context} do
+  test "wait budgets distinguish launch from status queries", %{context: context} do
     assert {:ok, 125} = Jobs.wait_budget(9_000, %{context | tool_timeout: 250})
     assert {:ok, 5_000} = Jobs.wait_budget(9_000, context)
     assert {:ok, 23} = Jobs.wait_budget(23, context)
     assert {:error, _} = Jobs.wait_budget(100, Map.delete(context, :tool_timeout))
     assert {:error, _} = Jobs.wait_budget(-1, context)
+
+    long_context = %{context | tool_timeout: 120_000}
+    assert {:ok, 30_000} = Jobs.status_wait_budget(60_000, long_context)
+    assert {:ok, 125} = Jobs.status_wait_budget(9_000, %{context | tool_timeout: 250})
+    assert {:error, _} = Jobs.status_wait_budget(-1, context)
+    assert get_in(JobStatus.input_schema(), [:properties, :wait_ms, :maximum]) == 30_000
   end
 
   test "managed Bash returns executor-compatible text and a recoverable job handle", %{
@@ -55,6 +61,11 @@ defmodule Handbean.JobsTest do
     assert is_binary(sync_text)
     assert sync_job.state == :completed
     assert sync_job.output == "sync"
+    assert sync_job.elapsed_ms >= 0
+    assert sync_job.output_idle_ms >= 0
+    assert sync_job.remaining_ms == 0
+    assert sync_job.timeout_ms == 120_000
+    assert sync_job.total_output_bytes == 4
 
     assert {:ok, text, %{job: job}} =
              Bash.execute(
@@ -68,6 +79,88 @@ defmodule Handbean.JobsTest do
     assert text =~ "cursor"
   end
 
+  test "launch wait ignores output while status returns unread output immediately", %{
+    context: context
+  } do
+    task =
+      Task.async(fn ->
+        Jobs.start(
+          "printf ready; read -r answer",
+          File.cwd!(),
+          30_000,
+          1_000,
+          %{context | tool_call_id: "launch-output"}
+        )
+      end)
+
+    assert Task.yield(task, 100) == nil
+    assert {:ok, %{state: :running, output: "ready"} = job} = Task.await(task, 2_000)
+
+    assert {:ok, %{state: :running, output: "ready", cursor: cursor}} =
+             Jobs.status(job.job_id, 0, 5_000, context)
+
+    assert cursor == 5
+    release(job.job_id, "done\n")
+    assert {:ok, %{state: :completed}} = Jobs.status(job.job_id, cursor, 5_000, context)
+  end
+
+  test "status wait wakes on new output and reports monotonic runtime facts", %{context: context} do
+    assert {:ok, job} = launch("read -r answer; printf '%s' \"$answer\"", context)
+    assert job.state == :running
+    assert job.total_output_bytes == 0
+
+    task = Task.async(fn -> Jobs.status(job.job_id, job.cursor, 5_000, context) end)
+    assert Task.yield(task, 50) == nil
+    release(job.job_id, "result\n")
+
+    assert {:ok,
+            %{
+              output: "result",
+              cursor: cursor,
+              total_output_bytes: 6,
+              elapsed_ms: elapsed_ms,
+              output_idle_ms: output_idle_ms,
+              remaining_ms: remaining_ms
+            }} = Task.await(task, 1_000)
+
+    assert elapsed_ms >= job.elapsed_ms
+    assert output_idle_ms >= 0
+    assert remaining_ms in 0..30_000
+
+    assert {:ok, later} = Jobs.status(job.job_id, cursor, 20, context)
+    assert later.elapsed_ms >= elapsed_ms
+    assert later.state == :completed
+    assert later.remaining_ms == 0
+  end
+
+  test "status wait does not wake for incomplete UTF-8", %{context: context} do
+    parent = self()
+
+    fun = fn sink ->
+      sink.(<<?a, 0xE4, 0xBD>>)
+      send(parent, {:partial_utf8, self()})
+
+      receive do
+        :finish_utf8 ->
+          sink.(<<0xA0, ?z>>)
+          {:ok, "done"}
+      end
+    end
+
+    beam_context = %{context | tool_call_id: "utf8-beam"}
+
+    assert {:ok, %{state: :running, output: "a", cursor: 1} = job} =
+             Jobs.start_beam(:script, fun, 30_000, 500, beam_context)
+
+    assert_receive {:partial_utf8, worker}
+    task = Task.async(fn -> Jobs.status(job.job_id, job.cursor, 5_000, context) end)
+    assert Task.yield(task, 50) == nil
+    send(worker, :finish_utf8)
+
+    assert {:ok, %{output: "你z", cursor: 5}} = Task.await(task, 1_000)
+    assert {:ok, %{state: :completed}} = Jobs.status(job.job_id, 5, 5_000, context)
+  end
+
   test "wait expiration does not kill job, and tool call retries do not execute again", %{
     context: context
   } do
@@ -79,9 +172,19 @@ defmodule Handbean.JobsTest do
     assert id == first.job_id
     release(id, "result\n")
 
-    assert {:ok, %{state: :completed, output: "result", exit_code: 0}} =
-             Jobs.status(id, 0, 5_000, context)
+    assert {:ok, update} = Jobs.status(id, 0, 5_000, context)
+    assert update.output == "result"
 
+    terminal =
+      if update.state == :completed do
+        update
+      else
+        assert {:ok, terminal} = Jobs.status(id, update.cursor, 5_000, context)
+        terminal
+      end
+
+    assert terminal.state == :completed
+    assert terminal.exit_code == 0
     assert {:ok, %{output: ""}} = Jobs.status(id, 6, 500, context)
     assert {:ok, %{state: :completed}} = Jobs.cancel(id, context)
   end
@@ -105,7 +208,10 @@ defmodule Handbean.JobsTest do
   } do
     server = Process.whereis(Server)
     :erlang.trace(server, true, [:receive])
-    on_exit(fn -> :erlang.trace(server, false, [:receive]) end)
+
+    on_exit(fn ->
+      if Process.alive?(server), do: :erlang.trace(server, false, [:receive])
+    end)
 
     caller =
       spawn(fn ->
@@ -126,7 +232,12 @@ defmodule Handbean.JobsTest do
     assert {:ok, %{jobs: [%{job_id: id, state: :running}]}} = Jobs.status(nil, 0, 500, context)
     assert {:ok, %{job_id: ^id, state: :running}} = launch("printf duplicate", context)
     release(id, "once\n")
-    assert {:ok, %{state: :completed, output: "readyonce"}} = Jobs.status(id, 0, 5_000, context)
+    assert {:ok, update} = Jobs.status(id, 0, 5_000, context)
+    assert update.output == "readyonce"
+
+    if update.state != :completed do
+      assert {:ok, %{state: :completed}} = Jobs.status(id, update.cursor, 5_000, context)
+    end
   end
 
   for status <- [:completed, :max_turns, :budget_exceeded, :halted, :error, :cancelled],
@@ -211,6 +322,10 @@ defmodule Handbean.JobsTest do
       end
 
     assert {:ok, %{jobs: jobs, limit: 32}} = Jobs.status(nil, 0, 500, context)
+    assert Enum.all?(jobs, &Map.has_key?(&1, :elapsed_ms))
+    assert Enum.all?(jobs, &Map.has_key?(&1, :output_idle_ms))
+    assert Enum.all?(jobs, &Map.has_key?(&1, :remaining_ms))
+    assert Enum.all?(jobs, &Map.has_key?(&1, :total_output_bytes))
     retained_ids = Enum.map(jobs, & &1.job_id)
     assert length(retained_ids) == 32
     assert List.last(ids) in retained_ids
@@ -241,7 +356,11 @@ defmodule Handbean.JobsTest do
     cleaner = Process.whereis(Cleaner)
     group = :sys.get_state(Server).jobs[job.job_id].group
     :erlang.trace(cleaner, true, [:send])
-    on_exit(fn -> :erlang.trace(cleaner, false, [:send]) end)
+
+    on_exit(fn ->
+      if Process.alive?(cleaner), do: :erlang.trace(cleaner, false, [:send])
+    end)
+
     ref = Process.monitor(server)
     Process.exit(server, :kill)
     assert_receive {:DOWN, ^ref, :process, ^server, :killed}
