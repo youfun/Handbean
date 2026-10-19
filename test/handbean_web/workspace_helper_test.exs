@@ -367,6 +367,39 @@ defmodule HandbeanWeb.WorkspaceHelperTest do
       refute first["work_group_complete"]
     end
 
+    test "keeps prior rows stable while appending to an active tool streak" do
+      first_two = [
+        %{"id" => "t1", "content_type" => "tool", "tool" => "read", "tool_status" => "done"},
+        %{"id" => "t2", "content_type" => "tool", "tool" => "grep", "tool_status" => "done"}
+      ]
+
+      projected =
+        WorkspaceHelper.apply_tool_work_collapse(
+          first_two,
+          MapSet.new(),
+          trailing_open?: true
+        )
+
+      appended =
+        WorkspaceHelper.apply_tool_work_collapse(
+          first_two ++
+            [
+              %{
+                "id" => "t3",
+                "content_type" => "tool",
+                "tool" => "bash",
+                "tool_status" => "running"
+              }
+            ],
+          MapSet.new(),
+          trailing_open?: true
+        )
+
+      assert Enum.take(appended, 2) == projected
+      assert Enum.all?(appended, &(not &1["work_group_complete"]))
+      assert Enum.all?(appended, &(not &1["work_collapsed"]))
+    end
+
     test "expands a completed group when its id is in the set" do
       entries = [
         %{"id" => "t1", "content_type" => "tool", "tool" => "read", "tool_status" => "done"}

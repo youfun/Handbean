@@ -9,17 +9,21 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
   alias Handbean.PubSub.{AgentEvent, Projection}
   alias HandbeanWeb.WorkspaceLive.CliSelection
 
-  def timeline_insert(socket, entry) do
+  def timeline_insert(socket, entry, opts \\ []) do
     expanded = Map.get(socket.assigns, :expanded_tool_groups, MapSet.new())
     previous_timeline = socket.assigns.timeline
     pending_ids = pending_id_set(socket)
+    collapse_opts = Keyword.take(opts, [:trailing_open?])
 
     {timeline, position, inserted?} =
       previous_timeline
       |> upsert_in_sequence(entry, pending_ids)
       |> then(fn {entries, position, inserted?} ->
-        {HandbeanWeb.WorkspaceHelper.apply_tool_work_collapse(entries, expanded), position,
-         inserted?}
+        {HandbeanWeb.WorkspaceHelper.apply_tool_work_collapse(
+           entries,
+           expanded,
+           collapse_opts
+         ), position, inserted?}
       end)
 
     entry_id = Map.get(entry, "id")
@@ -458,7 +462,7 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
   def subscribe_tasks(socket), do: subscribe_to_runtime_tasks(socket)
   def mark_cancelled(socket), do: mark_run_cancelled(socket)
 
-  defp project_timeline(socket, entry, _opts), do: timeline_insert(socket, entry)
+  defp project_timeline(socket, entry, opts), do: timeline_insert(socket, entry, opts)
 
   def handle_current_agent_event(
         %Handbean.PubSub.AgentEvent{topic: "session:" <> _} = event,
@@ -785,7 +789,7 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
     |> finalize_assistant()
     |> assign(:tools_active, tools_active)
     |> assign(:current_assistant_entry_id, nil)
-    |> project_timeline(event, persist?: false)
+    |> project_timeline(event, persist?: false, trailing_open?: socket.assigns.running)
   end
 
   def do_handle_tool_end(payload, socket) do
@@ -808,7 +812,7 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
     updated =
       socket
       |> assign(:tools_active, tools_active)
-      |> project_timeline(entry, persist?: false)
+      |> project_timeline(entry, persist?: false, trailing_open?: socket.assigns.running)
       |> maybe_project_published_media(payload, status)
       |> EditorProjection.maybe_add_diff_file(
         file_path,
@@ -868,6 +872,7 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
 
     socket =
       socket
+      |> seal_tool_work()
       |> assign(:conv_tokens, usage)
       |> finalize_assistant()
       |> assign(:running, false)
@@ -885,6 +890,7 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
 
   def mark_run_cancelled(socket) do
     socket
+    |> seal_tool_work()
     |> finalize_assistant()
     |> assign(:running, false)
     |> assign(:running_conversation_id, nil)
@@ -893,6 +899,15 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
     |> assign(:current_assistant_entry_id, nil)
     |> assign(:pending_approval, nil)
     |> update_status(%{status: :cancelled, status_detail: nil})
+  end
+
+  defp seal_tool_work(socket) do
+    expanded = Map.get(socket.assigns, :expanded_tool_groups, MapSet.new())
+
+    timeline =
+      HandbeanWeb.WorkspaceHelper.apply_tool_work_collapse(socket.assigns.timeline, expanded)
+
+    reinsert_changed(socket, timeline)
   end
 
   def restore_active_session_snapshot(socket) do

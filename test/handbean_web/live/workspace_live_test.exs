@@ -5937,7 +5937,7 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
       assert rendered =~ ~s(data-streaming="false")
     end
 
-    test "multiple consecutive completed tools collapse into one work summary", %{conn: conn} do
+    test "active tool work stays open and collapses once the run ends", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/")
 
       send(view.pid, {:agent_event, agent_event(:run_start, %{model: "test"})})
@@ -5972,6 +5972,16 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
         view.pid,
         {:agent_event,
          agent_event(:tool_end, %{tool_use_id: "tu_2", tool: "bash", duration_ms: 20}, 4)}
+      )
+
+      rendered = render(view)
+      assert rendered =~ "tool-work-open"
+      refute rendered =~ "tool-work-summary"
+      refute rendered =~ "tool-work-collapsed"
+
+      send(
+        view.pid,
+        {:agent_event, agent_event(:run_end, %{status: "completed"}, 5)}
       )
 
       rendered = render(view)
@@ -6034,6 +6044,11 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
         {:agent_event, agent_event(:tool_end, %{tool: "read", duration_ms: 10}, 2)}
       )
 
+      send(
+        view.pid,
+        {:agent_event, agent_event(:run_end, %{status: "completed"}, 3)}
+      )
+
       rendered = render(view)
       assert rendered =~ "Explored 1 file"
       assert rendered =~ "tool-work-collapsed"
@@ -6075,6 +6090,11 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
         view.pid,
         {:agent_event,
          agent_event(:tool_end, %{tool_use_id: "tu_b", tool: "write", duration_ms: 5}, 4)}
+      )
+
+      send(
+        view.pid,
+        {:agent_event, agent_event(:run_end, %{status: "completed"}, 5)}
       )
 
       rendered = render(view)
@@ -6151,6 +6171,11 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
            },
            4
          )}
+      )
+
+      send(
+        view.pid,
+        {:agent_event, agent_event(:run_end, %{status: "completed"}, 5)}
       )
 
       refute has_element?(view, "#chat-file-change-tool-tu_change")

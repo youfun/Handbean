@@ -552,24 +552,33 @@ defmodule HandbeanWeb.WorkspaceHelper do
   Annotates consecutive tool streaks with collapse metadata.
 
   Completed groups are collapsed unless `expanded_ids` contains the group id
-  (the first tool entry id in that streak).
+  (the first tool entry id in that streak). `trailing_open?: true` keeps the
+  final streak stable while a run is still appending tools.
   """
-  def apply_tool_work_collapse(entries, expanded_ids \\ MapSet.new())
+  def apply_tool_work_collapse(entries, expanded_ids \\ MapSet.new(), opts \\ [])
 
-  def apply_tool_work_collapse(entries, expanded_ids) when is_list(entries) do
+  def apply_tool_work_collapse(entries, expanded_ids, opts) when is_list(entries) do
     expanded_ids = MapSet.new(expanded_ids, &to_string/1)
+    trailing_open? = Keyword.get(opts, :trailing_open?, false)
 
-    updates =
+    chunks =
       entries
       |> Enum.with_index()
       |> Enum.chunk_by(fn {entry, _idx} -> tool_entry?(entry) end)
+
+    trailing_chunk_index = length(chunks) - 1
+
+    updates =
+      chunks
+      |> Enum.with_index()
       |> Enum.flat_map(fn
-        [] ->
+        {[], _chunk_index} ->
           []
 
-        [{entry, _idx} | _rest] = chunk ->
+        {[{entry, _idx} | _rest] = chunk, chunk_index} ->
           if tool_entry?(entry) do
-            annotate_tool_work_chunk(chunk, expanded_ids)
+            open? = trailing_open? and chunk_index == trailing_chunk_index
+            annotate_tool_work_chunk(chunk, expanded_ids, open?)
           else
             []
           end
@@ -594,17 +603,17 @@ defmodule HandbeanWeb.WorkspaceHelper do
     end)
   end
 
-  def apply_tool_work_collapse(entries, _expanded_ids), do: entries
+  def apply_tool_work_collapse(entries, _expanded_ids, _opts), do: entries
 
-  defp annotate_tool_work_chunk(chunk, expanded_ids) do
+  defp annotate_tool_work_chunk(chunk, expanded_ids, open?) do
     tools = Enum.map(chunk, &elem(&1, 0))
     first = hd(tools)
     group_id = entry_id(first)
-    completed? = Enum.all?(tools, &tool_terminal?/1)
+    completed? = not open? and Enum.all?(tools, &tool_terminal?/1)
     collapsed? = completed? and group_id != "" and not MapSet.member?(expanded_ids, group_id)
-    summary = tool_work_summary(tools)
+    summary = if open?, do: nil, else: tool_work_summary(tools)
     roles = Enum.map(tools, &tool_work_role(tool_name(&1)))
-    nested_explore? = :explore in roles and Enum.any?(roles, &(&1 != :explore))
+    nested_explore? = not open? and :explore in roles and Enum.any?(roles, &(&1 != :explore))
 
     Enum.map(chunk, fn {entry, idx} ->
       role = tool_work_role(tool_name(entry))
