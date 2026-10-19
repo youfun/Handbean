@@ -139,8 +139,8 @@ defmodule HandbeanWeb.WorkspaceLive.MessageSubmission do
       :ok ->
         {:noreply,
          socket
-         |> assign(
-           :pending_messages,
+         |> drop_pending_timeline(id)
+         |> assign_pending_messages(
            Handbean.Agent.PendingMessages.drop(socket.assigns.pending_messages, id)
          )
          |> restore_pending_draft(item)
@@ -450,6 +450,14 @@ defmodule HandbeanWeb.WorkspaceLive.MessageSubmission do
 
   def assign_pending_messages(socket, pending) do
     Composer.assign_pending(socket, pending)
+  end
+
+  defp drop_pending_timeline(socket, id) do
+    assign(
+      socket,
+      :timeline,
+      Handbean.Agent.PendingMessages.drop_entry(socket.assigns.timeline || [], id)
+    )
   end
 
   def drop_transcript_entry(conversation_id, id),

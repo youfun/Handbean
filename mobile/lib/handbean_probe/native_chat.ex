@@ -447,7 +447,16 @@ defmodule HandbeanProbe.NativeChat do
   end
 
   defp pending_event(state, %{kind: :candidate_message_deleted, payload: payload}) do
-    %{state | pending: PendingMessages.apply_deleted(state.pending, event_payload(payload))}
+    payload = event_payload(payload)
+    id = payload["message_id"] || payload["id"]
+    pending = PendingMessages.apply_deleted(state.pending, payload)
+    entries = PendingMessages.drop_entry(state.entries, id)
+
+    %{
+      state
+      | pending: pending,
+        entries: PendingMessages.pin_pending(entries, pending)
+    }
   end
 
   defp pending_event(state, %{kind: :run_end, payload: payload}) do

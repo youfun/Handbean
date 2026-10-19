@@ -695,6 +695,15 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
   end
 
   def handle_agent_event(%{kind: :candidate_message_deleted, payload: payload}, socket) do
+    id = payload_value(payload, :message_id) || payload_value(payload, :id)
+
+    socket =
+      assign(
+        socket,
+        :timeline,
+        Handbean.Agent.PendingMessages.drop_entry(socket.assigns.timeline || [], id)
+      )
+
     pending =
       Handbean.Agent.PendingMessages.apply_deleted(socket.assigns.pending_messages, payload)
 

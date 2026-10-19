@@ -1497,6 +1497,57 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
       assert [] = Handbean.Agent.CandidateQueue.drain_follow_up(queue)
     end
 
+    test "undo queued follow-up removes it so a second queue is not duplicated", %{conn: conn} do
+      configure_test_models!()
+
+      {:ok, view, _html} = live(conn, "/")
+      sid = create_default_conversation(view)
+      {:ok, _session} = Handbean.PubSub.Session.start_or_get(session_id: sid)
+      {:ok, queue} = Handbean.Agent.CandidateQueue.start_link(session_id: sid, owner: self())
+      :ok = Handbean.PubSub.Session.attach_run(sid, self(), queue)
+      topic = "session:#{sid}"
+
+      send(
+        view.pid,
+        {:agent_event, agent_event(:run_start, %{model: "step-router-v1"}, 1, topic)}
+      )
+
+      view
+      |> element("#queue-button")
+      |> render_click(%{
+        "message" => "确认部署",
+        "model" => "stepfun/step-router-v1"
+      })
+
+      assert render(view) =~ "确认部署"
+      pending = :sys.get_state(view.pid).socket.assigns.pending_messages
+      [old_id] = Map.keys(pending)
+
+      view
+      |> element("button[phx-click='cancel_pending']")
+      |> render_click()
+
+      timeline = :sys.get_state(view.pid).socket.assigns.timeline
+      refute Enum.any?(timeline, &(&1["id"] == old_id))
+      refute Enum.any?(timeline, &(&1["content"] == "确认部署"))
+
+      view
+      |> element("#queue-button")
+      |> render_click(%{
+        "message" => "确认部署",
+        "model" => "stepfun/step-router-v1"
+      })
+
+      timeline = :sys.get_state(view.pid).socket.assigns.timeline
+      queued = Enum.filter(timeline, &(&1["content"] == "确认部署"))
+      assert length(queued) == 1
+      html = render(view)
+      assert html =~ "Queued"
+      assert html =~ "确认部署"
+
+      _ = queue
+    end
+
     test "queued follow-up stays last while the turn continues, then after inject", %{
       conn: conn
     } do

@@ -50,6 +50,14 @@ defmodule Handbean.Agent.PendingMessages do
   def drop(pending, id) when is_binary(id), do: Map.delete(pending, id)
   def drop(pending, _), do: pending
 
+  @doc "Remove a transcript/timeline entry by id."
+  @spec drop_entry([map()], String.t()) :: [map()]
+  def drop_entry(entries, id) when is_list(entries) and is_binary(id) do
+    Enum.reject(entries, &(entry_id(&1) == id))
+  end
+
+  def drop_entry(entries, _), do: entries
+
   @doc "Keep pending entries last while preserving the rest of the timeline."
   @spec pin_pending([map()], t()) :: [map()]
   def pin_pending(entries, pending) when is_list(entries) and is_map(pending) do

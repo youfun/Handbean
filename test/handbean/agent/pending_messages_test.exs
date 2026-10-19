@@ -33,6 +33,11 @@ defmodule Handbean.Agent.PendingMessagesTest do
     assert pending == %{}
   end
 
+  test "drop_entry removes the matching timeline row" do
+    entries = [%{"id" => "keep"}, %{"id" => "gone"}, %{"id" => "tail"}]
+    assert Enum.map(PendingMessages.drop_entry(entries, "gone"), & &1["id"]) == ["keep", "tail"]
+  end
+
   test "interrupted run_end does not mark undelivered; terminal status does" do
     pending = PendingMessages.put_queued(%{}, "m1", :steer, %{})
     assert PendingMessages.apply_run_end(pending, :interrupted)["m1"].status == :queued
