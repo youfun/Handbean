@@ -657,6 +657,8 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
                     <div
                       id={"assistant-md-wrapper-#{entry["id"]}"}
                       data-entry-id={entry["id"]}
+                      data-conversation-id={@current_conversation_id}
+                      data-widget-actions="true"
                       data-source={entry["content"] || ""}
                       data-final={
                         to_string(

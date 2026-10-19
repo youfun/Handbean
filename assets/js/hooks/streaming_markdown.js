@@ -12,6 +12,11 @@ import {
 import { decorateHtmlPreviews, handleHtmlPreviewClick, resizeHtmlPreview } from "../streaming_markdown/html_previews.js";
 import { workspaceFileFromHref } from "../streaming_markdown/workspace_file_link.js";
 
+const MAX_WIDGET_STATE_BYTES = 16 * 1024;
+const MAX_WIDGET_STATES = 256;
+const widgetStates = new Map();
+let widgetRequestSequence = 0;
+
 export const StreamingMarkdown = {
   mounted() {
     this.target = this.el.querySelector("[data-markdown-target]") || this.el;
@@ -20,8 +25,12 @@ export const StreamingMarkdown = {
     this.lastStreaming = false;
     this.unsubscribe = null;
     this.retryId = null;
+    this.widgetCommandRequests = new Map();
     this.resizeHandler = (event) => resizeHtmlPreview(this.target, event);
+    this.widgetMessageHandler = (event) => handleWidgetMessage(this, event);
     window.addEventListener("message", this.resizeHandler);
+    window.addEventListener("message", this.widgetMessageHandler);
+    this.handleEvent?.("widget-command-result", (result) => handleWidgetCommandResult(this, result));
     this.controller = createSmoothMarkdownStream({}, () => this.renderSnapshot());
     this.unsubscribe = this.controller.subscribe(() => this.renderSnapshot());
     this.applySource({ initial: true });
@@ -62,6 +71,8 @@ export const StreamingMarkdown = {
     disposeMermaidBlocks(this.target);
     this.el.removeEventListener("click", this.clickHandler);
     window.removeEventListener("message", this.resizeHandler);
+    window.removeEventListener("message", this.widgetMessageHandler);
+    this.widgetCommandRequests?.clear();
     this.retryId = null;
     this.unsubscribe = null;
     this.controller = null;
@@ -120,7 +131,8 @@ export const StreamingMarkdown = {
     let html = renderMarkdown(markdown, { linkTargetBlank: true });
     html = injectCopyButtons(html);
     applyRenderedHtml(this.target, html, snapshot.visible, {
-      diagrams: !(this.readStreaming() && !snapshot.final)
+      diagrams: !(this.readStreaming() && !snapshot.final),
+      widgetContext: widgetContext(this.el)
     });
 
     if (this.readStreaming() && !snapshot.final) {
@@ -250,6 +262,124 @@ export const StreamingMarkdown = {
   }
 };
 
+function widgetContext(element) {
+  const conversationId = element?.dataset?.conversationId;
+  const entryId = element?.dataset?.entryId;
+  if (element?.dataset?.widgetActions !== "true" || !conversationId || !entryId) return null;
+  return { conversationId, entryId };
+}
+
+function widgetStateKey(context, fenceIndex) {
+  return JSON.stringify([context.conversationId, context.entryId, String(fenceIndex)]);
+}
+
+function handleWidgetMessage(hook, event) {
+  const message = event.data;
+  if (!event.source ||
+      (message?.type !== "handbean:widget-state" && message?.type !== "handbean:widget-command")) return;
+
+  const frame = [...hook.target.querySelectorAll(".html-preview-frame")]
+    .find((candidate) => candidate.contentWindow === event.source);
+  if (!frame?.isConnected) return;
+
+  const context = widgetContext(hook.el);
+  const rawFenceIndex = frame.dataset.fenceIndex;
+  if (!context || !/^\d+$/.test(rawFenceIndex ?? "")) return;
+  const fenceIndex = Number(rawFenceIndex);
+  if (!Number.isSafeInteger(fenceIndex)) return;
+
+  if (message.type === "handbean:widget-state") {
+    const state = jsonState(message.value);
+    if (state !== undefined) storeWidgetState(widgetStateKey(context, fenceIndex), state);
+    return;
+  }
+
+  if (message.command !== "prefill_follow_up" || typeof hook.pushEvent !== "function") return;
+
+  const requestId = nextWidgetRequestId();
+  hook.widgetCommandRequests.set(requestId, { frame });
+  postToWidget(frame, {
+    type: "handbean:widget-command-accepted",
+    bridge_request_id: message.bridge_request_id,
+    request_id: requestId
+  });
+
+  try {
+    hook.pushEvent("widget_command", {
+      request_id: requestId,
+      entry_id: context.entryId,
+      fence_index: fenceIndex,
+      command: "prefill_follow_up",
+      payload: message.payload
+    });
+  } catch {
+    hook.widgetCommandRequests.delete(requestId);
+    postToWidget(frame, {
+      type: "handbean:widget-command-result",
+      request_id: requestId,
+      status: "error",
+      reason: "Widget command could not be sent"
+    });
+  }
+}
+
+function handleWidgetCommandResult(hook, result) {
+  if (!result || (result.status !== "ok" && result.status !== "error")) return;
+  const pending = hook.widgetCommandRequests?.get(result.request_id);
+  if (!pending) return;
+  hook.widgetCommandRequests.delete(result.request_id);
+  const message = {
+    type: "handbean:widget-command-result",
+    request_id: result.request_id,
+    status: result.status
+  };
+  if (result.reason !== undefined) message.reason = result.reason;
+  postToWidget(pending.frame, message);
+}
+
+function jsonState(value) {
+  try {
+    const serialized = JSON.stringify(value);
+    if (serialized === undefined || new TextEncoder().encode(serialized).byteLength > MAX_WIDGET_STATE_BYTES) {
+      return undefined;
+    }
+    return JSON.parse(serialized);
+  } catch {
+    return undefined;
+  }
+}
+
+function storeWidgetState(key, state) {
+  widgetStates.delete(key);
+  widgetStates.set(key, state);
+
+  if (widgetStates.size > MAX_WIDGET_STATES) {
+    widgetStates.delete(widgetStates.keys().next().value);
+  }
+}
+
+function readWidgetState(key) {
+  if (!widgetStates.has(key)) return null;
+  const state = widgetStates.get(key);
+  widgetStates.delete(key);
+  widgetStates.set(key, state);
+  return state;
+}
+
+function nextWidgetRequestId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  widgetRequestSequence += 1;
+  return `widget-command-${Date.now()}-${widgetRequestSequence}`;
+}
+
+function postToWidget(frame, message) {
+  try {
+    frame.contentWindow?.postMessage(message, "*");
+  } catch {
+    // A frame can disappear while a LiveView result is in flight.
+  }
+}
+
 function applyRenderedHtml(target, html, markdown, options = {}) {
   if (typeof document === "undefined" || !target) {
     target.innerHTML = html;
@@ -259,7 +389,13 @@ function applyRenderedHtml(target, html, markdown, options = {}) {
   try {
     const template = document.createElement("template");
     template.innerHTML = html;
-    decorateHtmlPreviews(template.content, markdown);
+    const widget = options.widgetContext;
+    decorateHtmlPreviews(template.content, markdown, {
+      widgetActions: Boolean(widget),
+      widgetState: widget
+        ? (fenceIndex) => readWidgetState(widgetStateKey(widget, fenceIndex))
+        : undefined
+    });
     if (options.diagrams) decorateMermaidBlocks(template.content);
     patchMarkdownDom(target, template.content, {
       selection: typeof window !== "undefined" ? window.getSelection?.() : null

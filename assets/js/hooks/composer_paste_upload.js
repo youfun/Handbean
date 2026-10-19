@@ -19,10 +19,12 @@
  */
 export const ComposerPasteUpload = {
   mounted() {
-    this.handleEvent?.("prefill-subagent-follow-up", ({ value }) => {
+    const setInput = ({ value }) => {
       this.el.value = String(value || "");
       this.el.focus();
-    });
+    };
+    this.handleEvent?.("composer:set-input", setInput);
+    this.handleEvent?.("prefill-subagent-follow-up", setInput);
 
     this.onKeyDown = (e) => {
       if (e.key !== "Enter" || e.isComposing || e.keyCode === 229) return;

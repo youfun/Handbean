@@ -27,6 +27,7 @@ defmodule HandbeanWeb.WorkspaceLive do
   alias HandbeanWeb.WorkspaceLive.{CliSelection, ModelSelection}
   alias HandbeanWeb.WorkspaceLive.RuntimeProjection
   alias HandbeanWeb.WorkspaceLive.Skills
+  alias HandbeanWeb.WorkspaceLive.WidgetCommands
   alias HandbeanWeb.WorkspaceLive.ChatComponents
   alias HandbeanWeb.WorkspaceLive.OverlayComponents
   alias HandbeanWeb.WorkspaceLive.SidebarComponents
@@ -706,13 +707,24 @@ defmodule HandbeanWeb.WorkspaceLive do
   @impl true
   def handle_event("prefill_subagent_follow_up", %{"child" => child}, socket)
       when is_binary(child) and child != "" do
-    value = "@#{child} "
+    {:noreply, Composer.prefill_text(socket, "@#{child} ")}
+  end
 
-    {:noreply,
-     socket
-     |> assign(:input_value, value)
-     |> assign(:skill_suggestions, nil)
-     |> push_event("prefill-subagent-follow-up", %{value: value})}
+  @impl true
+  def handle_event("widget_command", params, socket) do
+    conversation_id = socket.assigns[:current_conversation_id]
+    entry = authoritative_widget_entry(conversation_id, params["entry_id"])
+
+    case WidgetCommands.prefill_text(params, entry, conversation_id) do
+      {:ok, text} ->
+        {:noreply,
+         socket
+         |> Composer.prefill_text(text)
+         |> push_widget_command_result(params, "ok")}
+
+      {:error, reason} ->
+        {:noreply, push_widget_command_result(socket, params, "error", reason)}
+    end
   end
 
   @impl true
@@ -2320,6 +2332,31 @@ defmodule HandbeanWeb.WorkspaceLive do
 
   defp transcription_error_message(_reason),
     do: gettext("Voice transcription failed. Please try again.")
+
+  defp authoritative_widget_entry(conversation_id, entry_id)
+       when is_binary(conversation_id) and is_binary(entry_id) do
+    case Handbean.ConversationTranscriptStore.list(conversation_id) do
+      {:ok, entries} -> Enum.find(entries, &(&1["id"] == entry_id))
+      {:error, _reason} -> nil
+    end
+  end
+
+  defp authoritative_widget_entry(_conversation_id, _entry_id), do: nil
+
+  defp push_widget_command_result(socket, params, status, reason \\ nil) do
+    result = %{
+      request_id: widget_request_id(params),
+      status: status
+    }
+
+    result = if reason, do: Map.put(result, :reason, Atom.to_string(reason)), else: result
+    push_event(socket, "widget-command-result", result)
+  end
+
+  defp widget_request_id(%{"request_id" => request_id}) when is_binary(request_id),
+    do: request_id
+
+  defp widget_request_id(_params), do: ""
 
   defp speech_error_message("permission_denied"),
     do: gettext("Microphone access was denied. Allow it in system settings and try again.")

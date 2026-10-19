@@ -7177,6 +7177,131 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
     end
   end
 
+  describe "widget commands" do
+    test "completed main assistant widgets prefill the draft without changing run state", %{
+      conn: conn
+    } do
+      content = """
+      Choose files to move.
+
+      ```html
+      <button>Use selection</button>
+      ```
+      """
+
+      {:ok, conversation} =
+        Handbean.ConversationStore.create("default",
+          id: "conv-widget-command",
+          title: "Widget command",
+          timeline: [
+            %{
+              "id" => "widget-assistant",
+              "content_type" => "assistant_msg",
+              "role" => "assistant",
+              "status" => "completed",
+              "content" => content
+            }
+          ]
+        )
+
+      {:ok, view, _html} = live(conn, "/w/default/c/#{conversation["id"]}")
+
+      assert has_element?(
+               view,
+               "#assistant-md-wrapper-widget-assistant[data-widget-actions='true'][data-entry-id='widget-assistant'][data-conversation-id='#{conversation["id"]}']"
+             )
+
+      render_keyup(view, "update_input", %{"value" => "Existing draft"})
+
+      :sys.replace_state(view.pid, fn %{socket: socket} = state ->
+        %{state | socket: %{socket | assigns: %{socket.assigns | running: true}}}
+      end)
+
+      render_hook(view, "widget_command", %{
+        "request_id" => "widget-request-ok",
+        "entry_id" => "widget-assistant",
+        "fence_index" => 0,
+        "command" => "prefill_follow_up",
+        "payload" => %{
+          "prompt" => "Move the reviewed files.",
+          "selections" => [%{"label" => "README.md", "value" => true}]
+        }
+      })
+
+      expected = "Existing draft\nMove the reviewed files.\n\nSelections:\n- \"README.md\": true"
+      assert_push_event(view, "composer:set-input", %{value: ^expected})
+
+      assert_push_event(view, "widget-command-result", %{
+        request_id: "widget-request-ok",
+        status: "ok"
+      })
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.input_value == expected
+      assert assigns.running
+
+      assert {:ok, entries} =
+               Handbean.ConversationTranscriptStore.list(conversation["id"])
+
+      assert Enum.map(entries, & &1["id"]) == ["widget-assistant"]
+    end
+
+    test "rejects an entry id from another conversation and leaves the draft untouched", %{
+      conn: conn
+    } do
+      {:ok, current} =
+        Handbean.ConversationStore.create("default",
+          id: "conv-widget-current",
+          title: "Current widget",
+          timeline: [
+            %{
+              "id" => "current-assistant",
+              "content_type" => "assistant_msg",
+              "role" => "assistant",
+              "status" => "completed",
+              "content" => "```html\n<p>Current</p>\n```"
+            }
+          ]
+        )
+
+      {:ok, _other} =
+        Handbean.ConversationStore.create("default",
+          id: "conv-widget-other",
+          title: "Other widget",
+          timeline: [
+            %{
+              "id" => "other-assistant",
+              "content_type" => "assistant_msg",
+              "role" => "assistant",
+              "status" => "completed",
+              "content" => "```widget\n<button>Other</button>\n```"
+            }
+          ]
+        )
+
+      {:ok, view, _html} = live(conn, "/w/default/c/#{current["id"]}")
+      render_keyup(view, "update_input", %{"value" => "Do not replace"})
+
+      render_hook(view, "widget_command", %{
+        "request_id" => "widget-request-error",
+        "entry_id" => "other-assistant",
+        "fence_index" => 0,
+        "command" => "prefill_follow_up",
+        "payload" => %{"prompt" => "Untrusted follow-up"}
+      })
+
+      assert_push_event(view, "widget-command-result", %{
+        request_id: "widget-request-error",
+        status: "error",
+        reason: "entry_not_found"
+      })
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.input_value == "Do not replace"
+      refute assigns.running
+    end
+  end
+
   describe "free chat send" do
     test "sending in a new free chat replies before the run starts", %{conn: conn} do
       isolate_conversation_home!()

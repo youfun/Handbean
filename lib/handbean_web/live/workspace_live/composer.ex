@@ -111,6 +111,25 @@ defmodule HandbeanWeb.WorkspaceLive.Composer do
     |> cancel_image_uploads()
   end
 
+  def prefill_text(socket, text) when is_binary(text) and text != "" do
+    current = socket.assigns[:input_value] || ""
+
+    value =
+      if String.trim(current) == "",
+        do: text,
+        else: String.trim_trailing(current) <> "\n" <> text
+
+    socket
+    |> assign(:input_value, value)
+    |> assign(
+      :skill_suggestions,
+      Skills.suggestions(value, socket.assigns[:available_skills] || [])
+    )
+    |> push_event("composer:set-input", %{value: value})
+  end
+
+  def prefill_text(socket, _text), do: socket
+
   def invalidate_speech(socket) do
     socket
     |> assign(:speech_request, nil)

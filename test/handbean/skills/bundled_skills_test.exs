@@ -5,6 +5,7 @@ defmodule Handbean.Skills.BundledSkillsTest do
 
   @moduletag :tmp_dir
   @bundled_name "developing-handbean-extensions"
+  @visualizing_name "visualizing-in-conversation"
   @max_skill_bytes 65_536
 
   setup %{tmp_dir: tmp} do
@@ -22,6 +23,43 @@ defmodule Handbean.Skills.BundledSkillsTest do
     assert skill.disable_model_invocation == false
     assert content =~ "ext__"
     assert content =~ ".handbean/extensions"
+    assert byte_size(content) <= @max_skill_bytes
+  end
+
+  test "visualizing in conversation is loadable as a bundled skill", c do
+    assert {:ok, skill, content} = Loader.load_named(@visualizing_name, c.opts)
+    assert skill.source == :bundled
+    assert skill.name == @visualizing_name
+    assert skill.disable_model_invocation == false
+
+    assert skill.description =~ "chat-embedded interactive explanations"
+    assert skill.description =~ "charts, reports, simulators, and small UIs"
+    assert skill.description =~ "not for standalone websites or project pages"
+
+    assert content =~ "self-contained fenced `widget` block"
+    assert content =~ "`window.handbean.getState()`"
+    assert content =~ "`window.handbean.setState(value)`"
+    assert content =~ "no larger than 16 KiB"
+    assert content =~ "strictly `{prompt, selections?}`"
+    assert content =~ "only prefills the Composer"
+    assert content =~ "explicitly send it"
+    assert content =~ "hidden instructions or model-only data"
+    assert content =~ "necessary, appropriately reduced data"
+    assert content =~ "safely serialized inline JSON"
+    assert content =~ "must not read the original attachment"
+    assert content =~ "## Editable drafts and candidate sets"
+    assert content =~ "owners, dependencies, weights, filters"
+    assert content =~ "multiline Markdown list or table"
+    assert content =~ "selected task's visible title, owner, date, dependencies"
+    assert content =~ "active budget, preference weights"
+    assert content =~ "Continue investigating these candidates"
+    assert content =~ "complete request must remain understandable and editable"
+    assert content =~ "within 8 KiB"
+    assert content =~ "host resources"
+    assert content =~ "the network"
+    assert content =~ "responsive"
+    assert content =~ "keyboard"
+    assert content =~ "Never say the widget was tested or verified"
     assert byte_size(content) <= @max_skill_bytes
   end
 

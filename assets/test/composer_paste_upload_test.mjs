@@ -113,19 +113,22 @@ function after(fn) {
 
 {
   const el = document.querySelector("#ai-input");
-  let prefill;
+  const callbacks = new Map();
 
   const hook = {
     ...ComposerPasteUpload,
     el,
     upload: () => {},
-    handleEvent: (name, callback) => {
-      if (name === "prefill-subagent-follow-up") prefill = callback;
-    },
+    handleEvent: (name, callback) => callbacks.set(name, callback),
   };
   hook.mounted();
 
-  prefill({ value: "@child-research " });
+  callbacks.get("composer:set-input")({ value: "Continue from the widget" });
+
+  assert.equal(el.value, "Continue from the widget");
+  assert.equal(document.activeElement, el);
+
+  callbacks.get("prefill-subagent-follow-up")({ value: "@child-research " });
 
   assert.equal(el.value, "@child-research ");
   assert.equal(document.activeElement, el);

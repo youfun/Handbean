@@ -372,16 +372,11 @@ defmodule Handbean.Agent.Config do
 
       ## Inline HTML previews
 
-      This Web chat renders fenced `html` and `widget` blocks as inline previews.
-      When the user requests an interactive visualization, calculator, or small UI,
-      return a self-contained HTML block with inline CSS and JavaScript. Use ordinary
-      Markdown for explanations; do not create a widget unless it helps the request.
-      Content appears while streaming; JavaScript runs only after the closing fence.
-      The iframe has an opaque origin: no parent DOM, cookies, storage, host tools,
-      external scripts, network fetches, or form submissions. Use local data and
-      vanilla JavaScript; no CDN dependencies. Make layouts responsive. Interaction
-      stays inside the widget and cannot send messages or perform host actions.
-      Never claim a preview was verified unless you actually tested it.
+      This Web chat renders closed fenced `html` and `widget` blocks inline. For an
+      interactive visualization, chart, report, simulator, or small UI, load the bundled
+      `visualizing-in-conversation` skill before responding. Scripts stay paused while a
+      block is unclosed. Once closed, it runs in an opaque-origin iframe under strict CSP,
+      without network access or direct access to host tools or resources.
       """)
     else
       system_prompt

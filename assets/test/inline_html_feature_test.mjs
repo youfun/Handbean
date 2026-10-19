@@ -46,6 +46,7 @@ assert.match(frame.srcdoc, /default-src 'none'/);
 assert.match(frame.srcdoc, /connect-src 'none'/);
 assert.match(frame.srcdoc, /form-action 'none'/);
 assert.ok(frame.srcdoc.includes(widget));
+assert.doesNotMatch(frame.srcdoc, /Object\.defineProperty\(window, "handbean"/, "non-chat mounts have no widget bridge");
 
 target.querySelector(".code-block-copy").click();
 assert.equal(copied, widget);
@@ -128,6 +129,225 @@ el.dataset.source = "A replacement reply";
 hook.updated();
 assert.equal(target.querySelectorAll("iframe").length, 0);
 hook.destroyed();
+
+// The main chat surface opts into widget actions explicitly. Commands are
+// attributed from the real frame/DOM context, never from iframe-provided IDs.
+const widgetEl = document.createElement("div");
+const widgetSource = "```widget\n<button>One</button>\n```\n\n```widget\n<button>Two</button>\n```\n";
+widgetEl.dataset.source = widgetSource;
+widgetEl.dataset.streaming = "false";
+widgetEl.dataset.final = "true";
+widgetEl.dataset.widgetActions = "true";
+widgetEl.dataset.entryId = "entry-real";
+widgetEl.dataset.conversationId = "conversation-real";
+widgetEl.innerHTML = "<div data-markdown-target></div>";
+document.body.appendChild(widgetEl);
+const widgetCallbacks = new Map();
+const pushed = [];
+const widgetHook = {
+  ...StreamingMarkdown,
+  el: widgetEl,
+  handleEvent: (name, callback) => widgetCallbacks.set(name, callback),
+  pushEvent: (name, payload) => pushed.push([name, payload])
+};
+widgetHook.mounted();
+const widgetFrames = [...widgetEl.querySelectorAll("iframe")];
+assert.equal(widgetFrames.length, 2);
+assert.equal(widgetFrames[0].dataset.fenceIndex, "0");
+assert.equal(widgetFrames[1].dataset.fenceIndex, "1");
+assert.match(widgetFrames[0].srcdoc, /Object\.defineProperty\(window, "handbean"/);
+assert.doesNotMatch(widgetFrames[0].getAttribute("sandbox"), /allow-popups/);
+assert.doesNotMatch(widgetFrames[0].srcdoc, /openExternal/);
+
+const posted = [[], []];
+widgetFrames.forEach((widgetFrame, index) => {
+  Object.defineProperty(widgetFrame.contentWindow, "postMessage", {
+    configurable: true,
+    value: (message) => posted[index].push(message)
+  });
+});
+const sendFrom = (source, data) => window.dispatchEvent(new window.MessageEvent("message", { source, data }));
+const payloadOne = {
+  prompt: "Use the first choice",
+  selections: [{ label: "Mode", value: true }]
+};
+
+sendFrom(window, {
+  type: "handbean:widget-command",
+  command: "prefill_follow_up",
+  payload: payloadOne
+});
+assert.equal(pushed.length, 0, "a forged event.source must be ignored");
+
+widgetEl.dataset.widgetActions = "false";
+sendFrom(widgetFrames[0].contentWindow, {
+  type: "handbean:widget-command",
+  command: "prefill_follow_up",
+  payload: payloadOne
+});
+assert.equal(pushed.length, 0, "a surface without capability must not forward commands");
+widgetEl.dataset.widgetActions = "true";
+
+sendFrom(widgetFrames[0].contentWindow, {
+  type: "handbean:widget-state",
+  value: { answer: 42, markup: "</script>" }
+});
+sendFrom(widgetFrames[0].contentWindow, {
+  type: "handbean:widget-state",
+  value: { oversized: "x".repeat(16 * 1024) }
+});
+
+sendFrom(widgetFrames[0].contentWindow, {
+  type: "handbean:widget-command",
+  command: "prefill_follow_up",
+  payload: payloadOne,
+  entry_id: "iframe-forgery",
+  fence_index: 99
+});
+sendFrom(widgetFrames[1].contentWindow, {
+  type: "handbean:widget-command",
+  command: "prefill_follow_up",
+  payload: { prompt: "Second widget" }
+});
+assert.equal(pushed.length, 2);
+assert.equal(pushed[0][0], "widget_command");
+assert.deepEqual(pushed[0][1], {
+  request_id: pushed[0][1].request_id,
+  entry_id: "entry-real",
+  fence_index: 0,
+  command: "prefill_follow_up",
+  payload: payloadOne
+});
+assert.equal(pushed[1][1].entry_id, "entry-real");
+assert.equal(pushed[1][1].fence_index, 1);
+assert.notEqual(pushed[0][1].request_id, pushed[1][1].request_id);
+
+const result = widgetCallbacks.get("widget-command-result");
+result({ request_id: "not-pending", status: "ok" });
+assert.equal(posted[0].filter((message) => message.type === "handbean:widget-command-result").length, 0);
+result({ request_id: pushed[1][1].request_id, status: "ok" });
+assert.deepEqual(posted[1].at(-1), {
+  type: "handbean:widget-command-result",
+  request_id: pushed[1][1].request_id,
+  status: "ok"
+});
+assert.equal(posted[0].some((message) => message.request_id === pushed[1][1].request_id), false);
+result({ request_id: pushed[0][1].request_id, status: "error", reason: "invalid payload" });
+assert.deepEqual(posted[0].at(-1), {
+  type: "handbean:widget-command-result",
+  request_id: pushed[0][1].request_id,
+  status: "error",
+  reason: "invalid payload"
+});
+
+// Replacing an iframe restores the accepted state from the parent-only Map.
+widgetEl.dataset.source = widgetSource.replace("One", "One updated");
+widgetHook.updated();
+const rebuiltFrame = widgetEl.querySelector("iframe");
+assert.notEqual(rebuiltFrame, widgetFrames[0]);
+assert.match(rebuiltFrame.srcdoc, /"answer":42/);
+assert.ok(rebuiltFrame.srcdoc.includes("\\u003c/script>"));
+assert.doesNotMatch(rebuiltFrame.srcdoc, /"oversized"/);
+
+// Execute the injected bridge in its own jsdom realm to cover API state limits
+// and both Promise receipt paths. Browser sandbox/isolation remains E2E scope.
+const bridgeDom = new JSDOM(rebuiltFrame.srcdoc, {
+  runScripts: "dangerously",
+  beforeParse(bridgeWindow) {
+    bridgeWindow.TextEncoder = globalThis.TextEncoder;
+    bridgeWindow.ResizeObserver = class {
+      observe() {}
+    };
+  }
+});
+const bridge = bridgeDom.window.handbean;
+assert.deepEqual(JSON.parse(JSON.stringify(bridge.getState())), { answer: 42, markup: "</script>" });
+assert.throws(() => bridge.setState({ oversized: "x".repeat(16 * 1024) }), /16 KiB/);
+
+const nextBridgeMessage = (type) => new Promise((resolve) => {
+  const listener = (event) => {
+    if (event.data?.type !== type) return;
+    bridgeDom.window.removeEventListener("message", listener);
+    resolve(event.data);
+  };
+  bridgeDom.window.addEventListener("message", listener);
+});
+const dispatchToBridge = (data) => bridgeDom.window.dispatchEvent(new bridgeDom.window.MessageEvent("message", {
+  source: bridgeDom.window.parent,
+  data
+}));
+const bridgePayload = { prompt: "Continue", selections: [{ label: "Count", value: 2 }] };
+const commandMessage = nextBridgeMessage("handbean:widget-command");
+const resolved = bridge.prefillFollowUp(bridgePayload);
+const command = await commandMessage;
+assert.equal(JSON.stringify(command.payload), JSON.stringify(bridgePayload));
+dispatchToBridge({
+  type: "handbean:widget-command-accepted",
+  bridge_request_id: command.bridge_request_id,
+  request_id: "parent-ok"
+});
+dispatchToBridge({ type: "handbean:widget-command-result", request_id: "parent-ok", status: "ok" });
+await resolved;
+
+const rejectedCommandMessage = nextBridgeMessage("handbean:widget-command");
+const rejected = bridge.sendFollowUpMessage({ prompt: "Reject me" });
+const rejectedCommand = await rejectedCommandMessage;
+dispatchToBridge({
+  type: "handbean:widget-command-accepted",
+  bridge_request_id: rejectedCommand.bridge_request_id,
+  request_id: "parent-error"
+});
+dispatchToBridge({
+  type: "handbean:widget-command-result",
+  request_id: "parent-error",
+  status: "error",
+  reason: "server rejected"
+});
+await assert.rejects(rejected, /server rejected/);
+
+for (let index = 0; index < 32; index += 1) {
+  bridge.prefillFollowUp({ prompt: `Pending ${index}` });
+}
+await assert.rejects(
+  bridge.prefillFollowUp({ prompt: "One request too many" }),
+  /Too many pending widget commands/
+);
+
+bridgeDom.window.close();
+
+// Widget state is a bounded LRU: updating an existing key refreshes it, while
+// the oldest of more than 256 distinct widget contexts is evicted.
+for (let index = 0; index < 255; index += 1) {
+  widgetEl.dataset.conversationId = `lru-${index}`;
+  sendFrom(rebuiltFrame.contentWindow, {
+    type: "handbean:widget-state",
+    value: { slot: index }
+  });
+}
+widgetEl.dataset.conversationId = "conversation-real";
+sendFrom(rebuiltFrame.contentWindow, {
+  type: "handbean:widget-state",
+  value: { answer: 43 }
+});
+widgetEl.dataset.conversationId = "lru-255";
+sendFrom(rebuiltFrame.contentWindow, {
+  type: "handbean:widget-state",
+  value: { slot: 255 }
+});
+
+widgetEl.dataset.conversationId = "lru-0";
+widgetEl.dataset.source = widgetSource.replace("One", "Eviction probe");
+widgetHook.updated();
+assert.doesNotMatch(widgetEl.querySelector("iframe").srcdoc, /"slot":0/);
+
+widgetEl.dataset.conversationId = "conversation-real";
+widgetEl.dataset.source = widgetSource.replace("One", "Refresh probe");
+widgetHook.updated();
+assert.match(widgetEl.querySelector("iframe").srcdoc, /"answer":43/);
+
+widgetHook.destroyed();
+widgetEl.remove();
+
 dom.window.close();
 delete globalThis.window;
 delete globalThis.document;

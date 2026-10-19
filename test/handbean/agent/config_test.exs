@@ -220,6 +220,33 @@ defmodule Handbean.Agent.ConfigTest do
     refute config.system_prompt =~ "Current checkout"
   end
 
+  describe "inline preview prompt contract" do
+    test "injects only the short host route for LiveView runs" do
+      live_view = Config.from_opts(system_prompt: "Base prompt.", source: :live_view)
+
+      assert live_view.system_prompt =~ "## Inline HTML previews"
+      assert live_view.system_prompt =~ "closed fenced `html` and `widget` blocks"
+      assert live_view.system_prompt =~ "`visualizing-in-conversation` skill"
+      assert live_view.system_prompt =~ "Scripts stay paused"
+      assert live_view.system_prompt =~ "opaque-origin iframe under strict CSP"
+      assert live_view.system_prompt =~ "without network access"
+      assert live_view.system_prompt =~ "direct access to host tools or resources"
+
+      refute live_view.system_prompt =~ "window.handbean.getState"
+      refute live_view.system_prompt =~ "window.handbean.prefillFollowUp"
+      refute live_view.system_prompt =~ "user-uploaded data"
+      refute live_view.system_prompt =~ "inline JSON"
+      refute live_view.system_prompt =~ "16 KiB"
+
+      for source <- [nil, :native, :cli, :sns, :webhook, :schedule, "live_view"] do
+        config = Config.from_opts(system_prompt: "Base prompt.", source: source)
+
+        refute config.system_prompt =~ "## Inline HTML previews"
+        refute config.system_prompt =~ "visualizing-in-conversation"
+      end
+    end
+  end
+
   describe "workspace prompt contract" do
     test "injects the current workspace as the default command directory" do
       workspace =
