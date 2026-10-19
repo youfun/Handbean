@@ -41,8 +41,7 @@ defmodule Handbean.Agent.Tool.ResultContract do
     :started_at,
     :completed_at,
     :duration_ms,
-    :timing_fidelity,
-    :file_move_plan_id
+    :timing_fidelity
   ]
   @max_detail_string 2_000
   @max_diff_lines 80
@@ -263,8 +262,7 @@ defmodule Handbean.Agent.Tool.ResultContract do
         :started_at,
         :completed_at,
         :duration_ms,
-        :timing_fidelity,
-        :file_move_plan_id
+        :timing_fidelity
       ])
     end
   end

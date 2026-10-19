@@ -220,7 +220,6 @@ defmodule Handbean.Tool.Registry do
       Handbean.Tool.Builtin.ReplyToParentConversation,
       Handbean.Tool.Builtin.CreateConversation,
       Handbean.Tool.Builtin.Schedule,
-      Handbean.Tool.Builtin.FileMovePlan,
       Handbean.Tool.Builtin.ErrorTracker,
       Handbean.Tool.Memory.MemAssociate,
       Handbean.Tool.Memory.MemForget,
