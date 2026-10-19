@@ -2,7 +2,8 @@ defmodule Handbean.Agent.Provider.Codex.Models do
   @moduledoc "Authenticated Codex catalog; never uses the Platform API model list."
 
   alias Handbean.Agent.Auth.CodexCredential
-  alias Handbean.Agent.Provider.Codex
+  alias Handbean.Agent.Provider.{Codex, ModelCatalog}
+  alias Handbean.LlmDbDefaults
 
   # Codex filters /models by this query param. The live catalog can hide a
   # model even when the advertised client is above that model's
@@ -46,19 +47,30 @@ defmodule Handbean.Agent.Provider.Codex.Models do
     visible =
       Enum.flat_map(models, fn
         %{"slug" => id} = model when is_binary(id) and id != "" ->
-          if model["visibility"] == "hide" do
-            []
-          else
-            [catalog_model(id, model)]
-          end
+          if model["visibility"] == "hide", do: [], else: [{id, model}]
 
         _ ->
           []
       end)
+      |> Enum.uniq_by(&elem(&1, 0))
 
     case visible do
-      [] -> {:error, "No Codex models were returned. The existing model list was kept."}
-      models -> {:ok, Enum.uniq_by(models, & &1["id"])}
+      [] ->
+        {:error, "No Codex models were returned. The existing model list was kept."}
+
+      entries ->
+        fallbacks =
+          entries
+          |> Enum.map(fn {id, model} -> {id, model["display_name"] || id} end)
+          |> LlmDbDefaults.enrich_models()
+
+        catalog =
+          Enum.map(entries, fn {id, model} ->
+            fallback = fallbacks |> Map.fetch!(id) |> Map.delete("cost")
+            ModelCatalog.normalize_entry(model, fallback)
+          end)
+
+        {:ok, catalog}
     end
   end
 
@@ -69,49 +81,6 @@ defmodule Handbean.Agent.Provider.Codex.Models do
   dropped, matching the subscription catalog rather than a local union.
   """
   def preserve_enabled(models, existing) when is_list(models) and is_list(existing) do
-    enabled =
-      Map.new(existing, fn
-        %{"id" => id, "enabled" => enabled} when is_binary(id) and is_boolean(enabled) ->
-          {id, enabled}
-
-        _ ->
-          {nil, nil}
-      end)
-
-    Enum.map(models, fn model ->
-      case Map.get(enabled, model["id"]) do
-        enabled when is_boolean(enabled) -> Map.put(model, "enabled", enabled)
-        _ -> model
-      end
-    end)
+    ModelCatalog.refresh_merge(existing, models, missing: :drop)
   end
-
-  defp catalog_model(id, model) do
-    levels = reasoning_levels(model["supported_reasoning_levels"])
-
-    %{
-      "id" => id,
-      "name" => model["display_name"] || id,
-      "reasoning" => levels != [],
-      "input" => model["input_modalities"] || ["text"],
-      "contextWindow" => model["context_window"]
-    }
-    |> maybe_put("reasoningLevels", levels)
-    |> maybe_put("defaultReasoning", model["default_reasoning_level"])
-  end
-
-  defp reasoning_levels(levels) when is_list(levels) do
-    levels
-    |> Enum.flat_map(fn
-      %{"effort" => effort} when is_binary(effort) and effort != "" -> [effort]
-      _ -> []
-    end)
-    |> Enum.uniq()
-  end
-
-  defp reasoning_levels(_), do: []
-
-  defp maybe_put(model, _key, value) when value in [nil, ""], do: model
-  defp maybe_put(model, _key, []), do: model
-  defp maybe_put(model, key, value), do: Map.put(model, key, value)
 end

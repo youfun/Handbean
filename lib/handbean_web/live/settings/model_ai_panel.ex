@@ -74,7 +74,9 @@ defmodule HandbeanWeb.Live.Settings.ModelAIPanel do
                 phx-change="update_field"
                 class="settings-input"
               >
-                <option value="off" selected={@form.reasoning == "off"}>{gettext("Off")}</option>
+                <option value="off" selected={@form.reasoning == "off"}>
+                  {gettext("None (use provider default)")}
+                </option>
                 <option value="minimal" selected={@form.reasoning == "minimal"}>
                   {gettext("Minimal")}
                 </option>
@@ -446,7 +448,7 @@ defmodule HandbeanWeb.Live.Settings.ModelAIPanel do
   defp unavailable_reasoning_label(reasoning),
     do: gettext("%{level} (Unavailable)", level: reasoning_label(reasoning))
 
-  defp reasoning_label("off"), do: gettext("Off")
+  defp reasoning_label("off"), do: gettext("None (use provider default)")
   defp reasoning_label("minimal"), do: gettext("Minimal")
   defp reasoning_label("low"), do: gettext("Low")
   defp reasoning_label("medium"), do: gettext("Medium")

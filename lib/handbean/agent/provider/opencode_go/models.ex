@@ -2,10 +2,10 @@ defmodule Handbean.Agent.Provider.OpenCodeGo.Models do
   @moduledoc """
   Pulls the OpenCode Go catalog from `GET /v1/models`.
 
-  That list is the subscription catalog. It is not a Handbean price table.
-  Requests send the Handbean user agent. A failed or empty response never
-  replaces the saved rows. Re-pulling keeps a custom name, enabled flag, and
-  hand-edited limits.
+  That list is the subscription catalog and its model objects are persisted as
+  upstream facts. It is not a Handbean price table. Requests send the Handbean
+  user agent. A failed or empty response never replaces the saved rows. Re-
+  pulling refreshes upstream facts and keeps only the local enabled choice.
   """
 
   alias Handbean.Agent.ModelConfig
@@ -49,20 +49,23 @@ defmodule Handbean.Agent.Provider.OpenCodeGo.Models do
   @spec catalog(term()) :: {:ok, [map()]} | {:error, String.t()}
   def catalog(body) do
     with {:ok, data} <- decode(body) do
-      ids =
+      entries =
         data
         |> Enum.flat_map(fn
-          %{"id" => id} when is_binary(id) and id != "" -> [id]
+          %{"id" => id} = model when is_binary(id) and id != "" -> [{id, model}]
           _model -> []
         end)
-        |> Enum.uniq()
+        |> Enum.uniq_by(&elem(&1, 0))
 
       enriched =
-        ids
-        |> Enum.map(&{&1, &1})
+        entries
+        |> Enum.map(fn {id, _model} -> {id, id} end)
         |> LlmDbDefaults.enrich_models()
 
-      models = Enum.map(ids, &Map.fetch!(enriched, &1))
+      models =
+        Enum.map(entries, fn {id, raw} ->
+          ModelCatalog.normalize_entry(raw, Map.fetch!(enriched, id))
+        end)
 
       case models do
         [] -> {:error, "The provider returned no models. The existing list was kept."}

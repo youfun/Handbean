@@ -9,6 +9,8 @@ defmodule Handbean.Agent.Provider.Cursor.Models do
 
   alias Handbean.Agent.Auth.CursorCredential
   alias Handbean.Agent.Provider.Cursor.{Proto, Transport}
+  alias Handbean.Agent.Provider.ModelCatalog
+  alias Handbean.LlmDbDefaults
 
   @preferred "composer-2.5"
 
@@ -59,7 +61,10 @@ defmodule Handbean.Agent.Provider.Cursor.Models do
   end
 
   defp build_catalog(usable_body, available_body) do
-    usable = usable_body |> Proto.decode_models_response() |> Enum.map(&to_catalog/1)
+    usable =
+      usable_body
+      |> Proto.decode_models_response()
+      |> Enum.map(&to_catalog/1)
 
     parameterized =
       available_body
@@ -84,19 +89,21 @@ defmodule Handbean.Agent.Provider.Cursor.Models do
     context_window = context_window(context, model, variant)
     id = variant_id(model.name, variant, context)
 
-    %{
-      "id" => id,
-      "name" => variant_name(model, variant, context),
-      "reasoning" => reasoning_variant?(variant),
-      "input" => if(model.supports_images?, do: ["text", "image"], else: ["text"]),
-      "contextWindow" => context_window,
-      "maxTokens" => 32_000,
-      "cursorRequestedModel" => %{
-        "modelId" => model.name,
-        "maxMode" => variant.max_mode?,
-        "parameters" => Enum.map(variant.parameters, &stringify_parameter/1)
-      }
-    }
+    fallback = LlmDbDefaults.enrich_model(model.name, variant_name(model, variant, context))
+
+    fallback
+    |> Map.delete("cost")
+    |> Map.put("id", id)
+    |> Map.put("name", variant_name(model, variant, context))
+    |> put_reasoning(reasoning_variant?(variant))
+    |> Map.put("input", if(model.supports_images?, do: ["text", "image"], else: ["text"]))
+    |> Map.put("cursorRequestedModel", %{
+      "modelId" => model.name,
+      "maxMode" => variant.max_mode?,
+      "parameters" => Enum.map(variant.parameters, &stringify_parameter/1)
+    })
+    |> maybe_put("contextWindow", context_window)
+    |> ModelCatalog.put_upstream(%{available: model, variant: variant})
   end
 
   defp variant_id(base, variant, context) do
@@ -162,10 +169,10 @@ defmodule Handbean.Agent.Provider.Cursor.Models do
   defp context_window(_context, model, variant), do: model_context_window(model, variant)
 
   defp model_context_window(model, %{max_mode?: true}) do
-    model.max_context_token_limit || model.context_token_limit || 128_000
+    model.max_context_token_limit || model.context_token_limit
   end
 
-  defp model_context_window(model, _variant), do: model.context_token_limit || 128_000
+  defp model_context_window(model, _variant), do: model.context_token_limit
 
   defp reasoning_variant?(variant) do
     Enum.any?(variant.parameters, &(&1.id in ["reasoning", "effort"]))
@@ -183,56 +190,27 @@ defmodule Handbean.Agent.Provider.Cursor.Models do
   end
 
   defp to_catalog(model) do
-    context_window = default_context_window(model.id)
-
-    %{
-      "id" => model.id,
-      "name" => display_name(model, context_window),
-      "reasoning" => model.thinking?,
-      "input" => ["text"],
-      "contextWindow" => context_window,
-      "maxTokens" => 32_000
-    }
+    model.id
+    |> LlmDbDefaults.enrich_model(model.name || model.id)
+    |> Map.delete("cost")
+    |> Map.put("id", model.id)
+    |> Map.put("name", model.name || model.id)
+    |> put_reasoning(model.thinking?)
+    |> ModelCatalog.put_upstream(%{usable: model})
   end
 
-  defp display_name(%{name: name}, context_window) when is_binary(name) and name != "" do
-    String.replace(name, ~r/\b1M\b/, format_context(context_window))
+  defp put_reasoning(model, true), do: Map.put(model, "reasoning", true)
+
+  defp put_reasoning(model, false) do
+    model
+    |> Map.put("reasoning", false)
+    |> Map.delete("reasoningLevels")
+    |> Map.delete("defaultReasoning")
+    |> Map.delete("thinkingLevelMap")
   end
 
-  defp display_name(%{id: id}, _context_window), do: id
-
-  # GetUsableModels does not include token limits. Cursor's catalog names advertise
-  # the optional 1M maximum, while a normal Run request uses the documented default.
-  defp default_context_window(id) do
-    cond do
-      String.starts_with?(id, ["claude-opus-5", "claude-opus-4-8", "claude-fable-5"]) ->
-        300_000
-
-      String.starts_with?(id, "claude-opus-4-7") and not String.ends_with?(id, "-fast") ->
-        300_000
-
-      String.starts_with?(id, ["gpt-", "codex-"]) ->
-        272_000
-
-      String.contains?(id, "grok-4") ->
-        256_000
-
-      String.starts_with?(id, "kimi-k2.7") ->
-        262_144
-
-      String.starts_with?(id, "muse-spark") ->
-        300_000
-
-      id == "default" ->
-        128_000
-
-      true ->
-        200_000
-    end
-  end
-
-  defp format_context(262_144), do: "262K"
-  defp format_context(tokens), do: "#{div(tokens, 1_000)}K"
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
   defp classify(message) do
     down = String.downcase(message)

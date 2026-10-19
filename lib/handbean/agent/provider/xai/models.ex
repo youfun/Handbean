@@ -8,17 +8,17 @@ defmodule Handbean.Agent.Provider.Xai.Models do
   voice models stay out of the coding picker.
 
   Prices are the vendor's short-context rates, converted from USD cents per
-  100 million tokens to dollars per million tokens. A failed list never
-  replaces the saved rows. Re-pulling refreshes vendor fields and keeps a
-  custom name and enabled flag.
+  100 million tokens to dollars per million tokens. The merged raw catalog
+  object is persisted under `upstream`. A failed list never replaces saved rows;
+  re-pulling refreshes vendor facts and keeps the local enabled choice.
   """
 
   alias Handbean.Agent.Auth.XaiCredential
   alias Handbean.Agent.ModelConfig
+  alias Handbean.Agent.Provider.ModelCatalog
   alias Handbean.LlmDbDefaults
 
   @receive_timeout 15_000
-  @vendor_keys ~w(contextWindow maxTokens cost input reasoning defaultReasoning thinkingLevelMap)
   @compatible_apis ~w(openai openai-responses openai-chat-completions openai-compatible custom)
 
   @spec remote_catalog?(map()) :: boolean()
@@ -35,7 +35,7 @@ defmodule Handbean.Agent.Provider.Xai.Models do
          {:ok, listed} <- get_json(url, api_key, opts),
          language = language_list(url, api_key, opts),
          {:ok, remote} <- catalog(listed, language) do
-      models = refresh_merge(Map.get(provider, "models", []), remote)
+      models = ModelCatalog.refresh_merge(Map.get(provider, "models", []), remote)
       :ok = ModelConfig.update_provider(provider_id, %{"models" => models})
       {:ok, %{added: added_count(provider, remote), total: length(models)}}
     end
@@ -56,11 +56,20 @@ defmodule Handbean.Agent.Provider.Xai.Models do
         case decode_language(language_body) do
           {:ok, language_models} ->
             Enum.map(language_models, fn model ->
-              Map.merge(Map.get(by_id, model["id"], %{}), model)
+              listed_model = Map.get(by_id, model["id"], %{})
+
+              listed_model
+              |> Map.merge(model)
+              |> Map.put("__upstream", %{
+                "models" => listed_model,
+                "languageModels" => model
+              })
             end)
 
           :unavailable ->
-            Enum.filter(listed, &text_model?/1)
+            listed
+            |> Enum.filter(&text_model?/1)
+            |> Enum.map(&Map.put(&1, "__upstream", %{"models" => &1}))
         end
 
       build(entries)
@@ -190,6 +199,7 @@ defmodule Handbean.Agent.Provider.Xai.Models do
             enriched
             |> Map.fetch!(entry["id"])
             |> overlay(entry)
+            |> ModelCatalog.put_upstream(entry["__upstream"] || entry)
           end)
 
         {:ok, models}
@@ -197,11 +207,14 @@ defmodule Handbean.Agent.Provider.Xai.Models do
   end
 
   defp overlay(model, entry) do
+    reasoning = reasoning_fields(entry["capabilities"])
+
     model
     |> maybe_put("contextWindow", positive_integer(entry["context_length"]))
     |> maybe_put("input", input_modalities(entry["input_modalities"]))
     |> put_prices(entry)
-    |> Map.merge(reasoning_fields(entry["capabilities"]))
+    |> Map.merge(reasoning)
+    |> drop_reasoning_metadata(reasoning["reasoning"])
   end
 
   defp text_model?(%{"prompt_text_token_price" => price} = model) when is_integer(price) do
@@ -236,6 +249,7 @@ defmodule Handbean.Agent.Provider.Xai.Models do
     else
       %{
         "reasoning" => true,
+        "reasoningLevels" => efforts,
         "thinkingLevelMap" => thinking_level_map(efforts)
       }
       |> maybe_put("defaultReasoning", default_effort(capabilities, efforts))
@@ -243,6 +257,15 @@ defmodule Handbean.Agent.Provider.Xai.Models do
   end
 
   defp reasoning_fields(_capabilities), do: %{}
+
+  defp drop_reasoning_metadata(model, false) do
+    model
+    |> Map.delete("reasoningLevels")
+    |> Map.delete("defaultReasoning")
+    |> Map.delete("thinkingLevelMap")
+  end
+
+  defp drop_reasoning_metadata(model, _reasoning), do: model
 
   defp thinking_level_map(efforts) do
     ~w(none minimal low medium high xhigh max ultra)
@@ -277,44 +300,6 @@ defmodule Handbean.Agent.Provider.Xai.Models do
 
   defp put_price(prices, _key, cents) when not is_integer(cents), do: prices
   defp put_price(prices, key, cents), do: Map.put(prices, key, cents / 10_000)
-
-  defp refresh_merge(existing, remote) when is_list(existing) and is_list(remote) do
-    existing_by_id =
-      Map.new(existing, fn
-        %{"id" => id} = model when is_binary(id) -> {id, model}
-        _model -> {nil, nil}
-      end)
-
-    remote_ids = MapSet.new(remote, & &1["id"])
-
-    discovered =
-      Enum.map(remote, fn remote_model ->
-        case Map.get(existing_by_id, remote_model["id"]) do
-          nil ->
-            remote_model
-
-          existing ->
-            existing
-            |> Map.merge(Map.take(remote_model, @vendor_keys))
-            |> Map.put("id", remote_model["id"])
-            |> Map.put("name", existing["name"] || remote_model["name"])
-            |> Map.delete("unavailable")
-        end
-      end)
-
-    kept =
-      Enum.flat_map(existing, fn
-        %{"id" => id} = model when is_binary(id) ->
-          if MapSet.member?(remote_ids, id), do: [], else: [Map.put(model, "unavailable", true)]
-
-        _model ->
-          []
-      end)
-
-    discovered ++ kept
-  end
-
-  defp refresh_merge(_existing, remote), do: remote
 
   defp added_count(provider, remote) do
     existing = MapSet.new(Map.get(provider, "models", []), & &1["id"])

@@ -185,10 +185,18 @@ defmodule HandbeanWeb.AvailableModelsLiveTest do
     html = render(view)
     assert html =~ "custom-reasoner"
 
-    assert Regex.match?(
-             ~r/Off\s*\/\s*Minimal\s*\/\s*Low\s*\/\s*Medium\s*\/\s*High\s*\/\s*X-High/,
-             html
-           )
+    for level <- [
+          "None (use provider default)",
+          "Minimal",
+          "Low",
+          "Medium",
+          "High",
+          "X-High",
+          "max",
+          "ultra"
+        ] do
+      assert html =~ level
+    end
   end
 
   test "adding a grok model stores only the selected reasoning levels", %{conn: conn} do
@@ -231,7 +239,7 @@ defmodule HandbeanWeb.AvailableModelsLiveTest do
     refute Map.has_key?(model["thinkingLevelMap"], "off")
 
     html = render(view)
-    assert Regex.match?(~r/grok-4\.7.*?Low\s*\/\s*X-High/s, html)
+    assert Regex.match?(~r/grok-4\.7.*?None \(use provider default\).*?Low\s*\/\s*X-High/s, html)
     refute Regex.match?(~r/grok-4\.7.*?Off\s*\/\s*Minimal/s, html)
   end
 

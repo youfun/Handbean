@@ -4,11 +4,13 @@ defmodule Handbean.Agent.Provider.Ollama.Models do
 
   The OpenAI `/v1/models` list only has ids. Tags also reports vision and
   thinking, which the chat picker needs. Completion models stay; decision-only
-  models do not. A failed list never replaces the saved rows. Re-pulling
-  refreshes capabilities and keeps a custom name and enabled flag.
+  models do not. The raw tag object is persisted as the upstream fact. A failed
+  list never replaces the saved rows. Re-pulling refreshes capabilities and
+  keeps the local enabled choice.
   """
 
   alias Handbean.Agent.ModelConfig
+  alias Handbean.Agent.Provider.ModelCatalog
   alias Handbean.LlmDbDefaults
 
   @receive_timeout 15_000
@@ -25,7 +27,7 @@ defmodule Handbean.Agent.Provider.Ollama.Models do
       when is_binary(provider_id) and is_map(provider) do
     with {:ok, listed} <- fetch_tags(tags_url(provider["baseUrl"]), api_key(provider), opts),
          {:ok, remote} <- catalog(listed) do
-      models = refresh_merge(Map.get(provider, "models", []), remote)
+      models = ModelCatalog.refresh_merge(Map.get(provider, "models", []), remote)
       :ok = ModelConfig.update_provider(provider_id, %{"models" => models})
       {:ok, %{added: added_count(provider, remote), total: length(models)}}
     end
@@ -42,15 +44,16 @@ defmodule Handbean.Agent.Provider.Ollama.Models do
 
       enriched =
         entries
-        |> Enum.map(fn {id, _input, _reasoning} -> {id, id} end)
+        |> Enum.map(fn {id, _input, _reasoning, _raw} -> {id, id} end)
         |> LlmDbDefaults.enrich_models()
 
       built =
-        Enum.map(entries, fn {id, input, reasoning} ->
+        Enum.map(entries, fn {id, input, reasoning, raw} ->
           enriched
           |> Map.fetch!(id)
           |> Map.put("input", input)
           |> put_reasoning(reasoning)
+          |> ModelCatalog.put_upstream(raw)
         end)
 
       case built do
@@ -121,7 +124,7 @@ defmodule Handbean.Agent.Provider.Ollama.Models do
     capabilities = model["capabilities"] || []
 
     if is_list(capabilities) and "completion" in capabilities do
-      [{name, input(capabilities), "thinking" in capabilities}]
+      [{name, input(capabilities), "thinking" in capabilities, model}]
     else
       []
     end
@@ -142,60 +145,6 @@ defmodule Handbean.Agent.Provider.Ollama.Models do
   defp put_reasoning(model, false) do
     model
     |> Map.put("reasoning", false)
-    |> Map.delete("reasoningLevels")
-    |> Map.delete("defaultReasoning")
-    |> Map.delete("thinkingLevelMap")
-  end
-
-  defp refresh_merge(existing, remote) when is_list(existing) and is_list(remote) do
-    existing_by_id =
-      Map.new(existing, fn
-        %{"id" => id} = model when is_binary(id) -> {id, model}
-        _model -> {nil, nil}
-      end)
-
-    remote_ids = MapSet.new(remote, & &1["id"])
-
-    discovered =
-      Enum.map(remote, fn remote_model ->
-        case Map.get(existing_by_id, remote_model["id"]) do
-          nil ->
-            remote_model
-
-          existing ->
-            merged =
-              existing
-              |> Map.merge(remote_model)
-              |> Map.put("id", remote_model["id"])
-              |> Map.put("name", existing["name"] || remote_model["name"])
-              |> Map.delete("unavailable")
-              |> drop_reasoning_fields(remote_model["reasoning"])
-
-            case Map.fetch(existing, "enabled") do
-              {:ok, enabled} -> Map.put(merged, "enabled", enabled)
-              :error -> Map.delete(merged, "enabled")
-            end
-        end
-      end)
-
-    kept =
-      Enum.flat_map(existing, fn
-        %{"id" => id} = model when is_binary(id) ->
-          if MapSet.member?(remote_ids, id), do: [], else: [Map.put(model, "unavailable", true)]
-
-        _model ->
-          []
-      end)
-
-    discovered ++ kept
-  end
-
-  defp refresh_merge(_existing, remote), do: remote
-
-  defp drop_reasoning_fields(model, true), do: model
-
-  defp drop_reasoning_fields(model, _reasoning) do
-    model
     |> Map.delete("reasoningLevels")
     |> Map.delete("defaultReasoning")
     |> Map.delete("thinkingLevelMap")

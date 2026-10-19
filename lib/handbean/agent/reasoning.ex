@@ -8,8 +8,7 @@ defmodule Handbean.Agent.Reasoning do
   """
 
   @levels ["off", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]
-  @reasoning_levels ["minimal", "low", "medium", "high", "xhigh"]
-  @catalog_levels ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]
+  @catalog_levels @levels
   @default_map %{
     "none" => "none",
     "minimal" => "low",
@@ -45,42 +44,33 @@ defmodule Handbean.Agent.Reasoning do
   @doc """
   Returns visible reasoning levels for a model.
 
-  `off` is always visible for reasoning-capable models, except models that
-  cannot disable reasoning. `thinkingLevelMap` entries set to `nil` hide that
-  level. Known model families fill in the levels their API actually accepts
-  when the catalog omits the map.
+  Models expose only effort levels explicitly declared by `reasoningLevels` or
+  `thinkingLevelMap`. The internal `off` value means “send no override and use
+  the provider default”; a boolean `reasoning: true` alone still exposes no
+  picker.
   """
   @spec supported_levels(model_entry()) :: [level()]
   def supported_levels(model_entry) do
     if reasoning?(model_entry) do
       map = thinking_level_map(model_entry)
-      family = family_levels(model_entry)
 
       levels =
-        catalog_levels(model_entry)
-        |> Kernel.||(@reasoning_levels)
+        model_entry
+        |> catalog_levels()
+        |> Kernel.||(mapped_levels(map))
         |> Enum.reject(&(Map.get(map, &1, :supported) == nil))
-        |> Enum.filter(&(family == [] or &1 in family))
 
-      if disableable?(model_entry), do: ["off" | levels], else: levels
+      maybe_prepend_provider_default(levels, map)
     else
       []
     end
   end
 
   @doc """
-  Levels a manually configured model can expose.
-
-  Known families such as Grok keep their API-supported set. Other reasoning
-  models expose the full Handbean list, including off.
+  Explicit levels a manually configured model can expose.
   """
   @spec configurable_levels(model_entry()) :: [level()]
-  def configurable_levels(model_entry) do
-    case family_levels(model_entry) do
-      [] -> @levels
-      family -> if(disableable?(model_entry), do: ["off" | family], else: family)
-    end
-  end
+  def configurable_levels(_model_entry), do: @levels
 
   @doc """
   Build the catalog fields for a manually configured reasoning model.
@@ -96,6 +86,7 @@ defmodule Handbean.Agent.Reasoning do
 
     fields = %{
       "reasoning" => true,
+      "reasoningLevels" => enabled,
       "thinkingLevelMap" => thinking_level_map_for(reasoning_levels, allowed)
     }
 
@@ -113,11 +104,8 @@ defmodule Handbean.Agent.Reasoning do
 
     cond do
       levels == [] -> "off"
-      default in levels and default != "off" -> default
-      "low" in levels and grok_4_3?(model_entry) -> "low"
-      "high" in levels and not disableable?(model_entry) -> "high"
-      "medium" in levels -> "medium"
-      true -> List.first(levels) || "off"
+      default in levels -> default
+      true -> "off"
     end
   end
 
@@ -143,7 +131,12 @@ defmodule Handbean.Agent.Reasoning do
 
       true ->
         map = thinking_level_map(model_entry)
-        {:ok, Map.get(map, level, Map.fetch!(@default_map, level))}
+
+        case Map.fetch(map, level) do
+          {:ok, nil} -> {:error, :unsupported}
+          {:ok, effort} -> {:ok, effort}
+          :error -> {:ok, level}
+        end
     end
   end
 
@@ -201,62 +194,27 @@ defmodule Handbean.Agent.Reasoning do
     end
   end
 
-  defp reasoning?(model_entry) do
-    case map_get(model_entry, :reasoning, "reasoning") do
-      true -> true
-      false -> false
-      "true" -> true
-      "false" -> false
-      _ -> infer_reasoning_support(model_entry)
-    end
-  end
+  defp maybe_prepend_provider_default([], _map), do: []
 
-  # xAI reasoning models reject requests that omit effort, and do not accept
-  # "off" or "minimal". Keep the picker aligned with the API.
-  defp family_levels(model_entry) do
+  defp maybe_prepend_provider_default(levels, map) do
     cond do
-      grok_4_3?(model_entry) -> ["none", "low", "medium", "high", "xhigh"]
-      grok_reasoning?(model_entry) -> ["low", "medium", "high", "xhigh"]
-      true -> []
+      "off" in levels -> levels
+      Map.get(map, "off", :provider_default) == nil -> levels
+      true -> ["off" | levels]
     end
   end
 
-  defp disableable?(model_entry), do: not grok_reasoning?(model_entry) or grok_4_3?(model_entry)
-
-  defp grok_4_3?(model_entry) do
-    tokens = identity_tokens(model_entry)
-    String.contains?(tokens, "grok-4.3") or String.contains?(tokens, "grok-4-3")
+  defp reasoning?(model_entry) do
+    map_get(model_entry, :reasoning, "reasoning") in [true, "true"]
   end
 
-  defp grok_reasoning?(model_entry) do
-    tokens = identity_tokens(model_entry)
-
-    String.contains?(tokens, "grok") and
-      (String.contains?(tokens, "xai") or String.contains?(tokens, "grok-4"))
-  end
-
-  # Existing configs often omit `reasoning`. Infer for Step Router / StepFun /
-  # Anthropic-compatible entries so the composer picker still appears.
-  defp infer_reasoning_support(model_entry) do
-    tokens = identity_tokens(model_entry)
-
-    String.contains?(tokens, "step-router") or
-      String.contains?(tokens, "stepfun") or
-      String.contains?(tokens, "anthropic") or
-      grok_reasoning?(model_entry)
-  end
-
-  defp identity_tokens(model_entry) do
-    [
-      map_get(model_entry, :id, "id"),
-      map_get(model_entry, :model_id, "model_id"),
-      map_get(model_entry, :name, "name"),
-      map_get(model_entry, :provider_id, "provider_id"),
-      map_get(model_entry, :provider, "provider"),
-      map_get(model_entry, :api, "api")
-    ]
-    |> Enum.map_join(" ", &to_string/1)
-    |> String.downcase()
+  defp mapped_levels(map) when is_map(map) do
+    Enum.filter(@levels, fn level ->
+      case Map.fetch(map, level) do
+        {:ok, value} -> not is_nil(value)
+        :error -> false
+      end
+    end)
   end
 
   defp normalize_enabled(levels, allowed) do
@@ -286,16 +244,12 @@ defmodule Handbean.Agent.Reasoning do
   end
 
   defp default_for(model_entry, enabled) do
-    preferred =
-      cond do
-        grok_4_3?(model_entry) -> "low"
-        grok_reasoning?(model_entry) -> "high"
-        true -> "medium"
-      end
+    configured = normalize(map_get(model_entry, :default_reasoning, "defaultReasoning"))
 
     cond do
-      preferred in enabled -> preferred
-      true -> List.first(enabled) || "off"
+      configured in enabled and configured != "off" -> configured
+      "medium" in enabled -> "medium"
+      true -> List.first(Enum.reject(enabled, &(&1 == "off"))) || "off"
     end
   end
 

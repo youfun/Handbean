@@ -101,6 +101,49 @@ defmodule Handbean.Agent.ModelConfigTest do
       assert result[:model] == "step-5-preview"
       refute Map.has_key?(result, :api_key)
     end
+
+    test "created default catalog declares StepFun reasoning levels" do
+      assert :ok = ModelConfig.ensure_config()
+      assert {:ok, config} = ModelConfig.read_config()
+
+      for model <- config["providers"]["stepfun"]["models"] do
+        assert model["reasoning"] == true
+        assert model["reasoningLevels"] == ["minimal", "medium", "high"]
+        assert model["defaultReasoning"] == "medium"
+        assert model["thinkingLevelMap"]["minimal"] == "low"
+      end
+    end
+
+    test "upgrades exact existing StepFun defaults without replacing user fields" do
+      write_config(%{
+        "defaultProvider" => "stepfun",
+        "defaultModel" => "step-router-v1",
+        "providers" => %{
+          "stepfun" => %{
+            "baseUrl" => "https://api.stepfun.com/step_plan/v1",
+            "api" => "stepfun-step-plan",
+            "provider" => "stepfun",
+            "models" => [
+              %{"id" => "step-router-v1", "name" => "My Router"},
+              %{"id" => "step-5-preview", "name" => "My Preview"}
+            ]
+          }
+        }
+      })
+
+      assert :ok = ModelConfig.ensure_config()
+      assert {:ok, config} = ModelConfig.read_config()
+
+      models = config["providers"]["stepfun"]["models"]
+      router = Enum.find(models, &(&1["id"] == "step-router-v1"))
+      preview = Enum.find(models, &(&1["id"] == "step-5-preview"))
+
+      assert router["name"] == "My Router"
+      assert preview["name"] == "My Preview"
+      assert router["reasoningLevels"] == ["minimal", "medium", "high"]
+      assert preview["reasoningLevels"] == ["minimal", "medium", "high"]
+      assert config["defaultModel"] == "step-router-v1"
+    end
   end
 
   # ══════════════════════════════════════════════════════════

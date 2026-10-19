@@ -410,6 +410,7 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
                 "id" => "step-router-v1",
                 "name" => "Step Router v1 (StepFun)",
                 "reasoning" => true,
+                "reasoningLevels" => ["minimal", "medium", "high"],
                 "defaultReasoning" => "medium",
                 "thinkingLevelMap" => %{"minimal" => "low", "xhigh" => nil}
               }

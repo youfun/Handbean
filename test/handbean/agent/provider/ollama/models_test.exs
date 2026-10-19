@@ -108,9 +108,15 @@ defmodule Handbean.Agent.Provider.Ollama.ModelsTest do
     {:ok, config} = ModelConfig.read_config()
     models = get_in(config, ["providers", "ollama", "models"])
     gemma = Enum.find(models, &(&1["id"] == "gemma4:31b"))
-    assert gemma["name"] == "Custom Gemma"
+    assert gemma["name"] == "gemma4:31b"
     assert gemma["enabled"] == false
     assert gemma["input"] == ["text", "image"]
+
+    assert gemma["upstream"] == %{
+             "name" => "gemma4:31b",
+             "capabilities" => ["completion", "vision", "thinking"]
+           }
+
     assert Enum.any?(models, &(&1["id"] == "kimi-k2.6"))
   end
 end

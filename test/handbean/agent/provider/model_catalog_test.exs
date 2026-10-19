@@ -43,7 +43,7 @@ defmodule Handbean.Agent.Provider.ModelCatalogTest do
              "http://127.0.0.1:3425/v1/models"
   end
 
-  test "discover merges remote ids and keeps a disappeared model unavailable" do
+  test "refresh replaces upstream facts, preserves enabled, and marks missing rows" do
     :ok =
       ModelConfig.add_provider("magpie", %{
         "name" => "Magpie",
@@ -69,7 +69,19 @@ defmodule Handbean.Agent.Provider.ModelCatalogTest do
          body: %{
            "object" => "list",
            "data" => [
-             %{"id" => "openai/gpt-4o-mini", "object" => "model"},
+             %{
+               "id" => "openai/gpt-4o-mini",
+               "object" => "model",
+               "display_name" => "Remote mini",
+               "context_length" => 256_000,
+               "max_tokens" => 32_000,
+               "input_modalities" => ["text", "image"],
+               "capabilities" => %{
+                 "reasoning" => true,
+                 "reasoning_effort" => ["low", "high"],
+                 "default_reasoning_effort" => "high"
+               }
+             },
              %{"id" => "deepseek/deepseek-chat", "object" => "model"}
            ]
          }
@@ -88,13 +100,138 @@ defmodule Handbean.Agent.Provider.ModelCatalogTest do
     deepseek = Enum.find(models, &(&1["id"] == "deepseek/deepseek-chat"))
     gone = Enum.find(models, &(&1["id"] == "gone"))
 
-    assert mini["name"] == "Custom mini"
+    assert mini["name"] == "Remote mini"
     assert mini["enabled"] == false
-    assert mini["contextWindow"] == 128_000
-    assert mini["maxTokens"] == 16_384
+    assert mini["contextWindow"] == 256_000
+    assert mini["maxTokens"] == 32_000
+    assert mini["input"] == ["text", "image"]
+    assert mini["reasoning"] == true
+    assert mini["reasoningLevels"] == ["low", "high"]
+    assert mini["defaultReasoning"] == "high"
+    assert mini["upstream"]["display_name"] == "Remote mini"
     assert deepseek["name"] == "DeepSeek-V3.2 (Non-thinking Mode)"
     assert is_integer(deepseek["contextWindow"])
     assert gone["unavailable"] == true
+  end
+
+  test "normalizes provider-declared facts without inventing reasoning levels" do
+    assert ModelCatalog.normalize_entry(%{
+             "id" => "future/model",
+             "display_name" => "Future Model",
+             "input_modalities" => ["text", "audio", "video"],
+             "output_modalities" => ["text"],
+             "context_length" => 1_000_000,
+             "max_tokens" => 128_000,
+             "pricings" => %{
+               "prompt" => [
+                 %{"value" => 0.1, "unit" => "perMTokens"},
+                 %{"value" => 0.2, "unit" => "perMTokens"}
+               ],
+               "completion" => [%{"value" => 0.8, "unit" => "perMTokens"}]
+             },
+             "capabilities" => %{"reasoning" => true}
+           }) == %{
+             "id" => "future/model",
+             "name" => "Future Model",
+             "input" => ["text", "audio", "video"],
+             "output" => ["text"],
+             "contextWindow" => 1_000_000,
+             "maxTokens" => 128_000,
+             "cost" => %{"input" => 0.2, "output" => 0.8},
+             "reasoning" => true,
+             "upstream" => %{
+               "id" => "future/model",
+               "display_name" => "Future Model",
+               "input_modalities" => ["text", "audio", "video"],
+               "output_modalities" => ["text"],
+               "context_length" => 1_000_000,
+               "max_tokens" => 128_000,
+               "pricings" => %{
+                 "prompt" => [
+                   %{"value" => 0.1, "unit" => "perMTokens"},
+                   %{"value" => 0.2, "unit" => "perMTokens"}
+                 ],
+                 "completion" => [%{"value" => 0.8, "unit" => "perMTokens"}]
+               },
+               "capabilities" => %{"reasoning" => true}
+             }
+           }
+  end
+
+  test "upstream reasoning levels replace fallback mappings and reject an invalid fallback default" do
+    model =
+      ModelCatalog.normalize_entry(
+        %{
+          "id" => "future/reasoner",
+          "capabilities" => %{"reasoning" => true, "reasoning_effort" => ["low", "high"]}
+        },
+        %{
+          "id" => "future/reasoner",
+          "reasoning" => true,
+          "reasoningLevels" => ["minimal", "medium"],
+          "defaultReasoning" => "medium",
+          "thinkingLevelMap" => %{"minimal" => "low"}
+        }
+      )
+
+    assert model["reasoning"] == true
+    assert model["reasoningLevels"] == ["low", "high"]
+    refute Map.has_key?(model, "defaultReasoning")
+    refute Map.has_key?(model, "thinkingLevelMap")
+  end
+
+  test "prefers nested provider limits over llm_db fallback" do
+    model =
+      ModelCatalog.normalize_entry(
+        %{
+          "id" => "gateway/model",
+          "top_provider" => %{
+            "context_length" => 300_000,
+            "max_completion_tokens" => 64_000
+          }
+        },
+        %{"id" => "gateway/model", "contextWindow" => 128_000, "maxTokens" => 8_192}
+      )
+
+    assert model["contextWindow"] == 300_000
+    assert model["maxTokens"] == 64_000
+  end
+
+  test "does not invent text input for an upstream audio-only model" do
+    model =
+      ModelCatalog.normalize_entry(
+        %{"id" => "audio-only", "input_modalities" => ["audio"]},
+        %{"id" => "audio-only", "input" => ["text"]}
+      )
+
+    assert model["input"] == ["audio"]
+    assert model["upstream"]["input_modalities"] == ["audio"]
+  end
+
+  test "account-scoped refresh drops missing rows and preserves only enabled" do
+    existing = [
+      %{"id" => "kept", "name" => "Old", "contextWindow" => 1, "enabled" => false},
+      %{"id" => "gone", "enabled" => true}
+    ]
+
+    remote = [
+      %{
+        "id" => "kept",
+        "name" => "Current",
+        "contextWindow" => 200_000,
+        "upstream" => %{"id" => "kept"}
+      }
+    ]
+
+    assert ModelCatalog.refresh_merge(existing, remote, missing: :drop) == [
+             %{
+               "id" => "kept",
+               "name" => "Current",
+               "contextWindow" => 200_000,
+               "enabled" => false,
+               "upstream" => %{"id" => "kept"}
+             }
+           ]
   end
 
   test "fresh discovery keeps explicit modalities and exact built-in capabilities" do
@@ -134,7 +271,13 @@ defmodule Handbean.Agent.Provider.ModelCatalogTest do
 
     assert Enum.find(models, &(&1["id"] == "gpt-5.6-luna"))["input"] == ["text", "image"]
     assert Enum.find(models, &(&1["id"] == "direct-vision"))["input"] == ["text", "image"]
-    assert Enum.find(models, &(&1["id"] == "openrouter-vision"))["input"] == ["text", "image"]
+
+    assert Enum.find(models, &(&1["id"] == "openrouter-vision"))["input"] == [
+             "text",
+             "image",
+             "audio"
+           ]
+
     assert Enum.find(models, &(&1["id"] == "unknown-model"))["input"] == ["text"]
   end
 
@@ -251,7 +394,7 @@ defmodule Handbean.Agent.Provider.ModelCatalogTest do
     older = Enum.find(models, &(&1["id"] == "grok-4.6"))
     retired = Enum.find(models, &(&1["id"] == "retired"))
 
-    assert grok["name"] == "Custom Grok"
+    assert grok["name"] == "Grok 4.7"
     assert grok["enabled"] == false
     assert grok["contextWindow"] == 500_000
     assert grok["cost"]["input"] == 2.0
@@ -260,6 +403,11 @@ defmodule Handbean.Agent.Provider.ModelCatalogTest do
     assert grok["input"] == ["text", "image"]
     assert grok["reasoning"] == true
     assert grok["defaultReasoning"] == "high"
+    assert grok["upstream"]["models"]["context_length"] == 500_000
+
+    assert grok["upstream"]["languageModels"]["capabilities"]["reasoning_effort"] ==
+             ["low", "medium", "high", "xhigh"]
+
     assert older["contextWindow"] == 500_000
     assert older["cost"]["input"] == 2.0
     refute Enum.any?(models, &(&1["id"] == "grok-imagine-image"))

@@ -71,6 +71,7 @@ defmodule HandbeanWeb.SettingsLiveTest do
                 "id" => "step-router-v1",
                 "name" => "Step Router v1",
                 "reasoning" => true,
+                "reasoningLevels" => ["low", "medium", "high"],
                 "defaultReasoning" => "medium",
                 "contextWindow" => 256_000,
                 "input" => ["text"]

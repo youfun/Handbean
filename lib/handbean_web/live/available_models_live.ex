@@ -871,7 +871,8 @@ defmodule HandbeanWeb.AvailableModelsLive do
 
       case result do
         {:ok, models} ->
-          models = preserve_model_enabled(models, "cursor")
+          models =
+            ModelCatalog.refresh_merge(stored_models("cursor"), models, missing: :drop)
 
           case ModelConfig.update_provider("cursor", %{"models" => models}) do
             :ok -> reload_providers(socket)
@@ -1047,24 +1048,6 @@ defmodule HandbeanWeb.AvailableModelsLive do
     end
   end
 
-  defp preserve_model_enabled(models, provider_id) do
-    previous =
-      case load_raw_config() do
-        %{"providers" => %{^provider_id => %{"models" => existing}}} when is_list(existing) ->
-          Map.new(existing, fn model -> {model["id"], model["enabled"]} end)
-
-        _ ->
-          %{}
-      end
-
-    Enum.map(models, fn model ->
-      case Map.get(previous, model["id"]) do
-        enabled when is_boolean(enabled) -> Map.put(model, "enabled", enabled)
-        _ -> model
-      end
-    end)
-  end
-
   defp reload_providers(socket) do
     config = load_raw_config()
     providers = parse_providers(config)
@@ -1118,6 +1101,8 @@ defmodule HandbeanWeb.AvailableModelsLive do
               name: Map.get(m, "name", ""),
               type: List.first(Map.get(m, "input", ["text"])) || "text",
               reasoning: Map.get(m, "reasoning") == true,
+              reasoning_levels: Map.get(m, "reasoningLevels", []),
+              default_reasoning: Map.get(m, "defaultReasoning"),
               thinking_level_map: Map.get(m, "thinkingLevelMap", %{}),
               context_window: Map.get(m, "contextWindow"),
               max_tokens: Map.get(m, "maxTokens"),
@@ -1324,7 +1309,7 @@ defmodule HandbeanWeb.AvailableModelsLive do
 
   def reasoning_level_label(level) do
     case level do
-      "off" -> gettext("Off")
+      "off" -> gettext("None (use provider default)")
       "minimal" -> gettext("Minimal")
       "low" -> gettext("Low")
       "medium" -> gettext("Medium")
@@ -1339,6 +1324,8 @@ defmodule HandbeanWeb.AvailableModelsLive do
     |> Map.put(:id, model.id)
     |> Map.put(:provider_id, provider_id)
     |> Map.put(:reasoning, true)
+    |> Map.put(:reasoning_levels, Map.get(model, :reasoning_levels, []))
+    |> Map.put(:default_reasoning, Map.get(model, :default_reasoning))
     |> Map.put(:thinking_level_map, Map.get(model, :thinking_level_map, %{}))
     |> Reasoning.supported_levels()
   end

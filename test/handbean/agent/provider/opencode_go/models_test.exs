@@ -49,7 +49,7 @@ defmodule Handbean.Agent.Provider.OpenCodeGo.ModelsTest do
     assert Enum.map(models, & &1["id"]) == ["glm-5.3-flash", "gpt-6-luna"]
   end
 
-  test "discover writes the live list and keeps a custom name and enabled flag" do
+  test "discover refreshes upstream facts and keeps the enabled choice" do
     :ok =
       ModelConfig.add_provider("opencode-go", %{
         "name" => "OpenCode Go",
@@ -96,9 +96,9 @@ defmodule Handbean.Agent.Provider.OpenCodeGo.ModelsTest do
     {:ok, config} = ModelConfig.read_config()
     models = get_in(config, ["providers", "opencode-go", "models"])
     glm = Enum.find(models, &(&1["id"] == "glm-5.3-flash"))
-    assert glm["name"] == "Custom GLM"
+    assert glm["name"] == "glm-5.3-flash"
     assert glm["enabled"] == false
-    assert glm["contextWindow"] == 200_000
+    assert glm["upstream"] == %{"id" => "glm-5.3-flash"}
     assert Enum.any?(models, &(&1["id"] == "gpt-6-luna"))
 
     retired = Enum.find(models, &(&1["id"] == "retired-model"))
@@ -122,6 +122,7 @@ defmodule Handbean.Agent.Provider.OpenCodeGo.ModelsTest do
     assert message =~ "existing list was kept"
 
     {:ok, config} = ModelConfig.read_config()
+
     assert [%{"id" => "glm-5.3-flash", "name" => "GLM"}] =
              get_in(config, ["providers", "opencode-go", "models"])
   end

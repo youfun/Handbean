@@ -124,7 +124,7 @@ defmodule HandbeanWeb.WorkspaceLive.ViewComponents do
 
   def reasoning_label(level) do
     case level do
-      "off" -> gettext("Off")
+      "off" -> gettext("None (use provider default)")
       "minimal" -> gettext("Minimal")
       "low" -> gettext("Low")
       "medium" -> gettext("Medium")

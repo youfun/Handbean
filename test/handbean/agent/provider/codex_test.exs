@@ -556,6 +556,8 @@ defmodule Handbean.Agent.Provider.CodexTest do
     assert model["reasoning"]
     assert model["reasoningLevels"] == ["low", "high"]
     assert model["defaultReasoning"] == "low"
+    assert model["upstream"]["slug"] == "model-visible"
+    assert model["upstream"]["input_modalities"] == ["text", "image"]
     refute Map.has_key?(model, "cost")
 
     assert Models.preserve_enabled(

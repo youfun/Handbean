@@ -204,18 +204,21 @@ defmodule Handbean.Agent.Provider.Cursor.ModelsTest do
     refute Map.has_key?(hd(models), "cost")
   end
 
-  test "discover uses Cursor's documented default contexts instead of advertised 1M maximum", %{
+  test "discover leaves limits unset when Cursor does not report them", %{
     auth_path: auth_path
   } do
     assert {:ok, models} =
              Models.discover(auth_path: auth_path, transport_mod: ContextTransport)
 
     assert Enum.map(models, &{&1["id"], &1["name"], &1["contextWindow"]}) == [
-             {"claude-opus-5-high", "Claude Opus 5 300K High", 300_000},
-             {"claude-sonnet-5-high", "Claude Sonnet 5 200K", 200_000},
-             {"gpt-5.5-medium", "GPT-5.5 272K", 272_000},
-             {"grok-4.7-medium", "Grok 4.7 Medium", 256_000}
+             {"claude-opus-5-high", "Claude Opus 5 1M High", nil},
+             {"claude-sonnet-5-high", "Claude Sonnet 5 1M", nil},
+             {"gpt-5.5-medium", "GPT-5.5 1M", nil},
+             {"grok-4.7-medium", "Grok 4.7 Medium", nil}
            ]
+
+    assert Enum.all?(models, &is_map(&1["upstream"]))
+    refute Enum.any?(models, &Map.has_key?(&1, "maxTokens"))
   end
 
   test "empty catalog is an explicit error", %{auth_path: auth_path} do

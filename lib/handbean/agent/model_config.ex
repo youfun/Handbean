@@ -1005,11 +1005,31 @@ defmodule Handbean.Agent.ModelConfig do
 
   @valid_provider_name_re ~r/^[a-z0-9_-]+$/
 
+  @stepfun_reasoning_levels ["minimal", "medium", "high"]
+  @stepfun_thinking_level_map %{
+    "minimal" => "low",
+    "medium" => "medium",
+    "high" => "high"
+  }
+
+  @stepfun_router_model %{
+    "id" => "step-router-v1",
+    "name" => "Step Router v1",
+    "reasoning" => true,
+    "reasoningLevels" => @stepfun_reasoning_levels,
+    "defaultReasoning" => "medium",
+    "thinkingLevelMap" => @stepfun_thinking_level_map,
+    "input" => ["text"],
+    "contextWindow" => 256_000
+  }
+
   @stepfun_preview_model %{
     "id" => "step-5-preview",
     "name" => "Step 5 Preview",
     "reasoning" => true,
+    "reasoningLevels" => @stepfun_reasoning_levels,
     "defaultReasoning" => "medium",
+    "thinkingLevelMap" => @stepfun_thinking_level_map,
     "input" => ["text", "image"],
     "contextWindow" => 256_000
   }
@@ -1023,17 +1043,7 @@ defmodule Handbean.Agent.ModelConfig do
         "api" => "stepfun-step-plan",
         "apiKey" => "env:OPENAI_API_KEY",
         "provider" => "stepfun",
-        "models" => [
-          %{
-            "id" => "step-router-v1",
-            "name" => "Step Router v1",
-            "reasoning" => true,
-            "defaultReasoning" => "medium",
-            "input" => ["text"],
-            "contextWindow" => 256_000
-          },
-          @stepfun_preview_model
-        ]
+        "models" => [@stepfun_router_model, @stepfun_preview_model]
       }
     }
   }
@@ -1143,16 +1153,29 @@ defmodule Handbean.Agent.ModelConfig do
   defp maybe_put_stepfun_preview(%{"providers" => providers} = json) when is_map(providers) do
     case Map.get(providers, "stepfun") do
       %{"models" => models} = stepfun when is_list(models) ->
-        if Enum.any?(models, &(is_map(&1) and &1["id"] == @stepfun_preview_model["id"])) do
-          :unchanged
-        else
-          stepfun = Map.put(stepfun, "models", models ++ [@stepfun_preview_model])
+        preview_missing? =
+          not Enum.any?(models, &(is_map(&1) and &1["id"] == @stepfun_preview_model["id"]))
 
-          {:ok,
-           json
-           |> put_in(["providers", "stepfun"], stepfun)
-           |> Map.put("defaultProvider", "stepfun")
-           |> Map.put("defaultModel", @stepfun_preview_model["id"])}
+        upgraded_models =
+          models
+          |> Enum.map(&upgrade_stepfun_model/1)
+          |> then(&if(preview_missing?, do: &1 ++ [@stepfun_preview_model], else: &1))
+
+        cond do
+          upgraded_models == models ->
+            :unchanged
+
+          preview_missing? ->
+            stepfun = Map.put(stepfun, "models", upgraded_models)
+
+            {:ok,
+             json
+             |> put_in(["providers", "stepfun"], stepfun)
+             |> Map.put("defaultProvider", "stepfun")
+             |> Map.put("defaultModel", @stepfun_preview_model["id"])}
+
+          true ->
+            {:ok, put_in(json, ["providers", "stepfun", "models"], upgraded_models)}
         end
 
       _ ->
@@ -1161,6 +1184,14 @@ defmodule Handbean.Agent.ModelConfig do
   end
 
   defp maybe_put_stepfun_preview(_json), do: :unchanged
+
+  defp upgrade_stepfun_model(%{"id" => "step-router-v1"} = model),
+    do: Map.merge(@stepfun_router_model, model)
+
+  defp upgrade_stepfun_model(%{"id" => "step-5-preview"} = model),
+    do: Map.merge(@stepfun_preview_model, model)
+
+  defp upgrade_stepfun_model(model), do: model
 
   defp initial_config_body do
     case System.get_env("HANDBEAN_MODELS_SEED") do
