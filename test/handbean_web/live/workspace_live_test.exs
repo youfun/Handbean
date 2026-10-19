@@ -636,6 +636,7 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
       assert html =~ "id=\"ai-input\""
       assert html =~ "id=\"send-button\""
       assert html =~ "id=\"ai-input-area\""
+      refute html =~ "id=\"speech-input-button\""
     end
 
     test "ai input textarea does not render leading whitespace around the value", %{conn: conn} do
@@ -702,6 +703,102 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
       _html = render_keyup(view, "update_input", %{"value" => "hello world"})
 
       assert element(view, "textarea#ai-input") |> render() =~ "hello world"
+    end
+
+    test "speech transcription appends to the current draft without submitting" do
+      request = %{id: "speech-1", conversation_id: "conversation-1", revision: 3}
+
+      socket = %Phoenix.LiveView.Socket{
+        assigns: %{
+          __changed__: %{},
+          available_skills: [],
+          composer_error: nil,
+          current_conversation_id: "conversation-1",
+          input_value: "检查",
+          skill_suggestions: [],
+          speech_request: request,
+          speech_revision: 3,
+          speech_state: :processing
+        }
+      }
+
+      assert {:noreply, updated} =
+               HandbeanWeb.WorkspaceLive.handle_async(
+                 {:speech_transcription, "speech-1"},
+                 {:ok, {request, {:ok, "这个文件"}}},
+                 socket
+               )
+
+      assert updated.assigns.input_value == "检查 这个文件"
+      assert updated.assigns.speech_request == nil
+      assert updated.assigns.speech_state == :ready
+    end
+
+    test "speech transcription drops a stale composer generation" do
+      request = %{id: "speech-stale", conversation_id: "conversation-1", revision: 2}
+
+      socket = %Phoenix.LiveView.Socket{
+        assigns: %{
+          __changed__: %{},
+          available_skills: [],
+          current_conversation_id: "conversation-1",
+          input_value: "new draft",
+          speech_request: nil,
+          speech_revision: 3,
+          speech_state: :ready
+        }
+      }
+
+      assert {:noreply, unchanged} =
+               HandbeanWeb.WorkspaceLive.handle_async(
+                 {:speech_transcription, "speech-stale"},
+                 {:ok, {request, {:ok, "old transcription"}}},
+                 socket
+               )
+
+      assert unchanged.assigns.input_value == "new draft"
+      assert unchanged.assigns.speech_request == nil
+    end
+
+    test "disabling speech invalidates the active composer generation" do
+      socket = %Phoenix.LiveView.Socket{
+        assigns: %{
+          __changed__: %{},
+          speech_available?: true,
+          speech_request: %{id: "speech-active"},
+          speech_revision: 4,
+          speech_state: :processing,
+          uploads: %{}
+        }
+      }
+
+      assert {:noreply, updated} =
+               HandbeanWeb.WorkspaceLive.handle_info({:speech_enabled, false}, socket)
+
+      refute updated.assigns.speech_available?
+      assert updated.assigns.speech_request == nil
+      assert updated.assigns.speech_revision == 5
+      assert updated.assigns.speech_state == :disabled
+    end
+
+    test "speech upload is consumed without transcription while voice input is disabled", %{
+      conn: conn
+    } do
+      {:ok, view, _html} = live(conn, "/")
+
+      upload =
+        file_input(view, "#composer", :speech_audio, [
+          %{
+            name: "disabled-voice.pcm",
+            type: "application/octet-stream",
+            content: :binary.copy(<<0, 0, 0, 0>>, 4_800)
+          }
+        ])
+
+      render_upload(upload, "disabled-voice.pcm")
+
+      assert :sys.get_state(view.pid).socket.assigns.uploads.speech_audio.entries == []
+      refute has_element?(view, "#speech-input-button")
     end
 
     test "empty message does not add to list on send (whitespace only)", %{conn: conn} do
@@ -4747,8 +4844,12 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
         view |> render_keyup("update_add_name", %{"value" => "Counted Project"})
         view |> element("button[phx-click='confirm_add_project']") |> render_click()
 
+        bundled_count =
+          Handbean.Skills.Loader.load(workspace: project_dir).skills
+          |> Enum.count(&(&1.source == :bundled))
+
         assert has_element?(view, "#status-mcp-count", "2")
-        assert has_element?(view, "#status-skills-count", "2")
+        assert has_element?(view, "#status-skills-count", to_string(2 + bundled_count))
       after
         File.rm_rf!(project_dir)
       end
@@ -4830,8 +4931,12 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
         view |> render_keyup("update_add_name", %{"value" => "Global Counted Project"})
         view |> element("button[phx-click='confirm_add_project']") |> render_click()
 
+        bundled_count =
+          Handbean.Skills.Loader.load(workspace: project_dir, user_home: home_dir).skills
+          |> Enum.count(&(&1.source == :bundled))
+
         assert has_element?(view, "#status-mcp-count", "3")
-        assert has_element?(view, "#status-skills-count", "3")
+        assert has_element?(view, "#status-skills-count", to_string(3 + bundled_count))
       after
         File.rm_rf!(project_dir)
       end

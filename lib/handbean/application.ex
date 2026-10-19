@@ -24,6 +24,7 @@ defmodule Handbean.Application do
          repos: Application.fetch_env!(:handbean, :ecto_repos), skip: skip_migrations?()},
         {DNSCluster, query: Application.get_env(:handbean, :dns_cluster_query) || :ignore},
         {Phoenix.PubSub, name: Handbean.PubSub},
+        Handbean.Speech.Server,
         {Registry, keys: :unique, name: Handbean.SessionRegistry},
         {Registry, keys: :unique, name: Handbean.AgentRunRegistry},
         {Registry, keys: :unique, name: Handbean.AgentRunSupervisorRegistry},

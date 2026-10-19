@@ -292,12 +292,29 @@ defmodule HandbeanWeb.SettingsLiveTest do
       |> render_click()
 
       html = render(view)
+      assert html =~ "Local voice input"
+      assert has_element?(view, "#speech-settings")
+      assert has_element?(view, "#speech-enabled-toggle[aria-checked='false']")
+      assert html =~ "ggml-base-q5_1.bin"
+      assert html =~ "Chinese and English"
       assert html =~ "Local WebGPU capability probe"
       assert has_element?(view, ~s|button[phx-value-tab="local_webgpu"]|, "Advanced")
       assert html =~ ~s(id="local-webgpu-probe")
       assert html =~ ~s(phx-hook="LocalWebGPUProbe")
       assert html =~ ~s(data-probe-check="compute")
       assert html =~ "does not download or run a model"
+    end
+
+    test "completed model setup does not re-enable a disabled setting" do
+      socket = %Phoenix.LiveView.Socket{
+        assigns: %{__changed__: %{}, speech_enabled: false, speech_status: :disabled}
+      }
+
+      assert {:noreply, unchanged} =
+               HandbeanWeb.SettingsLive.handle_async(:prepare_speech, {:ok, :ok}, socket)
+
+      refute unchanged.assigns.speech_enabled
+      assert unchanged.assigns.speech_status == :disabled
     end
 
     test "Workspace Models tab edits current workspace policy", %{conn: conn} do

@@ -4,7 +4,9 @@ defmodule HandbeanWeb.WorkspaceLive.Composer do
   use Gettext, backend: Handbean.Gettext
 
   import Phoenix.Component, only: [assign: 3]
-  import Phoenix.LiveView, only: [cancel_upload: 3, consume_uploaded_entries: 3, stream: 4]
+
+  import Phoenix.LiveView,
+    only: [cancel_upload: 3, consume_uploaded_entries: 3, push_event: 3, stream: 4]
 
   alias HandbeanWeb.WorkspaceLive.Skills
 
@@ -31,6 +33,7 @@ defmodule HandbeanWeb.WorkspaceLive.Composer do
     else
       socket
       |> stash_current()
+      |> invalidate_speech()
       |> load_draft(next_id)
     end
   end
@@ -104,29 +107,47 @@ defmodule HandbeanWeb.WorkspaceLive.Composer do
     |> assign(:input_value, "")
     |> assign(:composer_error, nil)
     |> assign(:skill_suggestions, [])
+    |> invalidate_speech()
     |> cancel_image_uploads()
   end
 
-  defp cancel_image_uploads(socket) do
-    case socket.assigns[:uploads][:images] do
+  def invalidate_speech(socket) do
+    socket
+    |> assign(:speech_request, nil)
+    |> assign(
+      :speech_state,
+      if(socket.assigns[:speech_available?], do: :ready, else: :unavailable)
+    )
+    |> assign(:speech_revision, (socket.assigns[:speech_revision] || 0) + 1)
+    |> cancel_speech_uploads()
+    |> push_event("speech-cancel", %{})
+  end
+
+  defp cancel_image_uploads(socket), do: cancel_uploads(socket, :images)
+  defp cancel_speech_uploads(socket), do: cancel_uploads(socket, :speech_audio)
+
+  defp cancel_uploads(socket, name) do
+    uploads = socket.assigns[:uploads] || %{}
+
+    case uploads[name] do
       %{entries: entries} when is_list(entries) ->
-        Enum.reduce(entries, socket, &cancel_image_upload/2)
+        Enum.reduce(entries, socket, &cancel_upload_entry(&2, name, &1))
 
       _ ->
         socket
     end
   end
 
-  defp cancel_image_upload(entry, socket) do
-    if upload_channel_alive?(socket, entry) do
-      cancel_upload(socket, :images, entry.ref)
+  defp cancel_upload_entry(socket, name, entry) do
+    if upload_channel_alive?(socket, name, entry) do
+      cancel_upload(socket, name, entry.ref)
     else
       socket
     end
   end
 
-  defp upload_channel_alive?(socket, entry) do
-    case socket.assigns.uploads.images.entry_refs_to_pids[entry.ref] do
+  defp upload_channel_alive?(socket, name, entry) do
+    case socket.assigns.uploads[name].entry_refs_to_pids[entry.ref] do
       pid when is_pid(pid) -> Process.alive?(pid)
       _ -> false
     end

@@ -219,6 +219,68 @@
   cursor: not-allowed;
 }
 
+.textarea-wrap.speech-enabled textarea {
+  padding-right: 40px;
+}
+
+.speech-input-button {
+  position: absolute;
+  right: 0;
+  bottom: 1px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--sig-radius-full);
+  background: transparent;
+  color: var(--sig-text-tertiary);
+  cursor: pointer;
+  transition: background-color var(--sig-motion-fast), color var(--sig-motion-fast);
+}
+
+.speech-input-button:hover:not(:disabled) {
+  background: var(--sig-bg-surface-hover);
+  color: var(--sig-text-primary);
+}
+
+.speech-input-button:focus-visible {
+  outline: 2px solid var(--sig-accent);
+  outline-offset: 2px;
+}
+
+.speech-input-button[data-state="recording"] {
+  background: var(--sig-error-bg);
+  color: var(--sig-error);
+}
+
+.speech-input-button:disabled {
+  cursor: wait;
+  opacity: 0.68;
+}
+
+.speech-input-stop {
+  display: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.speech-input-button[data-state="recording"] .speech-input-mic {
+  display: none;
+}
+
+.speech-input-button[data-state="recording"] .speech-input-stop {
+  display: block;
+}
+
+.speech-input-button[data-state="processing"] .speech-input-mic {
+  opacity: 0.45;
+}
+
 .composer-toolbar {
   display: flex;
   align-items: center;

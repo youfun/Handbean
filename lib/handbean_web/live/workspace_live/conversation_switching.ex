@@ -1289,6 +1289,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
     |> assign(:active_file, nil)
     |> assign(:file_preview, nil)
     |> assign(:file_preview_error, nil)
+    |> assign(:preview_line, nil)
     |> assign(:revert_confirm_change_id, nil)
     |> assign(:revert_message, nil)
     |> assign(:timeline, [])

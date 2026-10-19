@@ -78,7 +78,12 @@ defmodule HandbeanWeb.SettingsLive do
       |> assign(:workspace_models_saving, false)
       |> assign(:toast, nil)
       |> assign(:runtime_banner, nil)
+      |> assign(:speech_enabled, Handbean.Speech.enabled?())
+      |> assign(:speech_supported, Handbean.Speech.supported?())
+      |> assign(:speech_status, Handbean.Speech.status())
+      |> assign(:speech_model, Handbean.Speech.model_info())
       |> subscribe_to_runtime_tasks()
+      |> subscribe_to_speech()
 
     {:ok, socket}
   end
@@ -110,6 +115,42 @@ defmodule HandbeanWeb.SettingsLive do
      socket
      |> assign(:active_tab, tab)
      |> push_patch(to: ~p"/settings?#{query}")}
+  end
+
+  def handle_event("toggle_speech", _params, socket) do
+    if speech_status_busy?(socket.assigns.speech_status) do
+      {:noreply, socket}
+    else
+      enabled = not socket.assigns.speech_enabled
+
+      case Handbean.Speech.set_enabled(enabled) do
+        :ok when enabled ->
+          {:noreply,
+           socket
+           |> assign(:speech_enabled, true)
+           |> assign(:speech_status, :downloading)
+           |> start_async(:prepare_speech, &Handbean.Speech.prepare/0)}
+
+        :ok ->
+          {:noreply,
+           socket |> assign(:speech_enabled, false) |> assign(:speech_status, :disabled)}
+
+        {:error, _reason} ->
+          {:noreply, put_flash(socket, :error, gettext("Could not save voice input setting."))}
+      end
+    end
+  end
+
+  def handle_event("prepare_speech", _params, socket) do
+    if socket.assigns.speech_enabled and socket.assigns.speech_supported and
+         not speech_status_busy?(socket.assigns.speech_status) do
+      {:noreply,
+       socket
+       |> assign(:speech_status, :downloading)
+       |> start_async(:prepare_speech, &Handbean.Speech.prepare/0)}
+    else
+      {:noreply, socket}
+    end
   end
 
   def handle_event("set_theme", %{"theme" => theme}, socket) do
@@ -333,6 +374,25 @@ defmodule HandbeanWeb.SettingsLive do
     end
   end
 
+  @impl true
+  def handle_async(:prepare_speech, {:ok, :ok}, socket) do
+    if socket.assigns.speech_enabled,
+      do: {:noreply, assign(socket, :speech_status, :ready)},
+      else: {:noreply, socket}
+  end
+
+  def handle_async(:prepare_speech, {:ok, {:error, reason}}, socket) do
+    if socket.assigns.speech_enabled,
+      do: {:noreply, assign(socket, :speech_status, {:error, reason})},
+      else: {:noreply, socket}
+  end
+
+  def handle_async(:prepare_speech, {:exit, reason}, socket) do
+    if socket.assigns.speech_enabled,
+      do: {:noreply, assign(socket, :speech_status, {:error, reason})},
+      else: {:noreply, socket}
+  end
+
   # ── Info ──
 
   @impl true
@@ -349,6 +409,25 @@ defmodule HandbeanWeb.SettingsLive do
     {:noreply, assign_runtime_banner(socket, snapshot)}
   end
 
+  def handle_info({:speech_enabled, enabled}, socket) do
+    if socket.assigns.speech_enabled == enabled do
+      {:noreply, socket}
+    else
+      status = if enabled, do: Handbean.Speech.status(), else: :disabled
+
+      {:noreply,
+       socket
+       |> assign(:speech_enabled, enabled)
+       |> assign(:speech_status, status)}
+    end
+  end
+
+  def handle_info({:speech_status, status}, socket) do
+    if socket.assigns.speech_enabled,
+      do: {:noreply, assign(socket, :speech_status, status)},
+      else: {:noreply, socket}
+  end
+
   def handle_info({:in_app_ended, task, reason}, socket) do
     {:noreply, put_flash(socket, :info, in_app_ended_flash(task, reason))}
   end
@@ -363,6 +442,14 @@ defmodule HandbeanWeb.SettingsLive do
     else
       socket
     end
+  end
+
+  defp subscribe_to_speech(socket) do
+    if connected?(socket) do
+      Handbean.Speech.subscribe()
+    end
+
+    socket
   end
 
   defp assign_runtime_banner(socket, snapshot) do
@@ -429,6 +516,26 @@ defmodule HandbeanWeb.SettingsLive do
   def tab_icon(:sns), do: "📡"
   def tab_icon(:tools), do: "🔒"
   def tab_icon(:security), do: "🛡️"
+
+  def speech_status_label(_enabled, false, _status), do: gettext("Unavailable on this platform")
+  def speech_status_label(false, true, _status), do: gettext("Off")
+  def speech_status_label(true, true, :not_downloaded), do: gettext("Model not downloaded")
+  def speech_status_label(true, true, :installed), do: gettext("Loading model…")
+  def speech_status_label(true, true, :downloading), do: gettext("Downloading model…")
+  def speech_status_label(true, true, :loading), do: gettext("Loading model…")
+  def speech_status_label(true, true, :ready), do: gettext("Ready")
+  def speech_status_label(true, true, :transcribing), do: gettext("Transcribing…")
+  def speech_status_label(true, true, {:error, _reason}), do: gettext("Model setup failed")
+  def speech_status_label(true, true, _status), do: gettext("Preparing…")
+
+  def speech_status_busy?(status),
+    do: status in [:installed, :downloading, :loading, :transcribing]
+
+  def speech_status_retry?({:error, _reason}), do: true
+  def speech_status_retry?(:not_downloaded), do: true
+  def speech_status_retry?(_status), do: false
+
+  def format_speech_model_size(bytes), do: HandbeanWeb.WorkspaceHelper.format_bytes(bytes)
 
   # ── Helpers ──
 

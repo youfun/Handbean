@@ -50,12 +50,26 @@ input:checked + .settings-toggle-track .settings-toggle-thumb {
   cursor: pointer;
 }
 
-.settings-toggle-button[aria-pressed="true"] .settings-toggle-track {
+.settings-toggle-button[aria-pressed="true"] .settings-toggle-track,
+.settings-toggle-button[aria-checked="true"] .settings-toggle-track {
   background: var(--sig-accent-fill, var(--color-primary));
 }
 
-.settings-toggle-button[aria-pressed="true"] .settings-toggle-thumb {
+.settings-toggle-button[aria-pressed="true"] .settings-toggle-thumb,
+.settings-toggle-button[aria-checked="true"] .settings-toggle-thumb {
   transform: translateX(1rem);
+}
+
+.speech-settings-toggle {
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
+  height: 32px;
+}
+
+.settings-toggle-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 /* ═══════════════════════════════════════════════════════════════════
    Settings / Available Models Page
@@ -793,6 +807,12 @@ select.settings-input {
 
 .settings-section-heading .settings-help-text {
   margin-top: 0;
+}
+
+.settings-advanced-divider {
+  margin-top: 6px;
+  padding-top: 20px;
+  border-top: 1px solid var(--sig-border-subtle);
 }
 
 .settings-workspace-heading {

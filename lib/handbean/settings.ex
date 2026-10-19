@@ -57,6 +57,22 @@ defmodule Handbean.Settings do
     end
   end
 
+  @doc "Persist one top-level global settings section while preserving the others."
+  @spec save_global_section(String.t(), term(), keyword()) :: :ok | {:error, term()}
+  def save_global_section(section, value, opts \\ []) when is_binary(section) do
+    path = global_settings_path(opts)
+
+    with {:ok, existing} <- load_global(opts),
+         :ok <- File.mkdir_p(Path.dirname(path)) do
+      updated = Map.put(existing, section, value)
+
+      case File.write(path, Handbean.JSON.encode!(updated)) do
+        :ok -> :ok
+        {:error, reason} -> {:error, "Failed to write #{path}: #{inspect(reason)}"}
+      end
+    end
+  end
+
   @doc """
   Save the `model_ai` section to global settings.
 
@@ -64,17 +80,7 @@ defmodule Handbean.Settings do
   """
   @spec save_global(map(), keyword()) :: :ok | {:error, term()}
   def save_global(model_ai_map, opts \\ []) do
-    path = global_settings_path(opts)
-
-    with {:ok, existing} <- load_global(opts),
-         :ok <- File.mkdir_p(Path.dirname(path)) do
-      updated = Map.put(existing, "model_ai", model_ai_map)
-
-      case File.write(path, Handbean.JSON.encode!(updated)) do
-        :ok -> :ok
-        {:error, reason} -> {:error, "Failed to write #{path}: #{inspect(reason)}"}
-      end
-    end
+    save_global_section("model_ai", model_ai_map, opts)
   end
 
   # ── Workspace model_ai override ─────────────────────────────

@@ -113,6 +113,7 @@ defmodule HandbeanProbe.App do
       shell: false,
       terminal: false,
       browser_backend: :webview,
+      speech_backend: nil,
       artifact_delivery_backend: HandbeanProbe.AndroidIntent,
       host_script: true,
       directory_picker: HandbeanProbe.DirectoryPicker,

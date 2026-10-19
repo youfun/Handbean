@@ -4,7 +4,6 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
   use HandbeanWeb, :html
 
   alias HandbeanWeb.Components.ModelPicker
-  alias Handbean.Utils.SafeMap
   alias HandbeanWeb.FileChangeCard
 
   import HandbeanWeb.WorkspaceLive.ViewComponents
@@ -192,10 +191,6 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
     """
   end
 
-  defp file_move_plan_id(entry) do
-    entry |> SafeMap.get("details") |> SafeMap.get("file_move_plan_id")
-  end
-
   defp report_availability_label(:available), do: gettext("Report available")
   defp report_availability_label(:failed), do: gettext("Report failed")
   defp report_availability_label(_), do: gettext("Report unavailable")
@@ -210,7 +205,6 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
   attr :current_conversation_id, :any, required: true
   attr :current_workspace_id, :any, required: true
   attr :file_browser_path, :any, required: true
-  attr :file_move_plan_revision, :integer, default: 0
   attr :history_before, :any, required: true
   attr :history_has_more?, :any, required: true
   attr :input_value, :any, required: true
@@ -236,6 +230,8 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
   attr :show_file_browser, :any, required: true
   attr :show_permission_menu, :any, required: true
   attr :skill_suggestions, :any, required: true
+  attr :speech_available?, :boolean, required: true
+  attr :speech_state, :any, required: true
   attr :status_info, :map, default: %{}
   attr :streams, :any, required: true
   attr :timeline, :any, required: true
@@ -764,21 +760,6 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
                 <% install_prompt =
                   if(render_tool_details?, do: browser_install_prompt(entry), else: nil) %>
                 <% preview_card = if(render_tool_details?, do: preview_card(entry), else: nil) %>
-                <% move_plan_id = file_move_plan_id(entry) %>
-                <.live_component
-                  :if={is_binary(move_plan_id) && move_plan_id != ""}
-                  module={HandbeanWeb.FileMovePlanComponent}
-                  id={"file-move-plan-#{entry["id"]}"}
-                  plan_id={move_plan_id}
-                  context={
-                    %{
-                      conversation_id: @current_conversation_id,
-                      workspace_id: @current_workspace_id,
-                      working_directory: @workspace_root
-                    }
-                  }
-                  revision={@file_move_plan_revision}
-                />
                 <% browser_takeover =
                   if(render_tool_details?, do: browser_takeover_prompt(entry), else: nil) %>
                 <div
@@ -1134,7 +1115,16 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
           </div>
 
           <div class="composer-bar">
-            <div class="textarea-wrap">
+            <div
+              id="composer-speech"
+              class={["textarea-wrap", @speech_available? && "speech-enabled"]}
+              phx-hook={if(@speech_available?, do: "ComposerSpeech")}
+              data-speech-upload-name="speech_audio"
+              data-speech-state={@speech_state}
+              data-label-start={gettext("Start voice input")}
+              data-label-stop={gettext("Stop recording")}
+              data-label-processing={gettext("Transcribing voice")}
+            >
               <label class="sr-only" for="ai-input">{gettext("消息")}</label>
               <textarea
                 id="ai-input"
@@ -1151,6 +1141,36 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
                   )
                 }
               >{Phoenix.HTML.Form.normalize_value("textarea", @input_value)}</textarea>
+
+              <button
+                :if={@speech_available?}
+                id="speech-input-button"
+                type="button"
+                class="speech-input-button"
+                disabled={@speech_state in [:processing, :downloading, :loading, :transcribing]}
+                data-state={@speech_state}
+                aria-label={gettext("Start voice input")}
+                aria-pressed="false"
+                title={gettext("Start voice input")}
+              >
+                <svg
+                  class="speech-input-mic"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <rect x="9" y="3" width="6" height="11" rx="3" />
+                  <path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M9 21h6" />
+                </svg>
+                <span class="speech-input-stop" aria-hidden="true"></span>
+              </button>
+              <.live_file_input upload={@uploads.speech_audio} class="hidden" />
 
               <div
                 :if={@skill_suggestions not in [nil, []]}
@@ -1339,6 +1359,4 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
       ModelPicker.option(model.id, model.display_name || model.id)
     end)
   end
-
-  defp file_move_plan_id(entry), do: HandbeanWeb.WorkspaceHelper.file_move_plan_id(entry)
 end

@@ -30,6 +30,7 @@ defmodule Handbean.HostTest do
     refute Host.configured?()
     refute Host.packaged_mix_toolchain?()
     assert Host.get(:git_backend) == nil
+    assert Host.speech_backend() == Handbean.Speech.WhisperCpp
     assert Handbean.Git.backend() == Handbean.Git.CLI
     assert Handbean.Git.backend_kind() == :host_git_cli
   end
@@ -41,6 +42,7 @@ defmodule Handbean.HostTest do
       shell: false,
       terminal: false,
       browser_backend: :webview,
+      speech_backend: nil,
       beam_eval: false,
       mcp: false,
       dist: true,
@@ -51,6 +53,7 @@ defmodule Handbean.HostTest do
     refute Host.shell?()
     refute Host.terminal?()
     assert Host.browser_backend() == :webview
+    assert Host.speech_backend() == nil
     assert Host.artifact_delivery_backend() == nil
     refute Host.host_script?()
     refute Host.beam_eval?()

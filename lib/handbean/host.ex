@@ -26,6 +26,8 @@ defmodule Handbean.Host do
     entry in the desktop file manager. Hosts must declare it explicitly.
   * `directory_picker` — `fun/1` or a module exporting
     `request_directory_picker/1`. Desktop never sets it.
+  * `speech_backend` — module implementing local speech-to-text inference. Desktop
+    defaults to `Handbean.Speech.WhisperCpp`; other hosts must override it explicitly.
 
   `script_http: :platform_dns_ca` declares that the host configured Req's
   platform DNS and CA certificates before tool registration. It is guidance,
@@ -62,6 +64,7 @@ defmodule Handbean.Host do
     :mcp,
     :dist,
     :git_backend,
+    :speech_backend,
     :packaged_mix_toolchain
   ]
 
@@ -112,6 +115,15 @@ defmodule Handbean.Host do
     case declared(:browser_backend, :cli) do
       :cli -> :cli
       :webview -> :webview
+      _ -> nil
+    end
+  end
+
+  @doc "Declared local speech-to-text backend, or the desktop default."
+  @spec speech_backend() :: module() | nil
+  def speech_backend do
+    case declared(:speech_backend, Handbean.Speech.WhisperCpp) do
+      backend when is_atom(backend) and not is_nil(backend) -> backend
       _ -> nil
     end
   end

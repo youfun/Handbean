@@ -315,10 +315,77 @@
         )}
       </div>
 
-      <!-- Local WebGPU capability PoC — runs entirely in this browser. -->
+      <!-- Advanced settings: local voice input and browser capability diagnostics. -->
       <div :if={@active_tab == :local_webgpu} class="settings-content-wrap">
-        <div class="settings-content-card">
+        <div class="settings-content-card settings-form-section">
           <div class="settings-section-heading">
+            <div class="settings-section-title">{gettext("Local voice input")}</div>
+            <div class="settings-help-text">
+              {gettext(
+                "Transcribes on this device with a multilingual Whisper model. Recordings are not sent to a speech service."
+              )}
+            </div>
+          </div>
+
+          <div id="speech-settings" class="settings-card">
+            <div class="settings-field-row">
+              <div class="settings-field-copy">
+                <div class="settings-field-title">{gettext("Enable voice input")}</div>
+                <div class="settings-field-desc">
+                  {gettext(
+                    "Shows a microphone inside the message input after the local model is ready."
+                  )}
+                </div>
+              </div>
+              <div class="settings-field-control">
+                <button
+                  id="speech-enabled-toggle"
+                  type="button"
+                  phx-click="toggle_speech"
+                  disabled={!@speech_supported || speech_status_busy?(@speech_status)}
+                  class="settings-toggle-button speech-settings-toggle"
+                  role="switch"
+                  aria-checked={to_string(@speech_enabled)}
+                  aria-label={gettext("Enable voice input")}
+                >
+                  <span class="settings-toggle-track" aria-hidden="true">
+                    <span class="settings-toggle-thumb"></span>
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            <div class="settings-field-row">
+              <div class="settings-field-copy">
+                <div class="settings-field-title">
+                  {gettext("Speech model")}
+                  <span class="settings-badge-experimental">
+                    {speech_status_label(@speech_enabled, @speech_supported, @speech_status)}
+                  </span>
+                </div>
+                <div class="settings-field-desc">
+                  {@speech_model.filename} · {format_speech_model_size(@speech_model.size_bytes)} · {gettext(
+                    "Chinese and English"
+                  )}
+                </div>
+              </div>
+              <div
+                :if={@speech_enabled && @speech_supported && speech_status_retry?(@speech_status)}
+                class="settings-field-control"
+              >
+                <button
+                  id="speech-model-retry"
+                  type="button"
+                  phx-click="prepare_speech"
+                  class="settings-btn settings-btn-primary"
+                >
+                  {gettext("Download model")}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-section-heading settings-advanced-divider">
             <div class="settings-section-title">{gettext("Local WebGPU capability probe")}</div>
             <div class="settings-help-text">
               {gettext(

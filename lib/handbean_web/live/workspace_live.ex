@@ -113,6 +113,7 @@ defmodule HandbeanWeb.WorkspaceLive do
       |> stream_conversations(conversations_by_ws, workspaces)
       # Current conversation state (mirrored from conversations for convenience)
       |> ConversationState.sync_conv_state()
+      |> assign(:preview_line, nil)
       # Add project dialog
       |> assign(:show_add_project, false)
       |> assign(:add_project_form, %{
@@ -125,6 +126,7 @@ defmodule HandbeanWeb.WorkspaceLive do
       |> assign(:file_browser_path, nil)
       |> assign(:sandbox_workspace?, WorkspaceNavigation.sandbox_workspace?())
       |> subscribe_workspace_import()
+      |> subscribe_speech()
       |> assign(:terminal_available?, Handbean.Terminal.available?())
       |> assign(
         :file_manager,
@@ -149,11 +151,25 @@ defmodule HandbeanWeb.WorkspaceLive do
       |> assign(:pending_attachments, [])
       |> assign(:composer_drafts, %{})
       |> assign(:pending_messages, %{})
+      |> assign(:speech_available?, Handbean.Speech.available?())
+      |> assign(
+        :speech_state,
+        if(Handbean.Speech.available?(), do: Handbean.Speech.status(), else: :unavailable)
+      )
+      |> assign(:speech_request, nil)
+      |> assign(:speech_revision, 0)
       |> allow_upload(:images,
         accept: ~w(.png .jpg .jpeg .gif .webp),
         max_entries: 4,
         max_file_size: 5_000_000,
         auto_upload: true
+      )
+      |> allow_upload(:speech_audio,
+        accept: :any,
+        max_entries: 1,
+        max_file_size: 3_840_000,
+        auto_upload: true,
+        progress: &handle_progress/3
       )
       |> ModelSelection.reload_workspace_counts()
       |> assign(:expanded_file_changes, MapSet.new())
@@ -179,11 +195,9 @@ defmodule HandbeanWeb.WorkspaceLive do
       |> assign(:ext_status_text, nil)
       |> assign(:ext_notification, nil)
       |> assign(:ext_widget_data, nil)
-      |> assign(:file_move_plan_revision, 0)
       |> WorkspaceNavigation.load_permission_mode_into_socket()
       |> subscribe_to_conversation_updates()
       |> subscribe_schedules()
-      |> subscribe_file_move_plans()
       |> RuntimeProjection.subscribe_session()
       |> RuntimeProjection.subscribe_tasks()
       |> restore_session()
@@ -376,6 +390,53 @@ defmodule HandbeanWeb.WorkspaceLive do
     {:noreply, CliSelection.finish_model_load(socket, cli, revision, {:error, {:exit, reason}})}
   end
 
+  def handle_async(
+        {:speech_transcription, request_id},
+        {:ok, {request, {:ok, transcription}}},
+        socket
+      ) do
+    cond do
+      not current_speech_request?(socket, request_id, request) ->
+        {:noreply, socket}
+
+      transcription == "" ->
+        {:noreply, speech_failed(socket, gettext("No speech was detected."))}
+
+      true ->
+        value = Handbean.Speech.append_to_draft(socket.assigns.input_value, transcription)
+
+        {:noreply,
+         socket
+         |> assign(:input_value, value)
+         |> assign(:skill_suggestions, Skills.suggestions(value, socket.assigns.available_skills))
+         |> assign(:speech_request, nil)
+         |> assign(:speech_state, :ready)
+         |> push_event("speech-transcription", %{value: value})}
+    end
+  end
+
+  def handle_async(
+        {:speech_transcription, request_id},
+        {:ok, {request, {:error, reason}}},
+        socket
+      ) do
+    if current_speech_request?(socket, request_id, request) do
+      Logger.warning("[WorkspaceLive] speech transcription failed: #{inspect(reason)}")
+      {:noreply, speech_failed(socket, transcription_error_message(reason))}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_async({:speech_transcription, request_id}, {:exit, reason}, socket) do
+    if socket.assigns.speech_request && socket.assigns.speech_request.id == request_id do
+      Logger.warning("[WorkspaceLive] speech transcription task exited: #{inspect(reason)}")
+      {:noreply, speech_failed(socket, gettext("Voice transcription failed. Please try again."))}
+    else
+      {:noreply, socket}
+    end
+  end
+
   defp conversation_list_failed(socket, reason) do
     Logger.warning("Conversation list failed to load: #{inspect(reason)}")
 
@@ -491,6 +552,59 @@ defmodule HandbeanWeb.WorkspaceLive do
     end
   end
 
+  def handle_progress(:speech_audio, entry, socket) do
+    errors = upload_errors(socket.assigns.uploads.speech_audio, entry)
+
+    cond do
+      errors != [] ->
+        message =
+          if :too_large in errors,
+            do: gettext("Voice recording is too long. The limit is 60 seconds."),
+            else: gettext("Could not read the voice recording.")
+
+        {:noreply,
+         socket
+         |> cancel_upload(:speech_audio, entry.ref)
+         |> assign(:speech_state, :ready)
+         |> assign(:composer_error, message)
+         |> push_event("speech-transcription-failed", %{})}
+
+      entry.done? and not socket.assigns.speech_available? ->
+        _dropped =
+          consume_uploaded_entry(socket, entry, fn _meta ->
+            {:ok, :dropped}
+          end)
+
+        {:noreply, assign(socket, :speech_state, :unavailable)}
+
+      entry.done? ->
+        pcm =
+          consume_uploaded_entry(socket, entry, fn %{path: path} ->
+            {:ok, File.read!(path)}
+          end)
+
+        request = %{
+          id: Ecto.UUID.generate(),
+          conversation_id: socket.assigns.current_conversation_id,
+          revision: socket.assigns.speech_revision
+        }
+
+        socket =
+          socket
+          |> assign(:speech_request, request)
+          |> assign(:speech_state, :processing)
+          |> assign(:composer_error, nil)
+          |> start_async({:speech_transcription, request.id}, fn ->
+            {request, Handbean.Speech.transcribe(pcm, language: "auto")}
+          end)
+
+        {:noreply, socket}
+
+      true ->
+        {:noreply, socket}
+    end
+  end
+
   def handle_progress(:images, entry, socket) do
     errors =
       entry.errors
@@ -549,15 +663,15 @@ defmodule HandbeanWeb.WorkspaceLive do
 
   @impl true
   def handle_event("send_message", params, socket),
-    do: MessageSubmission.send_message(socket, params)
+    do: socket |> Composer.invalidate_speech() |> MessageSubmission.send_message(params)
 
   @impl true
   def handle_event("steer_message", params, socket),
-    do: MessageSubmission.steer_message(socket, params)
+    do: socket |> Composer.invalidate_speech() |> MessageSubmission.steer_message(params)
 
   @impl true
   def handle_event("queue_message", params, socket),
-    do: MessageSubmission.queue_message(socket, params)
+    do: socket |> Composer.invalidate_speech() |> MessageSubmission.queue_message(params)
 
   @impl true
   def handle_event("send_pending_now", %{"id" => id}, socket),
@@ -570,6 +684,14 @@ defmodule HandbeanWeb.WorkspaceLive do
   @impl true
   def handle_event("resend_pending", %{"id" => id}, socket),
     do: MessageSubmission.resend_pending(socket, id)
+
+  @impl true
+  def handle_event("speech_error", %{"reason" => reason}, socket) do
+    {:noreply,
+     socket
+     |> assign(:speech_state, :ready)
+     |> assign(:composer_error, speech_error_message(reason))}
+  end
 
   @impl true
   def handle_event("update_input", %{"value" => value}, socket) do
@@ -672,8 +794,9 @@ defmodule HandbeanWeb.WorkspaceLive do
   @impl true
   def handle_event("select_workspace_file", %{"path" => relative_path}, socket) do
     {:noreply,
-     ConversationState.select_file(
-       socket,
+     socket
+     |> assign(:preview_line, nil)
+     |> ConversationState.select_file(
        relative_path,
        ConversationState.current_checkout_path(socket),
        ModelSelection.state_opts()
@@ -689,8 +812,9 @@ defmodule HandbeanWeb.WorkspaceLive do
   def handle_event("select_editor_file", %{"path" => relative_path}, socket)
       when is_binary(relative_path) do
     {:noreply,
-     ConversationState.select_editor_file(
-       socket,
+     socket
+     |> assign(:preview_line, nil)
+     |> ConversationState.select_editor_file(
        relative_path,
        ConversationState.current_checkout_path(socket),
        ModelSelection.state_opts()
@@ -779,7 +903,12 @@ defmodule HandbeanWeb.WorkspaceLive do
        |> push_event("scroll_to_file_change", %{id: "chat-file-change-#{entry["id"]}"})}
     else
       relative = Path.relative_to(requested, root)
-      handle_event("select_workspace_file", %{"path" => relative}, socket)
+
+      {:noreply,
+       socket
+       |> WorkspaceNavigation.reveal_files_panel()
+       |> ConversationState.select_file(relative, root, ModelSelection.state_opts())
+       |> assign(:preview_line, preview_line(params["line"]))}
     end
   end
 
@@ -1725,6 +1854,36 @@ defmodule HandbeanWeb.WorkspaceLive do
   end
 
   @impl true
+  def handle_info({:speech_enabled, false}, socket) do
+    {:noreply,
+     socket
+     |> assign(:speech_available?, false)
+     |> Composer.invalidate_speech()
+     |> assign(:speech_state, :disabled)}
+  end
+
+  def handle_info({:speech_enabled, true}, socket) do
+    status = Handbean.Speech.status()
+
+    {:noreply,
+     socket
+     |> assign(:speech_available?, Handbean.Speech.available?())
+     |> assign(:speech_state, status)}
+  end
+
+  def handle_info({:speech_status, status}, socket) do
+    active_request? = not is_nil(socket.assigns.speech_request)
+
+    available? =
+      Handbean.Speech.enabled?() and Handbean.Speech.supported?() and
+        (status in [:ready, :transcribing] or active_request?)
+
+    {:noreply,
+     socket
+     |> assign(:speech_available?, available?)
+     |> assign(:speech_state, status)}
+  end
+
   def handle_info({:agent_event, event}, socket) do
     {:noreply, project_event(socket, event)}
   end
@@ -1880,29 +2039,6 @@ defmodule HandbeanWeb.WorkspaceLive do
 
   def handle_info({:ext_ui, %{event: event, data: data}}, socket) do
     {:noreply, assign(socket, :ext_widget_data, %{event: event, data: data})}
-  end
-
-  def handle_info({:file_move_plan_confirmed, id}, socket) do
-    context = file_move_plan_context(socket)
-
-    case Handbean.FileMovePlans.get(context, id) do
-      {:ok, %{status: "confirmed"}} ->
-        MessageSubmission.send_schedule_request(
-          socket,
-          "请调用 file_move_plan，action=execute，id=#{id}，执行我在文件整理卡片中确认的选项。"
-        )
-
-      _ ->
-        {:noreply, socket}
-    end
-  end
-
-  def handle_info({:file_move_plan_changed, conversation_id}, socket) do
-    if socket.assigns.current_conversation_id == conversation_id do
-      {:noreply, refresh_file_move_plan_cards(socket)}
-    else
-      {:noreply, socket}
-    end
   end
 
   def handle_info({:schedule_changed, _conv_id}, socket) do
@@ -2146,11 +2282,76 @@ defmodule HandbeanWeb.WorkspaceLive do
 
   # ── /model command parser ──
 
+  defp preview_line(line) when is_integer(line) and line > 0, do: line
+
+  defp preview_line(line) when is_binary(line) do
+    case Integer.parse(line) do
+      {value, ""} when value > 0 -> value
+      _ -> nil
+    end
+  end
+
+  defp preview_line(_line), do: nil
+
+  defp current_speech_request?(socket, request_id, request) do
+    current = socket.assigns.speech_request
+
+    not is_nil(current) and current.id == request_id and request.id == request_id and
+      request.conversation_id == socket.assigns.current_conversation_id and
+      request.revision == socket.assigns.speech_revision
+  end
+
+  defp speech_failed(socket, message) do
+    socket
+    |> assign(:speech_request, nil)
+    |> assign(:speech_state, :ready)
+    |> assign(:composer_error, message)
+    |> push_event("speech-transcription-failed", %{})
+  end
+
+  defp transcription_error_message(:too_short),
+    do: gettext("Record a little longer and try again.")
+
+  defp transcription_error_message(:too_long),
+    do: gettext("Voice recording is too long. The limit is 60 seconds.")
+
+  defp transcription_error_message(:unavailable),
+    do: gettext("Local voice transcription is unavailable on this device.")
+
+  defp transcription_error_message(_reason),
+    do: gettext("Voice transcription failed. Please try again.")
+
+  defp speech_error_message("permission_denied"),
+    do: gettext("Microphone access was denied. Allow it in system settings and try again.")
+
+  defp speech_error_message("microphone_missing"),
+    do: gettext("No microphone was found.")
+
+  defp speech_error_message("microphone_busy"),
+    do: gettext("The microphone is being used by another app.")
+
+  defp speech_error_message("unsupported"),
+    do: gettext("Voice recording is not supported by this browser.")
+
+  defp speech_error_message("empty_recording"),
+    do: gettext("No audio was recorded.")
+
+  defp speech_error_message(_reason),
+    do: gettext("Could not record audio. Please try again.")
+
   # ── PubSub subscription ──
 
   defp subscribe_to_conversation_updates(socket) do
     if connected?(socket) do
       Phoenix.PubSub.subscribe(Handbean.PubSub, "conversation:updated")
+    end
+
+    socket
+  end
+
+  defp subscribe_speech(socket) do
+    if connected?(socket) do
+      Handbean.Speech.subscribe()
     end
 
     socket
@@ -2162,35 +2363,6 @@ defmodule HandbeanWeb.WorkspaceLive do
     end
 
     socket
-  end
-
-  defp subscribe_file_move_plans(socket) do
-    if connected?(socket) do
-      Phoenix.PubSub.subscribe(Handbean.PubSub, "runtime:file_move_plans")
-    end
-
-    socket
-  end
-
-  defp file_move_plan_context(socket) do
-    %{
-      conversation_id: socket.assigns.current_conversation_id,
-      workspace_id: socket.assigns.current_workspace_id,
-      working_directory: socket.assigns.workspace_root
-    }
-  end
-
-  defp refresh_file_move_plan_cards(socket) do
-    revision = Map.get(socket.assigns, :file_move_plan_revision, 0) + 1
-
-    Enum.reduce(socket.assigns.timeline, assign(socket, :file_move_plan_revision, revision), fn
-      entry, acc ->
-        if HandbeanWeb.WorkspaceHelper.file_move_plan_id(entry) do
-          stream_insert(acc, :timeline, entry)
-        else
-          acc
-        end
-    end)
   end
 
   defp subscribe_workspace_import(socket) do

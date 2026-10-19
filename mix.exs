@@ -87,7 +87,8 @@ defmodule Handbean.MixProject do
       {:jason, "~> 1.2"},
       {:websockex, "~> 0.5.1"},
       {:dns_cluster, "~> 0.3.1"},
-      {:bandit, "~> 1.12"},
+      {:bandit, "~> 1.13"},
+      {:rustler_precompiled, "~> 0.10", override: true, optional: true},
 
       # 程序依赖图 / 发布安全检查
       {:reach, "~> 2.6", only: [:dev, :test], runtime: false},
@@ -103,7 +104,7 @@ defmodule Handbean.MixProject do
       # i18n / 多语言支持
       {:gettext, "~> 1.0"},
       {:elixir_make, "~> 0.9", runtime: false}
-    ] ++ maybe_ghostty()
+    ] ++ maybe_ghostty() ++ maybe_whisper_cpp()
   end
 
   # Aliases are shortcuts or tasks specific to the current project.
@@ -124,6 +125,18 @@ defmodule Handbean.MixProject do
       "assets.build": ["esbuild handbean"],
       "assets.deploy": ["esbuild handbean --minify", "phx.digest"]
     ]
+  end
+
+  defp maybe_whisper_cpp do
+    architecture = List.to_string(:erlang.system_info(:system_architecture))
+
+    supported? =
+      String.starts_with?(architecture, "aarch64-apple-darwin") or
+        ((String.starts_with?(architecture, "aarch64-") or
+            String.starts_with?(architecture, "x86_64-")) and
+           String.ends_with?(architecture, "-linux-gnu"))
+
+    if supported?, do: [{:whisper_cpp, "~> 0.5.0", optional: true}], else: []
   end
 
   # Ghostty NIFs exist for Linux and macOS only. Windows Web UI packages
