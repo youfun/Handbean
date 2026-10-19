@@ -9,6 +9,9 @@ defmodule HandbeanWeb.Live.TerminalPanel do
 
   use HandbeanWeb, :live_component
 
+  # Mobile and Windows builds intentionally omit the optional Ghostty dependency.
+  @compile {:no_warn_undefined, Ghostty.LiveTerminal.Component}
+
   alias Handbean.Terminal.{Session, Supervisor}
 
   @session_call_timeout 2_000

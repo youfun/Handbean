@@ -42,7 +42,6 @@ defmodule HandbeanProbe.MixProject do
       # Handbean pins these; Mob pulled newer ones into this Mix lock.
       {:phoenix_live_view, "~> 1.2.0", override: true},
       {:req, "~> 0.7.4", override: true},
-      {:ghostty, "~> 0.5.0", override: true},
       {:ecto_sqlite3, "~> 0.25"},
       # Host-provided password hash for workspace Mix projects (phx.gen.auth).
       {:bcrypt_elixir, "~> 3.3"},

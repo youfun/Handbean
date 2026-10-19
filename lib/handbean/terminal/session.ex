@@ -11,6 +11,10 @@ defmodule Handbean.Terminal.Session do
 
   use GenServer
 
+  # Mobile and Windows builds intentionally omit the optional Ghostty dependency.
+  @compile {:no_warn_undefined, Ghostty.PTY}
+  @compile {:no_warn_undefined, Ghostty.Terminal}
+
   alias Handbean.Platform.ProcessRunner
   alias Handbean.Terminal.Registry
 

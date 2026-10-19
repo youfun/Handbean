@@ -137,7 +137,8 @@ defmodule Handbean.MixProject do
         {:ghostty,
          git: "https://github.com/youfun/ghostty_ex.git",
          branch: "upgrade/ghostty-22fa134",
-         compile: ~s(bash "#{__DIR__}/scripts/compile_ghostty.sh")},
+         compile: ~s(bash "#{__DIR__}/scripts/compile_ghostty.sh"),
+         optional: true},
         {:zigler, "~> 0.16.0", runtime: false, optional: true}
       ]
     end
