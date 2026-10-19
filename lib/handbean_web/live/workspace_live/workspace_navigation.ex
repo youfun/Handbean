@@ -167,6 +167,18 @@ defmodule HandbeanWeb.WorkspaceLive.WorkspaceNavigation do
     |> assign(:show_terminal, false)
   end
 
+  def reveal_files_panel(socket) do
+    socket =
+      socket
+      |> select_panel("files")
+
+    if Map.get(socket.assigns, :mobile_mode) do
+      assign(socket, :mobile_right_panel_open, true)
+    else
+      socket
+    end
+  end
+
   def show_files_mobile(socket) do
     socket
     |> assign(:mobile_right_panel_open, true)

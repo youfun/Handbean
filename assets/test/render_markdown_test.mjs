@@ -49,4 +49,15 @@ const linked = renderMarkdown("[x](https://example.com)", { linkTargetBlank: tru
 assert.match(linked, /target="_blank"/);
 assert.match(linked, /rel="noopener noreferrer"/);
 
+const cited = renderMarkdown("项目 AGENTS.md 第 22 行 明确要求", { linkTargetBlank: true });
+assert.match(cited, /href="AGENTS.md#L22"/);
+assert.match(cited, />AGENTS.md 第 22 行</);
+assert.doesNotMatch(cited, /http:\/\/AGENTS\.md/);
+
+const explicit = renderMarkdown("[AGENTS.md 第 22 行](AGENTS.md:22)", { linkTargetBlank: true });
+assert.match(explicit, /href="AGENTS.md#L22"/);
+
+const web = renderMarkdown("see https://example.com/docs", { linkTargetBlank: true });
+assert.match(web, /href="https:\/\/example.com\/docs"/);
+
 console.log("render_markdown_test passed");

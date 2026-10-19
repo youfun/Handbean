@@ -1,5 +1,6 @@
 import MarkdownIt from "markdown-it";
 import createDOMPurify from "dompurify";
+import { installWorkspaceFileLinks } from "./workspace_file_link.js";
 
 export function createMarkdownIt(options = {}) {
   const md = new MarkdownIt({
@@ -8,6 +9,7 @@ export function createMarkdownIt(options = {}) {
     breaks: false,
     ...options.markdownIt
   });
+  installWorkspaceFileLinks(md);
 
   if (options.linkTargetBlank) {
     const defaultRender = md.renderer.rules.link_open || ((tokens, idx, opts, _env, self) => self.renderToken(tokens, idx, opts));

@@ -3468,6 +3468,38 @@ defmodule HandbeanWeb.WorkspaceLiveTest do
       assert render(view) =~ "isolated preview fixture"
     end
 
+    test "a chat file citation opens the files panel on a collapsed changes view", %{conn: conn} do
+      ws = Handbean.Workspace.ensure_root!()
+
+      File.write!(
+        Path.join(ws, "AGENTS.md"),
+        Enum.map_join(1..30, "\n", fn line -> "line #{line}" end)
+      )
+
+      {:ok, view, _html} = live(conn, "/")
+      _ = create_default_conversation(view)
+
+      view
+      |> element("button[phx-click='select_right_panel_view'][phx-value-view='changes']")
+      |> render_click()
+
+      view
+      |> element("#workspace-panel-collapse")
+      |> render_click()
+
+      refute has_element?(view, "#workspace-files")
+      refute has_element?(view, "#workspace-panel-collapse")
+
+      render_click(view, "open_file_change", %{"path" => "AGENTS.md", "line" => "22"})
+
+      assert has_element?(view, "#workspace-files")
+      assert has_element?(view, "#workspace-panel-collapse")
+      assert has_element?(view, "[role='tab'][aria-selected='true']", "AGENTS.md")
+      html = render(view)
+      assert html =~ "line 22"
+      assert html =~ ~s(data-preview-line="22")
+    end
+
     test "a deleted inactive tab can be selected and switching back restores its neighbor", %{
       conn: conn
     } do

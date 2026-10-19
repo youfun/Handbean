@@ -113,6 +113,7 @@ defmodule HandbeanWeb.WorkspaceLive.WorkspaceComponents do
   attr :active_file, :string, required: true
   attr :editor_files, :list, default: []
   attr :file_preview, :any, default: nil
+  attr :preview_line, :integer, default: nil
   attr :chat_scope, :any, required: true
   attr :current_workspace_id, :any, required: true
   attr :expanded_file_changes, :any, required: true
@@ -338,6 +339,7 @@ defmodule HandbeanWeb.WorkspaceLive.WorkspaceComponents do
               <.file_preview
                 :if={!@file_preview_error && is_map(@file_preview)}
                 preview={@file_preview}
+                preview_line={@preview_line}
                 workspace_id={@current_workspace_id}
                 conversation_id={@current_conversation_id}
                 file_manager={@file_manager}
@@ -397,6 +399,7 @@ defmodule HandbeanWeb.WorkspaceLive.WorkspaceComponents do
   end
 
   attr :preview, :any, required: true
+  attr :preview_line, :integer, default: nil
   attr :workspace_id, :string, required: true
   attr :conversation_id, :string, required: true
   attr :file_manager, :atom, default: nil
@@ -465,6 +468,7 @@ defmodule HandbeanWeb.WorkspaceLive.WorkspaceComponents do
           data-kind={Atom.to_string(@preview.kind)}
           data-relative-path={@preview.relative_path}
           data-workspace-id={@workspace_id}
+          data-preview-line={@preview_line}
           data-digest={Base.encode16(:crypto.hash(:sha256, @preview.content || ""))}
         >
           <div class="workspace-preview-toolbar">

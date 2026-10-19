@@ -41,7 +41,27 @@ function after(fn) {
   link.dispatchEvent(click);
   assert.equal(click.defaultPrevented, true);
   assert.deepEqual(events, [["open_file_change", {
-    path: "/workspace/CHANGELOG.md", message_id: "assistant-changelog"
+    path: "/workspace/CHANGELOG.md", line: 12, message_id: "assistant-changelog"
+  }]]);
+  hook.destroyed();
+  el.dataset.source = "# Done";
+}
+
+{
+  const el = document.querySelector("#wrapper");
+  el.dataset.source = "需要再次确认是因为项目 AGENTS.md 第 22 行 明确要求。";
+  el.dataset.entryId = "assistant-agents";
+  el.dataset.streaming = "false";
+  const events = [];
+  const hook = { ...StreamingMarkdown, el, pushEvent: (...args) => events.push(args) };
+  hook.mounted();
+  const link = el.querySelector("a");
+  assert.equal(link.getAttribute("href"), "AGENTS.md#L22");
+  const click = new window.MouseEvent("click", { bubbles: true, cancelable: true });
+  link.dispatchEvent(click);
+  assert.equal(click.defaultPrevented, true);
+  assert.deepEqual(events, [["open_file_change", {
+    path: "AGENTS.md", line: 22, message_id: "assistant-agents"
   }]]);
   hook.destroyed();
   el.dataset.source = "# Done";

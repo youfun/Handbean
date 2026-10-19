@@ -151,10 +151,12 @@ export const FilePreview = {
     };
     this.el.addEventListener("click", this.previewClick);
     FilePreview.renderPreview.call(this);
+    FilePreview.scrollToPreviewLine.call(this);
   },
 
   updated() {
     FilePreview.renderPreview.call(this);
+    FilePreview.scrollToPreviewLine.call(this);
   },
 
   destroyed() {
@@ -226,6 +228,20 @@ export const FilePreview = {
       button.setAttribute("aria-pressed", String(this.previewWrap));
       button.hidden = showRendered;
     });
+  },
+
+  scrollToPreviewLine() {
+    const line = Number(this.el.dataset.previewLine);
+    if (!Number.isInteger(line) || line < 1) return;
+    if ((this.el.dataset.kind || "code") === "markdown") this.previewMode = "source";
+    FilePreview.renderPreview.call(this);
+    const surface = this.el.querySelector("[data-preview-target='source']")?.closest("pre");
+    const scroller = this.el.closest(".workspace-file-preview-scroll") || surface;
+    if (!scroller) return;
+    const style = this.el.ownerDocument.defaultView.getComputedStyle(surface || scroller);
+    const lineHeight = parseFloat(style.lineHeight);
+    if (!Number.isFinite(lineHeight) || lineHeight <= 0) return;
+    scroller.scrollTop = (line - 1) * lineHeight;
   }
 };
 

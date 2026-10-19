@@ -10,6 +10,7 @@ import {
   renderMermaidBlocks
 } from "../streaming_markdown/mermaid_blocks.js";
 import { decorateHtmlPreviews, handleHtmlPreviewClick, resizeHtmlPreview } from "../streaming_markdown/html_previews.js";
+import { workspaceFileFromHref } from "../streaming_markdown/workspace_file_link.js";
 
 export const StreamingMarkdown = {
   mounted() {
@@ -34,15 +35,12 @@ export const StreamingMarkdown = {
       handleMermaidPreviewClick(e);
       const link = e.target.closest("a[href]");
       if (link && this.el.contains(link)) {
-        const href = link.getAttribute("href");
-        const localHref = href?.replace(/:\d+(?::\d+)?(?=[?#]|$)/, "");
-        // Only local paths belong to the workspace; leave web links untouched.
-        if (localHref && !/^(?:[a-z][a-z0-9+.-]*:|\/\/|#|\?)/i.test(localHref)) {
+        const parsed = workspaceFileFromHref(link.getAttribute("href"), link.textContent);
+        if (parsed) {
           e.preventDefault();
-          let path;
-          try { path = decodeURIComponent(href.split(/[?#]/)[0]); } catch { return; }
-          path = path.replace(/:\d+(?::\d+)?$/, "");
-          this.pushEvent("open_file_change", { path, message_id: this.el.dataset.entryId });
+          const payload = { path: parsed.path, message_id: this.el.dataset.entryId };
+          if (parsed.line) payload.line = parsed.line;
+          this.pushEvent("open_file_change", payload);
           return;
         }
       }
