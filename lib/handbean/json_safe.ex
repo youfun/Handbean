@@ -38,7 +38,7 @@ defmodule Handbean.JsonSafe do
 
   def normalize(value), do: inspect(value)
 
-  defp normalize_struct(%Handbean.Memory.Engram{} = engram) do
+  defp normalize_struct(%{__struct__: Handbean.Memory.Engram} = engram) do
     %{
       "id" => engram.id,
       "content" => engram.content,
