@@ -24,9 +24,12 @@ export const ChatScroll = {
     this._olderAnchor = null;
     this._touching = false;
     this._pointing = false;
+    this._focusEntryId = this.focusEntryId();
+    this._focusCursor = null;
 
     requestAnimationFrame(() => {
-      this.scrollToBottom();
+      if (this._focusEntryId) this.focusEntry();
+      else this.scrollToBottom();
     });
 
     this.onUserIntent = (event) => {
@@ -94,7 +97,8 @@ export const ChatScroll = {
 
   updated() {
     this.restoreOlderAnchor();
-    this.maybeScrollToBottom();
+    if (this._focusEntryId) this.focusEntry();
+    else this.maybeScrollToBottom();
   },
 
   destroyed() {
@@ -117,6 +121,48 @@ export const ChatScroll = {
 
   historyCursor() {
     return this.el?.dataset.historyBefore || "";
+  },
+
+  focusEntryId() {
+    const hash = globalThis.location?.hash || "";
+    if (hash.length <= 1) return null;
+
+    try {
+      return decodeURIComponent(hash.slice(1));
+    } catch (_error) {
+      return null;
+    }
+  },
+
+  focusEntry() {
+    const id = this._focusEntryId;
+    const target = id ? globalThis.document?.getElementById?.(id) : null;
+
+    if (target && this.el?.contains?.(target)) {
+      this.pinned = false;
+      target.scrollIntoView?.({ behavior: "smooth", block: "center" });
+      this._focusEntryId = null;
+      this._focusCursor = null;
+      this._loadingOlder = false;
+      return;
+    }
+
+    const cursor = this.historyCursor();
+    if (!this.el || this._loadingOlder || this.el.dataset.historyHasMore !== "true") return;
+    if (this._focusCursor === cursor) return;
+
+    this.pinned = false;
+    this._loadingOlder = true;
+    this._focusCursor = cursor;
+    this.pushEvent("load_older_history", {}, () => {
+      requestAnimationFrame(() => {
+        this._loadingOlder = false;
+        if (!this._focusEntryId) return;
+
+        if (this.historyCursor() === cursor) this._focusCursor = null;
+        this.focusEntry();
+      });
+    });
   },
 
   maybeLoadOlder() {

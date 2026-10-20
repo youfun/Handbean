@@ -26,6 +26,10 @@ class FakeElement {
       (this.listeners.get(type) || []).filter((item) => item !== listener),
     );
   }
+
+  contains(target) {
+    return target?.inside === true;
+  }
 }
 
 class FakeMutationObserver {
@@ -88,6 +92,47 @@ hook.onUserIntent({ type: "wheel", deltaY: -40 });
 assert.equal(pushes.length, 3, "the end of history never sends another request");
 
 hook.destroyed();
+
+const focusedElement = new FakeElement();
+const focusPushes = [];
+let focusedTarget = null;
+globalThis.location = { hash: "#source-entry" };
+globalThis.document = {
+  getElementById(id) {
+    return id === "source-entry" ? focusedTarget : null;
+  },
+};
+
+const focusHook = {
+  ...ChatScroll,
+  el: focusedElement,
+  handleEvent() {},
+  pushEvent(event, payload, callback) {
+    focusPushes.push({ event, payload, callback });
+  },
+};
+
+focusHook.mounted();
+assert.equal(focusPushes[0].event, "load_older_history");
+assert.equal(focusedElement.scrollTop, 0, "a source link does not jump to the newest message");
+
+focusedElement.dataset.historyBefore = "cursor-1";
+focusPushes[0].callback();
+assert.equal(focusPushes.length, 2, "a source link keeps paging until the entry is loaded");
+
+focusedTarget = {
+  inside: true,
+  scrollIntoView(options) {
+    this.options = options;
+  },
+};
+focusHook.updated();
+assert.deepEqual(focusedTarget.options, { behavior: "smooth", block: "center" });
+assert.equal(focusHook._focusEntryId, null);
+focusHook.destroyed();
+
+delete globalThis.location;
+delete globalThis.document;
 delete globalThis.MutationObserver;
 delete globalThis.requestAnimationFrame;
 console.log("chat_scroll_test passed");
