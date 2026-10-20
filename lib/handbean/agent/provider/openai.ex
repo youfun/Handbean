@@ -38,6 +38,7 @@ defmodule Handbean.Agent.Provider.OpenAI do
   @behaviour Handbean.Agent.Provider
 
   alias Handbean.Agent.Message
+  alias Handbean.Agent.Provider.OpenAI.Response
   alias Handbean.Agent.Provider.SSE
 
   require Logger
@@ -539,7 +540,7 @@ defmodule Handbean.Agent.Provider.OpenAI do
         "role=#{inspect(item["role"])} name=#{inspect(item["name"])}"
     )
 
-    case parse_output_item(item) do
+    case Response.parse_output_item(item) do
       {:ok, _blocks} -> %{acc | output: upsert_stream_output_item(acc.output, item)}
       {:error, reason} -> {:halt, %{acc | stream_error: reason}}
     end
@@ -624,7 +625,7 @@ defmodule Handbean.Agent.Provider.OpenAI do
 
     case error do
       nil -> "provider_error: Provider returned a failed response"
-      error -> format_error_payload(error)
+      error -> Response.format_error_payload(error)
     end
   end
 
@@ -697,7 +698,7 @@ defmodule Handbean.Agent.Provider.OpenAI do
 
   defp maybe_put_stream_output_text(response, content)
        when is_binary(content) and content != "" do
-    case response_text_fallback(response) do
+    case Response.text_fallback(response) do
       nil -> Map.put(response, "output_text", content)
       _text -> response
     end
@@ -708,217 +709,12 @@ defmodule Handbean.Agent.Provider.OpenAI do
   # --- Response Parsing ---
 
   @doc false
-  def parse_response(body) when is_binary(body) do
-    case Handbean.Agent.Provider.decode_body(body) do
-      {:ok, decoded} -> parse_response(decoded)
-      {:error, _} = err -> err
-    end
-  end
-
-  def parse_response(%{"error" => error}) when not is_nil(error) do
-    {:error, format_error_payload(error)}
-  end
-
-  def parse_response(%{"status" => status}) when status not in [nil, "completed"] do
-    {:error, "OpenAI response did not complete successfully"}
-  end
-
-  def parse_response(%{"output" => output} = resp) when is_list(output) do
-    usage = resp["usage"] || %{}
-    provider_state = provider_state_from_response(resp)
-
-    case parse_output_to_blocks(output) do
-      {:ok, content_blocks} ->
-        content_blocks = fallback_response_text_blocks(resp, content_blocks)
-        stop_reason = parse_stop_reason(content_blocks)
-
-        Logger.debug(
-          "[OpenAI] parsed response stop_reason=#{stop_reason} blocks=#{length(content_blocks)} " <>
-            "text_bytes=#{byte_size(blocks_text(content_blocks))}"
-        )
-
-        alloy_msg = %Message{
-          role: :assistant,
-          content: content_blocks
-        }
-
-        {:ok,
-         %{
-           stop_reason: stop_reason,
-           messages: [alloy_msg],
-           usage: Handbean.Agent.Provider.openai_usage(usage),
-           provider_state: provider_state,
-           response_metadata: response_metadata_from_response(resp)
-         }}
-
-      {:error, _} = err ->
-        err
-    end
-  end
-
-  def parse_response(%{"output_text" => text} = resp) when is_binary(text) do
-    usage = resp["usage"] || %{}
-    provider_state = provider_state_from_response(resp)
-
-    content_blocks =
-      case text do
-        "" -> []
-        _ -> [%{type: "text", text: text}]
-      end
-
-    {:ok,
-     %{
-       stop_reason: :end_turn,
-       messages: [%Message{role: :assistant, content: content_blocks}],
-       usage: Handbean.Agent.Provider.openai_usage(usage),
-       provider_state: provider_state,
-       response_metadata: response_metadata_from_response(resp)
-     }}
-  end
-
-  def parse_response(_resp) do
-    {:error, "Unexpected OpenAI response payload"}
-  end
-
-  defp parse_output_to_blocks(output) do
-    result =
-      Enum.reduce_while(output, {:ok, []}, fn item, {:ok, acc} ->
-        case parse_output_item(item) do
-          {:ok, blocks} -> {:cont, {:ok, [blocks | acc]}}
-          {:error, _} = err -> {:halt, err}
-        end
-      end)
-
-    case result do
-      {:ok, nested} -> {:ok, nested |> Enum.reverse() |> List.flatten()}
-      error -> error
-    end
-  end
-
-  defp fallback_response_text_blocks(resp, [] = _content_blocks) do
-    resp
-    |> response_text_fallback()
-    |> case do
-      nil -> []
-      text -> [%{type: "text", text: text}]
-    end
-  end
-
-  defp fallback_response_text_blocks(_resp, content_blocks), do: content_blocks
-
-  defp response_text_fallback(resp) do
-    Enum.find_value(["output_text", "text", "message"], fn key ->
-      case Map.get(resp, key) do
-        text when is_binary(text) and text != "" -> text
-        _other -> nil
-      end
-    end)
-  end
-
-  defp parse_output_item(%{"type" => "message", "role" => "assistant", "content" => content})
-       when is_list(content) do
-    if Enum.any?(content, &malformed_assistant_part?/1),
-      do: {:error, "Malformed OpenAI assistant content"},
-      else: {:ok, parse_assistant_content(content)}
-  end
-
-  defp parse_output_item(%{"type" => "message", "role" => "assistant", "content" => text})
-       when is_binary(text) do
-    blocks =
-      case text do
-        "" -> []
-        _ -> [%{type: "text", text: text}]
-      end
-
-    {:ok, blocks}
-  end
-
-  defp parse_output_item(%{"type" => "function_call", "name" => name} = call)
-       when is_binary(name) and name != "" do
-    id = call["call_id"] || call["id"]
-
-    if is_binary(id) and id != "" and String.trim(name) != "" do
-      with {:ok, input} <- decode_function_call_arguments(call) do
-        {:ok, [%{type: "tool_use", id: id, name: name, input: input}]}
-      end
-    else
-      {:error, "Malformed OpenAI function_call"}
-    end
-  end
-
-  defp parse_output_item(%{"type" => "reasoning", "encrypted_content" => encrypted} = item)
-       when is_binary(encrypted) and encrypted != "" do
-    {:ok,
-     [
-       %{
-         type: "responses_reasoning",
-         item: Map.take(item, ["type", "id", "summary", "encrypted_content", "status"])
-       }
-     ]}
-  end
-
-  defp parse_output_item(%{"type" => type}) when type in ["function_call", "message"],
-    do: {:error, "Malformed OpenAI #{type}"}
-
-  defp parse_output_item(_item), do: {:ok, []}
-
-  defp malformed_assistant_part?(%{"type" => type} = part)
-       when type in ["text", "output_text"], do: not is_binary(part["text"])
-
-  defp malformed_assistant_part?(%{"type" => "refusal"} = part),
-    do: not is_binary(part["refusal"] || part["text"])
-
-  defp malformed_assistant_part?(part), do: not is_map(part)
-
-  defp parse_assistant_content(content) when is_list(content) do
-    content
-    |> Enum.flat_map(fn
-      %{"type" => "output_text", "text" => text} = item when is_binary(text) and text != "" ->
-        [%{type: "text", text: text} |> maybe_put_annotations(item["annotations"])]
-
-      %{"type" => "text", "text" => text} = item when is_binary(text) and text != "" ->
-        [%{type: "text", text: text} |> maybe_put_annotations(item["annotations"])]
-
-      %{"text" => text} = item when is_binary(text) and text != "" ->
-        [%{type: "text", text: text} |> maybe_put_annotations(item["annotations"])]
-
-      %{"type" => "refusal", "refusal" => text} when is_binary(text) and text != "" ->
-        [%{type: "text", text: text}]
-
-      %{"type" => "refusal", "text" => text} when is_binary(text) and text != "" ->
-        [%{type: "text", text: text}]
-
-      _ ->
-        []
-    end)
-  end
-
-  defp parse_stop_reason(content_blocks) do
-    if Enum.any?(content_blocks, &(&1.type == "tool_use")), do: :tool_use, else: :end_turn
-  end
-
-  defp decode_function_call_arguments(call) do
-    args = call["arguments"]
-
-    case args do
-      encoded when is_binary(encoded) ->
-        case Handbean.JSON.decode(encoded) do
-          {:ok, input} when is_map(input) -> {:ok, input}
-          _ -> {:error, "Invalid JSON in tool call arguments: expected an object"}
-        end
-
-      decoded when is_map(decoded) ->
-        {:ok, decoded}
-
-      _other ->
-        {:error, "Invalid tool call arguments payload: expected an object"}
-    end
-  end
+  defdelegate parse_response(body), to: Response, as: :parse
 
   defp parse_error(status, body) when is_binary(body) do
     case Handbean.JSON.decode(body) do
       {:ok, %{"error" => error}} ->
-        format_error_payload(error)
+        Response.format_error_payload(error)
 
       _ ->
         "HTTP #{status}: #{body}"
@@ -927,19 +723,10 @@ defmodule Handbean.Agent.Provider.OpenAI do
 
   defp parse_error(status, body) when is_map(body) do
     case body do
-      %{"error" => error} -> format_error_payload(error)
+      %{"error" => error} -> Response.format_error_payload(error)
       _ -> "HTTP #{status}: #{inspect(body)}"
     end
   end
-
-  defp format_error_payload(error) when is_map(error) do
-    type = Map.get(error, "type") || Map.get(error, "code") || "error"
-    message = Map.get(error, "message") || "Provider request failed"
-    "#{type}: #{message}"
-  end
-
-  defp format_error_payload(error) when is_binary(error), do: error
-  defp format_error_payload(_error), do: "provider_error: Provider request failed"
 
   defp tag_reasoning_origin({:ok, %{messages: messages} = response}, config) do
     origin = reasoning_origin(config)
@@ -971,32 +758,6 @@ defmodule Handbean.Agent.Provider.OpenAI do
 
   defp tag_reasoning_block(block, _origin), do: block
 
-  defp provider_state_from_response(%{"id" => id}) when is_binary(id) and id != "" do
-    %{response_id: id}
-  end
-
-  defp provider_state_from_response(_resp), do: %{}
-
-  defp response_metadata_from_response(resp) do
-    %{}
-    |> maybe_put_response_metadata(:citations, Map.get(resp, "citations"))
-    |> maybe_put_response_metadata(
-      :server_side_tool_usage,
-      Map.get(resp, "server_side_tool_usage")
-    )
-  end
-
-  defp maybe_put_response_metadata(metadata, _key, nil), do: metadata
-  defp maybe_put_response_metadata(metadata, _key, value) when value == [], do: metadata
-  defp maybe_put_response_metadata(metadata, key, value), do: Map.put(metadata, key, value)
-
-  defp maybe_put_annotations(block, annotations)
-       when is_list(annotations) and annotations != [] do
-    Map.put(block, :annotations, annotations)
-  end
-
-  defp maybe_put_annotations(block, _annotations), do: block
-
   defp log_chunk(chunk) when is_binary(chunk) do
     preview =
       chunk
@@ -1005,18 +766,6 @@ defmodule Handbean.Agent.Provider.OpenAI do
 
     "bytes=#{byte_size(chunk)} preview=#{inspect(preview)}"
   end
-
-  defp blocks_text(blocks) when is_list(blocks) do
-    blocks
-    |> Enum.filter(&(is_map(&1) && block_value(&1, :type) == "text"))
-    |> Enum.map_join(&(block_value(&1, :text) || ""))
-  end
-
-  defp block_value(block, key) when is_map(block) do
-    Map.get(block, key) || Map.get(block, Atom.to_string(key))
-  end
-
-  defp block_value(_block, _key), do: nil
 
   # ── Config normalization ─────────────────────────────────────────────
 
