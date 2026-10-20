@@ -17,6 +17,7 @@ defmodule Handbean.PubSub.Session do
 
   alias Handbean.Agent.Message
   alias Handbean.PubSub.AgentEvent
+  alias Handbean.PubSub.Session.{RecoveryProjection, SnapshotCodec}
 
   require Logger
 
@@ -216,11 +217,11 @@ defmodule Handbean.PubSub.Session do
       model: model,
       epoch: Ecto.UUID.generate(),
       seq: Map.get(loaded, "seq", 0),
-      events: load_events(Map.get(loaded, "events", [])),
+      events: SnapshotCodec.events(Map.get(loaded, "events", [])),
       control_events:
         loaded
         |> Map.get("control_events", Map.get(loaded, "events", []))
-        |> load_events()
+        |> SnapshotCodec.events()
         |> Enum.reject(&(&1.kind in @high_freq_events)),
       meta: %{
         created_at: DateTime.utc_now(),
@@ -235,7 +236,7 @@ defmodule Handbean.PubSub.Session do
       },
       agent_pid: nil,
       queue_pid: nil,
-      next_turn_messages: load_messages(Map.get(loaded, "next_turn_messages", [])),
+      next_turn_messages: SnapshotCodec.messages(Map.get(loaded, "next_turn_messages", [])),
       extension_state: Map.get(loaded, "extension_state", %{}),
       last_throttle: 0,
       session_store: session_store,
@@ -265,8 +266,8 @@ defmodule Handbean.PubSub.Session do
      %{
        last_seq: state.seq,
        epoch: state.epoch,
-       control_events: recovery_events(state.control_events, state.meta.run_id),
-       pending_events: pending_recovery_events(state.control_events),
+       control_events: RecoveryProjection.events(state.control_events, state.meta.run_id),
+       pending_events: RecoveryProjection.pending_events(state.control_events),
        meta: state.meta,
        extension_state: state.extension_state
      }, state}
@@ -634,61 +635,12 @@ defmodule Handbean.PubSub.Session do
     end
   end
 
-  defp load_events(events) when is_list(events) do
-    events
-    |> Enum.map(fn
-      %AgentEvent{} = event -> event
-      %{} = event -> struct(AgentEvent, atomize_known_keys(event))
-      _ -> nil
-    end)
-    |> Enum.reject(&is_nil/1)
-  end
-
-  defp load_events(_events), do: []
-
-  defp load_messages(messages) when is_list(messages) do
-    messages
-    |> Enum.map(fn
-      %Message{} = message -> message
-      %{} = message -> struct(Message, atomize_known_keys(message))
-      _ -> nil
-    end)
-    |> Enum.reject(&is_nil/1)
-  end
-
-  defp load_messages(_messages), do: []
-
-  defp atomize_known_keys(map) do
-    Map.new(map, fn
-      {"seq", value} -> {:seq, value}
-      {"epoch", value} -> {:epoch, value}
-      {"topic", value} -> {:topic, value}
-      {"kind", value} -> {:kind, maybe_existing_atom(value)}
-      {"payload", value} -> {:payload, value}
-      {"ts_ms", value} -> {:ts_ms, value}
-      {"role", value} -> {:role, maybe_existing_atom(value)}
-      {"content", value} -> {:content, value}
-      {key, value} when is_atom(key) -> {key, value}
-      {key, value} -> {key, value}
-    end)
-  end
-
-  defp maybe_existing_atom(value) when is_binary(value) do
-    try do
-      String.to_existing_atom(value)
-    rescue
-      ArgumentError -> value
-    end
-  end
-
-  defp maybe_existing_atom(value), do: value
-
   # Core broadcast/append/persist pipeline shared by call and cast paths.
   defp persist_next_turn(id, content, receipt, opts, state) do
     if sqlite_accept_transaction?(opts, state) do
       Handbean.Repo.transaction(fn ->
         with :ok <- persist_next_turn_inbound(id, content, receipt, opts),
-             :ok <- state.session_store.save(id, session_snapshot(state), state.store_opts) do
+             :ok <- state.session_store.save(id, SnapshotCodec.encode(state), state.store_opts) do
           :ok
         else
           {:error, reason} -> Handbean.Repo.rollback(reason)
@@ -737,7 +689,7 @@ defmodule Handbean.PubSub.Session do
          session_store_enabled?(state.store_opts) do
       Handbean.Repo.transaction(fn ->
         with :ok <- Handbean.ConversationTranscriptStore.delete(id, message_id),
-             :ok <- state.session_store.save(id, session_snapshot(state), state.store_opts) do
+             :ok <- state.session_store.save(id, SnapshotCodec.encode(state), state.store_opts) do
           :ok
         else
           {:error, reason} -> Handbean.Repo.rollback(reason)
@@ -795,84 +747,6 @@ defmodule Handbean.PubSub.Session do
 
   defp append_control(events, event),
     do: Enum.take([event | events], @max_snapshot_events)
-
-  defp recovery_events(events, run_id) do
-    events
-    |> Enum.filter(&(event_run_id(&1) == run_id))
-    |> Enum.sort_by(& &1.seq)
-    |> Enum.reduce(empty_recovery(), &reduce_recovery_event/2)
-    |> recovery_event_list()
-  end
-
-  defp pending_recovery_events(events) do
-    events
-    |> Enum.filter(&(&1.kind in [:candidate_message_injected, :candidate_message_deleted]))
-    |> Enum.sort_by(& &1.seq)
-  end
-
-  defp empty_recovery do
-    %{
-      run_start: nil,
-      run_resumed: nil,
-      turn_start: nil,
-      session_state: nil,
-      usage_updated: nil,
-      active_tools: %{},
-      pending_approval: nil
-    }
-  end
-
-  defp reduce_recovery_event(%{kind: :run_start} = event, _state),
-    do: %{empty_recovery() | run_start: event}
-
-  defp reduce_recovery_event(%{kind: :run_resumed} = event, state),
-    do: %{state | run_resumed: event, session_state: nil, pending_approval: nil}
-
-  defp reduce_recovery_event(%{kind: :turn_start} = event, state),
-    do: %{state | turn_start: event}
-
-  defp reduce_recovery_event(%{kind: :session_state} = event, state),
-    do: %{state | session_state: event}
-
-  defp reduce_recovery_event(%{kind: :usage_updated} = event, state),
-    do: %{state | usage_updated: event}
-
-  defp reduce_recovery_event(%{kind: :tool_start} = event, state) do
-    put_in(state, [:active_tools, recovery_tool_id(event)], event)
-  end
-
-  defp reduce_recovery_event(%{kind: :tool_end} = event, state) do
-    update_in(state.active_tools, &Map.delete(&1, recovery_tool_id(event)))
-  end
-
-  defp reduce_recovery_event(%{kind: :tool_approval_requested} = event, state),
-    do: %{state | pending_approval: event}
-
-  defp reduce_recovery_event(_event, state), do: state
-
-  defp recovery_event_list(state) do
-    [
-      state.run_start,
-      state.run_resumed,
-      state.turn_start,
-      state.session_state,
-      state.usage_updated,
-      Map.values(state.active_tools),
-      state.pending_approval
-    ]
-    |> List.flatten()
-    |> Enum.reject(&is_nil/1)
-  end
-
-  defp event_run_id(event),
-    do: Handbean.Utils.SafeMap.get_any(event.payload, :run_id, "run_id")
-
-  defp recovery_tool_id(event) do
-    Handbean.Utils.SafeMap.get_any(event.payload, :tool_use_id, "tool_use_id") ||
-      Handbean.Utils.SafeMap.get_any(event.payload, :tool, "tool") ||
-      Handbean.Utils.SafeMap.get_any(event.payload, :name, "name") ||
-      event.seq
-  end
 
   # Read registry metadata, never call Runner from Session init: Runner may be
   # waiting for this Session. Only a still-live, identified run is restored.
@@ -941,7 +815,7 @@ defmodule Handbean.PubSub.Session do
 
   defp maybe_save(state) do
     if session_store_enabled?(state.store_opts) do
-      state.session_store.save(state.session_id, session_snapshot(state), state.store_opts)
+      state.session_store.save(state.session_id, SnapshotCodec.encode(state), state.store_opts)
     end
 
     %{state | last_throttle: System.monotonic_time(:millisecond)}
@@ -965,18 +839,6 @@ defmodule Handbean.PubSub.Session do
       true ->
         state
     end
-  end
-
-  defp session_snapshot(state) do
-    %{
-      "seq" => state.seq,
-      "events" => Enum.map(state.events, &Map.from_struct/1),
-      "control_events" => Enum.map(state.control_events, &Map.from_struct/1),
-      "running?" => state.meta.running?,
-      "model" => state.model,
-      "next_turn_messages" => Enum.map(state.next_turn_messages, &Map.from_struct/1),
-      "extension_state" => state.extension_state
-    }
   end
 
   defp event_recorder_enabled?(opts) do

@@ -17,6 +17,25 @@ defmodule Handbean.PubSub.SessionTest do
 
   alias Handbean.PubSub.{AgentEvent, Session}
 
+  defmodule SnapshotStore do
+    @behaviour Handbean.SessionStore
+
+    @impl true
+    def load(_session_id, opts), do: {:ok, Keyword.fetch!(opts, :snapshot)}
+
+    @impl true
+    def save(_session_id, _snapshot, _opts), do: :ok
+
+    @impl true
+    def delete(_session_id, _opts), do: :ok
+
+    @impl true
+    def list_active(_opts), do: {:ok, []}
+
+    @impl true
+    def update(_session_id, _updates, _opts), do: :ok
+  end
+
   setup do
     on_exit(fn ->
       if pid = Process.whereis(Handbean.Runtime.TaskTracker), do: :sys.get_state(pid)
@@ -139,9 +158,12 @@ defmodule Handbean.PubSub.SessionTest do
       Session.broadcast_event(sid, :tool_end, %{tool: "read", duration_ms: 100, error: false})
       Session.broadcast_event(sid, :run_end, %{status: :completed, turns: 1})
 
-      assert_receive {:agent_event, %AgentEvent{kind: :tool_start, seq: 1}}
-      assert_receive {:agent_event, %AgentEvent{kind: :tool_end, seq: 2}}
-      assert_receive {:agent_event, %AgentEvent{kind: :run_end, seq: 3}}
+      assert_receive first_event
+      assert {:agent_event, %AgentEvent{kind: :tool_start, seq: 1}} = first_event
+      assert_receive second_event
+      assert {:agent_event, %AgentEvent{kind: :tool_end, seq: 2}} = second_event
+      assert_receive third_event
+      assert {:agent_event, %AgentEvent{kind: :run_end, seq: 3}} = third_event
     end
   end
 
@@ -161,19 +183,59 @@ defmodule Handbean.PubSub.SessionTest do
       assert oldest.seq == 1
     end
 
-    test "snapshot respects max_events limit" do
+    test "snapshot keeps only the newest 500 events" do
       sid = "test-#{System.unique_integer([:positive])}"
-      {:ok, _pid} = Session.start_link(session_id: sid)
+      {:ok, _pid} = Session.start_link(session_id: sid, session_store_enabled?: false)
 
-      # The module defines @max_snapshot_events 500
-      # We test with a smaller set — verify it doesn't grow unbounded
-      for i <- 1..50 do
+      for i <- 1..501 do
         Session.broadcast_event(sid, :tool_start, %{idx: i})
       end
 
       %{events: events, last_seq: seq} = Session.snapshot(sid)
-      assert seq == 50
-      assert length(events) == 50
+      assert seq == 501
+      assert length(events) == 500
+      assert hd(events).seq == 501
+      assert List.last(events).seq == 2
+    end
+
+    test "loads legacy snapshots without control_events and ignores persisted running state" do
+      sid = "legacy-#{System.unique_integer([:positive])}"
+
+      run_start = %{
+        "seq" => 4,
+        "epoch" => "persisted-epoch",
+        "topic" => Session.session_topic(sid),
+        "kind" => "run_start",
+        "payload" => %{"run_id" => "old-run"},
+        "ts_ms" => 1
+      }
+
+      delta = %{run_start | "seq" => 5, "kind" => "message_delta"}
+
+      {:ok, _pid} =
+        Session.start_link(
+          session_id: sid,
+          model: "configured-model",
+          session_store: SnapshotStore,
+          session_store_enabled?: true,
+          session_store_opts: [
+            snapshot: %{
+              "seq" => 5,
+              "events" => [delta, run_start],
+              "running?" => true,
+              "model" => "persisted-model"
+            }
+          ]
+        )
+
+      snapshot = Session.snapshot(sid)
+
+      assert snapshot.last_seq == 5
+      assert Enum.map(snapshot.events, & &1.kind) == [:message_delta, :run_start]
+      assert Enum.map(snapshot.control_events, & &1.kind) == [:run_start]
+      assert snapshot.meta.model == "persisted-model"
+      assert snapshot.meta.running? == false
+      assert snapshot.epoch != "persisted-epoch"
     end
 
     test "snapshot reports meta including status" do
@@ -396,13 +458,40 @@ defmodule Handbean.PubSub.SessionTest do
     test "broadcasts a pre-built AgentEvent and appends to snapshot" do
       sid = "test-#{System.unique_integer([:positive])}"
       {:ok, _pid} = Session.start_link(session_id: sid)
+      Session.subscribe(sid)
 
       event = AgentEvent.new("session:#{sid}", :tool_start, %{tool: "bash"}, 42)
       Session.broadcast(sid, event)
 
+      assert_receive {:agent_event, ^event}
       %{events: [evt | _]} = Session.snapshot(sid)
       assert evt.seq == 42
       assert evt.kind == :tool_start
+    end
+
+    test "broadcasts a pre-built event even when no Session exists" do
+      sid = "missing-#{System.unique_integer([:positive])}"
+      Session.subscribe(sid)
+      event = AgentEvent.new("session:#{sid}", :tool_start, %{tool: "read"}, 9)
+
+      assert :ok = Session.broadcast(sid, event)
+      assert_receive {:agent_event, ^event}
+      assert Session.whereis(sid) == nil
+    end
+
+    test "broadcast_event publishes session and runtime lifecycle events" do
+      sid = "test-#{System.unique_integer([:positive])}"
+      {:ok, _pid} = Session.start_link(session_id: sid, session_store_enabled?: false)
+      Session.subscribe(sid)
+      Phoenix.PubSub.subscribe(Handbean.PubSub, "runtime:runs")
+
+      assert :ok = Session.broadcast_event(sid, :run_start, %{model: "fake"})
+
+      assert_receive first_message
+      assert {:agent_event, %AgentEvent{kind: :run_start, seq: 1} = event} = first_message
+      assert_receive second_message
+      assert {:run_lifecycle, ^sid, :run_start, %{model: "fake"}} = second_message
+      assert Session.snapshot(sid).events == [event]
     end
   end
 

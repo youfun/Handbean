@@ -64,7 +64,7 @@ defmodule Handbean.PubSub.SessionSQLiteTest do
 
     Session.broadcast_event(id, :run_start, %{model: "fake"})
     :ok = Session.enqueue_candidate(id, "remember me", deliver_as: :next_turn)
-    assert %{last_seq: 2} = Session.snapshot(id)
+    assert %{last_seq: 2, epoch: epoch1} = Session.snapshot(id)
     sync_task_tracker()
     :ok = Handbean.SessionSupervisor.stop_session(id)
     refute Process.alive?(pid1)
@@ -80,8 +80,11 @@ defmodule Handbean.PubSub.SessionSQLiteTest do
         %AgentEvent{kind: :candidate_message_injected},
         %AgentEvent{kind: :run_start}
       ],
-      meta: meta
+      meta: meta,
+      epoch: epoch2
     } = Session.snapshot(id)
+
+    assert epoch2 != epoch1
 
     assert meta.running? == false
     assert meta.agent_pid == nil
