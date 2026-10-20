@@ -320,7 +320,13 @@ class MainActivity : ComponentActivity() {
             )
 
             MaterialTheme(colorScheme = colorScheme) {
-                MobNavHost(state)
+                Box(Modifier.fillMaxSize()) {
+                    MobNavHost(state)
+                    // The bridge's first real render tree is the readiness
+                    // signal. Keep startup presentation local to the Android
+                    // host; do not invent a timer or a second runtime state.
+                    HandbeanStartup(visible = state.node == null)
+                }
             }
         }
 
