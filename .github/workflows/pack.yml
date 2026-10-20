@@ -26,8 +26,19 @@ on:
       - "v*"
 
 concurrency:
-  group: pack-${{ inputs.release_tag != '' && format('refs/tags/{0}', inputs.release_tag) || github.ref }}
-  cancel-in-progress: true
+  # Publication runs that mutate the same release must not overlap. In
+  # particular, dev pushes and manual untagged publication both replace
+  # web-latest, even when their source refs differ.
+  group: >-
+    pack-${{
+      (github.event_name == 'workflow_dispatch' && inputs.publish_release &&
+       (inputs.release_tag != '' && format('refs/tags/{0}', inputs.release_tag) ||
+        startsWith(github.ref, 'refs/tags/v') && github.ref ||
+        'web-latest')) ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/dev' && 'web-latest') ||
+      github.ref
+    }}
+  cancel-in-progress: false
 
 jobs:
   target:
@@ -321,6 +332,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
+      PACKAGE_COMMIT: ${{ needs.target.outputs.commit }}
       RELEASE_TAG: ${{ needs.target.outputs.release_tag }}
 
     steps:
@@ -423,10 +435,10 @@ jobs:
               echo "Windows ARM64 is omitted: OTP publishes no ARM64 installer, and GitHub-hosted ARM runners cannot install WSL."
             fi
             echo
-            if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-              changelog_ref="$GITHUB_REF_NAME"
+            if [[ -n "$RELEASE_TAG" ]]; then
+              changelog_ref="$RELEASE_TAG"
             else
-              changelog_ref="$GITHUB_SHA"
+              changelog_ref="$PACKAGE_COMMIT"
             fi
             echo "[完整更新日志](https://github.com/${GITHUB_REPOSITORY}/blob/${changelog_ref}/CHANGELOG.md)"
             echo
@@ -436,7 +448,30 @@ jobs:
 
       - name: Replace moving web-latest tag
         if: ${{ needs.target.outputs.release_tag == '' }}
-        run: gh release delete web-latest --yes --cleanup-tag || true
+        run: |
+          set -euo pipefail
+          release_error="$RUNNER_TEMP/web-latest-release.error"
+          if gh api "repos/$GH_REPO/releases/tags/web-latest" >/dev/null 2>"$release_error"; then
+            gh release delete web-latest --yes --cleanup-tag
+          elif grep -Eq 'HTTP 404([^0-9]|$)' "$release_error"; then
+            tag_error="$RUNNER_TEMP/web-latest-tag.error"
+            set +e
+            git ls-remote --exit-code --tags origin refs/tags/web-latest \
+              >/dev/null 2>"$tag_error"
+            tag_status=$?
+            set -e
+            case "$tag_status" in
+              0) gh api --method DELETE "repos/$GH_REPO/git/refs/tags/web-latest" ;;
+              2) ;;
+              *)
+                cat "$tag_error" >&2
+                exit "$tag_status"
+                ;;
+            esac
+          else
+            cat "$release_error" >&2
+            exit 1
+          fi
 
       - name: Publish release
         run: |
@@ -461,7 +496,11 @@ jobs:
             gh release upload "$tag" "${files[@]}" --clobber
             gh release edit "$tag" --title "$title" --notes-file notes.md --prerelease=false --latest
           else
-            gh release create "$tag" "${files[@]}" \
+            create_args=()
+            if [[ "$tag" == web-latest ]]; then
+              create_args+=(--target "$PACKAGE_COMMIT")
+            fi
+            gh release create "$tag" "${files[@]}" "${create_args[@]}" \
               --title "$title" \
               --notes-file notes.md \
               --latest
