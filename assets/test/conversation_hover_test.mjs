@@ -91,6 +91,15 @@ assert.equal(age.hidden, false);
 assert.equal(card.querySelector('[data-hover-context="conv-a"]').hidden, false);
 assert.equal(card.querySelector('[data-hover-context="conv-b"]').hidden, true);
 
+// ── Opening the row's context menu dismisses the competing hover card ───
+fire(rowA.querySelector("button"), "contextmenu");
+assert.equal(card.hidden, true, "right-click must hide the hover card before the menu opens");
+assert.equal(hook.row, null);
+serverPatch();
+await flush();
+assert.equal(card.hidden, true, "a sidebar patch must not restore a dismissed hover card");
+hover(rowA.querySelector("button"));
+
 // ── A sidebar re-render keeps the card the pointer is still on ──────────
 serverPatch();
 await flush();

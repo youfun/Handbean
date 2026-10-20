@@ -65,6 +65,12 @@ export const ConversationHover = {
       this.hide();
       this.hideWorkspace();
     };
+    this.onContextMenu = (event) => {
+      const row = event.target.closest("[data-conversation-id]");
+      if (!row || !this.el.contains(row)) return;
+      this.hide();
+      this.hideWorkspace();
+    };
     this.onClick = (event) => {
       const rename = event.target.closest("[data-workspace-hover-rename]");
       const remove = event.target.closest("[data-workspace-hover-remove]");
@@ -80,6 +86,7 @@ export const ConversationHover = {
     this.el.addEventListener("pointerover", this.onOver);
     this.el.addEventListener("pointerout", this.onOut);
     this.el.addEventListener("pointerdown", this.onPointerDown);
+    this.el.addEventListener("contextmenu", this.onContextMenu);
     this.el.addEventListener("click", this.onClick);
     if (this.scroll) this.scroll.addEventListener("scroll", this.onScroll, { passive: true });
   },
@@ -98,6 +105,7 @@ export const ConversationHover = {
     this.el.removeEventListener("pointerover", this.onOver);
     this.el.removeEventListener("pointerout", this.onOut);
     this.el.removeEventListener("pointerdown", this.onPointerDown);
+    this.el.removeEventListener("contextmenu", this.onContextMenu);
     this.el.removeEventListener("click", this.onClick);
     if (this.scroll) this.scroll.removeEventListener("scroll", this.onScroll);
   },
