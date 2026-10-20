@@ -231,6 +231,58 @@ defmodule HandbeanWeb.WorkspaceLive.SendMessageQueueAndUploadTest do
       _ = queue
     end
 
+    test "multiple queued follow-ups stay in submission order", %{conn: conn} do
+      configure_test_models!()
+
+      {:ok, view, _html} = live(conn, "/")
+      sid = create_default_conversation(view)
+      {:ok, _session} = Handbean.PubSub.Session.start_or_get(session_id: sid)
+      {:ok, queue} = Handbean.Agent.CandidateQueue.start_link(session_id: sid, owner: self())
+      :ok = Handbean.PubSub.Session.attach_run(sid, self(), queue)
+      topic = "session:#{sid}"
+
+      send(
+        view.pid,
+        {:agent_event, agent_event(:run_start, %{model: "step-router-v1"}, 1, topic)}
+      )
+
+      send(
+        view.pid,
+        {:agent_event,
+         agent_event(:tool_start, %{tool: "read", input: %{file_path: "queued.txt"}}, 2, topic)}
+      )
+
+      assert has_element?(view, "#tool-event-read")
+
+      for message <- ["first queued", "second queued"] do
+        view
+        |> element("#queue-button")
+        |> render_click(%{"message" => message, "model" => "stepfun/step-router-v1"})
+      end
+
+      timeline_items =
+        view
+        |> render()
+        |> Floki.parse_document!()
+        |> Floki.find("#timeline-stream > div")
+        |> Enum.flat_map(fn node ->
+          user_bubbles = Floki.find(node, "[data-user-msg] .msg-bubble.msg-user")
+
+          cond do
+            Floki.find(node, "#tool-event-read") != [] ->
+              [:tool]
+
+            user_bubbles != [] ->
+              [user_bubbles |> hd() |> Floki.text() |> String.trim()]
+
+            true ->
+              []
+          end
+        end)
+
+      assert timeline_items == [:tool, "first queued", "second queued"]
+    end
+
     test "idle queue_message starts a new run instead of erroring", %{conn: conn} do
       configure_test_models!()
 

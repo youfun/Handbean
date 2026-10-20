@@ -519,10 +519,10 @@ defmodule HandbeanWeb.WorkspaceLive.MessageSubmission do
         socket =
           socket
           |> assign(:input_value, "")
-          |> append_user_message(message, attachments, msg_id)
           |> assign(:pending_attachments, [])
           |> Composer.forget(conv_id)
           |> assign(:pending_messages, pending)
+          |> append_user_message(message, attachments, msg_id)
           |> push_event("user-message-sent", %{})
 
         {:noreply, socket}
@@ -693,8 +693,8 @@ defmodule HandbeanWeb.WorkspaceLive.MessageSubmission do
          |> assign(:input_value, "")
          |> assign(:pending_attachments, [])
          |> Composer.forget(conv_id)
+         |> assign(:pending_messages, pending)
          |> append_user_message(message, attachments, msg_id)
-         |> assign_pending_messages(pending)
          |> push_event("user-message-sent", %{})}
 
       {:ok, %{action: :started}} ->
