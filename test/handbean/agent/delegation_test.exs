@@ -51,6 +51,14 @@ defmodule Handbean.Agent.DelegationTest do
     def stream(messages, defs, config, _callback), do: complete(messages, defs, config)
   end
 
+  defmodule FallbackTranscriptStore do
+    alias Handbean.ConversationTranscriptStore.ConversationStore, as: Store
+
+    defdelegate append(id, entry, opts), to: Store
+    defdelegate update(id, entry_id, patch, opts), to: Store
+    defdelegate list(id, opts), to: Store
+  end
+
   setup do
     old_home = System.get_env("HOME")
     home = Path.join(System.tmp_dir!(), "delegation-#{Ecto.UUID.generate()}")
@@ -98,6 +106,7 @@ defmodule Handbean.Agent.DelegationTest do
         2_000 -> Process.demonitor(ref, [:flush])
       end
 
+      drain_runtime_tasks()
       sync_runtime_observers()
       if old_home, do: System.put_env("HOME", old_home), else: System.delete_env("HOME")
       remove_tree(home)
@@ -120,6 +129,30 @@ defmodule Handbean.Agent.DelegationTest do
   end
 
   defp remove_tree(path, 0), do: File.rm_rf!(path)
+
+  defp drain_runtime_tasks do
+    deadline = System.monotonic_time(:millisecond) + 2_000
+    await_runtime_tasks(deadline)
+  end
+
+  defp await_runtime_tasks(deadline) do
+    tasks = Task.Supervisor.children(Handbean.AgentRunTaskSupervisor)
+
+    if tasks != [] and System.monotonic_time(:millisecond) < deadline do
+      refs = Enum.map(tasks, &Process.monitor/1)
+      timeout = max(deadline - System.monotonic_time(:millisecond), 0)
+
+      Enum.each(refs, fn ref ->
+        receive do
+          {:DOWN, ^ref, :process, _pid, _reason} -> :ok
+        after
+          timeout -> Process.demonitor(ref, [:flush])
+        end
+      end)
+
+      await_runtime_tasks(deadline)
+    end
+  end
 
   defp sync_runtime_observers do
     for name <- [Handbean.Runtime.TaskTracker, Handbean.Schedule.Recorder],
@@ -459,6 +492,15 @@ defmodule Handbean.Agent.DelegationTest do
   test "child provider errors remain intact after internal transcript settlement", %{
     context: context
   } do
+    previous = Application.get_env(:handbean, :conversation_transcript_store)
+    Application.put_env(:handbean, :conversation_transcript_store, FallbackTranscriptStore)
+
+    on_exit(fn ->
+      if previous,
+        do: Application.put_env(:handbean, :conversation_transcript_store, previous),
+        else: Application.delete_env(:handbean, :conversation_transcript_store)
+    end)
+
     task = delegate(context)
     assert_receive {:provider, :child, child, _, _, _}, 2_000
     [{id, job}] = Map.to_list(:sys.get_state(Delegation).jobs)

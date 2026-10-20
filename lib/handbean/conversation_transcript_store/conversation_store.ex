@@ -220,11 +220,17 @@ defmodule Handbean.ConversationTranscriptStore.ConversationStore do
 
     case patch do
       %{"content" => %{"$append" => delta}} when is_binary(delta) and map_size(patch) <= 2 ->
-        atomic_append_content(conversation_id, entry_id, delta, Map.get(patch, "status"))
+        atomic_append_content_entry(conversation_id, entry_id, delta, Map.get(patch, "status"))
 
       _ ->
         update_cas(conversation_id, entry_id, patch, 32)
     end
+  end
+
+  @impl true
+  def append_content(conversation_id, entry_id, delta, status, _opts)
+      when is_binary(delta) do
+    atomic_append_content(conversation_id, entry_id, delta, status)
   end
 
   @impl true
@@ -507,10 +513,9 @@ defmodule Handbean.ConversationTranscriptStore.ConversationStore do
       UPDATE conversation_entries
       SET content = COALESCE(content, '') || ?, revision = revision + 1, updated_at = ?
       WHERE conversation_id = ? AND entry_id = ?
-      RETURNING id
+      RETURNING entry_id, length(CAST(content AS BLOB))
       """,
-      [delta, now_naive(), conversation_id, entry_id],
-      conversation_id
+      [delta, now_naive(), conversation_id, entry_id]
     )
   end
 
@@ -521,21 +526,30 @@ defmodule Handbean.ConversationTranscriptStore.ConversationStore do
       SET content = COALESCE(content, '') || ?, status = ?, revision = revision + 1,
           updated_at = ?
       WHERE conversation_id = ? AND entry_id = ?
-      RETURNING id
+      RETURNING entry_id, length(CAST(content AS BLOB))
       """,
-      [delta, status, now_naive(), conversation_id, entry_id],
-      conversation_id
+      [delta, status, now_naive(), conversation_id, entry_id]
     )
   end
 
-  defp atomic_append_content_query(sql, params, _conversation_id) do
+  defp atomic_append_content_entry(conversation_id, entry_id, delta, status) do
+    with {:ok, _summary} <- atomic_append_content(conversation_id, entry_id, delta, status) do
+      case Repo.one(
+             from entry in ConversationEntry,
+               where: entry.conversation_id == ^conversation_id and entry.entry_id == ^entry_id
+           ) do
+        nil -> {:error, :not_found}
+        row -> {:ok, public_entry(row)}
+      end
+    end
+  end
+
+  defp atomic_append_content_query(sql, params) do
     case Repo.query(sql, params) do
-      {:ok, %{rows: [[id]]}} -> {:ok, ConversationEntry |> Repo.get!(id) |> public_entry()}
+      {:ok, %{rows: [[id, text_bytes]]}} -> {:ok, %{id: id, text_bytes: text_bytes}}
       {:ok, %{rows: []}} -> {:error, :not_found}
       {:error, reason} -> {:error, reason}
     end
-  rescue
-    Ecto.NoResultsError -> {:error, :not_found}
   end
 
   defp settle_tools(conversation_id, run_id, status, error) do

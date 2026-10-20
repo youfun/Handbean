@@ -17,8 +17,11 @@ defmodule Handbean.ConversationTranscriptStore do
   @optional_callbacks page: 2, complete_tool_call: 5, consume: 4
   @callback append(String.t(), entry(), keyword()) :: {:ok, entry()} | {:error, term()}
   @callback update(String.t(), String.t(), map(), keyword()) :: {:ok, entry()} | {:error, term()}
+  @callback append_content(String.t(), String.t(), String.t(), String.t() | nil, keyword()) ::
+              {:ok, %{id: String.t(), text_bytes: non_neg_integer()}} | {:error, term()}
   @callback delete(String.t(), String.t(), keyword()) :: :ok | {:error, term()}
   @callback replace_all(String.t(), [entry()], keyword()) :: :ok | {:error, term()}
+  @optional_callbacks append_content: 5
 
   @doc "Load all transcript entries for a conversation."
   @spec list(String.t(), keyword()) :: {:ok, [entry()]} | {:error, term()}
@@ -54,6 +57,29 @@ defmodule Handbean.ConversationTranscriptStore do
   def update(conversation_id, entry_id, patch, opts \\ [])
       when is_binary(conversation_id) and is_binary(entry_id) and is_map(patch) do
     impl(opts).update(conversation_id, entry_id, patch, opts)
+  end
+
+  @doc false
+  @spec append_content(String.t(), String.t(), String.t(), String.t() | nil, keyword()) ::
+          {:ok, %{id: String.t(), text_bytes: non_neg_integer()}} | {:error, term()}
+  def append_content(conversation_id, entry_id, delta, status, opts \\ [])
+      when is_binary(conversation_id) and is_binary(entry_id) and is_binary(delta) do
+    store = impl(opts)
+
+    if Code.ensure_loaded?(store) and function_exported?(store, :append_content, 5) do
+      store.append_content(conversation_id, entry_id, delta, status, opts)
+    else
+      patch = %{"content" => %{"$append" => delta}}
+      patch = if is_binary(status), do: Map.put(patch, "status", status), else: patch
+
+      case store.update(conversation_id, entry_id, patch, opts) do
+        {:ok, entry} ->
+          {:ok, %{id: entry["id"], text_bytes: byte_size(entry["content"] || "")}}
+
+        {:error, _reason} = error ->
+          error
+      end
+    end
   end
 
   @doc """

@@ -915,6 +915,39 @@ defmodule Handbean.ConversationsTest do
              Conversations.status(%{"conversation" => c.target}, c.context)
   end
 
+  test "generic updates return full entries while streaming append returns byte position", c do
+    assert {:ok, _entry} =
+             ConversationTranscriptStore.append(c.target, %{
+               "id" => "stream-entry",
+               "role" => "assistant",
+               "content" => "你",
+               "status" => "streaming",
+               "metadata" => %{"kept" => true}
+             })
+
+    assert {:ok,
+            %{
+              "id" => "stream-entry",
+              "content" => "你好",
+              "metadata" => %{"kept" => true},
+              "status" => "streaming"
+            }} =
+             ConversationTranscriptStore.update(c.target, "stream-entry", %{
+               "content" => %{"$append" => "好"}
+             })
+
+    assert {:ok, %{id: "stream-entry", text_bytes: 10}} =
+             ConversationTranscriptStore.append_content(
+               c.target,
+               "stream-entry",
+               "🙂",
+               "streaming"
+             )
+
+    assert {:ok, [%{"content" => "你好🙂", "metadata" => %{"kept" => true}}]} =
+             ConversationTranscriptStore.list(c.target)
+  end
+
   test "date filtering normalizes offsets and rejects malformed input", c do
     {:ok, %{conversations: []}} =
       Conversations.list(%{"updated_after" => "2999-01-01T00:00:00+08:00"}, c.context)

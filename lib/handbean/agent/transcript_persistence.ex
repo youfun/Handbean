@@ -125,8 +125,15 @@ defmodule Handbean.Agent.TranscriptPersistence do
     append_thinking(conversation_id, thinking_text)
     open_segment(conversation_id, payload, opts)
     append_to_buffer(conversation_id, clean_chunk)
-    # The journal syncs the delta before the runtime broadcasts it. The task
-    # process is no longer the only owner of an acknowledged visible reply.
+    # The journal syncs each drained batch before Runner projects or broadcasts
+    # it; accepting a chunk into an in-memory batch is an earlier boundary.
+    flush!(conversation_id, opts)
+    :ok
+  end
+
+  def handle_event(conversation_id, {:message_delta, payload}, opts)
+      when is_binary(conversation_id) and is_map(payload) do
+    Process.delete({__MODULE__, :text_patch, conversation_id})
     flush!(conversation_id, opts)
     :ok
   end
@@ -349,6 +356,13 @@ defmodule Handbean.Agent.TranscriptPersistence do
   end
 
   def project_event(_conversation_id, event), do: event
+
+  @doc false
+  def discard_pending(conversation_id) when is_binary(conversation_id) do
+    clear_buffer(conversation_id)
+    Process.delete({__MODULE__, :text_patch, conversation_id})
+    :ok
+  end
 
   @doc """
   Marks durable in-flight tools for this conversation+run as cancelled.
@@ -846,14 +860,15 @@ defmodule Handbean.Agent.TranscriptPersistence do
   defp open_segment(conversation_id, payload, opts) do
     phase = stream_phase(payload)
     index = stream_index(payload)
+    segment = {phase, index}
     segments = Process.get(assistant_segments_key(conversation_id), %{})
     current = Process.get(assistant_key(conversation_id))
 
     cond do
-      is_nil(index) ->
+      is_nil(index) and is_nil(phase) ->
         :ok
 
-      segments[index] == current and not is_nil(current) ->
+      segments[segment] == current and not is_nil(current) ->
         :ok
 
       true ->
@@ -865,7 +880,7 @@ defmodule Handbean.Agent.TranscriptPersistence do
 
         Process.put(
           assistant_segments_key(conversation_id),
-          Map.put(segments, index, entry_id)
+          Map.put(segments, segment, entry_id)
         )
     end
   end
@@ -903,16 +918,16 @@ defmodule Handbean.Agent.TranscriptPersistence do
           |> maybe_put_provider_items(conversation_id)
 
         case persist_assistant_delta(conversation_id, entry_id, entry, opts) do
-          {:ok, saved} ->
+          {:ok, persisted} ->
             Process.delete(buffer_key(conversation_id))
 
             Process.put({__MODULE__, :text_patch, conversation_id}, %{
-              transcript_id: saved["id"],
-              text_offset: byte_size(saved["content"]) - byte_size(buffered),
+              transcript_id: persisted.id,
+              text_offset: persisted.text_bytes - byte_size(buffered),
               text: buffered
             })
 
-            deliver_delta(saved, buffered, opts)
+            if persisted.entry, do: deliver_delta(persisted.entry, buffered, opts)
 
           {:error, reason} ->
             # Do not advance the message boundary or report a successful run.
@@ -1020,20 +1035,23 @@ defmodule Handbean.Agent.TranscriptPersistence do
   defp provider_item?(_), do: false
 
   defp persist_assistant_delta(conversation_id, entry_id, entry, opts) do
-    case Handbean.ConversationTranscriptStore.update(
-           conversation_id,
-           entry_id,
-           %{
-             "content" => append_patch(entry["content"]),
-             "status" => "streaming"
-           },
-           opts
-         ) do
-      {:ok, updated} ->
-        {:ok, updated}
+    case append_assistant_content(conversation_id, entry_id, entry["content"], opts) do
+      {:ok, persisted} ->
+        {:ok, persisted}
 
       {:error, :not_found} ->
-        Handbean.ConversationTranscriptStore.append(conversation_id, entry, opts)
+        case Handbean.ConversationTranscriptStore.append(conversation_id, entry, opts) do
+          {:ok, saved} ->
+            {:ok,
+             %{
+               id: saved["id"],
+               text_bytes: byte_size(saved["content"] || ""),
+               entry: saved
+             }}
+
+          {:error, _reason} = error ->
+            error
+        end
 
       {:error, reason} ->
         Logger.warning(fn ->
@@ -1042,6 +1060,39 @@ defmodule Handbean.Agent.TranscriptPersistence do
         end)
 
         {:error, reason}
+    end
+  end
+
+  defp append_assistant_content(conversation_id, entry_id, content, opts) do
+    if delivery_channel?(opts) do
+      case Handbean.ConversationTranscriptStore.update(
+             conversation_id,
+             entry_id,
+             %{"content" => append_patch(content), "status" => "streaming"},
+             opts
+           ) do
+        {:ok, saved} ->
+          {:ok,
+           %{
+             id: saved["id"],
+             text_bytes: byte_size(saved["content"] || ""),
+             entry: saved
+           }}
+
+        {:error, _reason} = error ->
+          error
+      end
+    else
+      case Handbean.ConversationTranscriptStore.append_content(
+             conversation_id,
+             entry_id,
+             content,
+             "streaming",
+             opts
+           ) do
+        {:ok, summary} -> {:ok, Map.put(summary, :entry, nil)}
+        {:error, _reason} = error -> error
+      end
     end
   end
 
