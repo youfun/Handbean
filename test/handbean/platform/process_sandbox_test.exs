@@ -176,6 +176,63 @@ defmodule Handbean.Platform.ProcessSandboxTest do
       assert reason =~ "not a directory"
     end
 
+    test "an outside cwd requires authorization for that exact directory", %{
+      root: root,
+      workspace: workspace
+    } do
+      outside = Path.join(root, "outside")
+      sibling = Path.join(root, "other")
+      File.mkdir_p!(outside)
+      File.mkdir_p!(sibling)
+      authorized = Handbean.Security.PathValidator.resolve_symlink(outside)
+
+      for opts <- [[], [authorized_cwd: sibling]] do
+        assert {:error, reason} =
+                 ProcessSandbox.wrap(
+                   @shell,
+                   "echo x",
+                   outside,
+                   [workspace_path: workspace] ++ opts
+                 )
+
+        assert reason =~ "Path traversal"
+      end
+
+      if ProcessSandbox.os_enforced?() do
+        # Exercise the invocation builder without launching a backend executable.
+        assert {:ok, invocation} =
+                 ProcessSandbox.wrap(@shell, "echo x", outside,
+                   workspace_path: workspace,
+                   authorized_cwd: authorized,
+                   sandbox_path: @shell.path
+                 )
+
+        assert invocation.pid_namespace? or invocation.process_group?
+      end
+    end
+
+    @tag :unix_jobs
+    test "a canonical cwd authorization cannot follow a replaced directory symlink", %{
+      root: root,
+      workspace: workspace
+    } do
+      outside = Path.join(root, "approved")
+      replacement = Path.join(root, "replacement")
+      File.mkdir_p!(outside)
+      File.mkdir_p!(replacement)
+      authorized = Handbean.Security.PathValidator.resolve_symlink(outside)
+      File.rmdir!(outside)
+      File.ln_s!(replacement, outside)
+
+      assert {:error, reason} =
+               ProcessSandbox.wrap(@shell, "echo x", outside,
+                 workspace_path: workspace,
+                 authorized_cwd: authorized
+               )
+
+      assert reason =~ "Path traversal"
+    end
+
     test "no workspace means no sandbox and no extra environment" do
       assert {:ok,
               %{

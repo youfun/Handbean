@@ -20,6 +20,97 @@ defmodule Handbean.Agent.Middleware.ToolGuardTest do
     |> State.append_messages([Message.tool_use(tool_calls)])
   end
 
+  test "outside-workspace calls receive an exact grant only after approval" do
+    workspace = tmp_workspace(%{"tools" => %{"default_mode" => "auto"}})
+
+    external =
+      Path.join(Path.dirname(workspace), "outside-#{System.unique_integer([:positive])}.txt")
+
+    File.write!(external, "outside")
+    on_exit(fn -> File.rm(external) end)
+
+    call = %{
+      type: "tool_use",
+      id: "outside-read",
+      name: "read",
+      input: %{"file_path" => external}
+    }
+
+    config = %Config{
+      working_directory: workspace,
+      model: "fake",
+      middleware: [],
+      context: %{workspace_id: "ws", conversation_id: "conversation"}
+    }
+
+    state =
+      %State{State.init(config, "hi") | tool_guard_overrides: %{}}
+      |> State.append_messages([Message.tool_use([call])])
+
+    assert {:interrupt, interrupted, data} = ToolGuard.call(:after_tool_request, state)
+    assert [%{boundary: %{operation: :read, resource: %{kind: :path}}}] = data.action_requests
+    assert Map.has_key?(interrupted.tool_guard_pending_grants, call.id)
+    refute Map.has_key?(interrupted.tool_guard_execution_grants, call.id)
+
+    resolved =
+      ToolGuard.resolve_approval(interrupted, [
+        %{
+          "tool_call_id" => call.id,
+          "tool_name" => call.name,
+          "action" => "approve",
+          "remember" => false
+        }
+      ])
+
+    assert Map.has_key?(resolved.state.tool_guard_execution_grants, call.id)
+    assert resolved.state.tool_guard_pending_grants == %{}
+  end
+
+  test "yolo grants outside-workspace calls without interrupting" do
+    workspace = tmp_workspace(%{"tools" => %{"default_mode" => "yolo"}})
+
+    external =
+      Path.join(Path.dirname(workspace), "yolo-#{System.unique_integer([:positive])}.txt")
+
+    File.write!(external, "outside")
+    on_exit(fn -> File.rm(external) end)
+
+    call = %{
+      type: "tool_use",
+      id: "yolo-read",
+      name: "read",
+      input: %{"file_path" => external}
+    }
+
+    config = %Config{
+      working_directory: workspace,
+      model: "fake",
+      middleware: [],
+      context: %{workspace_id: "ws", conversation_id: "conversation"}
+    }
+
+    state =
+      %State{State.init(config, "hi") | tool_guard_overrides: %{}}
+      |> State.append_messages([Message.tool_use([call])])
+
+    assert %State{} = guarded = ToolGuard.call(:after_tool_request, state)
+    assert %{provenance: :yolo} = guarded.tool_guard_execution_grants[call.id]
+  end
+
+  test "duplicate tool call ids are denied before grants can collide" do
+    settings = %{"tools" => %{"default_mode" => "yolo"}}
+
+    guarded =
+      state(settings, [
+        %{type: "tool_use", id: "duplicate", name: "read", input: %{"file_path" => "a"}},
+        %{type: "tool_use", id: "duplicate", name: "read", input: %{"file_path" => "b"}}
+      ])
+
+    assert {:tool_guard_denied, denied} = ToolGuard.call(:after_tool_request, guarded)
+    assert length(denied.tool_guard_denied_calls) == 2
+    assert denied.tool_guard_execution_grants == %{}
+  end
+
   test "after_tool_request allows memory tools and denies workspace tools without a workspace" do
     config = %Config{working_directory: nil, model: "fake", middleware: []}
 

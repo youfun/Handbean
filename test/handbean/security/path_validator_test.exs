@@ -274,15 +274,27 @@ defmodule Handbean.Security.PathValidator.Test do
       assert PathValidator.reject_resolved(link) == {:error, "sensitive path blocked"}
 
       assert {:error, "sensitive path blocked"} =
-               Handbean.Agent.Tool.resolve_path("link", %{working_directory: @sandbox_dir})
+               Handbean.Agent.Tool.resolve_path(
+                 "link",
+                 %{working_directory: @sandbox_dir},
+                 :read
+               )
 
       assert {:error, "sensitive path blocked"} =
-               Handbean.Agent.Tool.resolve_path(".env", %{working_directory: @sandbox_dir})
+               Handbean.Agent.Tool.resolve_path(
+                 ".env",
+                 %{working_directory: @sandbox_dir},
+                 :read
+               )
 
       assert {:error, reason} =
-               Handbean.Agent.Tool.resolve_path("~/.ssh/id_rsa", %{
-                 working_directory: @sandbox_dir
-               })
+               Handbean.Agent.Tool.resolve_path(
+                 "~/.ssh/id_rsa",
+                 %{
+                   working_directory: @sandbox_dir
+                 },
+                 :read
+               )
 
       assert reason == "sensitive path blocked"
       refute reason =~ "SECRET"
@@ -300,10 +312,18 @@ defmodule Handbean.Security.PathValidator.Test do
       assert PathValidator.reject_resolved(readme) == :ok
 
       assert {:ok, _} =
-               Handbean.Agent.Tool.resolve_path("lib/app.ex", %{working_directory: @sandbox_dir})
+               Handbean.Agent.Tool.resolve_path(
+                 "lib/app.ex",
+                 %{working_directory: @sandbox_dir},
+                 :read
+               )
 
       assert {:ok, _} =
-               Handbean.Agent.Tool.resolve_path("README.md", %{working_directory: @sandbox_dir})
+               Handbean.Agent.Tool.resolve_path(
+                 "README.md",
+                 %{working_directory: @sandbox_dir},
+                 :read
+               )
 
       for name <-
             ~w(.environment not_id_rsa_notes.md .gitconfig .bashrc .profile server.cer server.crt models.example.json) do

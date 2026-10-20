@@ -36,13 +36,26 @@ defmodule Handbean.CodeIndex do
   def ensure_index(workspace_root, workspace_id, opts \\ []) do
     budget = Keyword.get(opts, :budget_ms, @sync_budget_ms)
 
-    with {:ok, dir} <- Location.resolve(workspace_root, workspace_id),
+    with {:ok, dir} <- Location.resolve(workspace_root, workspace_id, opts),
          {:ok, store} <- open_or_rebind(dir, workspace_root, workspace_id) do
       outcome =
         Sync.sync(store, workspace_root, budget, Keyword.put(opts, :workspace_id, workspace_id))
 
-      maybe_embed(store, opts)
-      {:ok, store, Map.put(outcome, :index_dir, dir)}
+      if Keyword.get(opts, :require_scope_sync, false) and outcome.safety != :checked do
+        Store.close(store)
+        {:error, :index_scope_unavailable}
+      else
+        maybe_embed(store, workspace_root, opts)
+        {:ok, store, Map.put(outcome, :index_dir, dir)}
+      end
+    else
+      {:error, reason} ->
+        if Keyword.get(opts, :require_scope_sync, false),
+          do: {:error, :index_scope_unavailable},
+          else: {:error, reason}
+
+      other ->
+        other
     end
   end
 
@@ -57,7 +70,8 @@ defmodule Handbean.CodeIndex do
     with {:ok, store, sync} <- ensure_index(workspace_root, workspace_id, opts) do
       try do
         mode = search_mode(opts)
-        hits = Search.query(store, query, limit, search_opts(opts, mode))
+        query_opts = opts |> Keyword.put(:workspace_root, workspace_root) |> search_opts(mode)
+        hits = Search.query(store, query, limit, query_opts)
         elapsed = System.monotonic_time(:millisecond) - started
 
         {:ok,
@@ -190,12 +204,16 @@ defmodule Handbean.CodeIndex do
     )
   end
 
-  defp maybe_embed(store, opts) do
+  defp maybe_embed(store, workspace_root, opts) do
     embedder = Keyword.get(opts, :embedder, Embedder.Noop)
 
     with :hybrid <- search_mode(opts),
          {:ok, config} <- embedder.config(opts) do
-      pending = Store.chunks_pending_embed(store, config.model, 8)
+      pending =
+        store
+        |> Store.chunks_pending_embed(config.model, 32)
+        |> Enum.filter(&Scan.allowed_path?(workspace_root, &1.path, opts))
+        |> Enum.take(8)
 
       case embedder.embed(Enum.map(pending, &embed_text/1), config) do
         {:ok, vectors} ->

@@ -43,7 +43,8 @@ defmodule Handbean.Tool.Builtin.FileSearch do
         },
         path: %{
           type: "string",
-          description: "Workspace-relative prefix; yolo also permits an external path"
+          description:
+            "Workspace-relative prefix; an external path requires per-call approval unless the run is yolo"
         },
         exclude: %{
           type: "array",
@@ -66,7 +67,8 @@ defmodule Handbean.Tool.Builtin.FileSearch do
     working_directory = Map.get(context, :working_directory)
 
     with {:ok, workspace} <- resolve_root(working_directory),
-         {:ok, root, path, absolute_paths?} <- resolve_search_scope(workspace, input["path"], context),
+         {:ok, root, path, absolute_paths?} <-
+           resolve_search_scope(workspace, input["path"], context),
          {:ok, index} <- Handbean.Search.ensure_started(root),
          search_opts = [
            limit: limit,
@@ -123,7 +125,7 @@ defmodule Handbean.Tool.Builtin.FileSearch do
   defp resolve_search_scope(root, "", _context), do: {:ok, root, nil, false}
 
   defp resolve_search_scope(root, path, context) when is_binary(path) do
-    with {:ok, expanded} <- Handbean.Agent.Tool.resolve_path(path, context) do
+    with {:ok, expanded} <- Handbean.Agent.Tool.resolve_path(path, context, :search) do
       if Handbean.Security.PathValidator.validate_within_workspace(expanded, root) == :ok do
         {:ok, root, Path.relative_to(expanded, root), false}
       else

@@ -18,6 +18,7 @@ defmodule Handbean.Tool.Builtin.Grep do
   @max_context 3
   @scan_budget_ms 2_000
   @external_index_wait_ms 3_000
+  @search_budget_ms 6_000
 
   @impl true
   def name, do: "grep"
@@ -27,14 +28,14 @@ defmodule Handbean.Tool.Builtin.Grep do
     "Search file contents for a regex or literal pattern. " <>
       "Omit pattern and pass glob to list matching files. " <>
       "Use file_search for fuzzy name search. " <>
-      "path should be workspace-relative; yolo mode also accepts paths outside the workspace. " <>
+      "path should be workspace-relative; an external path requires per-call approval unless the run is yolo. " <>
       "Results are grouped by file; pass next_cursor as cursor to continue."
   end
 
   @impl true
   def hint do
     "A failed search is not an empty result. Add a content pattern, or pass glob to list files. " <>
-      "If path is outside the workspace, yolo mode is required. " <>
+      "If path is outside the workspace, request per-call approval unless the run is yolo. " <>
       "Do not invent another user's absolute path, and do not repeat the same arguments unchanged."
   end
 
@@ -51,7 +52,7 @@ defmodule Handbean.Tool.Builtin.Grep do
         path: %{
           type: "string",
           description:
-            "Workspace-relative file or directory. Yolo mode also permits an absolute path outside the workspace"
+            "Workspace-relative file or directory. External paths require per-call approval unless the run is yolo"
         },
         glob: %{
           type: "string",
@@ -85,47 +86,110 @@ defmodule Handbean.Tool.Builtin.Grep do
 
   @impl true
   def execute(input, context) when is_map(input) do
+    # Include inventory, regex evaluation and rendering in the budget. The
+    # linked task and its rg port also terminate when the tool is cancelled.
+    deadline = System.monotonic_time(:millisecond) + @search_budget_ms
+    task = Task.async(fn -> execute_search(input, context, deadline) end)
+
+    case Task.yield(task, @search_budget_ms) || Task.shutdown(task, :brutal_kill) do
+      {:ok, result} -> result
+      nil -> search_timeout()
+    end
+  end
+
+  def execute(_input, _context), do: {:error, "pattern is required"}
+
+  defp execute_search(input, context, deadline) do
     with {:ok, workspace, prefix, note, absolute_paths?} <- resolve_scope(input, context) do
       case fetch_pattern(input) do
         {:ok, pattern} ->
           input
-          |> search_pattern(pattern, workspace, prefix, absolute_paths?)
+          |> search_pattern(pattern, workspace, prefix, absolute_paths?, deadline)
           |> with_note(note)
 
         :missing ->
           if glob_present?(input) do
-            list_by_glob(input, workspace, prefix, note, absolute_paths?)
+            list_by_glob(input, workspace, prefix, note, absolute_paths?, deadline)
           else
             {:error, missing_pattern_error(workspace)}
           end
       end
     end
   rescue
-    error -> {:error, "grep failed: #{Exception.message(error)}"}
+    error ->
+      Handbean.Agent.Tool.Result.error(
+        "grep failed due to an internal error; retry with a narrower path",
+        %{code: :tool_exception, side_effect: :not_started},
+        Handbean.Agent.ErrorReporter.capture_exception(error, __STACKTRACE__, :grep)
+      )
   catch
     {:invalid_cursor, reason} ->
       {:error, reason, %{code: :cursor_invalid, side_effect: :not_started, status: :failed}}
   end
 
-  def execute(_input, _context), do: {:error, "pattern is required"}
-
-  defp inventory(index, workspace, prefix, input) do
-    excludes = Handbean.Utils.SafeMap.get_any(input, "exclude", :exclude) || []
-    collect_inventory(index, workspace, prefix, List.wrap(excludes), nil, [], nil)
+  defp search_timeout do
+    {:error, "grep search timed out before completion; narrow path or glob and retry",
+     %{code: :scan_timeout, status: :failed, side_effect: :not_started}}
   end
 
-  defp collect_inventory(index, workspace, prefix, excludes, cursor, acc, status) do
-    opts = [path: prefix, exclude: excludes, cursor: cursor, limit: @inventory_page]
+  defp inventory(index, workspace, prefix, input, deadline) do
+    excludes = Handbean.Utils.SafeMap.get_any(input, "exclude", :exclude) || []
+    matcher = glob_matcher(Handbean.Utils.SafeMap.get_any(input, "glob", :glob))
+
+    collect_inventory(
+      index,
+      workspace,
+      prefix,
+      List.wrap(excludes),
+      nil,
+      [],
+      nil,
+      matcher,
+      deadline
+    )
+  end
+
+  defp collect_inventory(
+         index,
+         workspace,
+         prefix,
+         excludes,
+         cursor,
+         acc,
+         status,
+         matcher,
+         deadline
+       ) do
+    timeout = max(min(deadline - System.monotonic_time(:millisecond), 5_000), 1)
+
+    opts = [
+      path: prefix,
+      exclude: excludes,
+      cursor: cursor,
+      limit: @inventory_page,
+      deadline: deadline,
+      timeout: timeout
+    ]
 
     with {:ok, page} <- Handbean.Search.files(index, opts) do
-      next_acc = acc ++ page.paths
+      next_acc = [Enum.filter(page.paths, matcher) | acc]
 
       if page.cursor do
-        collect_inventory(index, workspace, prefix, excludes, page.cursor, next_acc, page.status)
+        collect_inventory(
+          index,
+          workspace,
+          prefix,
+          excludes,
+          page.cursor,
+          next_acc,
+          page.status,
+          matcher,
+          deadline
+        )
       else
         {:ok,
          %{
-           paths: next_acc,
+           paths: next_acc |> Enum.reverse() |> List.flatten(),
            prefix: prefix,
            status: status || page.status,
            indexed_count: page.indexed_count
@@ -153,10 +217,7 @@ defmodule Handbean.Tool.Builtin.Grep do
       )
     end
 
-    files =
-      inventory.paths
-      |> Enum.filter(&glob_match?(&1, Handbean.Utils.SafeMap.get_any(input, "glob", :glob)))
-      |> Enum.sort()
+    files = Enum.sort(inventory.paths)
 
     {matcher, hits, partial?} =
       case System.find_executable("rg") do
@@ -266,7 +327,7 @@ defmodule Handbean.Tool.Builtin.Grep do
   defp rg_hits(rg, files, workspace, prefix, pattern, input, cursor, wanted) do
     inventory = MapSet.new(files)
     target = if prefix in [nil, "", "."], do: ".", else: prefix
-    args = rg_args(input) ++ rg_sensitive_globs() ++ ["--", pattern, target]
+    args = rg_args(input) ++ rg_globs(input) ++ rg_sensitive_globs() ++ ["--", pattern, target]
 
     case stream_rg(rg, args, workspace, inventory, input, cursor, wanted) do
       {:ok, hits, partial?} ->
@@ -351,7 +412,7 @@ defmodule Handbean.Tool.Builtin.Grep do
     end
   end
 
-  defp maybe_add_rg_hit(acc, line, inventory, input, cursor) do
+  defp maybe_add_rg_hit(acc, line, inventory, _input, cursor) do
     case parse_rg_line(line) do
       nil ->
         acc
@@ -359,9 +420,7 @@ defmodule Handbean.Tool.Builtin.Grep do
       hit ->
         hit = hit |> normalize_rg_hit() |> bound_hit()
 
-        if MapSet.member?(inventory, hit.path) and
-             glob_match?(hit.path, Handbean.Utils.SafeMap.get_any(input, "glob", :glob)) and
-             after_cursor?(hit, cursor) do
+        if MapSet.member?(inventory, hit.path) and after_cursor?(hit, cursor) do
           [hit | acc]
         else
           acc
@@ -402,6 +461,22 @@ defmodule Handbean.Tool.Builtin.Grep do
     if truthy?(Handbean.Utils.SafeMap.get_any(input, "literal", :literal)),
       do: base ++ ["-F"],
       else: base
+  end
+
+  defp rg_globs(input) do
+    case Handbean.Utils.SafeMap.get_any(input, "glob", :glob) do
+      glob when is_binary(glob) ->
+        # Our legacy '*' may cross slashes. Only push down suffix filters whose
+        # rg meaning is a superset; other patterns remain inventory filters.
+        patterns = expand_braces(glob)
+
+        if Enum.all?(patterns, &Regex.match?(~r/^\*\.[a-zA-Z0-9_]+$/, &1)),
+          do: Enum.flat_map(patterns, &["--glob", &1]),
+          else: []
+
+      _ ->
+        []
+    end
   end
 
   defp rg_sensitive_globs do
@@ -654,33 +729,35 @@ defmodule Handbean.Tool.Builtin.Grep do
     end
   end
 
-  defp search_pattern(input, pattern, workspace, prefix, absolute_paths?) do
+  defp search_pattern(input, pattern, workspace, prefix, absolute_paths?, deadline) do
     with {:ok, regex} <- compile_pattern(pattern, input),
          {:ok, index} <- Handbean.Search.ensure_started(workspace),
          :ok <- await_external_index(index, absolute_paths?),
-         {:ok, inventory} <- inventory(index, workspace, prefix, input) do
+         {:ok, inventory} <- inventory(index, workspace, prefix, input, deadline) do
       search(pattern, regex, inventory, workspace, input, absolute_paths?)
     end
   end
 
-  defp list_by_glob(input, workspace, prefix, note, absolute_paths?) do
+  defp list_by_glob(input, workspace, prefix, note, absolute_paths?, deadline) do
     with {:ok, index} <- Handbean.Search.ensure_started(workspace),
          :ok <- await_external_index(index, absolute_paths?),
-         {:ok, inventory} <- inventory(index, workspace, prefix, input) do
-      glob = Handbean.Utils.SafeMap.get_any(input, ["glob", :glob])
-
+         {:ok, inventory} <- inventory(index, workspace, prefix, input, deadline) do
       files =
         inventory.paths
-        |> Enum.filter(&(glob_match?(&1, glob) and safe_search_file?(workspace, &1)))
+        |> Enum.filter(&safe_search_file?(workspace, &1))
         |> Enum.sort()
         |> Enum.take(limit(input))
 
       body =
         case files do
-          [] -> "No matches found"
+          [] ->
+            "No matches found"
+
           paths ->
             paths
-            |> Enum.map(fn path -> if absolute_paths?, do: Path.join(workspace, path), else: path end)
+            |> Enum.map(fn path ->
+              if absolute_paths?, do: Path.join(workspace, path), else: path
+            end)
             |> Enum.join("\n")
         end
 
@@ -689,8 +766,11 @@ defmodule Handbean.Tool.Builtin.Grep do
     end
   end
 
-  defp await_external_index(index, true),
-    do: Handbean.Search.await(index, @external_index_wait_ms)
+  defp await_external_index(index, true) do
+    Handbean.Search.await(index, @external_index_wait_ms)
+  catch
+    :exit, {:timeout, _} -> search_timeout()
+  end
 
   defp await_external_index(_index, false), do: :ok
 
@@ -733,7 +813,7 @@ defmodule Handbean.Tool.Builtin.Grep do
 
     {path, note} = maybe_reroot(requested, workspace, context)
 
-    with {:ok, resolved} <- Handbean.Agent.Tool.resolve_path(path, context),
+    with {:ok, resolved} <- Handbean.Agent.Tool.resolve_path(path, context, :search),
          true <- File.exists?(resolved) do
       if Handbean.Security.PathValidator.validate_within_workspace(resolved, workspace) == :ok do
         {:ok, workspace, Path.relative_to(resolved, workspace), note, false}
@@ -741,14 +821,19 @@ defmodule Handbean.Tool.Builtin.Grep do
         external_scope(resolved)
       end
     else
-      false -> {:error, path_not_found(path, note)}
-      {:error, "Path traversal blocked: " <> _} -> {:error, outside_workspace_error(requested, workspace)}
-      {:error, reason} -> {:error, reason}
+      false ->
+        {:error, path_not_found(path, note)}
+
+      {:error, "Path traversal blocked: " <> _} ->
+        {:error, outside_workspace_error(requested, workspace)}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
   defp maybe_reroot(requested, workspace, context) do
-    if Handbean.Agent.Tool.outside_workspace_allowed?(context) do
+    if Handbean.Agent.Tool.outside_workspace_allowed?(context, requested, :search) do
       {requested, nil}
     else
       case reroot_foreign_workspace(requested, workspace) do
@@ -826,20 +911,16 @@ defmodule Handbean.Tool.Builtin.Grep do
 
   defp regular_file?(path), do: match?({:ok, %{type: :regular}}, File.lstat(path))
 
-  defp glob_match?(_path, glob) when glob in [nil, ""], do: true
+  defp glob_matcher(glob) when is_binary(glob) and glob != "" do
+    regexes = glob |> expand_braces() |> Enum.map(&glob_regex/1)
 
-  defp glob_match?(path, glob) when is_binary(glob) do
-    basename = Path.basename(path)
-
-    glob
-    |> expand_braces()
-    |> Enum.any?(fn pattern ->
-      regex = glob_regex(pattern)
-      Regex.match?(regex, path) or Regex.match?(regex, basename)
-    end)
+    fn path ->
+      basename = Path.basename(path)
+      Enum.any?(regexes, &(Regex.match?(&1, path) or Regex.match?(&1, basename)))
+    end
   end
 
-  defp glob_match?(_path, _glob), do: true
+  defp glob_matcher(_glob), do: fn _path -> true end
 
   defp glob_regex(pattern) do
     source =

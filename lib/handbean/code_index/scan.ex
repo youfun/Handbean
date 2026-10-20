@@ -7,6 +7,8 @@ defmodule Handbean.CodeIndex.Scan do
   mean "ignore nothing".
   """
 
+  alias Handbean.Security.PathValidator
+
   @max_files 5_000
   @max_bytes 256 * 1024
 
@@ -41,20 +43,25 @@ defmodule Handbean.CodeIndex.Scan do
     max_files = Keyword.get(opts, :max_files, @max_files)
     deadline = Keyword.get(opts, :deadline)
 
-    case File.lstat(root) do
-      {:ok, %File.Stat{type: :directory}} ->
-        ignore = load_ignore(root)
-        acc = walk(root, root, ignore, [], %{files: 0, partial: false}, max_files, deadline)
-        {:ok, Enum.reverse(acc.entries), Map.take(acc, [:partial, :files, :ignore])}
+    with {:ok, scope} <- resolve_scope(root, Keyword.get(opts, :path)),
+         :ok <- ensure_safe_root(root) do
+      case scope do
+        {:directory, dir} ->
+          ignore = load_ignore(root)
+          acc = walk(dir, root, ignore, [], %{files: 0, partial: false}, max_files, deadline)
+          {:ok, Enum.reverse(acc.entries), Map.take(acc, [:partial, :files, :ignore])}
 
-      {:ok, %File.Stat{type: :symlink}} ->
-        {:error, :symlink}
+        {:file, abs, relative} ->
+          ignore = %{patterns: [], parse_error: false}
+          acc = consider(abs, root, ignore, empty_acc(ignore), max_files, deadline)
 
-      {:ok, _} ->
-        {:error, :not_directory}
+          entries =
+            acc.entries
+            |> Enum.filter(&(&1.path == relative))
+            |> Enum.reverse()
 
-      {:error, reason} ->
-        {:error, reason}
+          {:ok, entries, Map.take(acc, [:partial, :files, :ignore])}
+      end
     end
   end
 
@@ -72,10 +79,25 @@ defmodule Handbean.CodeIndex.Scan do
       match_patterns?(relative, ignore.patterns)
   end
 
+  @doc "True when a stored relative path remains inside the requested scan scope and is non-sensitive."
+  @spec allowed_path?(Path.t(), String.t(), keyword()) :: boolean()
+  def allowed_path?(root, relative, opts \\ [])
+
+  def allowed_path?(root, relative, opts)
+      when is_binary(root) and is_binary(relative) do
+    absolute = Path.expand(relative, root)
+
+    PathValidator.validate_under_root(absolute, root) == :ok and
+      PathValidator.allowed_result?(root, relative) and
+      in_requested_scope?(absolute, root, Keyword.get(opts, :path))
+  end
+
+  def allowed_path?(_root, _relative, _opts), do: false
+
   @doc false
   def load_ignore(root) do
-    git = read_patterns(Path.join(root, ".gitignore"))
-    extra = read_patterns(Path.join(root, ".handbeanignore"))
+    git = read_patterns(Path.join(root, ".gitignore"), root)
+    extra = read_patterns(Path.join(root, ".handbeanignore"), root)
 
     %{
       patterns: git.patterns ++ extra.patterns,
@@ -116,6 +138,9 @@ defmodule Handbean.CodeIndex.Scan do
     relative = Path.relative_to(abs, root)
 
     cond do
+      not PathValidator.allowed_result?(root, relative) ->
+        acc
+
       ignored?(relative, ignore) ->
         acc
 
@@ -137,6 +162,75 @@ defmodule Handbean.CodeIndex.Scan do
         end
     end
   end
+
+  defp empty_acc(ignore), do: %{entries: [], partial: false, files: 0, ignore: ignore}
+
+  defp resolve_scope(root, nil), do: directory_scope(root)
+  defp resolve_scope(root, ""), do: directory_scope(root)
+
+  defp resolve_scope(root, requested) when is_binary(requested) do
+    absolute = Path.expand(requested, root)
+
+    with :ok <- PathValidator.validate_under_root(absolute, root),
+         :ok <- PathValidator.reject_resolved(absolute) do
+      case File.lstat(absolute) do
+        {:ok, %File.Stat{type: :directory}} ->
+          {:ok, {:directory, absolute}}
+
+        {:ok, %File.Stat{type: :regular}} ->
+          {:ok, {:file, absolute, Path.relative_to(absolute, root)}}
+
+        {:ok, %File.Stat{type: :symlink}} ->
+          {:error, :symlink}
+
+        {:ok, _} ->
+          {:error, :unsupported_file}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp resolve_scope(_root, _requested), do: {:error, :invalid_scope}
+
+  defp directory_scope(root) do
+    case File.lstat(root) do
+      {:ok, %File.Stat{type: :directory}} -> {:ok, {:directory, root}}
+      {:ok, %File.Stat{type: :symlink}} -> {:error, :symlink}
+      {:ok, _} -> {:error, :not_directory}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp ensure_safe_root(root) do
+    case PathValidator.reject_resolved(root) do
+      :ok -> :ok
+      {:error, _} -> {:error, :sensitive_path}
+    end
+  end
+
+  defp in_requested_scope?(absolute, root, requested) when requested in [nil, ""],
+    do: PathValidator.validate_under_root(absolute, root) == :ok
+
+  defp in_requested_scope?(absolute, root, requested) when is_binary(requested) do
+    scope = Path.expand(requested, root)
+
+    case File.lstat(scope) do
+      {:ok, %File.Stat{type: :directory}} ->
+        PathValidator.validate_under_root(absolute, scope) == :ok
+
+      {:ok, %File.Stat{type: :regular}} ->
+        PathValidator.resolve_symlink(absolute) == PathValidator.resolve_symlink(scope)
+
+      _ ->
+        false
+    end
+  end
+
+  defp in_requested_scope?(_absolute, _root, _requested), do: false
 
   defp entry(relative, abs, size) do
     %{
@@ -169,7 +263,28 @@ defmodule Handbean.CodeIndex.Scan do
     end
   end
 
-  defp read_patterns(path) do
+  defp read_patterns(path, root) do
+    relative = Path.relative_to(path, root)
+
+    cond do
+      PathValidator.validate_under_root(path, root) != :ok ->
+        %{patterns: [], error: true}
+
+      not PathValidator.allowed_result?(root, relative) ->
+        %{patterns: [], error: true}
+
+      true ->
+        case File.lstat(path) do
+          {:ok, %File.Stat{type: :regular}} -> read_regular_patterns(path)
+          {:ok, %File.Stat{type: :symlink}} -> %{patterns: [], error: false}
+          {:ok, _} -> %{patterns: [], error: true}
+          {:error, :enoent} -> %{patterns: [], error: false}
+          {:error, _} -> %{patterns: [], error: true}
+        end
+    end
+  end
+
+  defp read_regular_patterns(path) do
     case File.read(path) do
       {:ok, body} -> %{patterns: parse_patterns(body), error: false}
       {:error, :enoent} -> %{patterns: [], error: false}

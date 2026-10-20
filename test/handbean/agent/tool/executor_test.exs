@@ -35,6 +35,18 @@ defmodule Handbean.Agent.Tool.ExecutorTest do
     def execute(_input, _context), do: {:ok, "hello", %{exit_code: 0}}
   end
 
+  defmodule ContextFixtureTool do
+    @behaviour Handbean.Agent.Tool
+
+    def name, do: "context_fixture"
+    def description, do: "Returns the effective reasoning level exposed to tools"
+    def input_schema, do: %{type: "object", properties: %{}}
+
+    def execute(_input, context) do
+      {:ok, Keyword.get(context.conversation_run_opts, :reasoning_level) || "missing"}
+    end
+  end
+
   defmodule ExitingFixtureTool do
     @behaviour Handbean.Agent.Tool
 
@@ -59,6 +71,7 @@ defmodule Handbean.Agent.Tool.ExecutorTest do
     ensure_registered(Handbean.Tool.Builtin.Bash)
     ensure_registered(Handbean.Tool.Builtin.EditContext)
     ensure_registered(ResultFixtureTool)
+    ensure_registered(ContextFixtureTool)
     ensure_registered(ExitingFixtureTool)
     :ok
   end
@@ -111,6 +124,26 @@ defmodule Handbean.Agent.Tool.ExecutorTest do
       assert first_block[:content] =~ "line one"
     end
 
+    test "tools receive the run's effective reasoning level" do
+      config = %Config{
+        working_directory: @fixtures_dir,
+        model: "fake-model",
+        reasoning_level: "max"
+      }
+
+      state = State.init(config, "Inspect run selection")
+
+      assert {:ok, result_msg} =
+               Executor.execute_all(
+                 [%{id: "context-reasoning", name: "context_fixture", input: %{}}],
+                 state
+               )
+
+      assert [block] = result_msg.content
+      refute block[:is_error]
+      assert block[:content] == "max"
+    end
+
     test "workspace yolo mode reaches tools as unrestricted path access" do
       root =
         Path.join(
@@ -137,6 +170,99 @@ defmodule Handbean.Agent.Tool.ExecutorTest do
       assert [block] = result_msg.content
       refute block[:is_error]
       assert block[:content] =~ "outside through executor"
+    end
+
+    test "execution grants are consumed before parallel dispatch and cannot be replayed" do
+      root =
+        Path.join(
+          System.tmp_dir!(),
+          "handbean-executor-grant-#{System.unique_integer([:positive])}"
+        )
+
+      workspace = Path.join(root, "workspace")
+      outside = Path.join(root, "outside.txt")
+      other = Path.join(root, "other.txt")
+      File.mkdir_p!(workspace)
+      File.write!(outside, "approved outside")
+      File.write!(other, "unapproved outside")
+      on_exit(fn -> File.rm_rf!(root) end)
+
+      context = %{
+        working_directory: workspace,
+        workspace_id: "grant-workspace",
+        conversation_id: "grant-conversation",
+        run_id: "grant-run"
+      }
+
+      approved = %{id: "shared-id", name: "read", input: %{"file_path" => outside}}
+      replay = %{id: "shared-id", name: "read", input: %{"file_path" => other}}
+      requirement = Handbean.Permissions.Boundary.requirement(approved, context)
+      grant = Handbean.Permissions.Boundary.grant(approved, context, requirement, :human)
+
+      config = %Config{
+        working_directory: workspace,
+        run_id: "grant-run",
+        context: Map.drop(context, [:working_directory, :run_id])
+      }
+
+      state = %{
+        State.init(config, "read the exact approved file")
+        | tool_guard_execution_grants: %{approved.id => grant}
+      }
+
+      assert {:ok, result_msg, _ui_blocks, next_state} =
+               Executor.execute_all_with_context([approved, replay], state)
+
+      assert [approved_result, replay_result] = result_msg.content
+      refute approved_result[:is_error]
+      assert approved_result[:content] =~ "approved outside"
+      assert replay_result[:is_error]
+      assert replay_result[:content] =~ "outside workspace"
+      assert next_state.tool_guard_execution_grants == %{}
+    end
+
+    test "parallel calls receive only their own grant" do
+      root =
+        Path.join(
+          System.tmp_dir!(),
+          "handbean-executor-isolation-#{System.unique_integer([:positive])}"
+        )
+
+      workspace = Path.join(root, "workspace")
+      first = Path.join(root, "first.txt")
+      second = Path.join(root, "second.txt")
+      File.mkdir_p!(workspace)
+      File.write!(first, "first approved")
+      File.write!(second, "second unapproved")
+      on_exit(fn -> File.rm_rf!(root) end)
+
+      context = %{
+        working_directory: workspace,
+        workspace_id: "parallel-workspace",
+        conversation_id: "parallel-conversation",
+        run_id: "parallel-run"
+      }
+
+      approved = %{id: "parallel-1", name: "read", input: %{"file_path" => first}}
+      unapproved = %{id: "parallel-2", name: "read", input: %{"file_path" => second}}
+      requirement = Handbean.Permissions.Boundary.requirement(approved, context)
+      grant = Handbean.Permissions.Boundary.grant(approved, context, requirement, :human)
+
+      config = %Config{
+        working_directory: workspace,
+        run_id: "parallel-run",
+        context: Map.drop(context, [:working_directory, :run_id])
+      }
+
+      state = %{
+        State.init(config, "read only the approved file")
+        | tool_guard_execution_grants: %{approved.id => grant}
+      }
+
+      assert {:ok, result_msg} = Executor.execute_all([approved, unapproved], state)
+      assert [approved_result, unapproved_result] = result_msg.content
+      refute approved_result[:is_error]
+      assert unapproved_result[:is_error]
     end
 
     test "returns error for unknown tool" do
@@ -269,6 +395,11 @@ defmodule Handbean.Agent.Tool.ExecutorTest do
     def nested_only?, do: true
     def max_result_chars, do: 80
 
+    def execute(%{"mode" => "boundary"}, context) do
+      {:ok,
+       "grant=#{Map.has_key?(context, :boundary_grant)}:collection=#{Map.has_key?(context, :tool_execution_grants)}"}
+    end
+
     def execute(%{"mode" => "huge"}, _context) do
       {:ok, String.duplicate("spill-line\n", 40)}
     end
@@ -336,6 +467,43 @@ defmodule Handbean.Agent.Tool.ExecutorTest do
       assert_receive {:nested_event, {:tool_end, end_payload}}
       assert end_payload.parent_tool_call_id == "parent-1"
       assert end_payload.tool == "nested_executor_probe"
+    end
+
+    test "nested execution strips parent boundary capabilities" do
+      stale_grant = %{
+        tool_call_id: "parent",
+        tool_name: "read",
+        input_fingerprint: "stale",
+        source_workspace_id: "workspace",
+        source_conversation_id: "conv-nested",
+        run_id: "run-nested",
+        resource: %{kind: :path, path: "/tmp/stale", scope: :file},
+        operation: :read,
+        provenance: :human
+      }
+
+      config = %Config{
+        working_directory: @fixtures_dir,
+        run_id: "run-nested",
+        context: %{
+          conversation_id: "conv-nested",
+          workspace_id: "workspace",
+          boundary_grant: stale_grant,
+          tool_execution_grants: %{"parent" => stale_grant}
+        }
+      }
+
+      state = %{
+        State.init(config, "nested")
+        | tool_guard_execution_grants: %{"parent" => stale_grant}
+      }
+
+      assert {:ok, text, _details} =
+               Executor.execute_nested("nested_executor_probe", %{"mode" => "boundary"}, state,
+                 parent_tool_call_id: "parent"
+               )
+
+      assert text == "grant=false:collection=false"
     end
 
     test "nested execution still honors the session active set" do

@@ -75,8 +75,8 @@ defmodule Handbean.Tool.Builtin.Bash do
         cwd: %{
           type: "string",
           description:
-            "Optional working directory override. Use a subdirectory inside the current workspace, " <>
-              "or an external directory in yolo mode."
+            "Optional working directory override. Use a subdirectory inside the current workspace; " <>
+              "an external directory requires per-call approval unless the run is yolo."
         },
         unsandboxed: %{
           type: "boolean",
@@ -104,20 +104,28 @@ defmodule Handbean.Tool.Builtin.Bash do
   def concurrent?, do: false
 
   @impl true
+  def timeout_ms(%{"job" => true}), do: nil
+
+  def timeout_ms(input) when is_map(input) do
+    case Map.get(input, "timeout", 120) do
+      seconds when is_integer(seconds) and seconds in 1..3_600 -> seconds * 1_000
+      _ -> nil
+    end
+  end
+
+  def timeout_ms(_input), do: nil
+
+  @impl true
   def execute(%{"command" => command} = input, context) do
     timeout_sec = Map.get(input, "timeout", 120)
     working_directory = context[:working_directory]
 
-    with :ok <- validate_command(command),
+    with :ok <- validate_timeout(timeout_sec),
+         :ok <- validate_command(command),
          :ok <- preflight_cwd(Map.get(input, "cwd"), working_directory),
          {:ok, cwd} <- resolve_cwd(Map.get(input, "cwd"), working_directory, context),
          :ok <- preflight_sensitive(command, cwd) do
-      external_cwd? = outside_workspace?(cwd, working_directory)
-
-      unsandboxed? =
-        Map.get(input, "unsandboxed") == true or
-          (Handbean.Agent.Tool.outside_workspace_allowed?(context) and external_cwd?) or
-          not Handbean.Platform.ProcessSandbox.os_enforced?()
+      unsandboxed? = unsandboxed_execution?(input)
 
       cond do
         Map.get(input, "job", false) == true and not Handbean.Host.shell_jobs?() ->
@@ -129,14 +137,10 @@ defmodule Handbean.Tool.Builtin.Bash do
         unsandboxed? or not managed_context?(context) ->
           execute_command(command, timeout_sec, cwd, context, unsandboxed?)
 
-        Map.get(input, "job", false) == false and is_integer(timeout_sec) and
-            timeout_sec in 1..3_600 ->
+        Map.get(input, "job", false) == false ->
           managed_command(command, timeout_sec, cwd, input, context)
 
-        Map.get(input, "job", false) == false ->
-          execute_command(command, timeout_sec, cwd, context, unsandboxed?)
-
-        is_integer(timeout_sec) and timeout_sec in 1..3_600 ->
+        Map.get(input, "job", false) == true ->
           Handbean.Jobs.start(
             command,
             cwd,
@@ -145,9 +149,6 @@ defmodule Handbean.Tool.Builtin.Bash do
             context
           )
           |> Handbean.Jobs.format()
-
-        Map.get(input, "job", false) == true ->
-          {:error, "Job timeout must be an integer from 1 to 3600 seconds"}
 
         true ->
           {:error, "job must be a boolean"}
@@ -159,7 +160,16 @@ defmodule Handbean.Tool.Builtin.Bash do
     {:error, "command is required"}
   end
 
+  @doc false
+  def unsandboxed_execution?(input) when is_map(input) do
+    Map.get(input, "unsandboxed") == true or
+      not Handbean.Platform.ProcessSandbox.os_enforced?()
+  end
+
   # ── Validation ──
+
+  defp validate_timeout(seconds) when is_integer(seconds) and seconds in 1..3_600, do: :ok
+  defp validate_timeout(_), do: {:error, "timeout must be an integer from 1 to 3600 seconds"}
 
   defp validate_command(cmd) when not is_binary(cmd) or byte_size(cmd) == 0 do
     {:error, "command must be a non-empty string"}
@@ -202,10 +212,10 @@ defmodule Handbean.Tool.Builtin.Bash do
         resolved_cwd = Handbean.Security.PathValidator.resolve_symlink(cwd)
         resolved_wd = Handbean.Security.PathValidator.resolve_symlink(Path.expand(wd))
 
-        if Handbean.Agent.Tool.outside_workspace_allowed?(context) or
+        if Handbean.Agent.Tool.outside_workspace_allowed?(context, resolved_cwd, :execute) or
              String.starts_with?(resolved_cwd, resolved_wd <> "/") or resolved_cwd == resolved_wd do
           if cwd == "/" or File.dir?(cwd) do
-            {:ok, cwd}
+            {:ok, resolved_cwd}
           else
             {:error, "cwd #{path} is not a directory"}
           end
@@ -214,16 +224,6 @@ defmodule Handbean.Tool.Builtin.Bash do
         end
     end
   end
-
-  defp outside_workspace?(_cwd, working_directory)
-       when not is_binary(working_directory) or working_directory == "",
-       do: false
-
-  defp outside_workspace?(cwd, working_directory) when is_binary(cwd) do
-    Handbean.Security.PathValidator.validate_within_workspace(cwd, working_directory) != :ok
-  end
-
-  defp outside_workspace?(_cwd, _working_directory), do: false
 
   # ── Execution ──
 
@@ -266,7 +266,11 @@ defmodule Handbean.Tool.Builtin.Bash do
     capture = Handbean.WorkspaceChangeCapture.start(working_directory)
     timeout_ms = timeout_sec * 1000
     sandboxed? = working_directory != nil and not unsandboxed?
-    opts = if sandboxed?, do: [workspace_path: working_directory], else: []
+    # resolve_cwd/3 has checked this exact directory; it does not become writable.
+    opts =
+      if sandboxed?,
+        do: [workspace_path: working_directory, authorized_cwd: cwd],
+        else: []
 
     opts =
       if is_pid(Process.get(:tool_owner)),

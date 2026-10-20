@@ -45,6 +45,66 @@ defmodule Handbean.Jobs.SandboxTest do
   end
 
   @tag :os_sandbox
+  test "managed and explicit jobs retain cwd authorization without granting outside writes", %{
+    workspace: workspace,
+    context: context
+  } do
+    outside = workspace <> "-cwd"
+    File.mkdir_p!(outside)
+    File.write!(Path.join(outside, "fixture.txt"), "external-readable")
+    on_exit(fn -> File.rm_rf!(outside) end)
+
+    assert {:error, reason} = Jobs.start("pwd", outside, 10_000, 1_000, context)
+    assert reason =~ "Path traversal"
+
+    for approval_mode <- [:yolo, :smart], explicit? <- [false, true] do
+      id = "#{approval_mode}-#{explicit?}"
+
+      scoped =
+        Map.merge(context, %{
+          workspace_id: "job-workspace",
+          tool_call_id: id,
+          approval_mode: approval_mode
+        })
+
+      input = %{
+        "command" =>
+          "cat fixture.txt && printf inside > '#{workspace}/#{id}.txt'; " <>
+            "if (printf forbidden > forbidden.txt) 2>/dev/null; then exit 99; fi",
+        "cwd" => outside,
+        "job" => explicit?,
+        "wait_ms" => 100
+      }
+
+      approved =
+        if approval_mode == :smart do
+          call = %{id: id, name: "bash", input: input}
+          requirement = Handbean.Permissions.Boundary.requirement(call, scoped)
+          grant = Handbean.Permissions.Boundary.grant(call, scoped, requirement, :human)
+
+          scoped
+          |> Map.put(:tool_execution_grants, %{id => grant})
+          |> Handbean.Permissions.Boundary.invocation_context(call)
+        else
+          scoped
+        end
+
+      assert {:ok, _, %{job: %{job_id: job_id}}} = Bash.execute(input, approved)
+
+      assert {:ok, %{state: :completed, exit_code: 0, output: "external-readable"}} =
+               Jobs.status(job_id, 0, 5_000, context)
+
+      assert File.read!(Path.join(workspace, "#{id}.txt")) == "inside"
+      refute File.exists?(Path.join(outside, "forbidden.txt"))
+    end
+
+    assert {:error, reason} =
+             Jobs.start("pwd", outside, 10_000, 1_000, %{context | tool_call_id: "next"})
+
+    assert reason =~ "Path traversal"
+  end
+
+  @tag :os_sandbox
   test "sandbox gate retains verified group cancellation before user code executes", %{
     workspace: workspace
   } do

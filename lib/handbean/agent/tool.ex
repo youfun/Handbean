@@ -44,6 +44,9 @@ defmodule Handbean.Agent.Tool do
 
   @callback timeout_ms() :: pos_integer()
 
+  @doc "Execution budget from validated input; nil keeps the configured call budget (for example job launches)."
+  @callback timeout_ms(input :: map()) :: pos_integer() | nil
+
   @doc """
   Short recovery note appended to a failed result for this tool.
 
@@ -53,15 +56,16 @@ defmodule Handbean.Agent.Tool do
   """
   @callback hint() :: String.t()
 
-  @optional_callbacks [max_result_chars: 0, concurrent?: 0, timeout_ms: 0, hint: 0]
+  @optional_callbacks [max_result_chars: 0, concurrent?: 0, timeout_ms: 0, timeout_ms: 1, hint: 0]
 
   @doc """
   Resolve a file path against the working directory from context.
 
   Returns `{:ok, path}` or `{:error, reason}`.
   """
-  @spec resolve_path(String.t(), map()) :: {:ok, String.t()} | {:error, String.t()}
-  def resolve_path(file_path, context) when is_binary(file_path) do
+  @spec resolve_path(String.t(), map(), atom()) :: {:ok, String.t()} | {:error, String.t()}
+  def resolve_path(file_path, context, operation)
+      when is_binary(file_path) and is_atom(operation) do
     file_path = Handbean.Agent.Tool.Helpers.expand_tilde(file_path)
     working_directory = working_directory(context)
 
@@ -75,7 +79,7 @@ defmodule Handbean.Agent.Tool do
         end
       end
 
-    with :ok <- within_workspace(resolved, working_directory, context),
+    with :ok <- within_workspace(resolved, working_directory, context, operation),
          :ok <- Handbean.Security.PathValidator.reject_resolved(resolved) do
       {:ok, resolved}
     else
@@ -94,21 +98,25 @@ defmodule Handbean.Agent.Tool do
 
   defp working_directory(_context), do: nil
 
-  @doc "Whether this tool context may access paths outside the current workspace."
-  @spec outside_workspace_allowed?(map()) :: boolean()
-  def outside_workspace_allowed?(context) when is_map(context) do
+  @doc "Whether this tool context may access a specific path outside the current workspace."
+  @spec outside_workspace_allowed?(map(), String.t(), atom()) :: boolean()
+  def outside_workspace_allowed?(context, path, operation)
+
+  def outside_workspace_allowed?(context, path, operation)
+      when is_map(context) and is_atom(operation) do
     Handbean.Utils.SafeMap.get_any(context, :approval_mode, "approval_mode") in [:yolo, "yolo"] or
       Handbean.Utils.SafeMap.get_any(context, :delegated_approval, "delegated_approval") in [
         :yolo,
         "yolo"
-      ]
+      ] or
+      (is_binary(path) and Handbean.Permissions.Boundary.path_allowed?(context, path, operation))
   end
 
-  def outside_workspace_allowed?(_context), do: false
+  def outside_workspace_allowed?(_context, _path, _operation), do: false
 
-  defp within_workspace(resolved, wd, context) do
+  defp within_workspace(resolved, wd, context, operation) do
     cond do
-      outside_workspace_allowed?(context) ->
+      outside_workspace_allowed?(context, resolved, operation) ->
         :ok
 
       not is_binary(wd) or wd == "" ->

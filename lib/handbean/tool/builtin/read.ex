@@ -20,12 +20,12 @@ defmodule Handbean.Tool.Builtin.Read do
   @impl true
   def description do
     "Read file contents. Supports pagination with offset/limit. " <>
-      "Detects binary and image files automatically."
+      "Detects binary and image files automatically. An external path requires per-call approval unless the run is yolo."
   end
 
   @impl true
   def hint do
-    "Check file_path against the workspace unless the run is in yolo mode. " <>
+    "Check file_path and request per-call approval for an external path unless the run is yolo. " <>
       "Use offset and limit to read another slice; do not repeat a path or range that just failed."
   end
 
@@ -34,7 +34,11 @@ defmodule Handbean.Tool.Builtin.Read do
     %{
       type: "object",
       properties: %{
-        file_path: %{type: "string", description: "Absolute or relative file path"},
+        file_path: %{
+          type: "string",
+          description:
+            "Absolute or relative file path. External paths require per-call approval unless the run is yolo."
+        },
         offset: %{
           type: "integer",
           description: "Line number to start from (1-based, 0 = from start)",
@@ -58,7 +62,7 @@ defmodule Handbean.Tool.Builtin.Read do
     limit = Map.get(input, "limit", @default_limit)
 
     with {:ok, resolved} <-
-           Handbean.Agent.Tool.resolve_path(Helpers.expand_tilde(file_path), context),
+           Handbean.Agent.Tool.resolve_path(Helpers.expand_tilde(file_path), context, :read),
          :ok <- validate_exists(resolved),
          :ok <- validate_not_dir(resolved),
          :ok <- validate_readable(resolved) do

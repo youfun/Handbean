@@ -83,6 +83,18 @@ defmodule Handbean.Tool.Builtin.MixProject do
   def concurrent?, do: false
 
   @impl true
+  def timeout_ms(%{"job" => true}), do: nil
+
+  def timeout_ms(input) when is_map(input) do
+    case parse_timeout(Map.get(input, "timeout_ms", Project.default_timeout_ms()), false) do
+      {:ok, timeout} -> timeout
+      {:error, _} -> nil
+    end
+  end
+
+  def timeout_ms(_input), do: nil
+
+  @impl true
   def execute(%{"action" => action} = input, context) when is_binary(action) do
     workspace =
       Handbean.Utils.SafeMap.get_any(context, :working_directory, "working_directory")

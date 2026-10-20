@@ -299,9 +299,43 @@ defmodule Handbean.Tool.Builtin.ReadTest do
       assert reason =~ "Path traversal" or reason =~ "outside workspace"
     end
 
+    test "an approved invocation grant reads its exact outside file" do
+      outside =
+        Path.join(
+          System.tmp_dir!(),
+          "handbean-approved-read-#{System.unique_integer([:positive])}.txt"
+        )
+
+      File.write!(outside, "approved outside content")
+      on_exit(fn -> File.rm(outside) end)
+
+      call = %{id: "approved-read", name: "read", input: %{"file_path" => outside}}
+
+      base = %{
+        working_directory: @fixtures_dir,
+        workspace_id: "ws",
+        conversation_id: "conversation",
+        run_id: "approved-run"
+      }
+
+      requirement = Handbean.Permissions.Boundary.requirement(call, base)
+      grant = Handbean.Permissions.Boundary.grant(call, base, requirement, :human)
+
+      context =
+        base
+        |> Map.put(:tool_execution_grants, %{call.id => grant})
+        |> Handbean.Permissions.Boundary.invocation_context(call)
+
+      assert {:ok, output, %{file_path: ^outside}} = Read.execute(call.input, context)
+      assert output =~ "approved outside content"
+    end
+
     test "yolo reads an ordinary file outside the workspace" do
       outside =
-        Path.join(System.tmp_dir!(), "handbean-yolo-read-#{System.unique_integer([:positive])}.txt")
+        Path.join(
+          System.tmp_dir!(),
+          "handbean-yolo-read-#{System.unique_integer([:positive])}.txt"
+        )
 
       File.write!(outside, "outside content")
       on_exit(fn -> File.rm(outside) end)
@@ -317,7 +351,10 @@ defmodule Handbean.Tool.Builtin.ReadTest do
 
     test "yolo still rejects sensitive files outside the workspace" do
       root =
-        Path.join(System.tmp_dir!(), "handbean-yolo-sensitive-#{System.unique_integer([:positive])}")
+        Path.join(
+          System.tmp_dir!(),
+          "handbean-yolo-sensitive-#{System.unique_integer([:positive])}"
+        )
 
       sensitive = Path.join(root, ".env")
       File.mkdir_p!(root)

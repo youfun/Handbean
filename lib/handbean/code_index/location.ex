@@ -8,24 +8,28 @@ defmodule Handbean.CodeIndex.Location do
 
   @imported "imported_workspaces"
 
-  @spec resolve(Path.t(), String.t()) :: {:ok, Path.t()} | {:error, term()}
-  def resolve(checkout_root, workspace_id)
+  @spec resolve(Path.t(), String.t(), keyword()) :: {:ok, Path.t()} | {:error, term()}
+  def resolve(checkout_root, workspace_id, opts \\ [])
+
+  def resolve(checkout_root, workspace_id, opts)
       when is_binary(checkout_root) and is_binary(workspace_id) do
     with true <- workspace_id != "" or {:error, :missing_workspace_id},
          {:ok, checkout} <- CheckoutScope.resolve(checkout_root) do
-      owner = workspace_owner(workspace_id, checkout.path)
+      if Keyword.get(opts, :storage) == :host_data do
+        {:ok, fallback_dir(workspace_id, checkout.key)}
+      else
+        owner = workspace_owner(workspace_id, checkout.path)
 
-      cond do
-        imported?(checkout.path) or not writable_workspace?(owner) ->
+        if imported?(checkout.path) or not writable_workspace?(owner) do
           {:ok, fallback_dir(workspace_id, checkout.key)}
-
-        true ->
+        else
           prefer_workspace_dir(owner, workspace_id, checkout.key)
+        end
       end
     end
   end
 
-  def resolve(_, _), do: {:error, :invalid_workspace}
+  def resolve(_, _, _), do: {:error, :invalid_workspace}
 
   @spec fallback_dir(String.t()) :: Path.t()
   def fallback_dir(workspace_id),

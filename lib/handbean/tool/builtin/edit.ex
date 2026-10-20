@@ -34,7 +34,11 @@ defmodule Handbean.Tool.Builtin.Edit do
     %{
       type: "object",
       properties: %{
-        file_path: %{type: "string", description: "Path to the file to edit"},
+        file_path: %{
+          type: "string",
+          description:
+            "Path to the file to edit. External paths require per-call approval unless the run is yolo."
+        },
         old_string: %{
           type: "string",
           description:
@@ -130,7 +134,7 @@ defmodule Handbean.Tool.Builtin.Edit do
 
   defp run_prepared_replace(input, fp, context, operation_id) do
     with {:ok, replacements} <- normalize_replacements(input),
-         {:ok, path} <- Handbean.Agent.Tool.resolve_path(fp, context),
+         {:ok, path} <- Handbean.Agent.Tool.resolve_path(fp, context, :write),
          :ok <- Handbean.Security.PathValidator.validate_writeable(path),
          :ok <- validate_replacements(replacements),
          :ok <- validate_file(path),
@@ -568,7 +572,7 @@ defmodule Handbean.Tool.Builtin.Edit do
   # ── Diff mode ──
 
   defp run_diff_mode(%{"file_path" => fp, "diff" => diff}, context, operation_id) do
-    with {:ok, path} <- Handbean.Agent.Tool.resolve_path(fp, context),
+    with {:ok, path} <- Handbean.Agent.Tool.resolve_path(fp, context, :write),
          :ok <- Handbean.Security.PathValidator.validate_writeable(path),
          :ok <- validate_diff_input(diff),
          :ok <- check_file_exists(path),

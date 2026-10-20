@@ -289,6 +289,60 @@ defmodule Handbean.Tool.Builtin.BashTest do
     end
 
     @tag :os_sandbox
+    test "an approved external cwd stays read-only and does not authorize another call" do
+      root =
+        Path.join(System.tmp_dir!(), "bash-approved-cwd-#{System.unique_integer([:positive])}")
+
+      workspace = Path.join(root, "workspace")
+      outside = Path.join(root, "outside")
+      File.mkdir_p!(workspace)
+      File.mkdir_p!(outside)
+      File.write!(Path.join(outside, "fixture.txt"), "external-readable")
+      on_exit(fn -> File.rm_rf!(root) end)
+
+      context = %{
+        working_directory: workspace,
+        approval_mode: :smart,
+        workspace_id: "cwd-workspace",
+        conversation_id: "cwd-conversation",
+        run_id: "cwd-run"
+      }
+
+      input = %{
+        "cwd" => outside,
+        "command" =>
+          "cat fixture.txt && printf inside > '#{workspace}/inside.txt'; " <>
+            "if (printf forbidden > forbidden.txt) 2>/dev/null; then exit 99; fi"
+      }
+
+      call = %{id: "approved-cwd", name: "bash", input: input}
+      requirement = Handbean.Permissions.Boundary.requirement(call, context)
+      grant = Handbean.Permissions.Boundary.grant(call, context, requirement, :human)
+
+      approved =
+        context
+        |> Map.put(:tool_execution_grants, %{call.id => grant})
+        |> Handbean.Permissions.Boundary.invocation_context(call)
+
+      assert {:error, reason} = Bash.execute(input, context)
+      assert reason =~ "Path traversal"
+
+      assert {:error, reason} =
+               Bash.execute(input, put_in(approved.boundary_grant.operation, :read))
+
+      assert reason =~ "Path traversal"
+      assert {:ok, "external-readable", %{exit_code: 0}} = Bash.execute(input, approved)
+      assert File.read!(Path.join(workspace, "inside.txt")) == "inside"
+      refute File.exists?(Path.join(outside, "forbidden.txt"))
+
+      unapproved =
+        Handbean.Permissions.Boundary.invocation_context(approved, %{call | id: "next"})
+
+      assert {:error, reason} = Bash.execute(input, unapproved)
+      assert reason =~ "Path traversal"
+    end
+
+    @tag :os_sandbox
     test "allows reading host paths outside the workspace" do
       {:ok, output, data} =
         Bash.execute(
@@ -566,6 +620,15 @@ defmodule Handbean.Tool.Builtin.BashTest do
         File.rm_rf(tmp_dir)
       end
     end
+  end
+
+  test "external cwd approval does not select unsandboxed execution" do
+    assert Bash.unsandboxed_execution?(%{"unsandboxed" => true})
+
+    assert Bash.unsandboxed_execution?(%{
+             "cwd" => "/an/approved/external/path",
+             "boundary_grant" => %{operation: :execute}
+           }) == not Handbean.Platform.ProcessSandbox.os_enforced?()
   end
 
   describe "native hosts without an OS sandbox" do

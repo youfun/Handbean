@@ -4,7 +4,7 @@ defmodule Handbean.Permissions.ToolPolicy do
   """
 
   alias Handbean.Browser.Policy, as: BrowserPolicy
-  alias Handbean.Permissions.{ApprovalMode, Matcher}
+  alias Handbean.Permissions.{ApprovalMode, Boundary, Matcher}
 
   require Logger
 
@@ -84,6 +84,38 @@ defmodule Handbean.Permissions.ToolPolicy do
 
   @builtin_prompt_tools MapSet.new(["ext__term_send"])
   @mount_prompt_tools MapSet.new(["ext__mount__apply", "ext__mount__drop"])
+
+  @type assessment :: %{
+          decision: ApprovalMode.t(),
+          requirement: map() | nil,
+          reason: term() | nil
+        }
+
+  @doc "Evaluate ordinary tool policy together with checkout/workspace boundaries."
+  @spec assess(t(), map(), map()) :: assessment()
+  def assess(%__MODULE__{} = policy, call, context \\ %{})
+      when is_map(call) and is_map(context) do
+    ordinary = decision(policy, call)
+
+    case Boundary.requirement(call, context) do
+      {:deny, reason} ->
+        %{decision: :deny, requirement: nil, reason: reason}
+
+      nil ->
+        %{decision: ordinary, requirement: nil, reason: nil}
+
+      requirement when is_map(requirement) ->
+        boundary_decision =
+          cond do
+            policy.default_mode == :deny -> :deny
+            ordinary in [:deny, :prompt] -> ordinary
+            policy.default_mode == :yolo -> :auto
+            true -> :prompt
+          end
+
+        %{decision: boundary_decision, requirement: requirement, reason: nil}
+    end
+  end
 
   @spec decision(t(), map()) :: ApprovalMode.t()
   def decision(%__MODULE__{settings_error: error}, call) when not is_nil(error) and is_map(call),

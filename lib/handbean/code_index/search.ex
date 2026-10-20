@@ -6,12 +6,14 @@ defmodule Handbean.CodeIndex.Search do
   never calls an embedder.
   """
 
-  alias Handbean.CodeIndex.{Embedder, Store}
+  alias Handbean.CodeIndex.{Embedder, Scan, Store}
 
   @rrf_k 60
 
   @spec query(Store.t(), String.t(), pos_integer(), keyword()) :: [map()]
   def query(store, text, limit, opts \\ []) do
+    opts = Keyword.put_new(opts, :workspace_root, store.workspace_root)
+
     fts =
       store
       |> Store.search_fts(fts_query(text), limit * 5)
@@ -28,10 +30,18 @@ defmodule Handbean.CodeIndex.Search do
     path = Keyword.get(opts, :path)
     glob = Keyword.get(opts, :glob)
 
+    root = Keyword.get(opts, :workspace_root)
+
     Enum.filter(hits, fn hit ->
-      path_ok?(hit.path, path) and glob_ok?(hit.path, glob)
+      path_ok?(hit.path, path) and glob_ok?(hit.path, glob) and
+        allowed_path?(root, hit.path, opts)
     end)
   end
+
+  defp allowed_path?(root, path, opts) when is_binary(root),
+    do: Scan.allowed_path?(root, path, opts)
+
+  defp allowed_path?(_root, _path, _opts), do: false
 
   defp path_ok?(_hit, prefix) when prefix in [nil, ""], do: true
 
@@ -83,6 +93,7 @@ defmodule Handbean.CodeIndex.Search do
 
       store
       |> Store.embeddings_for_scan(model, scan_limit)
+      |> filter_hits(opts)
       |> Enum.reduce_while([], fn row, acc ->
         if System.monotonic_time(:millisecond) >= deadline do
           {:halt, []}
@@ -112,7 +123,7 @@ defmodule Handbean.CodeIndex.Search do
 
   defp add_ranks(scores, hits, key_fun) do
     hits
-    |> Enum.with_index(1)
+    |> Stream.with_index(1)
     |> Enum.reduce(scores, fn {hit, rank}, acc ->
       Map.update(acc, key_fun.(hit), 1 / (@rrf_k + rank), &(&1 + 1 / (@rrf_k + rank)))
     end)

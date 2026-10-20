@@ -6,7 +6,7 @@ defmodule Handbean.Agent.Middleware.ToolGuard do
   @behaviour Handbean.Agent.Middleware
 
   alias Handbean.Agent.{Message, State}
-  alias Handbean.Permissions.{AutoReview, InterruptData, ToolPolicy}
+  alias Handbean.Permissions.{AutoReview, Boundary, InterruptData, ToolPolicy}
   alias Handbean.Utils.SafeMap
 
   @impl true
@@ -15,6 +15,8 @@ defmodule Handbean.Agent.Middleware.ToolGuard do
       state
       | tool_guard_denied_calls: [],
         tool_guard_result_blocks: [],
+        tool_guard_pending_grants: %{},
+        tool_guard_execution_grants: %{},
         messages:
           Handbean.Tool.Builtin.Schedule.freeze_messages(
             state.messages,
@@ -23,15 +25,32 @@ defmodule Handbean.Agent.Middleware.ToolGuard do
     }
 
     tool_calls = last_tool_calls(state)
-
     policy = policy(state)
+    context = boundary_context(state)
 
-    {denied, rest} = Enum.split_with(tool_calls, &(ToolPolicy.decision(policy, &1) == :deny))
+    assessed =
+      tool_calls
+      |> Enum.map(&{&1, ToolPolicy.assess(policy, &1, context)})
+      |> deny_duplicate_call_ids()
 
-    {pending, auto_approved} =
-      Enum.split_with(rest, &(ToolPolicy.decision(policy, &1) == :prompt))
+    {denied_pairs, rest} =
+      Enum.split_with(assessed, fn {_call, assessment} -> assessment.decision == :deny end)
 
-    state = put_denied(state, denied, policy)
+    {pending_pairs, auto_pairs} =
+      Enum.split_with(rest, fn {_call, assessment} -> assessment.decision == :prompt end)
+
+    denied = Enum.map(denied_pairs, &elem(&1, 0))
+    pending = Enum.map(pending_pairs, &elem(&1, 0))
+    auto_approved = Enum.map(auto_pairs, &elem(&1, 0))
+
+    pending_grants = grants(pending_pairs, context, :pending)
+    execution_grants = grants(auto_pairs, context, :yolo)
+
+    state = %{
+      put_denied(state, denied, policy)
+      | tool_guard_pending_grants: pending_grants,
+        tool_guard_execution_grants: execution_grants
+    }
 
     cond do
       pending != [] ->
@@ -73,7 +92,9 @@ defmodule Handbean.Agent.Middleware.ToolGuard do
       executable_ids == [] or Enum.any?(executable_calls, &is_nil/1) ->
         :pending
 
-      Enum.all?(executable_calls, &(ToolPolicy.decision(policy, &1) == :auto)) ->
+      Enum.all?(executable_calls, fn call ->
+        ToolPolicy.assess(policy, call, boundary_context(state)).decision == :auto
+      end) ->
         {:ok,
          Enum.map(hitl_ids, fn id ->
            call = Map.fetch!(calls_by_id, id)
@@ -139,8 +160,16 @@ defmodule Handbean.Agent.Middleware.ToolGuard do
     executable_calls =
       Enum.filter(tool_calls, &MapSet.member?(permitted_ids, &1.id))
 
+    next_state =
+      apply_approval_resume_state(
+        state,
+        denied_blocks,
+        remembered_overrides,
+        approved_hitl_ids
+      )
+
     %{
-      state: apply_approval_resume_state(state, denied_blocks, remembered_overrides),
+      state: next_state,
       tool_calls: tool_calls,
       executable_calls: executable_calls,
       denied_blocks: denied_blocks
@@ -197,10 +226,24 @@ defmodule Handbean.Agent.Middleware.ToolGuard do
     end)
   end
 
-  defp apply_approval_resume_state(state, denied_blocks, remembered_overrides) do
+  defp apply_approval_resume_state(
+         state,
+         denied_blocks,
+         remembered_overrides,
+         approved_hitl_ids
+       ) do
     {remembered_overrides, session_allow} = split_session_grants(remembered_overrides)
     merged_overrides = Map.merge(state.tool_guard_overrides || %{}, remembered_overrides)
     session_allow = Enum.uniq((state.tool_guard_session_allow || []) ++ session_allow)
+
+    approved_grants =
+      approved_hitl_ids
+      |> Enum.reduce(state.tool_guard_execution_grants || %{}, fn id, grants ->
+        case Map.get(state.tool_guard_pending_grants || %{}, id) do
+          %{} = grant -> Map.put(grants, id, %{grant | provenance: :human})
+          _ -> grants
+        end
+      end)
 
     state
     |> Map.put(:status, :running)
@@ -208,6 +251,8 @@ defmodule Handbean.Agent.Middleware.ToolGuard do
     |> Map.put(:tool_guard_result_blocks, denied_blocks)
     |> Map.put(:tool_guard_overrides, merged_overrides)
     |> Map.put(:tool_guard_session_allow, session_allow)
+    |> Map.put(:tool_guard_pending_grants, %{})
+    |> Map.put(:tool_guard_execution_grants, approved_grants)
   end
 
   # "This session" remembers the suggested pattern rather than granting every
@@ -273,10 +318,13 @@ defmodule Handbean.Agent.Middleware.ToolGuard do
           {:tool_guard_denied, merge_prior_denials(reviewed, state)}
 
         {:ok, %State{tool_guard_result_blocks: []} = reviewed} ->
-          merge_prior_denials(reviewed, state)
+          reviewed
+          |> merge_prior_denials(state)
+          |> grant_auto_reviewed(pending)
 
         {:ok, %State{} = reviewed} ->
-          {:tool_guard_denied, merge_prior_denials(reviewed, state)}
+          reviewed = merge_prior_denials(reviewed, state)
+          {:tool_guard_denied, grant_auto_reviewed(reviewed, pending)}
 
         {:fallback, %State{} = reviewed, _reason} ->
           interrupt(reviewed, pending, auto_approved)
@@ -298,6 +346,16 @@ defmodule Handbean.Agent.Middleware.ToolGuard do
           Enum.uniq_by(
             (prior.tool_guard_result_blocks || []) ++ (reviewed.tool_guard_result_blocks || []),
             & &1.tool_use_id
+          ),
+        tool_guard_pending_grants:
+          Map.merge(
+            prior.tool_guard_pending_grants || %{},
+            reviewed.tool_guard_pending_grants || %{}
+          ),
+        tool_guard_execution_grants:
+          Map.merge(
+            prior.tool_guard_execution_grants || %{},
+            reviewed.tool_guard_execution_grants || %{}
           )
     }
   end
@@ -333,8 +391,75 @@ defmodule Handbean.Agent.Middleware.ToolGuard do
 
   defp interrupt(state, pending, auto_approved) do
     data = InterruptData.build(pending, auto_approved, state.config.working_directory)
+
+    data =
+      Map.update!(data, :action_requests, fn requests ->
+        Boundary.annotate_requests(requests, state.tool_guard_pending_grants || %{})
+      end)
+
     interrupted = %{state | status: :interrupted, interrupt_data: data}
     {:interrupt, interrupted, data}
+  end
+
+  defp deny_duplicate_call_ids(assessed) do
+    counts = Enum.frequencies_by(assessed, fn {call, _assessment} -> call.id end)
+
+    Enum.map(assessed, fn {call, assessment} ->
+      if Map.get(counts, call.id, 0) > 1 do
+        {call, %{assessment | decision: :deny, requirement: nil, reason: :duplicate_tool_call_id}}
+      else
+        {call, assessment}
+      end
+    end)
+  end
+
+  defp grants(pairs, context, provenance) do
+    pairs
+    |> Enum.reduce(%{}, fn
+      {call, %{requirement: requirement}}, acc when is_map(requirement) ->
+        Map.put(acc, call.id, Boundary.grant(call, context, requirement, provenance))
+
+      _pair, acc ->
+        acc
+    end)
+  end
+
+  defp grant_auto_reviewed(state, pending) do
+    denied_ids = MapSet.new(state.tool_guard_denied_calls || [], & &1.id)
+
+    execution_grants =
+      Enum.reduce(pending, state.tool_guard_execution_grants || %{}, fn call, grants ->
+        if MapSet.member?(denied_ids, call.id) do
+          grants
+        else
+          case Map.get(state.tool_guard_pending_grants || %{}, call.id) do
+            %{} = grant -> Map.put(grants, call.id, %{grant | provenance: :auto_review})
+            _ -> grants
+          end
+        end
+      end)
+
+    %{
+      state
+      | tool_guard_pending_grants: %{},
+        tool_guard_execution_grants: execution_grants
+    }
+  end
+
+  defp boundary_context(%State{} = state) do
+    context = state.config.context || %{}
+    metadata = state.run_metadata || %{}
+
+    context
+    |> Map.put(:working_directory, state.config.working_directory)
+    |> Map.put(:checkout_path, state.config.working_directory)
+    |> Map.put(:workspace_path, state.config.workspace_path)
+    |> Map.put(:run_id, state.config.run_id)
+    |> Map.put(
+      :conversation_id,
+      Map.get(context, :conversation_id) || Map.get(metadata, :conversation_id) ||
+        Map.get(metadata, :session_id)
+    )
   end
 
   defp config_context(%State{config: %{context: context}}) when is_map(context), do: context

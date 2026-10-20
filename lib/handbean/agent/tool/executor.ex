@@ -11,7 +11,7 @@ defmodule Handbean.Agent.Tool.Executor do
   alias Handbean.Agent.{ErrorReporter, Message, ModelContext, State}
   alias Handbean.Agent.Tool.{Result, ResultContract}
   alias Handbean.Extension.HookPipeline
-  alias Handbean.Permissions.ToolPolicy
+  alias Handbean.Permissions.{Boundary, ToolPolicy}
   alias Handbean.Utils.SafeMap
 
   require Logger
@@ -86,7 +86,11 @@ defmodule Handbean.Agent.Tool.Executor do
     parent_tool_call_id = Keyword.get(opts, :parent_tool_call_id)
     id = Keyword.get(opts, :tool_call_id) || nested_call_id(parent_tool_call_id)
     call = %{id: id, name: name, input: input || %{}}
-    context = build_context(state, caller: :nested, parent_tool_call_id: parent_tool_call_id)
+
+    context =
+      state
+      |> build_context(caller: :nested, parent_tool_call_id: parent_tool_call_id)
+      |> Boundary.invocation_context(call)
 
     tool_fns =
       Handbean.Tool.Registry.tool_fns()
@@ -125,7 +129,7 @@ defmodule Handbean.Agent.Tool.Executor do
                 timeout_for(call, tool_fns, state)
               )
 
-            report_tool_error(call, block, context)
+            block = report_tool_error(call, block, context)
 
             emit_nested(
               opts,
@@ -160,12 +164,18 @@ defmodule Handbean.Agent.Tool.Executor do
 
     {seq_results, state} =
       Enum.map_reduce(sequential, state, fn call, state ->
-        context = build_context(state, exec_opts)
+        {context, state} = take_invocation_context(state, call, exec_opts)
 
         {block, revised} =
           execute_one_with_timeout(call, tool_fns, context, timeout_for(call, tool_fns, state))
 
         {block, install_context(state, revised)}
+      end)
+
+    {prepared_concurrent, state} =
+      Enum.map_reduce(concurrent, state, fn call, state ->
+        {context, state} = take_invocation_context(state, call, exec_opts)
+        {{call, Map.put(context, :tool_dispatch_owner, self())}, state}
       end)
 
     context = build_context(state, exec_opts)
@@ -178,9 +188,20 @@ defmodule Handbean.Agent.Tool.Executor do
         stream =
           Task.Supervisor.async_stream_nolink(
             task_supervisor(context),
-            concurrent,
-            &execute_one(&1, tool_fns, context),
-            timeout: timeout_for(hd(concurrent), tool_fns, state),
+            prepared_concurrent,
+            fn {call, invocation_context} ->
+              {block, _revised} =
+                execute_one_with_timeout(
+                  call,
+                  tool_fns,
+                  Map.put(invocation_context, :link_tool_task, true),
+                  timeout_for(call, tool_fns, state)
+                )
+
+              block
+            end,
+            # Each worker enforces its own budget; the stream only bounds concurrency.
+            timeout: :infinity,
             ordered: true,
             on_timeout: :kill_task
           )
@@ -219,12 +240,18 @@ defmodule Handbean.Agent.Tool.Executor do
     ui_blocks =
       reassemble_ordered(tool_calls, sequential, seq_results, concurrent, par_results)
 
-    Enum.zip_with(tool_calls, ui_blocks, &report_tool_error(&1, &2, context))
+    ui_blocks = Enum.zip_with(tool_calls, ui_blocks, &report_tool_error(&1, &2, context))
 
     # Strip details for LLM-friendly message
     results = Enum.map(ui_blocks, &strip_details/1)
 
-    {:ok, Message.tool_results(results), ui_blocks, state}
+    next_state = %{
+      state
+      | tool_guard_pending_grants: %{},
+        tool_guard_execution_grants: %{}
+    }
+
+    {:ok, Message.tool_results(results), ui_blocks, next_state}
   end
 
   @doc """
@@ -238,11 +265,7 @@ defmodule Handbean.Agent.Tool.Executor do
     block
     |> Map.delete(:details)
     |> Map.delete(:published_media)
-  end
-
-  defp execute_one(call, tool_fns, context) do
-    {block, _revised} = execute_one_with_revision(call, tool_fns, context)
-    block
+    |> Map.delete(:error_diagnostic)
   end
 
   defp execute_one_with_revision(%{name: name, input: input, id: id}, tool_fns, context) do
@@ -287,6 +310,7 @@ defmodule Handbean.Agent.Tool.Executor do
     block =
       truncated
       |> result_to_block(id)
+      |> Map.put(:error_diagnostic, truncated.diagnostic)
       |> put_execution_timing(started_at, completed_at, duration_ms)
 
     {block, revised}
@@ -328,23 +352,54 @@ defmodule Handbean.Agent.Tool.Executor do
   # hung tool (e.g. a bash subprocess that never EOFs on its port) cannot
   # block the whole Turn forever.
   defp execute_one_with_timeout(call, tool_fns, context, timeout_ms) do
+    if cap_run_budget(timeout_ms + 5_000, context[:run_deadline]) == 0 do
+      deadline_before_start(call, tool_fns)
+    else
+      execute_one_task(call, tool_fns, context, timeout_ms)
+    end
+  end
+
+  defp deadline_before_start(call, tool_fns) do
+    {result_to_block(
+       Result.error(
+         failure_content("Tool execution deadline reached before start", tool_fns, call.name),
+         %{code: :tool_timeout, side_effect: :not_started}
+       ),
+       call.id
+     ), nil}
+  end
+
+  defp execute_one_task(call, tool_fns, context, timeout_ms) do
+    context = Map.update!(context, :tool_timeout, &cap_run_budget(&1, context[:run_deadline]))
     tool_id = (call && SafeMap.get_any(call, [:id, "id"])) || "unknown"
 
     tool_name = (call && SafeMap.get_any(call, [:name, "name"])) || "unknown"
 
-    start_task = if context.delegation_config.delegated?, do: :async, else: :async_nolink
+    start_task =
+      if context.delegation_config.delegated? or context[:link_tool_task],
+        do: :async,
+        else: :async_nolink
+
+    owner = context[:tool_dispatch_owner] || self()
 
     task =
       apply(Task.Supervisor, start_task, [
         task_supervisor(context),
         fn ->
+          {:ok, _watcher} = monitor_dispatch_owner(self(), owner, task_supervisor(context))
           Process.put(:tool_owner, context[:runner_pid])
-          execute_one_with_revision(call, tool_fns, context)
+
+          if cap_run_budget(timeout_ms, context[:run_deadline]) == 0 or
+               not Process.alive?(owner) do
+            deadline_before_start(call, tool_fns)
+          else
+            execute_one_with_revision(call, tool_fns, context)
+          end
         end
       ])
 
     # Outer guard: tool-specific timeout + small grace period for kill/cleanup.
-    guard_ms = timeout_ms + 5_000
+    guard_ms = cap_run_budget(timeout_ms + 5_000, context[:run_deadline])
 
     case Task.yield(task, guard_ms) || Task.shutdown(task, :brutal_kill) do
       {:ok, result} ->
@@ -382,6 +437,18 @@ defmodule Handbean.Agent.Tool.Executor do
            tool_id
          ), nil}
     end
+  end
+
+  defp monitor_dispatch_owner(task_pid, owner, supervisor) do
+    Task.Supervisor.start_child(supervisor, fn ->
+      owner_ref = Process.monitor(owner)
+      task_ref = Process.monitor(task_pid)
+
+      receive do
+        {:DOWN, ^owner_ref, :process, ^owner, _} -> Process.exit(task_pid, :kill)
+        {:DOWN, ^task_ref, :process, _, _} -> :ok
+      end
+    end)
   end
 
   defp fetch_tool(_tool_fns, nil), do: :error
@@ -632,28 +699,65 @@ defmodule Handbean.Agent.Tool.Executor do
   defp advisor_tool_allowed?(_name, _config), do: true
 
   defp timeout_for(call, tool_fns, state) do
-    name = SafeMap.get_any(call, :name, "name")
+    name = call |> SafeMap.get_any(:name, "name") |> normalize_tool_name()
+    input = SafeMap.get_any(call, :input, "input")
 
-    tool_cap =
+    declared =
       case Map.get(tool_fns, name) do
-        %{timeout_ms: timeout} when is_integer(timeout) and timeout > 0 -> timeout
-        _ -> state.config.tool_timeout
+        %{timeout_ms: resolver} when is_function(resolver, 1) ->
+          resolve_timeout(resolver, input, state)
+
+        %{timeout_ms: timeout} ->
+          timeout
+
+        _ ->
+          nil
       end
 
-    remaining = remaining_run_ms(state)
+    case declared do
+      timeout when is_integer(timeout) and timeout > 0 -> timeout
+      _ -> state.config.tool_timeout
+    end
+  end
 
-    if is_integer(remaining), do: min(tool_cap, remaining), else: tool_cap
+  # Extension callbacks are executable code too. Bound this small metadata phase
+  # separately, so a broken declaration cannot block dispatch or escape the guard.
+  defp resolve_timeout(resolver, input, state) do
+    budget =
+      cap_run_budget(min(state.config.tool_timeout, 1_000), context_run_deadline(state.config))
+
+    if budget > 0 do
+      supervisor = state.config.run_task_supervisor || Handbean.AgentRunTaskSupervisor
+      owner = self()
+
+      task =
+        Task.Supervisor.async_nolink(supervisor, fn ->
+          {:ok, _watcher} = monitor_dispatch_owner(self(), owner, supervisor)
+
+          try do
+            resolver.(input)
+          rescue
+            _ -> nil
+          catch
+            _, _ -> nil
+          end
+        end)
+
+      case Task.yield(task, budget) || Task.shutdown(task, :brutal_kill) do
+        {:ok, timeout} -> timeout
+        _ -> nil
+      end
+    end
   end
 
   defp context_run_deadline(%{context: %{run_deadline: deadline}}), do: deadline
   defp context_run_deadline(_config), do: nil
 
-  defp remaining_run_ms(%{config: %{context: %{run_deadline: deadline}}})
-       when is_integer(deadline) do
-    max(deadline - System.monotonic_time(:millisecond), 0)
+  defp cap_run_budget(budget, deadline) when is_integer(deadline) do
+    min(budget, max(deadline - System.monotonic_time(:millisecond), 0))
   end
 
-  defp remaining_run_ms(_state), do: nil
+  defp cap_run_budget(budget, _deadline), do: budget
 
   defp failure_content(reason, tool_fns, name) do
     error = error_text(reason)
@@ -750,16 +854,15 @@ defmodule Handbean.Agent.Tool.Executor do
       |> Handbean.Tool.Images.import_result(context)
     rescue
       exception ->
-        msg = "Tool #{name} crashed: #{Exception.message(exception)}"
+        diagnostic = ErrorReporter.capture_exception(exception, __STACKTRACE__, :tool_execution)
+        msg = "Tool #{name} crashed (#{inspect(exception.__struct__)})"
+        Logger.warning(msg)
 
-        Logger.warning(fn ->
-          msg <> "\n" <> Exception.format(:error, exception, __STACKTRACE__)
-        end)
-
-        Result.error(failure_content(msg, tool_fns, name), %{
-          code: :tool_exception,
-          side_effect: :unknown
-        })
+        Result.error(
+          failure_content(msg, tool_fns, name),
+          %{code: :tool_exception, side_effect: :unknown},
+          diagnostic
+        )
     end
   end
 
@@ -871,6 +974,8 @@ defmodule Handbean.Agent.Tool.Executor do
     run_opts = context[:conversation_run_opts] || []
     provider_config = run_opts[:provider_config] || %{}
 
+    reason = block[:error_diagnostic] || reason
+
     case ErrorReporter.tool_failure_disposition(reason, details, provider_config) do
       {:expected, _reason_category} ->
         :ok
@@ -878,9 +983,11 @@ defmodule Handbean.Agent.Tool.Executor do
       {:report, reason_category} ->
         report_tool_failure(call, reason, reason_category, details, context, run_opts)
     end
+
+    Map.delete(block, :error_diagnostic)
   end
 
-  defp report_tool_error(_call, _block, _context), do: :ok
+  defp report_tool_error(_call, block, _context), do: Map.delete(block, :error_diagnostic)
 
   defp report_tool_failure(call, reason, reason_category, details, context, run_opts) do
     ErrorReporter.report(
@@ -904,6 +1011,25 @@ defmodule Handbean.Agent.Tool.Executor do
     )
   end
 
+  defp take_invocation_context(%State{} = state, call, exec_opts) do
+    id = SafeMap.get_any(call, [:id, "id"])
+    {grant, remaining} = Map.pop(state.tool_guard_execution_grants || %{}, id)
+    state = %{state | tool_guard_execution_grants: remaining}
+
+    context =
+      state
+      |> build_context(exec_opts)
+      |> maybe_put_invocation_grant(id, grant)
+      |> Boundary.invocation_context(call)
+
+    {context, state}
+  end
+
+  defp maybe_put_invocation_grant(context, id, %{} = grant),
+    do: Map.put(context, :tool_execution_grants, %{id => grant})
+
+  defp maybe_put_invocation_grant(context, _id, _grant), do: context
+
   defp build_context(%State{} = state, opts) do
     state
     |> build_context()
@@ -920,7 +1046,11 @@ defmodule Handbean.Agent.Tool.Executor do
       tool_guard_session_allow: session_allow
     } = state
 
-    context = config.context || %{}
+    context =
+      config.context
+      |> Kernel.||(%{})
+      |> Map.drop([:boundary_grant, :tool_execution_grants])
+
     metadata = run_metadata || %{}
 
     context
@@ -930,7 +1060,7 @@ defmodule Handbean.Agent.Tool.Executor do
       workspace_path: config.workspace_path,
       approval_mode: effective_approval_mode(config, overrides, session_allow),
       skill_paths: config.skill_paths,
-      tool_timeout: config.tool_timeout,
+      tool_timeout: cap_run_budget(config.tool_timeout, context_run_deadline(config)),
       run_deadline: context_run_deadline(config),
       run_id: config.run_id,
       runner_pid: config.runner_pid,
@@ -951,6 +1081,7 @@ defmodule Handbean.Agent.Tool.Executor do
         workspace_path: config.workspace_path || config.working_directory,
         working_directory: config.working_directory,
         model: config.model,
+        reasoning_level: config.reasoning_level,
         provider: config.provider,
         provider_config: config.provider_config
       ]

@@ -22,10 +22,6 @@ defmodule Handbean.CodeIndex.Store do
   def open(dir, workspace_root, workspace_id) do
     with :ok <- File.mkdir_p(dir),
          {:ok, db} <- Sqlite3.open(Path.join(dir, @db)) do
-      :ok = Sqlite3.execute(db, "PRAGMA journal_mode = WAL")
-      :ok = Sqlite3.execute(db, "PRAGMA foreign_keys = ON")
-      :ok = migrate(db)
-
       store = %{
         db: db,
         path: Path.join(dir, @db),
@@ -34,24 +30,46 @@ defmodule Handbean.CodeIndex.Store do
           Handbean.Security.PathValidator.resolve_symlink(Path.expand(workspace_root))
       }
 
-      case identity(db) do
-        {:empty, _} ->
-          :ok = put_meta(store, "workspace_id", workspace_id)
-          :ok = put_meta(store, "workspace_root", store.workspace_root)
-          :ok = put_meta(store, "checkout_path", store.workspace_root)
-          :ok = put_meta(store, "schema", @schema_version)
-          {:ok, store}
-
-        {:ok, id, root} when id == workspace_id and root == store.workspace_root ->
-          :ok = put_meta(store, "checkout_path", store.workspace_root)
-          :ok = put_meta(store, "schema", @schema_version)
-          {:ok, store}
-
-        {:ok, _, _} ->
-          Sqlite3.close(db)
-          {:error, :identity_mismatch}
+      case initialize(store) do
+        :ok -> {:ok, store}
+        {:error, reason} -> close_with_error(store, reason)
+        reason -> close_with_error(store, reason)
       end
     end
+  end
+
+  defp initialize(store) do
+    with :ok <- Sqlite3.execute(store.db, "PRAGMA journal_mode = WAL"),
+         :ok <- Sqlite3.execute(store.db, "PRAGMA foreign_keys = ON"),
+         :ok <- migrate(store.db) do
+      bind_identity(store)
+    end
+  end
+
+  defp bind_identity(store) do
+    case identity(store.db) do
+      {:empty, _} ->
+        with :ok <- put_meta(store, "workspace_id", store.workspace_id),
+             :ok <- put_meta(store, "workspace_root", store.workspace_root),
+             :ok <- put_meta(store, "checkout_path", store.workspace_root),
+             :ok <- put_meta(store, "schema", @schema_version) do
+          :ok
+        end
+
+      {:ok, id, root} when id == store.workspace_id and root == store.workspace_root ->
+        with :ok <- put_meta(store, "checkout_path", store.workspace_root),
+             :ok <- put_meta(store, "schema", @schema_version) do
+          :ok
+        end
+
+      {:ok, _, _} ->
+        {:error, :identity_mismatch}
+    end
+  end
+
+  defp close_with_error(store, reason) do
+    Sqlite3.close(store.db)
+    {:error, reason}
   end
 
   @spec close(t()) :: :ok
@@ -335,55 +353,60 @@ defmodule Handbean.CodeIndex.Store do
   end
 
   defp migrate(db) do
-    Sqlite3.execute(db, """
-    CREATE TABLE IF NOT EXISTS meta (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    )
-    """)
-
-    Sqlite3.execute(db, """
-    CREATE TABLE IF NOT EXISTS files (
-      path TEXT PRIMARY KEY,
-      size INTEGER NOT NULL,
-      content_hash TEXT NOT NULL,
-      language TEXT NOT NULL
-    )
-    """)
-
-    Sqlite3.execute(db, """
-    CREATE TABLE IF NOT EXISTS chunks (
-      id INTEGER PRIMARY KEY,
-      path TEXT NOT NULL,
-      start_line INTEGER NOT NULL,
-      end_line INTEGER NOT NULL,
-      symbol TEXT,
-      kind TEXT NOT NULL,
-      text TEXT NOT NULL,
-      text_hash TEXT NOT NULL,
-      embed_skip INTEGER NOT NULL DEFAULT 0
-    )
-    """)
-
-    Sqlite3.execute(db, """
-    CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
-      text,
-      symbol,
-      path,
-      content='chunks',
-      content_rowid='id'
-    )
-    """)
-
-    Sqlite3.execute(db, """
-    CREATE TABLE IF NOT EXISTS embeddings (
-      chunk_id INTEGER NOT NULL,
-      model TEXT NOT NULL,
-      dim INTEGER NOT NULL,
-      vector BLOB NOT NULL,
-      PRIMARY KEY (chunk_id, model)
-    )
-    """)
+    [
+      """
+      CREATE TABLE IF NOT EXISTS meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )
+      """,
+      """
+      CREATE TABLE IF NOT EXISTS files (
+        path TEXT PRIMARY KEY,
+        size INTEGER NOT NULL,
+        content_hash TEXT NOT NULL,
+        language TEXT NOT NULL
+      )
+      """,
+      """
+      CREATE TABLE IF NOT EXISTS chunks (
+        id INTEGER PRIMARY KEY,
+        path TEXT NOT NULL,
+        start_line INTEGER NOT NULL,
+        end_line INTEGER NOT NULL,
+        symbol TEXT,
+        kind TEXT NOT NULL,
+        text TEXT NOT NULL,
+        text_hash TEXT NOT NULL,
+        embed_skip INTEGER NOT NULL DEFAULT 0
+      )
+      """,
+      """
+      CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+        text,
+        symbol,
+        path,
+        content='chunks',
+        content_rowid='id'
+      )
+      """,
+      """
+      CREATE TABLE IF NOT EXISTS embeddings (
+        chunk_id INTEGER NOT NULL,
+        model TEXT NOT NULL,
+        dim INTEGER NOT NULL,
+        vector BLOB NOT NULL,
+        PRIMARY KEY (chunk_id, model)
+      )
+      """
+    ]
+    |> Enum.reduce_while(:ok, fn sql, :ok ->
+      case Sqlite3.execute(db, sql) do
+        :ok -> {:cont, :ok}
+        {:error, reason} -> {:halt, {:error, reason}}
+        reason -> {:halt, {:error, reason}}
+      end
+    end)
   end
 
   defp transaction(store, fun) do
@@ -420,12 +443,25 @@ defmodule Handbean.CodeIndex.Store do
   defp hash(text), do: :crypto.hash(:sha256, text) |> Base.encode16(case: :lower)
 
   defp exec(store, sql, args \\ []) do
-    with {:ok, stmt} <- Sqlite3.prepare(store.db, sql),
-         :ok <- Sqlite3.bind(stmt, args),
-         :done <- step_done(store.db, stmt) do
-      Sqlite3.release(store.db, stmt)
-    else
-      {:error, reason} -> {:error, reason}
+    case Sqlite3.prepare(store.db, sql) do
+      {:ok, stmt} ->
+        result =
+          with :ok <- Sqlite3.bind(stmt, args),
+               :done <- step_done(store.db, stmt) do
+            :ok
+          else
+            {:error, reason} -> {:error, reason}
+            reason -> {:error, reason}
+          end
+
+        _ = Sqlite3.release(store.db, stmt)
+        result
+
+      {:error, reason} ->
+        {:error, reason}
+
+      reason ->
+        {:error, reason}
     end
   end
 

@@ -24,7 +24,7 @@ defmodule Handbean.Tool.Builtin.Write do
   @impl true
   def hint do
     "Use a workspace-relative file_path by default. A leading / is filesystem root, not the workspace. " <>
-      "Paths outside the workspace require yolo mode. " <>
+      "Paths outside the workspace require per-call approval unless the run is yolo. " <>
       "For a precise change to an existing file, use edit instead of rewriting the whole file."
   end
 
@@ -36,7 +36,7 @@ defmodule Handbean.Tool.Builtin.Write do
         file_path: %{
           type: "string",
           description:
-            "File path. Prefer a workspace-relative path such as workspace-check.txt or reports/summary.md. A leading / means filesystem root, not workspace root; paths outside the workspace require yolo mode."
+            "File path. Prefer a workspace-relative path such as workspace-check.txt or reports/summary.md. A leading / means filesystem root, not workspace root; external paths require per-call approval unless the run is yolo."
         },
         content: %{type: "string", description: "Content to write to the file"},
         retry_of: %{
@@ -58,7 +58,8 @@ defmodule Handbean.Tool.Builtin.Write do
   @impl true
   def execute(%{"file_path" => file_path, "content" => content} = input, context)
       when is_binary(content) do
-    with {:ok, path} <- Handbean.Agent.Tool.resolve_path(Helpers.expand_tilde(file_path), context),
+    with {:ok, path} <-
+           Handbean.Agent.Tool.resolve_path(Helpers.expand_tilde(file_path), context, :write),
          {:ok, _input, operation_id} <-
            Handbean.Agent.Tool.SavedInput.prepare("write", input, context, ["file_path"]) do
       result = write_prepared(path, content, operation_id, context)
@@ -72,7 +73,11 @@ defmodule Handbean.Tool.Builtin.Write do
            Handbean.Agent.Tool.SavedInput.prepare("write", input, context, ["file_path"]),
          {:ok, content} <- fetch_content(input, operation_id),
          {:ok, path} <-
-           Handbean.Agent.Tool.resolve_path(Helpers.expand_tilde(input["file_path"]), context) do
+           Handbean.Agent.Tool.resolve_path(
+             Helpers.expand_tilde(input["file_path"]),
+             context,
+             :write
+           ) do
       result = write_prepared(path, content, operation_id, context)
       Handbean.Agent.Tool.SavedInput.attach(operation_id, result, context)
     end
@@ -153,7 +158,7 @@ defmodule Handbean.Tool.Builtin.Write do
   # Validates the resolved path stays within workspace, including symlink resolution.
   defp validate_within_workspace(path, %{working_directory: wd} = context)
        when is_binary(wd) do
-    if Handbean.Agent.Tool.outside_workspace_allowed?(context),
+    if Handbean.Agent.Tool.outside_workspace_allowed?(context, path, :write),
       do: :ok,
       else: Handbean.Security.PathValidator.validate_within_workspace(path, wd)
   end

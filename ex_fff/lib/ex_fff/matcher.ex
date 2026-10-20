@@ -110,23 +110,29 @@ defmodule ExFff.Matcher do
   """
   @spec match(ExFff.Query.t(), :ets.tid(), :ets.tid(), :ets.tid()) :: [map()]
   def match(query, files_tab, trigram_tab, frecency_tab) do
-    do_match(query, files_tab, trigram_tab, frecency_tab, nil)
+    do_match(query, files_tab, trigram_tab, frecency_tab, nil, [])
   end
 
   @doc false
   @spec match(ExFff.Query.t(), :ets.tid(), :ets.tid(), :ets.tid(), :ets.tid() | nil) :: [map()]
   def match(query, files_tab, trigram_tab, frecency_tab, git_tab) do
-    do_match(query, files_tab, trigram_tab, frecency_tab, git_tab)
+    match(query, files_tab, trigram_tab, frecency_tab, git_tab, [])
   end
 
-  defp do_match(query, files_tab, trigram_tab, frecency_tab, git_tab) do
+  @doc false
+  def match(query, files_tab, trigram_tab, frecency_tab, git_tab, opts) do
+    do_match(query, files_tab, trigram_tab, frecency_tab, git_tab, opts)
+  end
+
+  defp do_match(query, files_tab, trigram_tab, frecency_tab, git_tab, opts) do
     now = System.system_time(:second)
-    and_hits = rank(query, files_tab, trigram_tab, frecency_tab, git_tab, now, :and)
+    frecency_tab = frecency_scores(frecency_tab, now, opts)
+    and_hits = rank(query, files_tab, trigram_tab, frecency_tab, git_tab, now, :and, opts)
 
     {query, and_hits} =
       if and_hits == [] and basename_globs?(query) do
         widened = widen_basename_globs(query)
-        {widened, rank(widened, files_tab, trigram_tab, frecency_tab, git_tab, now, :and)}
+        {widened, rank(widened, files_tab, trigram_tab, frecency_tab, git_tab, now, :and, opts)}
       else
         {query, and_hits}
       end
@@ -136,84 +142,109 @@ defmodule ExFff.Matcher do
         and_hits
 
       length(query.terms) >= 2 ->
-        rank(query, files_tab, trigram_tab, frecency_tab, git_tab, now, :or)
+        rank(query, files_tab, trigram_tab, frecency_tab, git_tab, now, :or, opts)
 
       true ->
         []
     end
   end
 
-  defp rank(query, files_tab, trigram_tab, frecency_tab, git_tab, now, mode) do
+  defp rank(query, files_tab, trigram_tab, frecency_tab, git_tab, now, mode, opts) do
     prepared =
       query
-      |> find_candidates(files_tab, trigram_tab, mode)
-      |> Enum.map(&%{path: &1})
+      |> find_candidates(files_tab, trigram_tab, mode, opts)
+      |> Stream.filter(fn path ->
+        check_deadline(opts)
+        Keyword.get(opts, :path_filter, fn _ -> true end).(path)
+      end)
+      |> Stream.map(&%{path: &1})
       |> apply_filters(query)
-      |> Enum.map(&prepare_candidate(&1, query, frecency_tab, git_tab, now, mode))
-      |> Enum.reject(&reject_candidate?(&1, query, mode))
+      |> Stream.map(fn candidate ->
+        check_deadline(opts)
+        prepare_candidate(candidate, query, frecency_tab, git_tab, now, mode)
+      end)
+      |> Stream.reject(&reject_candidate?(&1, query, mode))
+      |> Enum.to_list()
 
-    max_freq = prepared |> Enum.map(& &1.freq) |> Enum.max(fn -> 0.0 end)
+    max_freq =
+      Enum.reduce(prepared, 0.0, fn candidate, max_freq ->
+        check_deadline(opts)
+        max(candidate.freq, max_freq)
+      end)
 
     prepared
-    |> Enum.map(&finalize_score(&1, max_freq, mode))
-    |> sort_results(mode)
-    |> Enum.take(query.limit)
+    |> Stream.map(&finalize_score(&1, max_freq, mode))
+    |> top_results(query.limit, mode, opts)
   end
 
-  defp sort_results(results, :or), do: Enum.sort_by(results, &{&1.matched_terms, &1.score}, :desc)
-  defp sort_results(results, :and), do: Enum.sort_by(results, & &1.score, :desc)
+  defp top_results(results, limit, mode, opts) do
+    results
+    |> Enum.reduce(:gb_sets.empty(), fn result, kept ->
+      check_deadline(opts)
+      terms = if mode == :or, do: result.matched_terms, else: 0
+      kept = :gb_sets.add({-terms, -result.score, result.path, result}, kept)
+
+      if :gb_sets.size(kept) > limit,
+        do: :gb_sets.delete(:gb_sets.largest(kept), kept),
+        else: kept
+    end)
+    |> :gb_sets.to_list()
+    |> Enum.map(&elem(&1, 3))
+  end
 
   # ── Candidate Discovery ──
 
-  defp find_candidates(%ExFff.Query{terms: terms}, _files_tab, trigram_tab, :or) do
+  defp find_candidates(%ExFff.Query{terms: terms}, _files_tab, trigram_tab, :or, opts) do
     terms
-    |> Enum.map(&term_path_set(&1, trigram_tab))
+    |> Enum.map(&term_path_set(&1, trigram_tab, opts))
     |> Enum.reduce(MapSet.new(), &MapSet.union/2)
   end
 
-  defp find_candidates(%ExFff.Query{terms: [], globs: globs}, files_tab, trigram_tab, :and)
-       when globs != [] do
-    case all_indexed_paths(files_tab) do
-      [] -> all_trigram_paths(trigram_tab)
-      paths -> paths
+  defp find_candidates(%ExFff.Query{terms: []}, files_tab, trigram_tab, :and, opts) do
+    if :ets.info(files_tab, :size) in [:undefined, 0] do
+      trigram_tab
+      |> table_rows(opts)
+      |> Stream.map(fn {_trigram, path} -> path end)
+      |> Enum.reduce(MapSet.new(), &MapSet.put(&2, &1))
+    else
+      files_tab
+      |> table_rows(opts)
+      |> Stream.map(fn {path, _meta} -> path end)
     end
   end
 
-  defp find_candidates(%ExFff.Query{terms: []}, _files_tab, trigram_tab, :and) do
-    # No search terms — extension filters still scan the trigram inventory.
-    all_trigram_paths(trigram_tab)
-  end
-
-  defp find_candidates(%ExFff.Query{terms: terms}, _files_tab, trigram_tab, :and) do
+  defp find_candidates(%ExFff.Query{terms: terms}, _files_tab, trigram_tab, :and, opts) do
     terms
-    |> Enum.map(&term_path_set(&1, trigram_tab))
+    |> Enum.map(&term_path_set(&1, trigram_tab, opts))
     |> reduce_intersection()
   end
 
-  defp term_path_set(term, trigram_tab) do
+  defp term_path_set(term, trigram_tab, opts) do
+    check_deadline(opts)
+
     MapSet.union(
-      path_set_for_term(term, trigram_tab),
-      direct_substring_matches(term, trigram_tab)
+      path_set_for_term(term, trigram_tab, opts),
+      direct_substring_matches(term, trigram_tab, opts)
     )
   end
 
-  defp path_set_for_term(term, trigram_tab) do
+  defp path_set_for_term(term, trigram_tab, opts) do
     term
     |> tokenize()
     |> Enum.reduce(MapSet.new(), fn trigram, acc ->
-      paths = lookup_trigram(trigram, trigram_tab)
+      check_deadline(opts)
+      paths = lookup_trigram(trigram, trigram_tab, opts)
       MapSet.union(acc, paths)
     end)
   end
 
-  defp lookup_trigram(trigram, trigram_tab) do
+  defp lookup_trigram(trigram, trigram_tab, opts) do
     trigram_tab
-    |> :ets.lookup(trigram)
-    |> Enum.map(fn {_k, path} -> path end)
-    |> MapSet.new()
+    |> select_rows([{{trigram, :"$1"}, [], [:"$1"]}], opts)
+    |> Enum.reduce(MapSet.new(), &MapSet.put(&2, &1))
   end
 
-  defp direct_substring_matches(term, trigram_tab) do
+  defp direct_substring_matches(term, trigram_tab, opts) do
     # Also find paths where the term appears as a substring of any token
     # We check by matching any trigram that contains the term as a substring.
     # `String.contains?/2` is byte-level, so it tolerates trigrams that were
@@ -221,13 +252,26 @@ defmodule ExFff.Matcher do
     # downcased safely.
     needle = safe_downcase(term)
 
+    # Trigrams contain graphemes, while this legacy match is a byte substring.
+    # A needle can begin or end inside a decorated grapheme or a ZWJ sequence,
+    # so its standalone grapheme count cannot safely eliminate this scan.
     trigram_tab
-    |> :ets.tab2list()
-    |> Enum.filter(fn {trigram, _path} ->
-      is_binary(trigram) and String.contains?(trigram, needle)
+    |> table_rows(opts)
+    |> Enum.reduce(MapSet.new(), fn {trigram, path}, paths ->
+      if is_binary(trigram) and String.contains?(trigram, needle),
+        do: MapSet.put(paths, path),
+        else: paths
     end)
-    |> Enum.map(fn {_trigram, path} -> path end)
-    |> MapSet.new()
+  end
+
+  defp check_deadline(opts) do
+    case Keyword.get(opts, :deadline) do
+      deadline when is_integer(deadline) ->
+        if System.monotonic_time(:millisecond) >= deadline, do: throw(:search_timeout)
+
+      _ ->
+        :ok
+    end
   end
 
   defp reduce_intersection([first | rest]) do
@@ -236,21 +280,30 @@ defmodule ExFff.Matcher do
 
   defp reduce_intersection([]), do: MapSet.new()
 
-  defp all_trigram_paths(trigram_tab) do
-    trigram_tab
-    |> :ets.tab2list()
-    |> Enum.map(fn {_trigram, path} -> path end)
-    |> Enum.uniq()
-  end
+  defp table_rows(table, opts), do: select_rows(table, [{:_, [], [:"$_"]}], opts)
 
-  defp all_indexed_paths(files_tab) do
-    case :ets.info(files_tab) do
-      :undefined ->
-        []
+  defp select_rows(table, match_spec, opts) do
+    Stream.resource(
+      fn -> :start end,
+      fn
+        :"$end_of_table" ->
+          {:halt, :"$end_of_table"}
 
-      _ ->
-        :ets.foldl(fn {path, _meta}, acc -> [path | acc] end, [], files_tab)
-    end
+        continuation ->
+          check_deadline(opts)
+
+          result =
+            if continuation == :start,
+              do: :ets.select(table, match_spec, 128),
+              else: :ets.select(continuation)
+
+          case result do
+            :"$end_of_table" -> {:halt, :"$end_of_table"}
+            {rows, next} -> {rows, next}
+          end
+      end,
+      fn _ -> :ok end
+    )
   end
 
   # ── Scoring ──
@@ -470,22 +523,26 @@ defmodule ExFff.Matcher do
     String.split(path, ~r{[/_\-\.]})
   end
 
-  defp effective_frecency(path, frecency_tab, now) do
-    # Frecency table: {{score, path}, touched_at | true} (ordered_set).
-    # `true` is the legacy value written before timestamps existed.
-    case :ets.match_object(frecency_tab, {{:_, path}, :_}) do
-      [] ->
-        0.0
+  defp effective_frecency(path, scores, _now), do: Map.get(scores, path, 0.0)
 
-      [{{score, _path}, meta} | _] ->
+  defp frecency_scores(table, now, opts) do
+    # The table is keyed by {score, path}, so matching one path scans it.
+    # Build one lookup map per query instead of doing that for every candidate.
+    :ets.foldl(
+      fn {{score, path}, meta}, scores ->
+        check_deadline(opts)
+
         elapsed =
           case frecency_timestamp(meta) do
             nil -> 0
             touched_at -> max(now - touched_at, 0)
           end
 
-        decay_frecency(score, elapsed)
-    end
+        Map.put_new(scores, path, decay_frecency(score, elapsed))
+      end,
+      %{},
+      table
+    )
   end
 
   defp frecency_timestamp(ts) when is_integer(ts), do: ts
@@ -504,7 +561,7 @@ defmodule ExFff.Matcher do
   defp apply_globs(candidates, []), do: candidates
 
   defp apply_globs(candidates, globs) do
-    Enum.filter(candidates, fn %{path: path} ->
+    Stream.filter(candidates, fn %{path: path} ->
       Enum.all?(globs, &glob_match?(&1, path))
     end)
   end
@@ -522,7 +579,7 @@ defmodule ExFff.Matcher do
   defp apply_include_patterns(candidates, []), do: candidates
 
   defp apply_include_patterns(candidates, patterns) do
-    Enum.filter(candidates, fn %{path: path} ->
+    Stream.filter(candidates, fn %{path: path} ->
       Enum.any?(patterns, fn pattern ->
         String.ends_with?(String.downcase(path), String.downcase(pattern))
       end)
@@ -532,7 +589,7 @@ defmodule ExFff.Matcher do
   defp apply_exclude_patterns(candidates, []), do: candidates
 
   defp apply_exclude_patterns(candidates, patterns) do
-    Enum.filter(candidates, fn %{path: path} ->
+    Stream.filter(candidates, fn %{path: path} ->
       not Enum.any?(patterns, fn pattern ->
         String.contains?(String.downcase(path), String.downcase(pattern))
       end)

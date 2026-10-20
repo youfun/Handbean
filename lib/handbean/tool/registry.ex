@@ -549,12 +549,20 @@ defmodule Handbean.Tool.Registry do
         ),
       concurrent?:
         if(function_exported?(mod, :concurrent?, 0), do: mod.concurrent?(), else: true),
-      timeout_ms: if(function_exported?(mod, :timeout_ms, 0), do: mod.timeout_ms(), else: nil),
+      timeout_ms: module_timeout(mod),
       hint: tool_hint(mod),
       nested_only?: nested_only?(mod, meta),
       deferred?: deferred?(mod),
       meta: meta
     }
+  end
+
+  defp module_timeout(mod) do
+    cond do
+      function_exported?(mod, :timeout_ms, 1) -> &mod.timeout_ms/1
+      function_exported?(mod, :timeout_ms, 0) -> mod.timeout_ms()
+      true -> nil
+    end
   end
 
   defp remove_owned_tools(tools, owner) do

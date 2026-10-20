@@ -343,6 +343,33 @@ defmodule Handbean.Permissions.AutoReviewTest do
     assert data.action_requests |> hd() |> Map.get(:tool_call_id) == "b1"
   end
 
+  test "reviewer abstention sends the whole mixed batch to human approval" do
+    settings = %{
+      "tools" => %{
+        "approvals_reviewer" => "auto_review",
+        "per_tool" => %{"bash" => "prompt"}
+      }
+    }
+
+    calls = [
+      %{type: "tool_use", id: "a1", name: "bash", input: %{"command" => "mix test a"}},
+      %{type: "tool_use", id: "a2", name: "bash", input: %{"command" => "mix test b"}}
+    ]
+
+    Process.put(AutoReview.transport_key(), fn _request ->
+      {:ok,
+       ~s({"decisions":[{"tool_call_id":"a1","decision":"approve","rationale":"safe"},{"tool_call_id":"a2","decision":"needs_human","rationale":"uncertain"}]})}
+    end)
+
+    assert {:interrupt, interrupted, data} =
+             ToolGuard.call(:after_tool_request, guard_state(settings, calls))
+
+    assert interrupted.status == :interrupted
+    assert data.hitl_tool_call_ids == ["a1", "a2"]
+    assert interrupted.tool_guard_result_blocks == []
+    assert interrupted.auto_review.recent == []
+  end
+
   test "an unavailable model falls back without treating the miss as deny" do
     dir =
       workspace(%{
@@ -415,7 +442,9 @@ defmodule Handbean.Permissions.AutoReviewTest do
     else
       assert prompt =~ "Host sandbox: none"
       assert prompt =~ "Do not deny solely"
-      assert AutoReview.policy_text() =~ "Do not deny solely because that host cannot confine bash"
+
+      assert AutoReview.policy_text() =~
+               "Do not deny solely because that host cannot confine bash"
     end
   end
 
@@ -904,6 +933,12 @@ defmodule Handbean.Permissions.AutoReviewTest do
              AutoReview.parse_decisions(~s({"decision":"approve","rationale":"ok"}), [
                %{tool_call_id: "only"}
              ])
+
+    assert {:ok, [%{tool_call_id: "only", decision: :needs_human}]} =
+             AutoReview.parse_decisions(
+               ~s({"decision":"needs_human","rationale":"requires a choice"}),
+               [%{tool_call_id: "only"}]
+             )
   end
 
   test "review prompt omits hidden reasoning and says the batch is out of bounds" do

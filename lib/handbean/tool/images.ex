@@ -51,7 +51,7 @@ defmodule Handbean.Tool.Images do
 
   defp source_allowed(%{path: path}, context) do
     with :ok <- Handbean.Security.PathValidator.reject_resolved(path) do
-      if Handbean.Agent.Tool.outside_workspace_allowed?(context),
+      if Handbean.Agent.Tool.outside_workspace_allowed?(context, path, :read),
         do: :ok,
         else:
           Handbean.Security.PathValidator.validate_within_workspace(

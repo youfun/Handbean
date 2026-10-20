@@ -419,6 +419,7 @@ defmodule Handbean.Jobs.Server do
 
     case ProcessRunner.open_gated_bash(command, cwd,
            workspace_path: workspace,
+           authorized_cwd: cwd,
            startup_timeout: min(1_000, max(0, deadline - now()))
          ) do
       {:ok, port, group} ->

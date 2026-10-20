@@ -129,8 +129,8 @@ defmodule ExFff.Index do
   @spec search(GenServer.server(), String.t(), keyword()) ::
           {:ok, map()} | {:error, String.t()}
   def search(pid \\ __MODULE__, query, opts \\ []) do
-    timeout = Keyword.get(opts, :timeout, 5000)
-    GenServer.call(pid, {:search, query, opts}, timeout)
+    {opts, timeout} = query_budget(opts)
+    query_call(pid, {:search, query, opts}, timeout)
   end
 
   @doc """
@@ -146,8 +146,8 @@ defmodule ExFff.Index do
   @doc "Return the indexed file inventory in stable lexical pages."
   @spec files(GenServer.server(), keyword()) :: {:ok, map()} | {:error, String.t()}
   def files(pid \\ __MODULE__, opts \\ []) do
-    timeout = Keyword.get(opts, :timeout, 5000)
-    GenServer.call(pid, {:files, opts}, timeout)
+    {opts, timeout} = query_budget(opts)
+    query_call(pid, {:files, opts}, timeout)
   end
 
   @doc "Apply incremental filesystem changes to the inventory."
@@ -256,12 +256,15 @@ defmodule ExFff.Index do
   @impl true
   def handle_call({:search, query_string, opts}, from, state) do
     cond do
+      System.monotonic_time(:millisecond) >= opts[:deadline] ->
+        {:reply, {:error, "Search timed out; narrow path or query and retry"}, state}
+
       state.status == :failed ->
         {:reply, {:error, "Indexing failed for #{state.root_path}"}, state}
 
       state.status == :indexing and await?(opts) ->
         pending = {from, query_string, opts, state.generation}
-        schedule_await_timeout(from, Keyword.get(opts, :await))
+        schedule_await_timeout(from, opts)
         {:noreply, %{state | pending_searches: [pending | state.pending_searches]}}
 
       true ->
@@ -271,7 +274,8 @@ defmodule ExFff.Index do
 
   @impl true
   def handle_call({:files, opts}, _from, state) do
-    {:reply, {:ok, list_files(opts, state)}, mark_used(state)}
+    result = within_budget(opts, fn -> {:ok, list_files(opts, state)} end)
+    {:reply, result, mark_used(state)}
   end
 
   @impl true
@@ -595,11 +599,11 @@ defmodule ExFff.Index do
     end
   end
 
-  defp schedule_await_timeout(from, ms) when is_integer(ms) do
-    Process.send_after(self(), {:await_timeout, from}, ms)
+  defp schedule_await_timeout(from, opts) do
+    remaining = max(opts[:deadline] - System.monotonic_time(:millisecond), 0)
+    wait = if is_integer(opts[:await]), do: min(opts[:await], remaining), else: remaining
+    Process.send_after(self(), {:await_timeout, from}, wait)
   end
-
-  defp schedule_await_timeout(_from, _await), do: :ok
 
   defp reply_pending(pending, generation, reply) do
     for {from, _kind, _opts, pending_generation} <- pending,
@@ -633,12 +637,16 @@ defmodule ExFff.Index do
   end
 
   defp do_search(query_string, opts, state) do
+    within_budget(opts, fn -> search_results(query_string, opts, state) end)
+  end
+
+  defp search_results(query_string, opts, state) do
     start_time = System.monotonic_time(:millisecond)
     parsed_query = ExFff.Query.parse(query_string)
 
     limit = Keyword.get(opts, :limit, parsed_query.limit)
     offset = decode_offset(Keyword.get(opts, :cursor))
-    parsed_query = %{parsed_query | limit: max(state.indexed_count, max(limit + offset + 1, 1))}
+    parsed_query = %{parsed_query | limit: max(limit + offset + 1, 1)}
     prefix = normalize_prefix(Keyword.get(opts, :path))
     excludes = opts |> Keyword.get(:exclude, []) |> List.wrap() |> Enum.reject(&(&1 in [nil, ""]))
 
@@ -648,9 +656,10 @@ defmodule ExFff.Index do
         state.files_ref,
         state.trigram_ref,
         state.frecency_ref,
-        state.git_ref
+        state.git_ref,
+        deadline: opts[:deadline],
+        path_filter: &inventory_path?(&1, prefix, excludes, nil)
       )
-      |> Enum.filter(&inventory_path?(&1.path, prefix, excludes, nil))
 
     page = matches |> Enum.drop(offset) |> Enum.take(limit + 1)
     results = Enum.take(page, limit)
@@ -703,9 +712,12 @@ defmodule ExFff.Index do
 
     matching =
       state.files_ref
-      |> :ets.tab2list()
-      |> Enum.map(&elem(&1, 0))
-      |> Enum.filter(&inventory_path?(&1, prefix, excludes, after_path))
+      |> inventory_paths(prefix, after_path)
+      |> Stream.filter(fn path ->
+        check_deadline(opts)
+        inventory_path?(path, prefix, excludes, after_path)
+      end)
+      |> Enum.take(limit + 1)
 
     page = Enum.take(matching, limit)
     more? = length(matching) > length(page)
@@ -716,6 +728,67 @@ defmodule ExFff.Index do
       status: state.status,
       indexed_count: state.indexed_count
     }
+  end
+
+  # Seek directly to the requested ordered-set range. Each page visits only
+  # its remaining range, rather than copying the complete inventory again.
+  defp inventory_paths(table, prefix, after_path) do
+    first =
+      cond do
+        is_binary(after_path) and after_path >= prefix ->
+          next_inventory_path(table, after_path, prefix)
+
+        prefix == "" ->
+          :ets.first(table)
+
+        :ets.member(table, prefix) ->
+          prefix
+
+        true ->
+          :ets.next(table, prefix <> "/")
+      end
+
+    Stream.unfold(first, fn
+      :"$end_of_table" ->
+        nil
+
+      path ->
+        if prefix == "" or path == prefix or String.starts_with?(path, prefix <> "/") do
+          {path, next_inventory_path(table, path, prefix)}
+        end
+    end)
+  end
+
+  defp next_inventory_path(table, path, prefix) when path == prefix and prefix != "",
+    do: :ets.next(table, prefix <> "/")
+
+  defp next_inventory_path(table, path, _prefix), do: :ets.next(table, path)
+
+  defp query_budget(opts) do
+    timeout = Keyword.get(opts, :timeout, 5_000)
+    deadline = System.monotonic_time(:millisecond) + timeout
+    deadline = min(Keyword.get(opts, :deadline, deadline), deadline)
+    {Keyword.put(opts, :deadline, deadline), timeout}
+  end
+
+  defp query_call(pid, request, timeout) do
+    GenServer.call(pid, request, timeout)
+  catch
+    :exit, {:timeout, _} -> {:error, "Search timed out; narrow path or query and retry"}
+    :exit, {:noproc, _} -> {:error, "Search index is unavailable; retry the search"}
+  end
+
+  defp within_budget(opts, fun) do
+    check_deadline(opts)
+    result = fun.()
+    check_deadline(opts)
+    result
+  catch
+    :search_timeout -> {:error, "Search timed out; narrow path or query and retry"}
+  end
+
+  defp check_deadline(opts) do
+    if System.monotonic_time(:millisecond) >= opts[:deadline], do: throw(:search_timeout)
   end
 
   defp inventory_path?(path, prefix, excludes, after_path) do

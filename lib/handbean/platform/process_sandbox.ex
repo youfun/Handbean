@@ -41,6 +41,13 @@ defmodule Handbean.Platform.ProcessSandbox do
       match?({:unix, os} when os in [:linux, :darwin], :os.type())
   end
 
+  @doc """
+  Wraps a command without changing the workspace write boundary.
+
+  `:authorized_cwd` is a canonical directory already authorized by the caller for
+  this invocation. It permits only that exact cwd; the frozen value is compared
+  with the current resolved path and never grants writes or disables isolation.
+  """
   @spec wrap(map(), String.t(), Path.t() | nil, keyword()) ::
           {:ok, command()} | {:error, String.t()}
   def wrap(shell, command, cwd, opts) do
@@ -130,7 +137,7 @@ defmodule Handbean.Platform.ProcessSandbox do
 
     with :ok <- validate_directory(workspace, "workspace"),
          :ok <- validate_directory(cwd, "cwd"),
-         :ok <- PathValidator.validate_within_workspace(cwd, workspace) do
+         :ok <- validate_cwd(cwd, workspace, Keyword.get(opts, :authorized_cwd)) do
       writable =
         writable_paths(
           Application.get_env(:handbean, :sandbox_writable_paths, []) ++
@@ -149,6 +156,11 @@ defmodule Handbean.Platform.ProcessSandbox do
       end
     end
   end
+
+  defp validate_cwd(cwd, _workspace, cwd), do: PathValidator.reject_resolved(cwd)
+
+  defp validate_cwd(cwd, workspace, _authorized_cwd),
+    do: PathValidator.validate_within_workspace(cwd, workspace)
 
   defp wrap_linux(shell, command, cwd, workspace, writable, opts) do
     case Keyword.get(opts, :sandbox_path) || System.find_executable("bwrap") do
@@ -247,11 +259,10 @@ defmodule Handbean.Platform.ProcessSandbox do
       "--tmpfs",
       "/tmp",
       "--tmpfs",
-      "/var/tmp",
-      "--bind",
-      workspace,
-      workspace
+      "/var/tmp"
     ] ++
+      external_tmp_cwd_mount(cwd, workspace) ++
+      ["--bind", workspace, workspace] ++
       Enum.flat_map(writable, &["--bind", &1, &1]) ++
       [
         "--chdir",
@@ -259,5 +270,15 @@ defmodule Handbean.Platform.ProcessSandbox do
         shell.path
         | shell.args ++ [command]
       ]
+  end
+
+  # Bubblewrap's private temp mounts hide host paths. Restore only an approved
+  # external cwd there, read-only, before restoring the workspace write mount.
+  defp external_tmp_cwd_mount(cwd, workspace) do
+    hidden? = Enum.any?(["/tmp", "/var/tmp"], &(cwd == &1 or String.starts_with?(cwd, &1 <> "/")))
+
+    if hidden? and PathValidator.validate_within_workspace(cwd, workspace) != :ok,
+      do: ["--ro-bind", cwd, cwd],
+      else: []
   end
 end

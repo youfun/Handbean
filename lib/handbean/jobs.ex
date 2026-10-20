@@ -39,7 +39,8 @@ defmodule Handbean.Jobs do
          {:ok, owner} <- owner(context),
          {:ok, wait} <- wait_budget(wait_ms, context),
          :ok <- valid_timeout(timeout_ms),
-         {:ok, call_id} <- call_id(context) do
+         {:ok, call_id} <- call_id(context),
+         {:ok, cwd} <- resolve_cwd(cwd, context) do
       capture = Handbean.WorkspaceChangeCapture.start(elem(owner, 2))
       deadline = now() + wait
       call({:start, owner, call_id, command, cwd, timeout_ms, deadline, capture}, wait)
@@ -139,6 +140,18 @@ defmodule Handbean.Jobs do
 
       _ ->
         {:error, "Job tools require trusted conversation, run and workspace context"}
+    end
+  end
+
+  defp resolve_cwd(cwd, context) do
+    expanded =
+      (cwd || context.working_directory)
+      |> Handbean.Agent.Tool.Helpers.expand_tilde()
+      |> Path.expand(context.working_directory)
+
+    with :ok <- Handbean.Security.PathValidator.reject_resolved(expanded),
+         {:ok, canonical} <- Handbean.Security.PathValidator.canonicalize(expanded) do
+      Handbean.Agent.Tool.resolve_path(canonical, context, :execute)
     end
   end
 

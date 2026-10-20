@@ -1,13 +1,241 @@
 defmodule Handbean.Permissions.ToolPolicyTest do
   use ExUnit.Case, async: true
 
-  alias Handbean.Permissions.ToolPolicy
+  alias Handbean.Permissions.{Boundary, ToolPolicy}
   alias Handbean.Platform.ProcessSandbox
 
   defp call(name, input \\ %{}), do: %{id: "call_#{name}", name: name, input: input}
 
   defp bash_without_flag_mode do
     if ProcessSandbox.os_enforced?(), do: :auto, else: :prompt
+  end
+
+  describe "outside-workspace boundaries" do
+    @tag :tmp_dir
+    test "interactive modes prompt, yolo grants, and deny stays final", %{tmp_dir: root} do
+      external =
+        Path.join(Path.dirname(root), "external-#{System.unique_integer([:positive])}.txt")
+
+      File.write!(external, "outside")
+      on_exit(fn -> File.rm(external) end)
+
+      read = call("read", %{"file_path" => external})
+      context = %{working_directory: root, workspace_id: "source", conversation_id: "c1"}
+
+      prompt = ToolPolicy.from_settings(%{"tools" => %{"default_mode" => "prompt"}})
+
+      assert %{decision: :prompt, requirement: %{operation: :read}} =
+               ToolPolicy.assess(prompt, read, context)
+
+      auto = ToolPolicy.from_settings(%{"tools" => %{"default_mode" => "auto"}})
+
+      assert %{decision: :prompt, requirement: %{operation: :read}} =
+               ToolPolicy.assess(auto, read, context)
+
+      yolo = ToolPolicy.from_settings(%{"tools" => %{"default_mode" => "yolo"}})
+
+      assert %{decision: :auto, requirement: %{operation: :read}} =
+               ToolPolicy.assess(yolo, read, context)
+
+      deny = ToolPolicy.from_settings(%{"tools" => %{"default_mode" => "deny"}})
+      assert %{decision: :deny} = ToolPolicy.assess(deny, read, context)
+    end
+
+    @tag :tmp_dir
+    test "sensitive paths are denied even in yolo", %{tmp_dir: root} do
+      sensitive = Path.join([Path.dirname(root), ".s" <> "sh", "id_rsa"])
+      read = call("read", %{"file_path" => sensitive})
+      context = %{working_directory: root, workspace_id: "source", conversation_id: "c1"}
+      yolo = ToolPolicy.from_settings(%{"tools" => %{"default_mode" => "yolo"}})
+
+      assert %{decision: :deny, requirement: nil} = ToolPolicy.assess(yolo, read, context)
+    end
+
+    @tag :tmp_dir
+    test "an invocation grant is bound to call id, input, resource, and operation", %{
+      tmp_dir: root
+    } do
+      external = Path.join(Path.dirname(root), "grant-#{System.unique_integer([:positive])}.txt")
+      other = external <> ".other"
+      File.write!(external, "outside")
+      File.write!(other, "other")
+
+      on_exit(fn ->
+        File.rm(external)
+        File.rm(other)
+      end)
+
+      call = %{id: "boundary-1", name: "read", input: %{"file_path" => external}}
+
+      context = %{
+        working_directory: root,
+        workspace_id: "source",
+        conversation_id: "c1",
+        run_id: "run-1"
+      }
+
+      requirement = Boundary.requirement(call, context)
+      grant = Boundary.grant(call, context, requirement, :human)
+
+      invocation =
+        Boundary.invocation_context(
+          Map.put(context, :tool_execution_grants, %{call.id => grant}),
+          call
+        )
+
+      assert Boundary.path_allowed?(invocation, external, :read)
+      refute Boundary.path_allowed?(invocation, external, :write)
+      refute Boundary.path_allowed?(invocation, other, :read)
+
+      changed = put_in(call, [:input, "file_path"], other)
+
+      changed_context =
+        Boundary.invocation_context(
+          Map.put(context, :tool_execution_grants, %{call.id => grant}),
+          changed
+        )
+
+      refute Map.has_key?(changed_context, :boundary_grant)
+
+      wrong_id = %{call | id: "boundary-2"}
+
+      wrong_id_context =
+        Boundary.invocation_context(
+          Map.put(context, :tool_execution_grants, %{call.id => grant}),
+          wrong_id
+        )
+
+      refute Map.has_key?(wrong_id_context, :boundary_grant)
+    end
+
+    @tag :tmp_dir
+    test "a grant rejects source identity replay and clears a stale selected grant", %{
+      tmp_dir: root
+    } do
+      external =
+        Path.join(Path.dirname(root), "identity-#{System.unique_integer([:positive])}.txt")
+
+      File.write!(external, "outside")
+      on_exit(fn -> File.rm(external) end)
+
+      call = %{id: "identity-1", name: "read", input: %{"file_path" => external}}
+
+      context = %{
+        working_directory: root,
+        workspace_id: "source-workspace",
+        conversation_id: "source-conversation",
+        run_id: "source-run"
+      }
+
+      requirement = Boundary.requirement(call, context)
+      grant = Boundary.grant(call, context, requirement, :human)
+
+      for {field, replayed} <- [
+            workspace_id: "other-workspace",
+            conversation_id: "other-conversation",
+            run_id: "other-run"
+          ] do
+        replay_context =
+          context
+          |> Map.put(field, replayed)
+          |> Map.put(:boundary_grant, grant)
+          |> Map.put(:tool_execution_grants, %{call.id => grant})
+          |> Boundary.invocation_context(call)
+
+        refute Map.has_key?(replay_context, :boundary_grant)
+        refute Map.has_key?(replay_context, :tool_execution_grants)
+      end
+
+      for {context_field, grant_field} <- [
+            {:workspace_id, :source_workspace_id},
+            {:conversation_id, :source_conversation_id},
+            {:run_id, :run_id}
+          ],
+          missing <- [nil, "", " "] do
+        missing_context =
+          context
+          |> Map.put(context_field, missing)
+          |> Map.put(:tool_execution_grants, %{call.id => grant})
+          |> Boundary.invocation_context(call)
+
+        refute Map.has_key?(missing_context, :boundary_grant)
+
+        invalid_grant = Map.put(grant, grant_field, missing)
+
+        invalid_candidate =
+          context
+          |> Map.put(:tool_execution_grants, %{call.id => invalid_grant})
+          |> Boundary.invocation_context(call)
+
+        refute Map.has_key?(invalid_candidate, :boundary_grant)
+      end
+
+      cleared = Boundary.invocation_context(Map.put(context, :boundary_grant, grant), call)
+      refute Map.has_key?(cleared, :boundary_grant)
+    end
+
+    @tag :tmp_dir
+    test "a frozen path grant rejects file and subtree symlink replacement", %{tmp_dir: root} do
+      parent = Path.dirname(root)
+      first = Path.join(parent, "first-#{System.unique_integer([:positive])}")
+      second = Path.join(parent, "second-#{System.unique_integer([:positive])}")
+      link = Path.join(parent, "link-#{System.unique_integer([:positive])}")
+      File.mkdir_p!(first)
+      File.mkdir_p!(second)
+      File.write!(Path.join(first, "item.txt"), "first")
+      File.write!(Path.join(second, "item.txt"), "second")
+      File.ln_s!(first, link)
+
+      on_exit(fn ->
+        File.rm(link)
+        File.rm_rf(first)
+        File.rm_rf(second)
+      end)
+
+      file_call = %{
+        id: "file-link",
+        name: "read",
+        input: %{"file_path" => Path.join(link, "item.txt")}
+      }
+
+      file_requirement = Boundary.requirement(file_call, %{working_directory: root})
+      file_grant = Boundary.grant(file_call, %{}, file_requirement, :human)
+
+      subtree_call = %{id: "tree-link", name: "grep", input: %{"path" => link}}
+      subtree_requirement = Boundary.requirement(subtree_call, %{working_directory: root})
+      subtree_grant = Boundary.grant(subtree_call, %{}, subtree_requirement, :human)
+
+      File.rm!(link)
+      File.ln_s!(second, link)
+
+      refute Boundary.path_allowed?(
+               %{boundary_grant: file_grant},
+               Path.join(link, "item.txt"),
+               :read
+             )
+
+      refute Boundary.path_allowed?(%{boundary_grant: subtree_grant}, link, :search)
+
+      refute Boundary.path_allowed?(
+               %{boundary_grant: subtree_grant},
+               Path.join(link, "item.txt"),
+               :search
+             )
+    end
+
+    @tag :tmp_dir
+    test "default deny cannot be weakened by a per-tool prompt", %{tmp_dir: root} do
+      external = Path.join(Path.dirname(root), "deny-#{System.unique_integer([:positive])}.txt")
+      call = call("read", %{"file_path" => external})
+
+      policy =
+        ToolPolicy.from_settings(%{
+          "tools" => %{"default_mode" => "deny", "per_tool" => %{"read" => "prompt"}}
+        })
+
+      assert %{decision: :deny, requirement: %{operation: :read}} =
+               ToolPolicy.assess(policy, call, %{working_directory: root})
+    end
   end
 
   @tag :tmp_dir

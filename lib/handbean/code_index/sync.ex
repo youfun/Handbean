@@ -8,13 +8,15 @@ defmodule Handbean.CodeIndex.Sync do
   """
 
   alias Handbean.CodeIndex.{Chunk, Scan, Store}
+  alias Handbean.Security.PathValidator
 
   @max_chunks 20_000
 
   @type outcome :: %{
           status: :ready | :partial | :stale,
           files: non_neg_integer(),
-          cancelled: boolean()
+          cancelled: boolean(),
+          safety: :checked | :not_checked | :failed
         }
 
   @spec writer_key(String.t()) :: {:code_index_writer, String.t()}
@@ -59,7 +61,7 @@ defmodule Handbean.CodeIndex.Sync do
 
     case claim(store.workspace_id) do
       :busy ->
-        %{status: :stale, files: 0, cancelled: false}
+        %{status: :stale, files: 0, cancelled: false, safety: :not_checked}
 
       :ok ->
         try do
@@ -73,48 +75,73 @@ defmodule Handbean.CodeIndex.Sync do
   defp do_sync(store, workspace_root, deadline, cancel, opts) do
     case Scan.list(workspace_root, Keyword.merge(opts, deadline: deadline)) do
       {:ok, entries, scan} ->
-        {indexed, stopped} =
-          Enum.reduce_while(entries, {0, false}, fn entry, {count, _} ->
-            cond do
-              cancel.() ->
-                {:halt, {count, true}}
-
-              System.monotonic_time(:millisecond) >= deadline ->
-                {:halt, {count, true}}
-
-              true ->
-                {:cont, {count + index_file(store, entry), false}}
-            end
-          end)
-
-        if not stopped and not scan.partial and not cancel.() do
-          _ = Store.remove_missing(store, Enum.map(entries, & &1.path))
+        case remove_disallowed(store, workspace_root, opts) do
+          :ok -> sync_entries(store, entries, scan, workspace_root, deadline, cancel, opts)
+          {:error, _reason} -> %{status: :stale, files: 0, cancelled: cancel.(), safety: :failed}
         end
-
-        status =
-          cond do
-            stopped or scan.partial -> :partial
-            true -> :ready
-          end
-
-        if status == :ready do
-          _ = Store.put_meta(store, "last_sync", DateTime.utc_now() |> DateTime.to_iso8601())
-        end
-
-        %{status: status, files: indexed, cancelled: cancel.()}
 
       {:error, _} ->
-        %{status: :stale, files: 0, cancelled: cancel.()}
+        %{status: :stale, files: 0, cancelled: cancel.(), safety: :failed}
     end
   end
 
-  defp index_file(store, entry) do
-    with {:ok, body} <- File.read(entry.abs),
+  defp sync_entries(store, entries, scan, workspace_root, deadline, cancel, opts) do
+    {indexed, stopped, failed} =
+      Enum.reduce_while(entries, {0, false, false}, fn entry, {count, _stopped, _failed} ->
+        cond do
+          cancel.() ->
+            {:halt, {count, true, false}}
+
+          System.monotonic_time(:millisecond) >= deadline ->
+            {:halt, {count, true, false}}
+
+          true ->
+            case index_file(store, entry, workspace_root, opts) do
+              {:ok, changed} -> {:cont, {count + changed, false, false}}
+              {:error, _reason} -> {:halt, {count, false, true}}
+            end
+        end
+      end)
+
+    cleanup =
+      if not failed and not stopped and not scan.partial and not cancel.() do
+        Store.remove_missing(store, Enum.map(entries, & &1.path))
+      else
+        :ok
+      end
+
+    cond do
+      failed or match?({:error, _}, cleanup) ->
+        %{status: :stale, files: indexed, cancelled: cancel.(), safety: :failed}
+
+      stopped or scan.partial ->
+        %{status: :partial, files: indexed, cancelled: cancel.(), safety: :checked}
+
+      true ->
+        _ = Store.put_meta(store, "last_sync", DateTime.utc_now() |> DateTime.to_iso8601())
+        %{status: :ready, files: indexed, cancelled: cancel.(), safety: :checked}
+    end
+  end
+
+  defp remove_disallowed(store, workspace_root, opts) do
+    allowed_paths =
+      store
+      |> Store.paths()
+      |> Enum.filter(&Scan.allowed_path?(workspace_root, &1, opts))
+
+    Store.remove_missing(store, allowed_paths)
+  end
+
+  defp index_file(store, entry, workspace_root, opts) do
+    with true <- Scan.allowed_path?(workspace_root, entry.path, opts),
+         :ok <- PathValidator.validate_under_root(entry.abs, workspace_root),
+         :ok <- PathValidator.reject_resolved(entry.abs),
+         {:ok, body} <- File.read(entry.abs),
          true <- String.valid?(body) do
       hash = :crypto.hash(:sha256, body) |> Base.encode16(case: :lower)
 
       if Store.file_hash(store, entry.path) == hash do
-        0
+        {:ok, 0}
       else
         chunks = Chunk.split(body, entry.language, max_chunks: @max_chunks)
 
@@ -126,12 +153,14 @@ defmodule Handbean.CodeIndex.Sync do
         }
 
         case Store.replace_file(store, file, chunks) do
-          :ok -> 1
-          {:error, _} -> 0
+          :ok -> {:ok, 1}
+          {:error, reason} -> {:error, reason}
         end
       end
     else
-      _ -> 0
+      false -> {:error, :scope_changed}
+      {:error, reason} -> {:error, reason}
+      reason -> {:error, reason}
     end
   end
 end

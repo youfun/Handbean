@@ -11,7 +11,7 @@ defmodule Handbean.Permissions.AutoReview do
   require Logger
 
   alias Handbean.Agent.{Config, Message, ModelConfig}
-  alias Handbean.Permissions.InterruptData
+  alias Handbean.Permissions.{Boundary, InterruptData}
   alias Handbean.WorkspaceSettings
 
   @transport_key :handbean_auto_review_transport
@@ -53,7 +53,13 @@ defmodule Handbean.Permissions.AutoReview do
   def review(%Handbean.Agent.State{} = state, pending) when is_list(pending) do
     checkout = state.config.working_directory
     workspace = state.config.workspace_path || checkout
-    requests = InterruptData.build(pending, [], checkout).action_requests
+
+    requests =
+      pending
+      |> InterruptData.build([], checkout)
+      |> Map.fetch!(:action_requests)
+      |> Boundary.annotate_requests(state.tool_guard_pending_grants || %{})
+
     prompt = build_prompt(state.messages, requests, checkout)
     timeout = timeout_ms(workspace)
 
@@ -71,8 +77,15 @@ defmodule Handbean.Permissions.AutoReview do
     case call_reviewer(request, timeout) do
       {:ok, text} when is_binary(text) ->
         case parse_decisions(text, requests) do
-          {:ok, decisions} -> {:ok, apply_decisions(state, pending, decisions)}
-          {:error, reason} -> fallback(state, reason)
+          {:ok, decisions} ->
+            if Enum.any?(decisions, &(&1.decision == :needs_human)) do
+              fallback(state, :reviewer_abstained)
+            else
+              {:ok, apply_decisions(state, pending, decisions)}
+            end
+
+          {:error, reason} ->
+            fallback(state, reason)
         end
 
       {:error, reason} ->
@@ -417,7 +430,7 @@ defmodule Handbean.Permissions.AutoReview do
     id = Handbean.Utils.SafeMap.get_any(item, "tool_call_id", :tool_call_id)
 
     cond do
-      decision not in ["approve", "deny"] ->
+      decision not in ["approve", "deny", "needs_human"] ->
         {:error, :invalid_decision}
 
       not is_binary(rationale) ->

@@ -21,7 +21,7 @@ defmodule Handbean.Tool.Builtin.CodeSearch do
 
   @impl true
   def description do
-    "Find code locations in the workspace, or under an explicit external path in yolo mode, by symbol, path, or meaning. " <>
+    "Find code locations in the workspace, or under an explicitly approved external path (automatic in yolo), by symbol, path, or meaning. " <>
       "Returns path and line numbers, not file contents; use read to inspect a hit. " <>
       "Without an embeddings config this is keyword/token search, not natural-language search. " <>
       "A keyword miss or index=partial does not mean the repository has no other matches. " <>
@@ -47,7 +47,8 @@ defmodule Handbean.Tool.Builtin.CodeSearch do
         },
         path: %{
           type: "string",
-          description: "Optional workspace-relative prefix; yolo also permits an external path"
+          description:
+            "Optional workspace-relative prefix; an external path requires per-call approval unless the run is yolo"
         },
         glob: %{type: "string", description: "Optional suffix filter such as .ex"}
       },
@@ -66,13 +67,23 @@ defmodule Handbean.Tool.Builtin.CodeSearch do
     with {:ok, query} <- fetch_query(input),
          {:ok, workspace} <- workspace(context),
          {:ok, root, scoped_input, absolute_paths?} <- search_scope(workspace, input, context),
-         {:ok, id} <- workspace_id(root, workspace, context) do
+         {:ok, id} <- workspace_id(root, workspace, scoped_input, absolute_paths?, context) do
       parent = self()
 
-      case CodeIndex.search(root, id, query, search_opts(scoped_input, context, parent)) do
+      opts =
+        scoped_input
+        |> search_opts(context, parent)
+        |> maybe_force_host_storage(absolute_paths?)
+
+      case CodeIndex.search(root, id, query, opts) do
         {:ok, payload} ->
-          payload = drop_sensitive_hits(payload, root)
-          {:ok, format(payload, scoped_input, root, absolute_paths?), details(payload, root, absolute_paths?)}
+          payload =
+            payload
+            |> drop_sensitive_hits(root)
+            |> filter_payload(scoped_input)
+
+          {:ok, format(payload, scoped_input, root, absolute_paths?),
+           details(payload, root, absolute_paths?)}
 
         {:error, reason} ->
           {:error, format_error(reason)}
@@ -92,6 +103,14 @@ defmodule Handbean.Tool.Builtin.CodeSearch do
     ]
     |> Enum.reject(fn {_k, v} -> is_nil(v) end)
   end
+
+  defp maybe_force_host_storage(opts, true) do
+    opts
+    |> Keyword.put(:storage, :host_data)
+    |> Keyword.put(:require_scope_sync, true)
+  end
+
+  defp maybe_force_host_storage(opts, false), do: opts
 
   defp fetch_query(input) do
     query = Handbean.Utils.SafeMap.get_any(input, "query", :query)
@@ -121,7 +140,7 @@ defmodule Handbean.Tool.Builtin.CodeSearch do
         {:ok, workspace, input, false}
 
       path when is_binary(path) ->
-        with {:ok, resolved} <- Handbean.Agent.Tool.resolve_path(path, context) do
+        with {:ok, resolved} <- Handbean.Agent.Tool.resolve_path(path, context, :search) do
           if Handbean.Security.PathValidator.validate_within_workspace(resolved, workspace) == :ok do
             {:ok, workspace, put_path(input, Path.relative_to(resolved, workspace)), false}
           else
@@ -155,18 +174,32 @@ defmodule Handbean.Tool.Builtin.CodeSearch do
     |> Map.put("path", path)
   end
 
-  defp workspace_id(root, workspace, context) do
-    case Handbean.Utils.SafeMap.get_any(context, :workspace_id, "workspace_id") do
-      id when is_binary(id) and id != "" and root == workspace ->
-        {:ok, id}
+  defp workspace_id(root, workspace, input, external?, context) do
+    base_result =
+      case Handbean.Utils.SafeMap.get_any(context, :workspace_id, "workspace_id") do
+        id when is_binary(id) and id != "" and root == workspace ->
+          {:ok, id}
 
-      _ ->
-        case WorkspaceStore.get_by_path(root) do
-          {:ok, %{"id" => id}} when is_binary(id) and id != "" -> {:ok, id}
-          _ -> {:ok, "path-" <> hash_path(root)}
-        end
+        _ ->
+          case WorkspaceStore.get_by_path(root) do
+            {:ok, %{"id" => id}} when is_binary(id) and id != "" -> {:ok, id}
+            _ -> {:ok, "path-" <> hash_path(root)}
+          end
+      end
+
+    with {:ok, id} <- base_result do
+      {:ok, scoped_workspace_id(id, input, external?)}
     end
   end
+
+  defp scoped_workspace_id(id, input, true) do
+    case Handbean.Utils.SafeMap.get_any(input, "path", :path) do
+      path when is_binary(path) and path != "" -> id <> "-scope-" <> hash_path(path)
+      _ -> id
+    end
+  end
+
+  defp scoped_workspace_id(id, _input, false), do: id
 
   defp hash_path(root) do
     :crypto.hash(:sha256, root) |> Base.encode16(case: :lower) |> binary_part(0, 16)
@@ -182,7 +215,12 @@ defmodule Handbean.Tool.Builtin.CodeSearch do
   defp blank_to_nil(value) when value in [nil, ""], do: nil
   defp blank_to_nil(value), do: value
 
-  defp format(%{hits: hits, mode: mode, index: index, elapsed_ms: elapsed}, input, root, absolute?) do
+  defp format(
+         %{hits: hits, mode: mode, index: index, elapsed_ms: elapsed},
+         input,
+         root,
+         absolute?
+       ) do
     filtered = filter_hits(hits, input)
 
     header =
@@ -226,6 +264,9 @@ defmodule Handbean.Tool.Builtin.CodeSearch do
     path = if absolute?, do: Path.join(root, hit.path), else: hit.path
     "#{n}. #{path}:#{hit.start_line}-#{hit.end_line}#{symbol}  (#{score})"
   end
+
+  defp filter_payload(%{hits: hits} = payload, input),
+    do: %{payload | hits: filter_hits(hits, input)}
 
   defp filter_hits(hits, input) do
     path = Handbean.Utils.SafeMap.get_any(input, "path", :path)
