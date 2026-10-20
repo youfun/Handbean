@@ -79,6 +79,111 @@ defmodule HandbeanWeb.WorkspaceLive.DiffAndEventFlowTest do
       end
     end
 
+    test "visible changes panel refreshes for file effects during a run", %{conn: conn} do
+      ws = Handbean.Workspace.ensure_root!()
+      file_path = Path.join(ws, "live_changes.ex")
+      before = "value = 1\n"
+      after_text = "value = 2\n"
+      File.write!(file_path, after_text)
+      change = Handbean.ChangeSnapshot.build_edit_snapshot(file_path, before, after_text)
+
+      {:ok, view, _html} = live(conn, "/")
+
+      try do
+        view
+        |> element("button[phx-click='select_right_panel_view'][phx-value-view='changes']")
+        |> render_click()
+
+        assert has_element?(view, "#workspace-changes .workspace-changes-empty")
+
+        send(view.pid, {:agent_event, agent_event(:run_start, %{model: "test"})})
+
+        send(
+          view.pid,
+          {:agent_event,
+           agent_event(
+             :tool_start,
+             %{
+               tool_use_id: "tu_live_changes",
+               tool: "edit",
+               input: %{file_path: file_path}
+             },
+             2
+           )}
+        )
+
+        refute has_element?(view, "#workspace-changes [id^='changes-file-net-']")
+
+        send(
+          view.pid,
+          {:agent_event,
+           agent_event(
+             :tool_end,
+             %{
+               tool_use_id: "tu_live_changes",
+               tool: "edit",
+               duration_ms: 42,
+               details:
+                 %{
+                   file_path: file_path,
+                   diff_lines: change.diff_lines
+                 }
+                 |> Map.merge(change_event_details(change))
+             },
+             3
+           )}
+        )
+
+        assert has_element?(view, "#workspace-changes [id^='changes-file-net-']")
+        refute has_element?(view, "#workspace-changes .workspace-changes-empty")
+
+        external = "value = 3\n"
+        File.write!(file_path, external)
+        reset = Handbean.ChangeSnapshot.build_write_snapshot(file_path, external, external)
+
+        send(
+          view.pid,
+          {:agent_event,
+           agent_event(
+             :tool_start,
+             %{
+               tool_use_id: "tu_live_changes_reset",
+               tool: "write",
+               input: %{file_path: file_path}
+             },
+             4
+           )}
+        )
+
+        assert has_element?(view, "#workspace-changes [id^='changes-file-net-']")
+
+        send(
+          view.pid,
+          {:agent_event,
+           agent_event(
+             :tool_end,
+             %{
+               tool_use_id: "tu_live_changes_reset",
+               tool: "write",
+               duration_ms: 10,
+               details:
+                 %{
+                   file_path: file_path,
+                   diff_lines: reset.diff_lines
+                 }
+                 |> Map.merge(change_event_details(reset))
+             },
+             5
+           )}
+        )
+
+        refute has_element?(view, "#workspace-changes [id^='changes-file-net-']")
+        assert has_element?(view, "#workspace-changes .workspace-changes-empty")
+      after
+        File.rm(file_path)
+      end
+    end
+
     test "Show diff button hidden when diff_lines is empty", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/")
 
@@ -514,8 +619,9 @@ defmodule HandbeanWeb.WorkspaceLive.DiffAndEventFlowTest do
         )
 
         rendered = render(view)
-        assert rendered =~ "Explored 1 file"
-        assert rendered =~ "tool-work-collapsed"
+        assert rendered =~ "runtime.exs"
+        assert rendered =~ "tool-work-open"
+        refute rendered =~ "tool-work-summary"
 
         # 5. Assistant streams response
         send(
@@ -528,7 +634,10 @@ defmodule HandbeanWeb.WorkspaceLive.DiffAndEventFlowTest do
           {:agent_event, agent_event(:message_delta, %{chunk: " useful settings."}, 5, topic)}
         )
 
-        assert render(view) =~ "The config contains useful settings."
+        rendered = render(view)
+        assert rendered =~ "The config contains useful settings."
+        assert rendered =~ "Explored 1 file"
+        assert rendered =~ "tool-work-collapsed"
 
         # 6. Run ends
         send(

@@ -180,6 +180,13 @@ defmodule HandbeanWeb.FileChangeCard do
 
   def change_entry?(_), do: false
 
+  @doc "True when the entry contributes a file effect to the Changes aggregation."
+  def change_source?(%{} = entry) do
+    recorded_effects(entry) != [] or successful_write?(entry)
+  end
+
+  def change_source?(_), do: false
+
   @doc """
   Session net file changes, one row per path.
 
@@ -247,7 +254,18 @@ defmodule HandbeanWeb.FileChangeCard do
   defp successful_write?(entry) do
     TranscriptEntry.tool_name(entry) in ["edit", "write", "delete"] and
       TranscriptEntry.tool_status(entry) in ["done", :done] and
-      is_binary(net_path(entry))
+      is_binary(change_source_path(entry) || net_path(entry))
+  end
+
+  defp change_source_path(entry) do
+    details = Handbean.Utils.SafeMap.get_any(entry, "details", :details) || %{}
+    change = ChangeHelper.value(entry, "change") || ChangeHelper.value(details, "change") || %{}
+
+    path =
+      ChangeHelper.value(change, "file_path") || ChangeHelper.value(entry, "file_path") ||
+        ChangeHelper.value(details, "file_path")
+
+    if is_binary(path) and path != "", do: path
   end
 
   defp accumulate_net(entry, nets) do

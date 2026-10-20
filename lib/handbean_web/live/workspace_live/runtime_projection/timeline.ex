@@ -32,7 +32,7 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection.Timeline do
     projected = Enum.find(timeline, &(Map.get(&1, "id") == entry_id)) || entry
 
     socket
-    |> put_timeline(timeline, incremental?)
+    |> put_timeline(previous_timeline, timeline, projected, incremental?)
     |> stream_timeline_entry(projected, position, inserted?)
     |> stream_changed_entries(previous_timeline, timeline, entry_id, incremental?)
     |> stream_related_handoffs(timeline, projected, inserted?)
@@ -120,6 +120,15 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection.Timeline do
     Enum.reduce(changed, assign(socket, :timeline, timeline), fn entry, acc ->
       stream_insert(acc, :timeline, entry)
     end)
+  end
+
+  def seal_tool_work(socket) do
+    expanded = Map.get(socket.assigns, :expanded_tool_groups, MapSet.new())
+
+    timeline =
+      HandbeanWeb.WorkspaceHelper.apply_tool_work_collapse(socket.assigns.timeline, expanded)
+
+    reinsert_changed(socket, timeline)
   end
 
   def finalize_assistant(%{assigns: %{current_assistant_entry_id: nil}} = socket), do: socket
@@ -240,26 +249,39 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection.Timeline do
   defp update_assistant(socket, chunk) do
     id = socket.assigns.current_assistant_entry_id || unique_id("msg-assistant")
 
-    entry =
+    {socket, entry} =
       case find_entry(socket.assigns.timeline, id) do
         nil ->
-          %{
-            "id" => id,
-            "content_type" => "assistant_msg",
-            "role" => "assistant",
-            "content" => chunk
-          }
+          socket = maybe_seal_tool_work(socket)
+
+          {socket,
+           %{
+             "id" => id,
+             "content_type" => "assistant_msg",
+             "role" => "assistant",
+             "content" => chunk
+           }}
 
         existing ->
-          Map.put(existing, "content", (Map.get(existing, "content") || "") <> chunk)
+          {socket, Map.put(existing, "content", (Map.get(existing, "content") || "") <> chunk)}
       end
 
-    # Text deltas do not change tool streak membership. Keep the server-side
-    # projection current for history/reset paths without regrouping every chunk.
+    # The first text entry seals completed tool work. Later deltas only update
+    # that entry, avoiding a full regroup for every chunk.
     socket
     |> assign(:current_assistant_entry_id, id)
     |> assign(:timeline, replace_or_append(socket.assigns.timeline, entry))
     |> stream_insert(:timeline, entry)
+  end
+
+  defp maybe_seal_tool_work(socket) do
+    if Enum.any?(socket.assigns.timeline, fn entry ->
+         tool_entry?(entry) and Map.get(entry, "work_group_complete") == false
+       end) do
+      seal_tool_work(socket)
+    else
+      socket
+    end
   end
 
   defp replace_or_append([], entry), do: [entry]
@@ -428,11 +450,29 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection.Timeline do
   defp stream_timeline_entry(socket, entry, _position, false),
     do: stream_insert(socket, :timeline, entry)
 
-  defp put_timeline(socket, timeline, true) do
-    %{socket | assigns: Map.put(socket.assigns, :timeline, timeline)}
+  defp put_timeline(socket, previous, timeline, projected, true) do
+    if timeline_shell(previous) != timeline_shell(timeline) or
+         visible_file_changes_may_have_changed?(socket, previous, projected) do
+      assign(socket, :timeline, timeline)
+    else
+      %{socket | assigns: Map.put(socket.assigns, :timeline, timeline)}
+    end
   end
 
-  defp put_timeline(socket, timeline, false), do: assign(socket, :timeline, timeline)
+  defp put_timeline(socket, _previous, timeline, _projected, false),
+    do: assign(socket, :timeline, timeline)
+
+  defp timeline_shell([]), do: :empty
+  defp timeline_shell([_entry]), do: :single
+  defp timeline_shell(_timeline), do: :multiple
+
+  defp visible_file_changes_may_have_changed?(socket, previous, projected) do
+    Map.get(socket.assigns, :right_panel_view) == :changes and
+      (HandbeanWeb.FileChangeCard.change_source?(projected) or
+         previous
+         |> find_entry(Map.get(projected, "id"))
+         |> HandbeanWeb.FileChangeCard.change_source?())
+  end
 
   defp stream_changed_entries(socket, _previous, _timeline, _inserted_id, true), do: socket
 

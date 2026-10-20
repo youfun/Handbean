@@ -30,7 +30,6 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
   defp hydrate_timeline_entries(socket, ids), do: Timeline.hydrate_timeline_entries(socket, ids)
   defp durable_consumed?(timeline, ids), do: Timeline.durable_consumed?(timeline, ids)
   defp refresh_history_cursor(socket, ids), do: Timeline.refresh_history_cursor(socket, ids)
-  defp reinsert_changed(socket, timeline), do: Timeline.reinsert_changed(socket, timeline)
 
   alias HandbeanWeb.WorkspaceLive.Composer
   alias HandbeanWeb.WorkspaceLive.ConversationState
@@ -485,14 +484,7 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
     |> update_status(%{status: :cancelled, status_detail: nil})
   end
 
-  defp seal_tool_work(socket) do
-    expanded = Map.get(socket.assigns, :expanded_tool_groups, MapSet.new())
-
-    timeline =
-      HandbeanWeb.WorkspaceHelper.apply_tool_work_collapse(socket.assigns.timeline, expanded)
-
-    reinsert_changed(socket, timeline)
-  end
+  defp seal_tool_work(socket), do: Timeline.seal_tool_work(socket)
 
   def restore_active_session_snapshot(socket) do
     conv_id = socket.assigns.current_conversation_id

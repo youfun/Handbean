@@ -292,8 +292,45 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRenderingTest do
       send(view.pid, {:agent_event, agent_event(:message_delta, %{chunk: "done"}, 3)})
 
       rendered = render(view)
-      assert rendered =~ "test.rb"
+      assert rendered =~ "Explored 1 file"
+      assert rendered =~ "tool-work-collapsed"
       assert rendered =~ "done"
+    end
+
+    test "incremental tool inserts refresh timeline shell state", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/")
+
+      send(view.pid, {:agent_event, agent_event(:run_start, %{model: "test"})})
+
+      refute has_element?(view, "#timeline-stream.turn-group")
+      refute has_element?(view, "#agent-working")
+      refute has_element?(view, "#turn-header")
+
+      send(
+        view.pid,
+        {:agent_event,
+         agent_event(
+           :tool_start,
+           %{tool_use_id: "tu_first", tool: "read", input: %{file_path: "first.ex"}},
+           2
+         )}
+      )
+
+      assert has_element?(view, "#timeline-stream.turn-group")
+      assert has_element?(view, "#agent-working")
+      refute has_element?(view, "#turn-header")
+
+      send(
+        view.pid,
+        {:agent_event,
+         agent_event(
+           :tool_start,
+           %{tool_use_id: "tu_second", tool: "read", input: %{file_path: "second.ex"}},
+           3
+         )}
+      )
+
+      assert has_element?(view, "#turn-header")
     end
 
     test "turn header includes truncated summary", %{conn: conn} do

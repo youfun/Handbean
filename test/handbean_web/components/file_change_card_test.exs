@@ -239,6 +239,26 @@ defmodule HandbeanWeb.FileChangeCardTest do
       assert change(row, "after_content") == "d\n"
     end
 
+    test "an intervening no-op write is still a source that resets the net baseline" do
+      path = "lib/shared.ex"
+      reset = write_entry("reset", path, "c\n", "c\n")
+
+      assert FileChangeCard.change_source?(reset)
+      assert FileChangeCard.changes([reset]) == []
+
+      assert FileChangeCard.changes([
+               edit_entry("first", path, "a\n", "b\n"),
+               reset
+             ]) == []
+    end
+
+    test "successful writes with an empty path do not enter the aggregation" do
+      entry = write_entry("empty-path", "", "a\n", "b\n")
+
+      refute FileChangeCard.change_source?(entry)
+      assert FileChangeCard.changes([entry]) == []
+    end
+
     test "later effects with a reused legacy change id are not discarded" do
       path = "lib/transient.ex"
 
