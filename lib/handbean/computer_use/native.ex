@@ -34,7 +34,9 @@ defmodule Handbean.ComputerUse.Native do
            :gen_tcp.connect(
              {127, 0, 0, 1},
              port,
-             [:binary, active: false, packet: :line, packet_size: @max_reply],
+             # Line mode returns a partial line when its buffer fills, even with
+             # a larger packet_size. Screenshot replies must fit in that buffer.
+             [:binary, active: false, packet: :line, packet_size: @max_reply, buffer: @max_reply],
              min(timeout, 1_000)
            ) do
       try do
@@ -50,7 +52,9 @@ defmodule Handbean.ComputerUse.Native do
 
         with :ok <- :gen_tcp.send(socket, Handbean.JSON.encode!(request) <> "\n"),
              {:ok, line} <- :gen_tcp.recv(socket, 0, timeout),
-             {:ok, %{"id" => ^id, "result" => reply}} <- Handbean.JSON.decode(line) do
+             true <- String.ends_with?(line, "\n"),
+             {:ok, %{"id" => ^id, "result" => reply}} when is_map(reply) <-
+               Handbean.JSON.decode(line) do
           {:ok, reply}
         else
           _ -> {:error, :native_outcome_unknown}
