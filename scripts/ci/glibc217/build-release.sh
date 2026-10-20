@@ -47,7 +47,7 @@ test -s priv/static/cache_manifest.json
 cat >config/glibc217.exs <<'EOF'
 import Config
 import_config "config.exs"
-config :exqlite, force_build: true
+config :elixir_make, :force_build, exqlite: true
 EOF
 export MIX_CONFIG="$source_dir/config/glibc217.exs"
 
