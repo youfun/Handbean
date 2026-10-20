@@ -94,21 +94,21 @@ defmodule Handbean.Runtime.TaskTracker do
   end
 
   def handle_info({:run_lifecycle, conversation_id, _kind, _payload} = event, state) do
-    if internal_or_unavailable?(conversation_id) do
-      {:noreply, state}
-    else
-      handle_lifecycle(event, state)
+    case conversation_summary(conversation_id) do
+      {:ok, %{"visibility" => "internal"}} -> {:noreply, state}
+      {:ok, summary} -> handle_lifecycle(event, state, summary)
+      {:error, _reason} -> {:noreply, state}
     end
   end
 
   def handle_info(_message, state), do: {:noreply, state}
 
-  defp handle_lifecycle({:run_lifecycle, conversation_id, :run_start, payload}, state) do
+  defp handle_lifecycle({:run_lifecycle, conversation_id, :run_start, payload}, state, summary) do
     task = %{
       conversation_id: conversation_id,
       run_id: resolve_run_id(payload, conversation_id, conversation_id),
-      workspace_id: workspace_id(conversation_id),
-      title: conversation_title(conversation_id),
+      workspace_id: summary["workspace_id"],
+      title: summary["title"],
       status: :running
     }
 
@@ -120,13 +120,14 @@ defmodule Handbean.Runtime.TaskTracker do
 
   defp handle_lifecycle(
          {:run_lifecycle, conversation_id, kind, payload},
-         state
+         state,
+         _summary
        )
        when kind in [:tool_approval_requested, :stall_check_requested] do
     {:noreply, put_waiting(state, conversation_id, payload)}
   end
 
-  defp handle_lifecycle({:run_lifecycle, conversation_id, :run_end, payload}, state) do
+  defp handle_lifecycle({:run_lifecycle, conversation_id, :run_end, payload}, state, _summary) do
     cond do
       waiting_status?(payload) ->
         {:noreply, put_waiting(state, conversation_id, payload)}
@@ -139,7 +140,7 @@ defmodule Handbean.Runtime.TaskTracker do
     end
   end
 
-  defp handle_lifecycle({:run_lifecycle, conversation_id, :run_resumed, payload}, state) do
+  defp handle_lifecycle({:run_lifecycle, conversation_id, :run_resumed, payload}, state, _summary) do
     case Map.get(state.tasks, conversation_id) do
       %{status: :waiting_confirmation} = task ->
         if event_matches_task?(task, payload) do
@@ -156,7 +157,7 @@ defmodule Handbean.Runtime.TaskTracker do
     end
   end
 
-  defp handle_lifecycle(_message, state), do: {:noreply, state}
+  defp handle_lifecycle(_message, state, _summary), do: {:noreply, state}
 
   defp dispatch(state, event) do
     snapshot = broadcast_snapshot(state)
@@ -307,33 +308,15 @@ defmodule Handbean.Runtime.TaskTracker do
     Map.get(payload, key) || Map.get(payload, Atom.to_string(key))
   end
 
-  defp conversation_title(conversation_id) do
-    case Handbean.ConversationStore.get(conversation_id) do
-      {:ok, conversation} -> conversation["title"]
-      _ -> nil
+  defp conversation_summary(conversation_id) do
+    case Handbean.ConversationStore.get_summary(conversation_id) do
+      # Session-only conversations have always been tracked without persisted metadata.
+      {:error, :not_found} -> {:ok, %{}}
+      result -> result
     end
   rescue
-    _error -> nil
+    _error -> {:error, :unavailable}
   catch
-    :exit, _reason -> nil
-  end
-
-  defp workspace_id(conversation_id) do
-    case Handbean.ConversationStore.get(conversation_id) do
-      {:ok, conversation} -> conversation["workspace_id"]
-      _ -> nil
-    end
-  rescue
-    _error -> nil
-  catch
-    :exit, _reason -> nil
-  end
-
-  defp internal_or_unavailable?(conversation_id) do
-    Handbean.ConversationStore.internal?(conversation_id)
-  rescue
-    _error -> true
-  catch
-    :exit, _reason -> true
+    :exit, _reason -> {:error, :unavailable}
   end
 end

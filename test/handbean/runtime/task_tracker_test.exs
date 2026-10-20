@@ -39,6 +39,171 @@ defmodule Handbean.Runtime.TaskTrackerTest do
     :ok
   end
 
+  test "lifecycle reads one summary and preserves notification metadata" do
+    {:ok, conversation} =
+      Handbean.ConversationStore.create("default", title: "Summary notification")
+
+    sid = conversation["id"]
+
+    {snapshot, queries} = capture_event_queries(sid, :run_start, %{run_id: "summary-run"})
+
+    assert [task] = snapshot.tasks
+    assert task.title == "Summary notification"
+    assert task.workspace_id == "default"
+    assert task.conversation_id == sid
+    assert task.run_id == "summary-run"
+    assert_received {:notify_action, {:update_running, ^snapshot}}
+
+    {finished, end_queries} =
+      capture_event_queries(sid, :run_end, %{run_id: "summary-run", status: "completed"})
+
+    assert finished.tasks == []
+    assert_received {:notify_action, {:system_ended, ^task, :completed}}
+    assert length(end_queries) == 1
+
+    assert length(queries) == 1,
+           "Expected one summary SELECT, got #{length(queries)}: #{inspect(queries)}"
+  end
+
+  test "internal conversations do not produce task notifications" do
+    {:ok, conversation} = Handbean.ConversationStore.create("default", visibility: "internal")
+
+    for kind <- [
+          :run_start,
+          :tool_approval_requested,
+          :stall_check_requested,
+          :run_resumed,
+          :run_end
+        ] do
+      {snapshot, queries} =
+        capture_event_queries(conversation["id"], kind, %{run_id: "hidden", status: "completed"})
+
+      assert snapshot.tasks == []
+      assert length(queries) == 1
+      refute_received {:notify_action, _}
+    end
+  end
+
+  test "persisted internal conversations with non-metadata IDs remain hidden" do
+    for sid <- ["n1:internal", "internal-" <> String.duplicate("x", 300)] do
+      {:ok, _conversation} =
+        Handbean.ConversationStore.create_free(id: sid, visibility: "internal")
+
+      for kind <- [
+            :run_start,
+            :tool_approval_requested,
+            :stall_check_requested,
+            :run_resumed,
+            :run_end
+          ] do
+        {snapshot, queries} =
+          capture_event_queries(sid, kind, %{run_id: "hidden", status: "completed"})
+
+        assert snapshot.tasks == []
+        assert length(queries) == 1
+        refute_received {:notify_action, _}
+      end
+    end
+  end
+
+  test "persisted public conversations with non-metadata IDs retain notification metadata" do
+    for sid <- ["n1:public", "public-" <> String.duplicate("x", 300)] do
+      {:ok, _conversation} =
+        Handbean.ConversationStore.create("default", id: sid, title: "Public notification")
+
+      {snapshot, queries} = capture_event_queries(sid, :run_start, %{run_id: sid})
+      assert [task] = snapshot.tasks
+      assert task.title == "Public notification"
+      assert task.workspace_id == "default"
+      assert task.conversation_id == sid
+      assert length(queries) == 1
+      assert_received {:notify_action, {:update_running, ^snapshot}}
+
+      {finished, _queries} =
+        capture_event_queries(sid, :run_end, %{run_id: sid, status: "completed"})
+
+      assert finished.tasks == []
+      assert_received {:notify_action, {:system_ended, ^task, :completed}}
+    end
+  end
+
+  test "missing and pending-delete conversations retain metadata-free task tracking" do
+    {:ok, deleted} = Handbean.ConversationStore.create("default", visibility: "internal")
+
+    Repo.update_all(from(c in Handbean.Storage.Conversation, where: c.id == ^deleted["id"]),
+      set: [status: "pending_delete"]
+    )
+
+    for sid <- ["task-missing-#{System.unique_integer([:positive])}", deleted["id"]] do
+      {snapshot, _queries} = capture_event_queries(sid, :run_start, %{run_id: sid})
+      assert [%{title: nil, workspace_id: nil, conversation_id: ^sid} = task] = snapshot.tasks
+      capture_event_queries(sid, :run_end, %{run_id: sid, status: "completed"})
+      assert_received {:notify_action, {:system_ended, ^task, :completed}}
+    end
+  end
+
+  test "unavailable storage suppresses lifecycle notifications and recovers" do
+    {:ok, conversation} = Handbean.ConversationStore.create("default", visibility: "internal")
+    tracker = Process.whereis(TaskTracker)
+    parent = self()
+
+    :sys.replace_state(tracker, fn state ->
+      send(parent, {:previous_repo, Repo.put_dynamic_repo(:task_tracker_unavailable_repo)})
+      state
+    end)
+
+    assert_receive {:previous_repo, previous_repo}
+
+    try do
+      {snapshot, _queries} =
+        capture_event_queries(conversation["id"], :run_start, %{run_id: "unavailable"})
+
+      assert snapshot.tasks == []
+      refute_received {:notify_action, _}
+      assert Process.alive?(tracker)
+    after
+      :sys.replace_state(tracker, fn state ->
+        Repo.put_dynamic_repo(previous_repo)
+        state
+      end)
+    end
+
+    {snapshot, queries} =
+      capture_event_queries("task-recovered-#{System.unique_integer([:positive])}", :run_start, %{
+        run_id: "recovered"
+      })
+
+    assert [%{run_id: "recovered"}] = snapshot.tasks
+    assert length(queries) == 1
+  end
+
+  test "stale lifecycle events cannot change a newer projected run" do
+    {:ok, conversation} = Handbean.ConversationStore.create("default")
+    sid = conversation["id"]
+    {snapshot, _queries} = capture_event_queries(sid, :run_start, %{run_id: "new"})
+    assert_received {:notify_action, {:update_running, ^snapshot}}
+
+    for {kind, status} <- [tool_approval_requested: nil, run_end: "completed"] do
+      {unchanged, queries} = capture_event_queries(sid, kind, %{run_id: "old", status: status})
+      assert unchanged == snapshot
+      assert length(queries) == 1
+      refute_received {:notify_action, _}
+    end
+
+    {waiting, _queries} = capture_event_queries(sid, :tool_approval_requested, %{run_id: "new"})
+    assert [%{status: :waiting_confirmation}] = waiting.tasks
+    assert_received {:notify_action, {:update_running, ^waiting}}
+
+    {unchanged, queries} = capture_event_queries(sid, :run_resumed, %{run_id: "old"})
+    assert unchanged == waiting
+    assert length(queries) == 1
+    refute_received {:notify_action, _}
+
+    {resumed, _queries} = capture_event_queries(sid, :run_resumed, %{run_id: "new"})
+    assert resumed == snapshot
+    assert_received {:notify_action, {:update_running, ^resumed}}
+  end
+
   test "follow-up stays one task until the runner actually finishes" do
     sid = "task-follow-#{System.unique_integer([:positive])}"
     {:ok, _} = Session.start_or_get(session_id: sid, model: "fake")
@@ -204,6 +369,42 @@ defmodule Handbean.Runtime.TaskTrackerTest do
     send(tracker, {:DOWN, old_ref, :process, runner, :killed})
     assert [%{run_id: "run-new"}] = TaskTracker.snapshot().tasks
     Process.exit(runner, :kill)
+  end
+
+  def capture_tracker_query(_event, _measurements, metadata, {tracker, recipient, ref}) do
+    if self() == tracker and String.starts_with?(metadata.query, "SELECT") do
+      send(recipient, {ref, metadata.query})
+    end
+  end
+
+  defp capture_event_queries(sid, kind, payload) do
+    tracker = Process.whereis(TaskTracker)
+    ref = make_ref()
+    handler = {__MODULE__, ref}
+
+    :ok =
+      :telemetry.attach(
+        handler,
+        [:handbean, :repo, :query],
+        &__MODULE__.capture_tracker_query/4,
+        {tracker, self(), ref}
+      )
+
+    try do
+      send(tracker, {:run_lifecycle, sid, kind, payload})
+      snapshot = TaskTracker.snapshot()
+      {snapshot, collect_queries(ref)}
+    after
+      :telemetry.detach(handler)
+    end
+  end
+
+  defp collect_queries(ref) do
+    receive do
+      {^ref, query} -> [query | collect_queries(ref)]
+    after
+      0 -> []
+    end
   end
 
   defp start_registered_runner(conversation_id, run_id) do
