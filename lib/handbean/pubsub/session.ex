@@ -208,7 +208,7 @@ defmodule Handbean.PubSub.Session do
     model = Keyword.get(opts, :model, "unknown")
 
     session_store = session_store(opts)
-    store_opts = store_opts(opts)
+    store_opts = store_opts(opts, session_store)
     loaded = load_snapshot(session_id, session_store, store_opts)
 
     state = %{
@@ -1000,17 +1000,22 @@ defmodule Handbean.PubSub.Session do
       Application.get_env(:handbean, :session_store, Handbean.SessionStore.SQLite)
   end
 
-  defp store_opts(opts) do
-    opts
-    |> Keyword.get(:session_store_opts, [])
-    |> Keyword.put_new(
-      :session_store_enabled?,
-      Keyword.get(
-        opts,
+  defp store_opts(opts, session_store) do
+    store_opts =
+      opts
+      |> Keyword.get(:session_store_opts, [])
+      |> Keyword.put_new(
         :session_store_enabled?,
-        Application.get_env(:handbean, :session_store_enabled?, true)
+        Keyword.get(
+          opts,
+          :session_store_enabled?,
+          Application.get_env(:handbean, :session_store_enabled?, true)
+        )
       )
-    )
+
+    if session_store == Handbean.SessionStore.SQLite,
+      do: Keyword.put(store_opts, :recovery_projection?, true),
+      else: store_opts
   end
 
   defp recorder_opts(opts) do
