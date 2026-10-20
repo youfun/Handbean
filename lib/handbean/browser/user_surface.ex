@@ -783,7 +783,7 @@ defmodule Handbean.Browser.UserSurface do
   end
 
   defp coord(value) when is_integer(value) and value >= 0 and value <= 100_000,
-    do: {:ok, value * 1.0}
+    do: {:ok, :erlang.float(value)}
 
   defp coord(value) when is_float(value) and value >= 0 and value <= 100_000 and value == value,
     do: {:ok, value}
@@ -798,7 +798,7 @@ defmodule Handbean.Browser.UserSurface do
 
   defp dimension(_), do: :error
 
-  defp num(value, _default) when is_integer(value), do: value * 1.0
+  defp num(value, _default) when is_integer(value), do: :erlang.float(value)
   defp num(value, _default) when is_float(value) and value == value, do: value
   defp num(_value, default), do: default
 

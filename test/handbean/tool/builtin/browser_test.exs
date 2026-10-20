@@ -207,20 +207,28 @@ defmodule Handbean.Tool.Builtin.BrowserTest do
       assert [%{id: "retry-with-fresh-session"}] = details.next_actions
     end
 
-    test "passes through approved eval after policy prompt (does not re-deny)" do
+    test "passes through approved multiline eval as one unchanged argv value" do
       runner = fn argv, _opts ->
         send(self(), {:eval_argv, argv})
         {:ok, %{stdout: ~s({"text":"1"}), stderr: "", exit_code: 0, timed_out: false}}
       end
 
+      script = """
+      const text = document.querySelector('#add-project-error')?.textContent ||
+        Array.from(document.querySelectorAll('[role=alert]')).map(x => x.textContent).join('|');
+      text && `message: ${text}`;
+      """
+
+      assert {:prompt, %{capability: :eval}} = Handbean.Browser.Policy.classify(["eval", script])
+
       assert {:ok, "1", _} =
                Browser.execute(
-                 %{"args" => ["eval", "1+1"]},
+                 %{"args" => ["eval", script]},
                  context(%{browser_runner: runner})
                )
 
       assert_received {:eval_argv, argv}
-      assert "eval" in argv
+      assert Enum.take(argv, -2) == ["eval", script]
     end
   end
 end

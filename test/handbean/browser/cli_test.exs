@@ -116,6 +116,26 @@ defmodule Handbean.Browser.CliTest do
       assert opts[:executable] == "/usr/bin/agent-browser"
     end
 
+    @tag :tmp_dir
+    @tag skip: match?({:win32, _}, :os.type())
+    test "direct subprocess receives eval source literally without shell expansion", %{
+      tmp_dir: dir
+    } do
+      executable = Path.join(dir, "argv-echo")
+      marker = Path.join(dir, "must-not-exist")
+      File.write!(executable, "#!/bin/sh\nprintf '%s\\000' \"$@\"\n")
+      File.chmod!(executable, 0o700)
+
+      script = "const text = '$(touch #{marker})';\ntext || `literal`"
+      assert {:prompt, %{capability: :eval}} = Handbean.Browser.Policy.classify(["eval", script])
+
+      assert {:ok, %{exit_code: 0, stdout: output}} =
+               Cli.run(["eval", script], executable: executable)
+
+      assert String.split(output, <<0>>, trim: true) == ["--json", "eval", script]
+      refute File.exists?(marker)
+    end
+
     test "returns missing-binary when the executable cannot be found" do
       find = fn _name -> nil end
 

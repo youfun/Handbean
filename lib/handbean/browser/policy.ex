@@ -4,7 +4,8 @@ defmodule Handbean.Browser.Policy do
 
   Safe page interaction can follow the workspace default mode. Sensitive
   families require approval. Local files, caller-owned sessions, and
-  shell metacharacters are denied.
+  shell command syntax outside the eval script argument is denied. Eval source
+  is passed as a single argv value, never through a shell.
   """
 
   alias Handbean.Agent.Tool.Helpers
@@ -105,7 +106,10 @@ defmodule Handbean.Browser.Policy do
       forbidden_token = Enum.find(args, &forbidden_token?/1) ->
         deny("blocked token: #{forbidden_token}")
 
-      shell_arg = Enum.find(args, &shell_injection?/1) ->
+      Enum.any?(args, &String.contains?(&1, <<0>>)) ->
+        deny("args must not contain NUL bytes")
+
+      shell_arg = Enum.find(shell_checked_args(args), &shell_injection?/1) ->
         deny("shell metacharacters are not allowed: #{inspect(shell_arg)}")
 
       true ->
@@ -173,33 +177,55 @@ defmodule Handbean.Browser.Policy do
 
   @doc "First command token after leading global flags, including an inspection flag."
   @spec command([String.t()]) :: String.t() | nil
-  def command(args) when is_list(args), do: command_at_position(args)
+  def command(args) when is_list(args) do
+    case command_args(args) do
+      [command | _] -> command
+      [] -> nil
+    end
+  end
 
   def command(_), do: nil
 
-  defp command_at_position([]), do: nil
+  defp command_args([]), do: []
 
-  defp command_at_position([flag]) when flag in @leading_value_flags, do: nil
+  defp command_args([flag]) when flag in @leading_value_flags, do: []
 
-  defp command_at_position([flag, _value | rest]) when flag in @leading_value_flags,
-    do: command_at_position(rest)
+  defp command_args([flag, _value | rest]) when flag in @leading_value_flags,
+    do: command_args(rest)
 
-  defp command_at_position([arg | rest]) do
+  defp command_args([arg | rest] = args) do
     cond do
       arg in @inspection_flags ->
-        arg
+        args
 
       arg in @leading_switch_flags or leading_inline_flag?(arg) ->
-        command_at_position(rest)
+        command_args(rest)
 
       is_binary(arg) and String.starts_with?(arg, "-") ->
-        command_at_position(rest)
+        command_args(rest)
 
       is_binary(arg) ->
-        arg
+        args
 
       true ->
-        nil
+        []
+    end
+  end
+
+  # Only the inline eval source is JavaScript. Keep checking leading options,
+  # their values, and trailing argv; forbidden flags are checked on all args.
+  # JavaScript syntax and execution errors belong to the browser backend.
+  defp shell_checked_args(args) do
+    case command_args(args) do
+      ["eval", script | rest] ->
+        if String.starts_with?(script, "-") do
+          args
+        else
+          Enum.take(args, length(args) - length(rest) - 1) ++ rest
+        end
+
+      _ ->
+        args
     end
   end
 

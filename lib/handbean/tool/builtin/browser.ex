@@ -51,6 +51,18 @@ defmodule Handbean.Tool.Builtin.Browser do
   def concurrent?, do: false
 
   @impl true
+  def timeout_ms(input) when is_map(input) do
+    default = if backend() == :webview, do: 20_000, else: 35_000
+
+    case fetch_timeout(input, default) do
+      {:ok, timeout} -> timeout
+      {:error, _} -> nil
+    end
+  end
+
+  def timeout_ms(_input), do: nil
+
+  @impl true
   def execute(input, context) when is_map(input) and is_map(context) do
     case backend() do
       :webview -> execute_webview(input, context)

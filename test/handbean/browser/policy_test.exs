@@ -4,7 +4,8 @@ defmodule Handbean.Browser.PolicyTest do
 
   Safe navigation/snapshot/click stays auto. eval, cookies, profile,
   upload/download, and attach/CDP require approval. Local files, caller
-  session takeover, and shell metacharacters are denied before spawn.
+  session takeover, and shell command syntax outside eval source are denied
+  before spawn.
   """
 
   use ExUnit.Case, async: true
@@ -70,6 +71,28 @@ defmodule Handbean.Browser.PolicyTest do
                Policy.classify(["download", "@e3"])
     end
 
+    test "treats JavaScript operators, templates, and multiline source as eval data" do
+      scripts = [
+        "document.querySelector('#add-project-error')?.textContent || Array.from(document.querySelectorAll('[role=alert]')).map(x=>x.textContent).join('|')",
+        "document.body && document.title",
+        "`title: ${document.title}`",
+        "$('body').text()",
+        "const label = 'cat | bash';\nlabel",
+        "document.title; 1"
+      ]
+
+      for script <- scripts do
+        assert {:prompt, %{command: "eval", capability: :eval}} =
+                 Policy.classify(["eval", script])
+
+        assert {:prompt, %{command: "eval", capability: :headed}} =
+                 Policy.classify(["--headed", "eval", script])
+
+        assert {:prompt, %{command: "eval", capability: :profile}} =
+                 Policy.classify(["--profile", "eval", "eval", script])
+      end
+    end
+
     test "requires approval for close --all, local URLs, and pdf" do
       assert {:prompt, %{command: "close"}} = Policy.classify(["close", "--all"])
       assert {:prompt, %{command: "open"}} = Policy.classify(["open", "http://127.0.0.1:4000"])
@@ -103,6 +126,7 @@ defmodule Handbean.Browser.PolicyTest do
     test "rejects empty or non-string args" do
       assert {:deny, %{failure_category: "validation-error"}} = Policy.classify([])
       assert {:deny, %{failure_category: "validation-error"}} = Policy.classify([1, "open"])
+      assert {:deny, %{failure_category: "validation-error"}} = Policy.classify(["eval", "1\0"])
     end
 
     test "rejects local and non-http navigation even with prompt flags" do
@@ -136,16 +160,43 @@ defmodule Handbean.Browser.PolicyTest do
                Policy.classify(["open", "https://example.com", "--allow-file-access"])
     end
 
-    test "rejects shell metacharacters so args cannot become a shell" do
+    test "rejects shell command syntax outside the eval script argument" do
       assert {:deny, %{failure_category: "validation-error"}} =
                Policy.classify(["open", "https://example.com && rm -rf /"])
 
       assert {:deny, %{failure_category: "validation-error"}} =
-               Policy.classify(["eval", "1; cat /etc/passwd"])
+               Policy.classify(["eval", "document.title", "&& rm -rf /"])
+
+      assert {:deny, %{failure_category: "validation-error"}} =
+               Policy.classify(["eval && rm -rf /", "document.title"])
+
+      assert {:deny, %{failure_category: "validation-error"}} =
+               Policy.classify(["--profile", "work && rm -rf /", "eval", "document.title"])
     end
 
-    test "does not treat ordinary JS semicolons as a shell" do
+    test "eval keeps forbidden flags and independent argv subject to validation" do
+      for flag <- ["--json", "--session=other", "--namespace=other", "--allow-file-access"] do
+        assert {:deny, %{failure_category: "validation-error"}} =
+                 Policy.classify(["eval", "document.title || ''", flag])
+
+        assert {:deny, %{failure_category: "validation-error"}} =
+                 Policy.classify(["eval", flag])
+      end
+
+      assert {:prompt, %{command: "eval", capability: :cdp}} =
+               Policy.classify(["--cdp=9222", "eval", "document.title || ''"])
+    end
+
+    test "does not exempt an option in the inline script position" do
+      for option <- ["--profile=work&&echo x", "--cdp=9222||echo x", "--unknown=$(echo x)"] do
+        assert {:deny, %{failure_category: "validation-error"}} =
+                 Policy.classify(["eval", option, "document.title"])
+      end
+    end
+
+    test "leaves JavaScript syntax validation to the backend" do
       assert {:prompt, %{command: "eval"}} = Policy.classify(["eval", "document.title; 1"])
+      assert {:prompt, %{command: "eval"}} = Policy.classify(["eval", "1; cat /etc/passwd"])
     end
   end
 
