@@ -9,13 +9,20 @@ defmodule Handbean.Terminal.EngineIntegrationTest do
   test "PTY input, resize and Agent snapshot work without a browser", %{tmp_dir: workspace} do
     workspace_id = "terminal-engine-#{System.unique_integer([:positive])}"
     name = "integration"
-    :ok = Phoenix.PubSub.subscribe(Handbean.PubSub, "terminal:#{workspace_id}")
+    {:ok, checkout} = Handbean.CheckoutScope.resolve(workspace)
+
+    :ok =
+      Phoenix.PubSub.subscribe(
+        Handbean.PubSub,
+        Handbean.CheckoutScope.terminal_topic(workspace_id, checkout.key)
+      )
 
     session =
       start_supervised!(
         {Session,
          workspace_id: workspace_id,
-         workspace_path: workspace,
+         checkout_key: checkout.key,
+         checkout_path: checkout.path,
          name: name,
          cmd: "/bin/sh",
          args: ["-c", ~S(stty -echo; IFS= read -r value; printf '\033[31m%s\033[0m\n' "$value")],
@@ -28,12 +35,15 @@ defmodule Handbean.Terminal.EngineIntegrationTest do
 
     text = "中文 👩‍💻 e\u0301"
     assert :ok = Session.send_input(session, text <> "\n")
-    assert_receive {:terminal_exited, ^workspace_id, ^name, 0}, 5_000
+    assert_receive {:terminal_exited, ^workspace_id, checkout_key, ^name, 0}, 5_000
+    assert checkout_key == checkout.key
 
     assert {:ok, snapshot} = Session.snapshot(session)
     assert snapshot =~ text
     refute snapshot =~ "\e[31m"
-    assert File.read!(Path.join([workspace, ".handbean", "terminals", "#{name}.log"])) =~ text
+
+    assert File.read!(Path.join([checkout.path, ".handbean", "terminals", "#{name}.log"])) =~
+             text
 
     %{term: terminal, pty: pty} = Session.info(session)
     terminal_monitor = Process.monitor(terminal)

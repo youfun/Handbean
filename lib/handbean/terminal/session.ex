@@ -52,11 +52,12 @@ defmodule Handbean.Terminal.Session do
 
   ## Options
     * `:workspace_id` — required, workspace identifier
-    * `:workspace_path` — required, workspace filesystem path
+    * `:checkout_key` — required, canonical checkout identifier
+    * `:checkout_path` — required, checkout filesystem path
     * `:name` — required, unique name within workspace
     * `:cmd` — command to run (default: `$SHELL` or `/bin/sh`)
     * `:args` — argument list (default: `[]`)
-    * `:cwd` — working directory (default: workspace_path)
+    * `:cwd` — working directory (default: checkout_path)
     * `:cols` — terminal columns (default: 120)
     * `:rows` — terminal rows (default: 40)
   """
