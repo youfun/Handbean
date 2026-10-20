@@ -187,10 +187,10 @@ mkdir -p "$artifacts_dir"
 for abi in "${abis[@]}"; do
   pack_args=(--abi "$abi" --no-install)
   if [[ "$developer" -eq 1 ]]; then
-    out="$artifacts_dir/Handbean-Developer-${abi}.apk"
+    out="$artifacts_dir/Handbean-android-developer-linux-${abi}.apk"
     pack_args+=(--developer-sideload)
   else
-    out="$artifacts_dir/Handbean-${abi}.apk"
+    out="$artifacts_dir/Handbean-android-${abi}.apk"
   fi
   pack_args+=(--output "$out")
   echo "Packing $abi → $out"

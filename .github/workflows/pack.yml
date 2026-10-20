@@ -355,7 +355,7 @@ jobs:
       - uses: actions/download-artifact@v8
         if: needs.android.result == 'success'
         with:
-          name: handbean-android-developer-arm64-apk
+          name: handbean-android-developer-linux-arm64-apk
           path: dist
 
       - uses: actions/download-artifact@v8
@@ -384,8 +384,8 @@ jobs:
             fi
           done
           if [[ "$ANDROID_BUILT" == true ]]; then
-            for apk in Handbean-arm64-v8a.apk Handbean-x86_64.apk \
-              Handbean-Developer-arm64-v8a.apk; do
+            for apk in Handbean-android-arm64-v8a.apk Handbean-android-x86_64.apk \
+              Handbean-android-developer-linux-arm64-v8a.apk; do
               if [[ ! -s "dist/$apk" ]]; then
                 echo "Missing Android package: $apk"
                 exit 1
@@ -411,12 +411,13 @@ jobs:
             echo "Handbean desktop, Web UI, and mobile packages."
             echo
             echo "macOS desktop: unpack \`Handbean-macos-arm64.zip\` and open \`Handbean.app\`."
-            if compgen -G "dist/Handbean-arm64-v8a.apk" >/dev/null; then
+            if compgen -G "dist/Handbean-android-arm64-v8a.apk" >/dev/null; then
               echo
               echo "Android packages:"
-              echo "- \`Handbean-arm64-v8a.apk\`: standard ARM64 phone build; targetSdk 35, no Termux rootfs, Bash disabled."
-              echo "- \`Handbean-x86_64.apk\`: standard ChromeOS/x86_64 emulator build with the same capability boundary."
-              echo "- \`Handbean-Developer-arm64-v8a.apk\`: separate ARM64-only sideload build; targetSdk 28, application ID \`io.hndbean\`, with pinned Termux/Bionic Bash, Python, Node.js, Erlang/OTP, Elixir, Git, and OpenSSH."
+              echo "- \`Handbean-android-arm64-v8a.apk\`: standard ARM64 phone build; targetSdk 35, no Termux rootfs, Bash disabled."
+              echo "- \`Handbean-android-x86_64.apk\`: standard ChromeOS/x86_64 emulator build with the same capability boundary."
+              echo "- \`Handbean-android-developer-linux-arm64-v8a.apk\`: separate ARM64-only sideload build; targetSdk 28, application ID \`io.hndbean\`, with a pinned Termux/Bionic Linux userspace containing Bash, Python, Node.js, Erlang/OTP, Elixir, Git, and OpenSSH."
+              echo "  Here, Linux means a Termux userspace built for Android/Bionic, not an Alpine/Ubuntu VM or compatibility with arbitrary glibc Linux binaries."
               echo "  The Developer shell runs under the app UID and is not a security sandbox. Background Bash jobs and terminal remain disabled. It can be installed beside the standard app and uses separate private data."
               echo "  These APKs use CI debug signing and do not promise in-place upgrades across builds. A signing change requires uninstalling first, which deletes that app's private data; export anything important before reinstalling."
             fi
@@ -627,8 +628,8 @@ jobs:
       - name: Upload Developer ARM64 APK
         uses: actions/upload-artifact@v7
         with:
-          name: handbean-android-developer-arm64-apk
-          path: mobile/artifacts/developer/Handbean-Developer-arm64-v8a.apk
+          name: handbean-android-developer-linux-arm64-apk
+          path: mobile/artifacts/developer/Handbean-android-developer-linux-arm64-v8a.apk
           if-no-files-found: error
           retention-days: 14
 

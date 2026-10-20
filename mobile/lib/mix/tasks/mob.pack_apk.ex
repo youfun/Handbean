@@ -9,14 +9,14 @@ defmodule Mix.Tasks.Mob.PackApk do
 
   One APK holds one OTP zip, so arm64 and x86_64 are separate builds:
 
-      mix mob.pack_apk --abi arm64-v8a --no-install --output handbean_probe-arm64.apk
-      mix mob.pack_apk --abi x86_64 --no-install --output handbean_probe-x86_64.apk
+      mix mob.pack_apk --abi arm64-v8a --no-install --output Handbean-android-arm64-v8a.apk
+      mix mob.pack_apk --abi x86_64 --no-install --output Handbean-android-x86_64.apk
 
   Standard packages keep `targetSdk 35`. The developer/sideload package is a
   separate ARM64-only application with `targetSdk 28` and a pinned Termux rootfs:
 
       mix mob.pack_apk --abi arm64-v8a --developer-sideload --no-install \
-        --output Handbean-Developer-arm64-v8a.apk
+        --output Handbean-android-developer-linux-arm64-v8a.apk
 
   The developer package requires generated assets under
   `android/app/src/developerSideload/assets`; it never falls back to an unpinned
