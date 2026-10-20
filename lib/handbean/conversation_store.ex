@@ -848,10 +848,22 @@ defmodule Handbean.ConversationStore do
   end
 
   defp summary_map(row) do
-    metadata_map(row)
-    |> Map.take(
-      ~w(id visibility parent_conversation_id parent_run_id parent_tool_call_id scope workspace_id checkout_path title title_source archived_at pinned_at created_at updated_at)
-    )
+    %{
+      "id" => row.id,
+      "visibility" => row.visibility,
+      "parent_conversation_id" => parent_conversation_id(row),
+      "parent_run_id" => row.parent_run_id,
+      "parent_tool_call_id" => row.parent_tool_call_id,
+      "scope" => row.scope,
+      "workspace_id" => row.workspace_id,
+      "checkout_path" => row.checkout_path,
+      "title" => row.title,
+      "title_source" => row.title_source,
+      "archived_at" => iso8601(row.archived_at),
+      "pinned_at" => iso8601(row.pinned_at),
+      "created_at" => iso8601(row.created_at),
+      "updated_at" => iso8601(row.updated_at)
+    }
   end
 
   defp accessible?(conversation, opts) do

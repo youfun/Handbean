@@ -67,6 +67,74 @@ defmodule Handbean.ConversationStoreTest do
            ) == Enum.sort([older["id"], newer["id"], archived["id"], internal["id"]])
   end
 
+  test "summaries keep their public projection while detailed metadata retains usage" do
+    {:ok, _parent} =
+      ConversationStore.create("workspace-a", id: "summary-parent", visibility: "internal")
+
+    {:ok, older} =
+      ConversationStore.create("workspace-a",
+        id: "summary-older",
+        title: "Older",
+        parent_conversation_id: "summary-parent",
+        parent_run_id: "parent-run",
+        parent_tool_call_id: "tool-call"
+      )
+
+    {:ok, newer} = ConversationStore.create("workspace-a", id: "summary-newer", title: "Newer")
+    {:ok, archived} = ConversationStore.create_free(id: "summary-archived", title: "Archived")
+
+    {:ok, _internal} =
+      ConversationStore.create_free(id: "summary-internal", visibility: "internal")
+
+    assert :ok =
+             ConversationStore.record_run_usage(older["id"], "run-1", %{
+               "input_tokens" => 12,
+               "output_tokens" => 3
+             })
+
+    assert {:ok, _} = ConversationStore.archive(archived["id"])
+
+    assert {:ok, _} =
+             ConversationStore.update_meta(older["id"],
+               updated_at: "2000-01-01T00:00:00Z",
+               touch: false
+             )
+
+    assert {:ok, _} =
+             ConversationStore.update_meta(newer["id"],
+               updated_at: "2001-01-01T00:00:00Z",
+               touch: false
+             )
+
+    assert {:ok, summaries} = ConversationStore.fetch_summaries()
+    assert Enum.map(summaries, & &1["id"]) == [archived["id"], newer["id"], older["id"]]
+
+    assert Enum.sort(Map.keys(hd(summaries))) ==
+             Enum.sort(
+               ~w(id visibility parent_conversation_id parent_run_id parent_tool_call_id scope workspace_id checkout_path title title_source archived_at pinned_at created_at updated_at)
+             )
+
+    assert Enum.map(ConversationStore.list_summaries("workspace-a"), & &1["id"]) == [
+             newer["id"],
+             older["id"]
+           ]
+
+    assert [free_summary] = ConversationStore.list_free_summaries()
+    assert free_summary["id"] == archived["id"]
+    assert is_binary(free_summary["archived_at"])
+
+    older_summary = Enum.find(summaries, &(&1["id"] == older["id"]))
+    assert older_summary["parent_conversation_id"] == "summary-parent"
+    assert older_summary["parent_run_id"] == "parent-run"
+    assert older_summary["parent_tool_call_id"] == "tool-call"
+    refute Map.has_key?(older_summary, "token_usage")
+
+    assert {:ok, metadata} = ConversationStore.get_metadata(older["id"])
+    assert metadata["token_usage"]["input_tokens"] == 12
+    assert metadata["token_usage"]["output_tokens"] == 3
+    assert metadata["run_usage"]["run-1"]["input_tokens"] == 12
+  end
+
   test "legacy collaboration parents are ignored" do
     {:ok, _parent} = ConversationStore.create("workspace-a", id: "legacy-parent")
 
