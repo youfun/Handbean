@@ -9,6 +9,238 @@ defmodule Handbean.ConversationTranscriptStoreTest do
     %{id: conversation["id"]}
   end
 
+  test "public list and page use one existence read plus the entry query", %{id: id} do
+    assert_queries(2, fn -> assert {:ok, []} = ConversationTranscriptStore.list(id) end)
+
+    assert_queries(2, fn ->
+      assert {:ok, %{entries: [], before: nil, has_more?: false}} =
+               ConversationTranscriptStore.page(id)
+    end)
+
+    for entry <- ["first", "second"] do
+      assert {:ok, _} = ConversationTranscriptStore.append(id, %{"id" => entry})
+    end
+
+    assert_queries(2, fn ->
+      assert {:ok, [%{"id" => "first"}, %{"id" => "second"}]} =
+               ConversationTranscriptStore.list(id)
+    end)
+
+    assert_queries(2, fn ->
+      assert {:ok, %{entries: [%{"id" => "second"}], before: "second", has_more?: true}} =
+               ConversationTranscriptStore.page(id, limit: 1)
+    end)
+
+    assert_queries(3, fn ->
+      assert {:ok, %{entries: [%{"id" => "first"}], before: nil, has_more?: false}} =
+               ConversationTranscriptStore.page(id, before: "second")
+    end)
+  end
+
+  test "public transcript reads preserve persisted IDs outside metadata ID syntax" do
+    for id <- ["n1:transcript", String.duplicate("t", 256)] do
+      assert {:ok, _} = ConversationStore.create_free(id: id)
+
+      assert {:ok, _} =
+               ConversationTranscriptStore.append(id, %{"id" => "saved", "content" => id})
+
+      assert_queries(2, fn ->
+        assert {:ok, [%{"id" => "saved", "content" => ^id}]} =
+                 ConversationTranscriptStore.list(id)
+      end)
+
+      assert_queries(2, fn ->
+        assert {:ok,
+                %{entries: [%{"id" => "saved", "content" => ^id}], before: nil, has_more?: false}} =
+                 ConversationTranscriptStore.page(id)
+      end)
+    end
+  end
+
+  test "registered internal runtime reads preserve persisted IDs outside metadata ID syntax" do
+    id = "n1:internal-transcript"
+    assert {:ok, _} = ConversationStore.create_free(id: id, visibility: "internal")
+    assert {:ok, _} = ConversationTranscriptStore.append(id, %{"id" => "private"})
+    {:ok, _} = Registry.register(Handbean.AgentRunRegistry, id, %{run_id: "internal-run"})
+    opts = [run_id: "internal-run", runner_pid: self()]
+
+    assert_queries(2, fn ->
+      assert {:ok, [%{"id" => "private"}]} = ConversationTranscriptStore.list(id, opts)
+    end)
+
+    assert_queries(2, fn ->
+      assert {:ok, %{entries: [%{"id" => "private"}], before: nil, has_more?: false}} =
+               ConversationTranscriptStore.page(id, opts)
+    end)
+
+    assert {:error, :not_found} = ConversationTranscriptStore.list(id)
+    assert {:error, :not_found} = ConversationTranscriptStore.page(id)
+  end
+
+  test "missing and pending deletion reads stop after the existence query", %{id: id} do
+    assert {:ok, _} = ConversationTranscriptStore.append(id, %{"id" => "hidden"})
+
+    Handbean.Repo.get!(Handbean.Storage.Conversation, id)
+    |> Ecto.Changeset.change(status: "pending_delete")
+    |> Handbean.Repo.update!()
+
+    for target <- [id, "missing-transcript"] do
+      for operation <- [:list, :page] do
+        assert_queries(1, fn ->
+          assert {:error, :not_found} = apply(ConversationTranscriptStore, operation, [target])
+        end)
+      end
+    end
+  end
+
+  test "internal reads require a live parent or the registered runtime reader", %{id: parent_id} do
+    child_id = parent_id <> "-child"
+    run_id = "parent-run"
+
+    assert {:ok, _} =
+             ConversationStore.create("default",
+               id: child_id,
+               visibility: "internal",
+               parent_conversation_id: parent_id,
+               parent_run_id: run_id
+             )
+
+    assert {:ok, _} = ConversationTranscriptStore.append(child_id, %{"id" => "private"})
+
+    context = %{
+      conversation_id: parent_id,
+      run_id: run_id,
+      runner_pid: self(),
+      workspace_id: "default"
+    }
+
+    for operation <- [:list, :page] do
+      assert_queries(2, fn ->
+        assert {:error, :not_found} =
+                 apply(ConversationTranscriptStore, operation, [
+                   child_id,
+                   [access_context: context]
+                 ])
+      end)
+    end
+
+    {:ok, _} =
+      Registry.register(Handbean.AgentRunRegistry, parent_id, %{run_id: run_id, active?: true})
+
+    on_exit(fn -> Registry.unregister(Handbean.AgentRunRegistry, parent_id) end)
+
+    for operation <- [:list, :page] do
+      assert_queries(3, fn ->
+        assert {:ok, result} =
+                 apply(ConversationTranscriptStore, operation, [
+                   child_id,
+                   [access_context: context]
+                 ])
+
+        entries = if operation == :list, do: result, else: result.entries
+        assert [%{"id" => "private"}] = entries
+      end)
+
+      for invalid <- [
+            %{context | workspace_id: "other"},
+            %{context | run_id: "stale"},
+            %{context | conversation_id: "other"}
+          ] do
+        assert {:error, :not_found} =
+                 apply(ConversationTranscriptStore, operation, [
+                   child_id,
+                   [access_context: invalid]
+                 ])
+      end
+    end
+
+    Registry.unregister(Handbean.AgentRunRegistry, parent_id)
+    {:ok, _} = Registry.register(Handbean.AgentRunRegistry, child_id, %{run_id: "child-run"})
+    on_exit(fn -> Registry.unregister(Handbean.AgentRunRegistry, child_id) end)
+
+    for operation <- [:list, :page] do
+      assert_queries(2, fn ->
+        assert {:ok, result} =
+                 apply(ConversationTranscriptStore, operation, [
+                   child_id,
+                   [run_id: "child-run", runner_pid: self()]
+                 ])
+
+        entries = if operation == :list, do: result, else: result.entries
+        assert [%{"id" => "private"}] = entries
+      end)
+
+      assert {:error, :not_found} =
+               apply(ConversationTranscriptStore, operation, [
+                 child_id,
+                 [run_id: "wrong-run", runner_pid: self()]
+               ])
+    end
+
+    runner_pid = self()
+
+    Task.async(fn ->
+      for operation <- [:list, :page] do
+        assert {:error, :not_found} =
+                 apply(ConversationTranscriptStore, operation, [
+                   child_id,
+                   [run_id: "child-run", runner_pid: runner_pid]
+                 ])
+      end
+    end)
+    |> Task.await()
+
+    Handbean.Repo.get!(Handbean.Storage.Conversation, child_id)
+    |> Ecto.Changeset.change(status: "pending_delete")
+    |> Handbean.Repo.update!()
+
+    for operation <- [:list, :page] do
+      assert_queries(1, fn ->
+        assert {:error, :not_found} =
+                 apply(ConversationTranscriptStore, operation, [
+                   child_id,
+                   [run_id: "child-run", runner_pid: self()]
+                 ])
+      end)
+    end
+  end
+
+  defp assert_queries(expected, operation) do
+    ref = make_ref()
+    handler = {__MODULE__, ref}
+
+    :ok =
+      :telemetry.attach(
+        handler,
+        [:handbean, :repo, :query],
+        &__MODULE__.record_query/4,
+        {self(), ref}
+      )
+
+    try do
+      operation.()
+      queries = collect_queries(ref, [])
+
+      assert length(queries) == expected,
+             "expected #{expected} queries, got #{length(queries)}: #{inspect(queries)}"
+    after
+      :telemetry.detach(handler)
+    end
+  end
+
+  @doc false
+  def record_query(_event, _measurements, metadata, {owner, ref}) do
+    if self() == owner, do: send(owner, {ref, metadata.query})
+  end
+
+  defp collect_queries(ref, queries) do
+    receive do
+      {^ref, query} -> collect_queries(ref, [query | queries])
+    after
+      0 -> Enum.reverse(queries)
+    end
+  end
+
   test "append, list, and deep patch preserve envelope and payload fields", %{id: id} do
     assert {:ok, first} =
              ConversationTranscriptStore.append(id, %{

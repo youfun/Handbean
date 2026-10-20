@@ -38,8 +38,7 @@ defmodule Handbean.ConversationTranscriptStore.ConversationStore do
 
   @impl true
   def list(conversation_id, opts) do
-    with :ok <- authorize_read(conversation_id, opts),
-         true <- Handbean.ConversationStore.exists?(conversation_id) do
+    with :ok <- authorize_read(conversation_id, opts) do
       entries =
         ConversationEntry
         |> where([entry], entry.conversation_id == ^conversation_id)
@@ -48,16 +47,12 @@ defmodule Handbean.ConversationTranscriptStore.ConversationStore do
         |> Enum.map(&public_entry/1)
 
       {:ok, entries}
-    else
-      false -> {:error, :not_found}
-      error -> error
     end
   end
 
   @impl true
   def page(conversation_id, opts) do
     with :ok <- authorize_read(conversation_id, opts),
-         true <- Handbean.ConversationStore.exists?(conversation_id),
          {:ok, limit} <- page_limit(opts),
          {:ok, before_sequence} <- before_sequence(conversation_id, Keyword.get(opts, :before)) do
       query =
@@ -76,9 +71,6 @@ defmodule Handbean.ConversationTranscriptStore.ConversationStore do
       entries = rows |> Enum.take(limit) |> Enum.reverse() |> Enum.map(&public_entry/1)
       before = if has_more?, do: entries |> hd() |> Map.fetch!("id"), else: nil
       {:ok, %{entries: entries, before: before, has_more?: has_more?}}
-    else
-      false -> {:error, :not_found}
-      error -> error
     end
   end
 
