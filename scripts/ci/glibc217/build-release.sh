@@ -35,6 +35,13 @@ export GGML_F16C=OFF
 export GGML_BMI2=OFF
 mkdir -p "$MIX_HOME" "$HEX_HOME" "$CARGO_HOME"
 
+# Mix loads its home configuration before compiling dependencies. Keep the
+# source-build override scoped to Exqlite and this dedicated CI Mix home.
+cat >"$MIX_HOME/config.exs" <<'EOF'
+import Config
+config :elixir_make, :force_build, exqlite: true
+EOF
+
 wrapper_bin="$build/bin"
 mkdir -p "$wrapper_bin"
 ln -s "$workspace/scripts/ci/glibc217/zig-wrapper.sh" "$wrapper_bin/zig"
@@ -43,13 +50,6 @@ export PATH="$wrapper_bin:$PATH"
 cd "$source_dir"
 tar -xzf "$input/handbean-static.tar.gz"
 test -s priv/static/cache_manifest.json
-
-cat >config/glibc217.exs <<'EOF'
-import Config
-import_config "config.exs"
-config :exqlite, force_build: true
-EOF
-export MIX_CONFIG="$source_dir/config/glibc217.exs"
 
 # Source-building whisper_cpp activates its optional Rustler compiler. This
 # edit exists only in the disposable container copy and never changes mix.exs.
@@ -101,6 +101,37 @@ git -C "$ghostty_source" remote add origin https://github.com/ghostty-org/ghostt
 git -C "$ghostty_source" fetch --depth 1 origin "$ghostty_ref"
 git -C "$ghostty_source" checkout --detach FETCH_HEAD
 [[ $(git -C "$ghostty_source" rev-parse HEAD) == "$ghostty_ref" ]]
+
+# Ghostty's translate-c package is hosted on Codeberg, whose DNS has been
+# intermittent on GitHub runners. Download the pinned archive with retries and
+# seed Zig's build-root package cache with exactly the paths declared upstream.
+translate_c_ref=4e879eb8aba615de112eabd1231ea6e01920cead
+translate_c_hash=translate_c-0.0.0-Q_BUWhVNBwDOEcIqub4VFPJPB6D9dgwzUMHTX5KWr8Xr
+translate_c_archive="$downloads/translate-c-$translate_c_ref.tar.gz"
+translate_c_source="$build/translate-c-$translate_c_ref"
+translate_c_package="$ghostty_source/zig-pkg/$translate_c_hash"
+grep -Fq ".url = \"https://codeberg.org/vancluever/translate-c/archive/$translate_c_ref.tar.gz\"" \
+  "$ghostty_source/pkg/translate-c/build.zig.zon"
+grep -Fq ".hash = \"$translate_c_hash\"" \
+  "$ghostty_source/pkg/translate-c/build.zig.zon"
+download_sha256 \
+  "https://codeberg.org/vancluever/translate-c/archive/$translate_c_ref.tar.gz" \
+  "$translate_c_archive" \
+  8fb0f5c6a3e8b3bf0e35225d3abc1230bcf6f1fdf162467f1f747ec2fa5eda07
+rm -rf "$translate_c_source" "$translate_c_package"
+mkdir -p "$translate_c_source" "$translate_c_package/test"
+tar -C "$translate_c_source" --strip-components=1 -xzf "$translate_c_archive"
+cp -a \
+  "$translate_c_source/build" \
+  "$translate_c_source/build.zig" \
+  "$translate_c_source/build.zig.zon" \
+  "$translate_c_source/src" \
+  "$translate_c_source/lib" \
+  "$translate_c_source/LICENSE" \
+  "$translate_c_source/README.md" \
+  "$translate_c_package/"
+cp "$translate_c_source/test/cases.zig" "$translate_c_package/test/"
+
 export GHOSTTY_SOURCE_DIR="$ghostty_source"
 
 echo '== compile source-built native dependencies and release =='

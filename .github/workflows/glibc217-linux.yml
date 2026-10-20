@@ -2,9 +2,12 @@ name: Experimental glibc 2.17 Linux
 
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows: [Pack]
+    types: [completed]
 
 concurrency:
-  group: glibc217-linux-${{ github.ref }}
+  group: glibc217-linux-${{ github.event.workflow_run.head_sha || github.sha }}
   cancel-in-progress: false
 
 permissions:
@@ -16,11 +19,17 @@ env:
 jobs:
   assets:
     name: Static Web assets
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-24.04
     timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Native build tools used only while compiling asset dependencies
         run: |
@@ -70,6 +79,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - uses: actions/download-artifact@v8
         with:
