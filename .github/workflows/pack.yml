@@ -562,6 +562,40 @@ jobs:
         with:
           ref: ${{ needs.target.outputs.commit }}
 
+      - name: Apply pinned Android build harness
+        working-directory: .
+        env:
+          PACKAGE_COMMIT: ${{ needs.target.outputs.commit }}
+          RELEASE_TAG: ${{ needs.target.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          git fetch --depth=1 origin "$GITHUB_SHA"
+          harnesses=(
+            mobile/config/termux-rootfs.lock.json
+            scripts/version.sh
+          )
+          for harness in "${harnesses[@]}"; do
+            blob="$(git rev-parse "$GITHUB_SHA:$harness")"
+            git show "$blob" > "$harness"
+            test "$(git hash-object "$harness")" = "$blob"
+            echo "Build harness: $harness; blob: $blob"
+          done
+          echo "Workflow commit: $GITHUB_SHA"
+          echo "Package commit: $PACKAGE_COMMIT"
+          test "$(git rev-parse HEAD)" = "$PACKAGE_COMMIT"
+          changed_paths="$(git diff HEAD --name-only)"
+          while IFS= read -r changed; do
+            [[ -z "$changed" ]] && continue
+            case "$changed" in
+              mobile/config/termux-rootfs.lock.json|scripts/version.sh) ;;
+              *) echo "Unexpected Android harness change: $changed" >&2; exit 1 ;;
+            esac
+          done <<<"$changed_paths"
+          test -z "$(git ls-files --others --exclude-standard)"
+          if [[ -n "$RELEASE_TAG" ]]; then
+            bash scripts/version.sh check-tag "$RELEASE_TAG"
+          fi
+
       - uses: erlef/setup-beam@v1
         with:
           otp-version: "29.0"
@@ -635,9 +669,7 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
             mobile/.build/termux-rootfs/downloads
-          key: pack-apk-${{ runner.os }}-${{ hashFiles('mobile/mix.lock', 'mix.lock', 'mobile/config/termux-rootfs.lock.json', 'mobile/script/build_termux_rootfs.exs', 'mobile/script/create_deterministic_tar.py') }}
-          restore-keys: |
-            pack-apk-${{ runner.os }}-
+          key: pack-apk-${{ runner.os }}-${{ needs.target.outputs.commit }}-${{ github.sha }}-${{ hashFiles('mobile/mix.lock', 'mix.lock', 'mobile/config/termux-rootfs.lock.json', 'mobile/script/build_termux_rootfs.exs', 'mobile/script/create_deterministic_tar.py') }}
 
       - name: Prepare Android packaging
         env:
