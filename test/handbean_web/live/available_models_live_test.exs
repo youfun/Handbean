@@ -15,6 +15,31 @@ defmodule HandbeanWeb.AvailableModelsLiveTest do
     :ok
   end
 
+  test "default provider rejects malformed events and remains usable", %{conn: conn} do
+    :ok = ModelConfig.add_provider("test_provider", %{"name" => "Test", "models" => []})
+
+    {:ok, view, _html} =
+      live_isolated(conn, HandbeanWeb.AvailableModelsLive, session: %{"embedded" => "true"})
+
+    path = ModelConfig.config_file_path()
+    original = File.read!(path)
+
+    for params <- [%{}, %{"id" => nil}, %{"id" => %{}}, %{"id" => "missing-provider"}] do
+      render_click(view, "toggle_default_provider", params)
+      assert File.read!(path) == original
+      assert has_element?(view, "button[phx-click='clear_error']")
+    end
+
+    view
+    |> element("button[phx-click='select_provider'][phx-value-id='test_provider']")
+    |> render_click()
+
+    view |> element("input[phx-click='toggle_default_provider']") |> render_click()
+
+    assert Handbean.JSON.decode!(File.read!(path))["defaultProvider"] == "test_provider"
+    refute has_element?(view, "button[phx-click='clear_error']")
+  end
+
   test "llm_db autofills provider defaults from the provider id", %{conn: conn} do
     {:ok, view, _html} =
       live_isolated(conn, HandbeanWeb.AvailableModelsLive, session: %{"embedded" => "true"})

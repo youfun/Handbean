@@ -16,18 +16,15 @@ defmodule HandbeanWeb.AvailableModelsLive do
   alias Handbean.Agent.Provider.Cursor.Models, as: CursorModels
   alias Handbean.Agent.Provider.ModelCatalog
   alias Handbean.Agent.ModelConfig
-  alias Handbean.Agent.Reasoning
-  alias Handbean.LlmDbDefaults
-
-  # ── Lifecycle ──────────────────────────────────────────────────────────
+  alias HandbeanWeb.AvailableModelsLive.{Forms, Presentation, Projection}
 
   @impl true
   def mount(_params, session, socket) do
     if connected?(socket), do: Phoenix.PubSub.subscribe(Handbean.PubSub, "models:updated")
 
     ModelConfig.ensure_config()
-    config = load_raw_config()
-    providers = parse_providers(config)
+    config = Projection.load_raw_config()
+    providers = Projection.parse_providers(config)
     embedded = Map.get(session, "embedded") == "true"
     selected_id = if embedded, do: nil, else: Map.get(config, "defaultProvider", "")
 
@@ -39,15 +36,15 @@ defmodule HandbeanWeb.AvailableModelsLive do
       |> assign(:config, config)
       |> assign(:providers, providers)
       |> assign(:selected_provider_id, selected_id)
-      |> assign(:selected_provider, find_provider(selected_id, providers))
+      |> assign(:selected_provider, Projection.find_provider(selected_id, providers))
       |> assign(:show_add_provider, false)
       |> assign(:show_edit_provider, false)
       |> assign(:show_add_model, false)
       |> assign(:show_delete_confirm, false)
       |> assign(:delete_target, nil)
-      |> assign(:add_provider_form, reset_add_provider_form())
+      |> assign(:add_provider_form, Forms.reset_add_provider())
       |> assign(:edit_provider_form, %{})
-      |> assign(:add_model_form, reset_add_model_form())
+      |> assign(:add_model_form, Forms.reset_add_model())
       |> assign(:form_error, nil)
       |> assign(:toast, nil)
       |> assign(:xai_oauth, nil)
@@ -64,16 +61,16 @@ defmodule HandbeanWeb.AvailableModelsLive do
 
   @impl true
   def handle_info({:models_updated}, socket) do
-    config = load_raw_config()
-    providers = parse_providers(config)
-    selected_id = maybe_reselect(socket.assigns.selected_provider_id, providers)
+    config = Projection.load_raw_config()
+    providers = Projection.parse_providers(config)
+    selected_id = Projection.maybe_reselect(socket.assigns.selected_provider_id, providers)
 
     socket =
       socket
       |> assign(:config, config)
       |> assign(:providers, providers)
       |> assign(:selected_provider_id, selected_id)
-      |> assign(:selected_provider, find_provider(selected_id, providers))
+      |> assign(:selected_provider, Projection.find_provider(selected_id, providers))
       |> schedule_catalog_prices(providers)
 
     {:noreply, socket}
@@ -136,14 +133,14 @@ defmodule HandbeanWeb.AvailableModelsLive do
 
   def handle_async({:catalog_prices, generation}, {:ok, prices}, socket) do
     if socket.assigns.catalog_price_generation == generation do
-      providers = apply_catalog_prices(socket.assigns.providers, prices)
+      providers = Projection.apply_catalog_prices(socket.assigns.providers, prices)
 
       {:noreply,
        socket
        |> assign(:providers, providers)
        |> assign(
          :selected_provider,
-         find_provider(socket.assigns.selected_provider_id, providers)
+         Projection.find_provider(socket.assigns.selected_provider_id, providers)
        )}
     else
       {:noreply, socket}
@@ -152,8 +149,6 @@ defmodule HandbeanWeb.AvailableModelsLive do
 
   def handle_async({:catalog_prices, _generation}, {:exit, _reason}, socket),
     do: {:noreply, socket}
-
-  # ── Subscription OAuth ─────────────────────────────────────────────────
 
   def handle_event("open_subscription_login", _params, socket) do
     {:noreply,
@@ -207,7 +202,8 @@ defmodule HandbeanWeb.AvailableModelsLive do
     provider_id = socket.assigns.selected_provider_id
     # Checkbox clicks drop phx-value-value after the first row. Flip the stored
     # flag instead of requiring the browser to send the next state.
-    enabled = not model_enabled?(socket, provider_id, model_id)
+    enabled =
+      not Projection.model_enabled?(socket.assigns.providers, provider_id, model_id)
 
     case ModelConfig.update_model(provider_id, model_id, %{"enabled" => enabled}) do
       :ok ->
@@ -218,14 +214,12 @@ defmodule HandbeanWeb.AvailableModelsLive do
     end
   end
 
-  # ── Provider selection ─────────────────────────────────────────────────
-
   @impl true
   def handle_event("select_provider", %{"id" => id}, socket) do
     {:noreply,
      socket
      |> assign(:selected_provider_id, id)
-     |> assign(:selected_provider, find_provider(id, socket.assigns.providers))}
+     |> assign(:selected_provider, Projection.find_provider(id, socket.assigns.providers))}
   end
 
   def handle_event("clear_provider", _params, socket) do
@@ -235,10 +229,8 @@ defmodule HandbeanWeb.AvailableModelsLive do
      |> assign(:selected_provider, nil)}
   end
 
-  # ── Default provider toggle ────────────────────────────────────────────
-
   @impl true
-  def handle_event("toggle_default_provider", %{"id" => id}, socket) do
+  def handle_event("toggle_default_provider", %{"id" => id}, socket) when is_binary(id) do
     case ModelConfig.set_default_provider(id) do
       :ok ->
         toast = %{
@@ -248,14 +240,16 @@ defmodule HandbeanWeb.AvailableModelsLive do
         }
 
         Process.send_after(self(), :clear_toast, 3000)
-        {:noreply, assign(socket, :toast, toast)}
+        {:noreply, socket |> assign(:toast, toast) |> assign(:form_error, nil)}
 
       {:error, reason} ->
         {:noreply, assign(socket, :form_error, reason)}
     end
   end
 
-  # ── Add provider ───────────────────────────────────────────────────────
+  def handle_event("toggle_default_provider", _params, socket) do
+    {:noreply, assign(socket, :form_error, gettext("Invalid provider selection"))}
+  end
 
   @impl true
   def handle_event("open_add_provider", _params, socket) do
@@ -263,7 +257,7 @@ defmodule HandbeanWeb.AvailableModelsLive do
      socket
      |> assign(:show_add_provider, true)
      |> assign(:form_error, nil)
-     |> assign(:add_provider_form, reset_add_provider_form())}
+     |> assign(:add_provider_form, Forms.reset_add_provider())}
   end
 
   def handle_event("close_add_provider", _params, socket) do
@@ -275,7 +269,7 @@ defmodule HandbeanWeb.AvailableModelsLive do
 
   def handle_event("update_add_provider", %{"add_provider" => params}, socket) do
     previous = socket.assigns.add_provider_form
-    form = previous |> Map.merge(params) |> maybe_apply_subscription_preset()
+    form = Forms.merge_add_provider(previous, params)
     {:noreply, assign(socket, :add_provider_form, form)}
   end
 
@@ -285,40 +279,18 @@ defmodule HandbeanWeb.AvailableModelsLive do
   end
 
   def handle_event("submit_add_provider", %{"add_provider" => params}, socket) do
-    params =
-      socket.assigns.add_provider_form
-      |> Map.merge(params)
-      |> maybe_apply_subscription_preset()
-      |> hydrate_add_provider_form(true)
-
-    name = params["name"] |> to_string() |> String.trim()
-    api = params["api"] |> to_string() |> String.trim()
-    base_url = params["base_url"] |> to_string() |> String.trim()
-    api_key = params["api_key"] |> to_string() |> String.trim()
-
-    provider_id =
-      params["id"]
-      |> to_string()
-      |> String.trim()
-      |> present_or(generated_provider_id(name, socket.assigns.providers))
-
-    cond do
-      provider_id == "" ->
+    case Forms.add_provider_submission(
+           socket.assigns.add_provider_form,
+           params,
+           socket.assigns.providers
+         ) do
+      {:error, :provider_id_empty} ->
         {:noreply, assign(socket, :form_error, gettext("Provider ID 不能为空"))}
 
-      not String.match?(provider_id, ~r/^[a-z0-9_-]+$/) ->
+      {:error, :provider_id_invalid} ->
         {:noreply, assign(socket, :form_error, gettext("Provider ID 只能包含小写字母、数字、横线和下划线"))}
 
-      true ->
-        provider_attrs = %{
-          "provider" => runtime_provider(params, provider_id),
-          "baseUrl" => base_url,
-          "api" => api,
-          "apiKey" => api_key,
-          "name" => present_or(name, display_name(provider_id)),
-          "models" => subscription_seed_models(provider_id)
-        }
-
+      {:ok, provider_id, provider_attrs} ->
         case ModelConfig.add_provider(provider_id, provider_attrs) do
           :ok ->
             toast = %{
@@ -333,7 +305,7 @@ defmodule HandbeanWeb.AvailableModelsLive do
              socket
              |> assign(:show_add_provider, false)
              |> assign(:form_error, nil)
-             |> assign(:add_provider_form, reset_add_provider_form())
+             |> assign(:add_provider_form, Forms.reset_add_provider())
              |> assign(:selected_provider_id, provider_id)
              |> reload_providers()
              |> maybe_refresh_saved_catalog(provider_id)
@@ -349,22 +321,15 @@ defmodule HandbeanWeb.AvailableModelsLive do
     {:noreply, assign(socket, :form_error, gettext("表单数据无效"))}
   end
 
-  # ── Edit provider ──────────────────────────────────────────────────────
-
   @impl true
   def handle_event("open_edit_provider", %{"id" => id}, socket) do
-    provider = find_provider(id, socket.assigns.providers)
+    provider = Projection.find_provider(id, socket.assigns.providers)
 
     {:noreply,
      socket
      |> assign(:show_edit_provider, true)
      |> assign(:form_error, nil)
-     |> assign(:edit_provider_form, %{
-       "name" => provider.name,
-       "api" => provider.api,
-       "base_url" => provider.base_url,
-       "api_key" => form_api_key(provider.api_key)
-     })}
+     |> assign(:edit_provider_form, Forms.edit_provider_form(provider))}
   end
 
   def handle_event("close_edit_provider", _params, socket) do
@@ -385,15 +350,7 @@ defmodule HandbeanWeb.AvailableModelsLive do
 
   def handle_event("submit_edit_provider", %{"edit_provider" => params}, socket) do
     provider_id = socket.assigns.selected_provider_id
-    params = Map.merge(socket.assigns.edit_provider_form, params)
-
-    attrs =
-      %{
-        "name" => params["name"],
-        "api" => params["api"],
-        "baseUrl" => params["base_url"]
-      }
-      |> maybe_put_api_key(params["api_key"])
+    attrs = Forms.edit_provider_attrs(socket.assigns.edit_provider_form, params)
 
     case ModelConfig.update_provider(provider_id, attrs) do
       :ok ->
@@ -421,8 +378,6 @@ defmodule HandbeanWeb.AvailableModelsLive do
   def handle_event("submit_edit_provider", _params, socket) do
     {:noreply, assign(socket, :form_error, gettext("表单数据无效"))}
   end
-
-  # ── Delete provider / model ────────────────────────────────────────────
 
   @impl true
   def handle_event("confirm_delete_provider", _params, socket) do
@@ -485,15 +440,12 @@ defmodule HandbeanWeb.AvailableModelsLive do
     end
   end
 
-  # ── Add model ──────────────────────────────────────────────────────────
-
-  @impl true
   def handle_event("open_add_model", _params, socket) do
     {:noreply,
      socket
      |> assign(:show_add_model, true)
      |> assign(:form_error, nil)
-     |> assign(:add_model_form, reset_add_model_form())}
+     |> assign(:add_model_form, Forms.reset_add_model())}
   end
 
   def handle_event("close_add_model", _params, socket) do
@@ -514,49 +466,33 @@ defmodule HandbeanWeb.AvailableModelsLive do
 
   def handle_event("submit_add_model", %{"add_model" => params}, socket) do
     provider_id = socket.assigns.selected_provider_id
-    params = socket.assigns.add_model_form |> Map.merge(params) |> hydrate_add_model_form(true)
 
-    model_id = params["id"] |> to_string() |> String.trim()
-    model_name = params["name"] |> to_string() |> String.trim()
-    type = params["type"] |> to_string() |> String.trim()
+    case Forms.add_model_submission(socket.assigns.add_model_form, params, provider_id) do
+      {:error, :model_id_empty} ->
+        {:noreply, assign(socket, :form_error, gettext("模型 ID 不能为空"))}
 
-    if model_id == "" do
-      {:noreply, assign(socket, :form_error, gettext("模型 ID 不能为空"))}
-    else
-      model_cost = build_cost_map(params)
+      {:ok, model_id, model_attrs} ->
+        case ModelConfig.add_model(provider_id, model_id, model_attrs) do
+          :ok ->
+            toast = %{
+              type: :success,
+              message: gettext("模型已成功添加"),
+              id: System.unique_integer([:positive])
+            }
 
-      model_attrs =
-        %{
-          "name" => present_or(model_name, model_id),
-          "input" => [type || "text"],
-          "contextWindow" => parse_int(params["context_window"], 128_000),
-          "maxTokens" => parse_int(params["max_tokens"], 8192),
-          "cost" => model_cost
-        }
-        |> maybe_put_reasoning(Map.put(params, "provider_id", provider_id), model_id)
-        |> maybe_drop_empty_cost()
+            Process.send_after(self(), :clear_toast, 3000)
 
-      case ModelConfig.add_model(provider_id, model_id, model_attrs) do
-        :ok ->
-          toast = %{
-            type: :success,
-            message: gettext("模型已成功添加"),
-            id: System.unique_integer([:positive])
-          }
+            {:noreply,
+             socket
+             |> assign(:show_add_model, false)
+             |> assign(:form_error, nil)
+             |> assign(:add_model_form, Forms.reset_add_model())
+             |> reload_providers()
+             |> assign(:toast, toast)}
 
-          Process.send_after(self(), :clear_toast, 3000)
-
-          {:noreply,
-           socket
-           |> assign(:show_add_model, false)
-           |> assign(:form_error, nil)
-           |> assign(:add_model_form, reset_add_model_form())
-           |> reload_providers()
-           |> assign(:toast, toast)}
-
-        {:error, reason} ->
-          {:noreply, assign(socket, :form_error, reason)}
-      end
+          {:error, reason} ->
+            {:noreply, assign(socket, :form_error, reason)}
+        end
     end
   end
 
@@ -564,72 +500,9 @@ defmodule HandbeanWeb.AvailableModelsLive do
     {:noreply, assign(socket, :form_error, gettext("表单数据无效"))}
   end
 
-  # ── Clear error ───────────────────────────────────────────────────────
-
-  @impl true
   def handle_event("clear_error", _params, socket) do
     {:noreply, assign(socket, :form_error, nil)}
   end
-
-  # ── Helpers ────────────────────────────────────────────────────────────
-
-  def obscured_api_key(key) when is_binary(key) do
-    cond do
-      key == "" -> "—"
-      String.starts_with?(key, "env:") -> "••••••••"
-      String.length(key) > 12 -> String.slice(key, 0, 6) <> "..." <> String.slice(key, -4, 4)
-      true -> String.slice(key, 0, 4) <> "..."
-    end
-  end
-
-  def obscured_api_key(nil), do: "—"
-
-  defp form_api_key("env:" <> _var), do: ""
-  defp form_api_key(key) when is_binary(key), do: key
-  defp form_api_key(_), do: ""
-
-  defp maybe_put_api_key(attrs, api_key) do
-    case api_key |> to_string() |> String.trim() do
-      "" -> attrs
-      key -> Map.put(attrs, "apiKey", key)
-    end
-  end
-
-  def format_context(nil), do: "—"
-  def format_context(n) when is_integer(n) and n >= 1_000_000, do: "#{div(n, 1_000_000)}M"
-  def format_context(n) when is_integer(n) and n >= 1_000, do: "#{div(n, 1_000)}K"
-  def format_context(n) when is_integer(n), do: Integer.to_string(n)
-
-  def format_price(%{"input" => input, "output" => output})
-      when is_number(input) and is_number(output) do
-    "in #{format_price_number(input)} / out #{format_price_number(output)}"
-  end
-
-  def format_price(%{input: input, output: output}) when is_number(input) and is_number(output) do
-    "in #{format_price_number(input)} / out #{format_price_number(output)}"
-  end
-
-  def format_price(_), do: "—"
-
-  def delete_confirm_title(%{type: :provider}), do: gettext("删除供应商")
-  def delete_confirm_title(%{type: :model}), do: gettext("删除模型")
-  def delete_confirm_title(_), do: gettext("确认删除")
-
-  def delete_confirm_message(%{type: :provider, id: id}, providers) do
-    name =
-      case Enum.find(providers, &(&1.id == id)) do
-        nil -> id
-        p -> p.name
-      end
-
-    gettext("确认删除供应商「%{name}」(ID: %{id})？这将同时删除其下所有模型。", name: name, id: id)
-  end
-
-  def delete_confirm_message(%{type: :model, model_id: mid}, _providers) do
-    gettext("确认删除模型「%{id}」？", id: mid)
-  end
-
-  def delete_confirm_message(_, _), do: gettext("确认删除？")
 
   defp start_subscription_oauth(socket, provider_id) do
     socket = clear_subscription_oauth(socket)
@@ -646,7 +519,10 @@ defmodule HandbeanWeb.AvailableModelsLive do
       |> assign(:selected_provider_id, method.id)
       |> assign(
         :selected_provider,
-        find_provider(method.id, parse_providers(load_raw_config()))
+        Projection.find_provider(
+          method.id,
+          Projection.parse_providers(Projection.load_raw_config())
+        )
       )
       |> assign(:form_error, nil)
       |> put_oauth(%{
@@ -792,7 +668,7 @@ defmodule HandbeanWeb.AvailableModelsLive do
   defp discover_provider_models(socket) do
     provider_id = socket.assigns.selected_provider_id
     attempt_id = System.unique_integer([:positive])
-    opts = catalog_discover_opts()
+    opts = Projection.catalog_discover_opts()
 
     socket
     |> cancel_discovery_async(:provider)
@@ -806,7 +682,7 @@ defmodule HandbeanWeb.AvailableModelsLive do
   # use their own discovery; every other fetchable provider uses the shared list.
   defp maybe_refresh_saved_catalog(socket, provider_id) do
     provider =
-      case load_raw_config() do
+      case Projection.load_raw_config() do
         %{"providers" => %{^provider_id => provider}} -> provider
         _ -> nil
       end
@@ -827,13 +703,6 @@ defmodule HandbeanWeb.AvailableModelsLive do
 
       true ->
         socket
-    end
-  end
-
-  defp catalog_discover_opts do
-    case Application.get_env(:handbean, :catalog_req_module) do
-      module when is_atom(module) and not is_nil(module) -> [req_module: module]
-      _ -> []
     end
   end
 
@@ -872,7 +741,7 @@ defmodule HandbeanWeb.AvailableModelsLive do
       case result do
         {:ok, models} ->
           models =
-            ModelCatalog.refresh_merge(stored_models("cursor"), models, missing: :drop)
+            ModelCatalog.refresh_merge(Projection.stored_models("cursor"), models, missing: :drop)
 
           case ModelConfig.update_provider("cursor", %{"models" => models}) do
             :ok -> reload_providers(socket)
@@ -892,7 +761,8 @@ defmodule HandbeanWeb.AvailableModelsLive do
 
       case result do
         {:ok, models} ->
-          models = CodexModels.preserve_enabled(models, stored_models("openai_codex"))
+          models =
+            CodexModels.preserve_enabled(models, Projection.stored_models("openai_codex"))
 
           case ModelConfig.update_provider("openai_codex", %{"models" => models}) do
             :ok -> reload_providers(socket)
@@ -983,7 +853,7 @@ defmodule HandbeanWeb.AvailableModelsLive do
   # the nested LiveView long enough for the settings page to stay blank, so
   # stored prices render immediately and missing ones fill in afterwards.
   defp schedule_catalog_prices(socket, providers) do
-    ids = unpriced_model_ids(providers)
+    ids = Projection.unpriced_model_ids(providers)
     generation = socket.assigns.catalog_price_generation + 1
 
     socket =
@@ -996,7 +866,9 @@ defmodule HandbeanWeb.AvailableModelsLive do
         socket
 
       true ->
-        start_async(socket, {:catalog_prices, generation}, fn -> lookup_catalog_prices(ids) end)
+        start_async(socket, {:catalog_prices, generation}, fn ->
+          Projection.lookup_catalog_prices(ids)
+        end)
     end
   end
 
@@ -1005,387 +877,27 @@ defmodule HandbeanWeb.AvailableModelsLive do
 
   defp cancel_catalog_async(socket, _generation), do: socket
 
-  defp lookup_catalog_prices(ids), do: LlmDbDefaults.prices_for_model_ids(ids)
-
-  defp unpriced_model_ids(providers) do
-    providers
-    |> Enum.flat_map(& &1.models)
-    |> Enum.filter(&(map_size(&1.cost) == 0))
-    |> Enum.map(& &1.id)
-    |> Enum.filter(&is_binary/1)
-  end
-
-  defp apply_catalog_prices(providers, prices) do
-    Enum.map(providers, fn provider ->
-      models =
-        Enum.map(provider.models, fn model ->
-          case Map.get(prices, model.id) do
-            %{} = cost when map_size(cost) > 0 and map_size(model.cost) == 0 ->
-              %{model | cost: cost}
-
-            _ ->
-              model
-          end
-        end)
-
-      %{provider | models: models}
-    end)
-  end
-
-  defp model_enabled?(socket, provider_id, model_id) do
-    provider = find_provider(provider_id, socket.assigns.providers)
-    model = provider && Enum.find(provider.models, &(&1.id == model_id))
-    (model && model.enabled) || false
-  end
-
-  defp display_cost(%{"cost" => cost}) when is_map(cost) and map_size(cost) > 0, do: cost
-  defp display_cost(_), do: %{}
-
-  defp stored_models(provider_id) do
-    case load_raw_config() do
-      %{"providers" => %{^provider_id => %{"models" => models}}} when is_list(models) -> models
-      _ -> []
-    end
-  end
-
   defp reload_providers(socket) do
-    config = load_raw_config()
-    providers = parse_providers(config)
-    selected_id = maybe_reselect(socket.assigns.selected_provider_id, providers)
+    config = Projection.load_raw_config()
+    providers = Projection.parse_providers(config)
+    selected_id = Projection.maybe_reselect(socket.assigns.selected_provider_id, providers)
 
     socket
     |> assign(:config, config)
     |> assign(:providers, providers)
     |> assign(:selected_provider_id, selected_id)
-    |> assign(:selected_provider, find_provider(selected_id, providers))
+    |> assign(:selected_provider, Projection.find_provider(selected_id, providers))
     |> schedule_catalog_prices(providers)
   end
 
-  defp load_raw_config do
-    path = ModelConfig.config_file_path()
+  defdelegate obscured_api_key(key), to: Presentation
+  defdelegate format_context(number), to: Presentation
+  defdelegate format_price(cost), to: Presentation
+  defdelegate delete_confirm_title(target), to: Presentation
+  defdelegate delete_confirm_message(target, providers), to: Presentation
+  defdelegate reasoning_level_label(level), to: Presentation
+  defdelegate reasoning_levels_for(provider_id, model), to: Presentation
+  defdelegate configurable_reasoning_levels(form), to: Forms
 
-    case File.read(path) do
-      {:ok, content} ->
-        case Handbean.JSON.decode(content) do
-          {:ok, json} when is_map(json) -> json
-          _ -> empty_config()
-        end
-
-      _ ->
-        empty_config()
-    end
-  end
-
-  defp empty_config, do: %{"defaultProvider" => "", "providers" => %{}}
-
-  defp parse_providers(config) do
-    providers = Map.get(config, "providers", %{})
-    default = Map.get(config, "defaultProvider", "")
-
-    Enum.map(providers, fn {id, pc} ->
-      %{
-        id: id,
-        name: Map.get(pc, "name", display_name(id)),
-        api: Map.get(pc, "api", ""),
-        base_url: Map.get(pc, "baseUrl", ""),
-        api_key: Map.get(pc, "apiKey", ""),
-        auth_type: Map.get(pc, "authType", "api_key"),
-        fetchable: ModelCatalog.fetchable?(pc),
-        is_default: id == default,
-        provider: Map.get(pc, "provider", id),
-        models:
-          Map.get(pc, "models", [])
-          |> Enum.map(fn m ->
-            %{
-              id: Map.get(m, "id", ""),
-              name: Map.get(m, "name", ""),
-              type: List.first(Map.get(m, "input", ["text"])) || "text",
-              reasoning: Map.get(m, "reasoning") == true,
-              reasoning_levels: Map.get(m, "reasoningLevels", []),
-              default_reasoning: Map.get(m, "defaultReasoning"),
-              thinking_level_map: Map.get(m, "thinkingLevelMap", %{}),
-              context_window: Map.get(m, "contextWindow"),
-              max_tokens: Map.get(m, "maxTokens"),
-              cost: display_cost(m),
-              enabled: Map.get(m, "enabled") != false
-            }
-          end)
-      }
-    end)
-  end
-
-  defp display_name(id) do
-    id |> String.capitalize()
-  end
-
-  defp find_provider(id, providers) do
-    Enum.find(providers, &(&1.id == id))
-  end
-
-  defp maybe_reselect(current_id, providers) do
-    if current_id && Enum.any?(providers, &(&1.id == current_id)) do
-      current_id
-    else
-      providers |> List.first() |> then(&if(&1, do: &1.id))
-    end
-  end
-
-  @subscription_presets ["ollama", "ollama-cloud", "ollama_cloud", "opencode-go", "opencode_go"]
-
-  defp maybe_apply_subscription_preset(form) do
-    case Handbean.Agent.Provider.SubscriptionCatalog.preset(form["id"]) do
-      nil ->
-        form
-
-      preset ->
-        form
-        |> Map.put("id", preset["provider"])
-        |> Map.put("name", preset["name"])
-        |> Map.put("base_url", preset["baseUrl"])
-        |> Map.put("api", preset["api"])
-        |> Map.put("provider_runtime", preset["provider"])
-        |> Map.put("subscription_preset", true)
-    end
-  end
-
-  defp subscription_seed_models(provider_id) do
-    case Handbean.Agent.Provider.SubscriptionCatalog.preset(provider_id) do
-      %{"models" => models} when provider_id in @subscription_presets and is_list(models) ->
-        models
-
-      _ ->
-        []
-    end
-  end
-
-  defp reset_add_provider_form do
-    %{
-      "name" => "",
-      "id" => "",
-      "api" => "openai",
-      "base_url" => "",
-      "api_key" => "",
-      "provider_runtime" => "",
-      "model_id" => "",
-      "model_name" => "",
-      "context_window" => "128000",
-      "max_tokens" => "8192",
-      "price_input" => "",
-      "price_output" => "",
-      "price_cache_read" => "",
-      "price_cache_write" => "",
-      "price_reasoning" => "",
-      "reasoning" => "false",
-      "reasoning_levels" => []
-    }
-  end
-
-  defp reset_add_model_form do
-    %{
-      "id" => "",
-      "name" => "",
-      "type" => "text",
-      "context_window" => "128000",
-      "max_tokens" => "8192",
-      "price_input" => "",
-      "price_output" => "",
-      "price_cache_read" => "",
-      "price_cache_write" => "",
-      "price_reasoning" => "",
-      "reasoning" => "false",
-      "reasoning_levels" => []
-    }
-  end
-
-  defp hydrate_add_provider_form(%{"subscription_preset" => true} = form, _force?), do: form
-
-  defp hydrate_add_provider_form(form, force?) do
-    defaults = LlmDbDefaults.defaults_for(form["id"], form["name"], form["base_url"], nil)
-
-    form
-    |> put_default("id", defaults.provider_id, false)
-    |> put_default("name", defaults.provider[:provider_name], force?)
-    |> put_default("base_url", defaults.provider[:base_url], force?)
-    |> put_default("api", defaults.provider[:api], force?)
-    |> put_default("provider_runtime", defaults.provider[:provider_runtime], force?)
-  end
-
-  defp hydrate_add_model_form(form, force?) do
-    defaults = LlmDbDefaults.model_form_defaults(form["id"])
-
-    form
-    |> put_default("name", defaults[:model_name], force?)
-    |> put_default("context_window", to_string_or_nil(defaults[:context_window]), force?)
-    |> put_default("max_tokens", to_string_or_nil(defaults[:max_tokens]), force?)
-    |> put_default("price_input", to_string_or_nil(defaults[:price_input]), force?)
-    |> put_default("price_output", to_string_or_nil(defaults[:price_output]), force?)
-    |> put_default("price_cache_read", to_string_or_nil(defaults[:price_cache_read]), force?)
-    |> put_default("price_cache_write", to_string_or_nil(defaults[:price_cache_write]), force?)
-    |> put_default("price_reasoning", to_string_or_nil(defaults[:price_reasoning]), force?)
-  end
-
-  defp generated_provider_id(name, providers) do
-    existing = Enum.map(providers, & &1.id)
-
-    base =
-      name
-      |> String.downcase()
-      |> String.replace(~r/[^a-z0-9]+/, "-")
-      |> String.trim("-")
-      |> case do
-        "" -> "provider"
-        slug -> slug
-      end
-
-    if base in existing do
-      Stream.iterate(2, &(&1 + 1))
-      |> Enum.find_value(fn n ->
-        candidate = "#{base}-#{n}"
-        unless candidate in existing, do: candidate
-      end)
-    else
-      base
-    end
-  end
-
-  defp runtime_provider(params, provider_id) do
-    params
-    |> Map.get("provider_runtime")
-    |> present_or(provider_id)
-  end
-
-  defp build_cost_map(params) do
-    %{}
-    |> maybe_put_cost("input", params["price_input"])
-    |> maybe_put_cost("output", params["price_output"])
-    |> maybe_put_cost("cache_read", params["price_cache_read"])
-    |> maybe_put_cost("cache_write", params["price_cache_write"])
-    |> maybe_put_cost("reasoning", params["price_reasoning"])
-  end
-
-  defp maybe_put_cost(costs, _key, nil), do: costs
-
-  defp maybe_put_cost(costs, key, value) do
-    case parse_float(value) do
-      nil -> costs
-      number -> Map.put(costs, key, number)
-    end
-  end
-
-  defp maybe_drop_empty_cost(%{"cost" => cost} = model) when map_size(cost) == 0,
-    do: Map.delete(model, "cost")
-
-  defp maybe_drop_empty_cost(model), do: model
-
-  defp maybe_put_reasoning(model, params, model_id) do
-    if truthy?(params["reasoning"]) do
-      Map.merge(model, reasoning_catalog_fields(params, model_id))
-    else
-      model
-    end
-  end
-
-  defp reasoning_catalog_fields(params, model_id) do
-    Reasoning.catalog_fields(
-      %{id: model_id, provider_id: params["provider_id"] || params["id"]},
-      selected_reasoning_levels(params)
-    )
-  end
-
-  defp selected_reasoning_levels(params) do
-    params
-    |> Map.get("reasoning_levels", [])
-    |> List.wrap()
-    |> Enum.reject(&(&1 in [nil, ""]))
-  end
-
-  defp reasoning_level_checked?(form, level) do
-    selected = selected_reasoning_levels(form)
-    selected == [] or level in selected
-  end
-
-  defp truthy?(value) when value in [true, "true", "on", "1"], do: true
-  defp truthy?(_value), do: false
-
-  def reasoning_level_label(level) do
-    case level do
-      "off" -> gettext("None (use provider default)")
-      "minimal" -> gettext("Minimal")
-      "low" -> gettext("Low")
-      "medium" -> gettext("Medium")
-      "high" -> gettext("High")
-      "xhigh" -> gettext("X-High")
-      _ -> level
-    end
-  end
-
-  def reasoning_levels_for(provider_id, model) do
-    model
-    |> Map.put(:id, model.id)
-    |> Map.put(:provider_id, provider_id)
-    |> Map.put(:reasoning, true)
-    |> Map.put(:reasoning_levels, Map.get(model, :reasoning_levels, []))
-    |> Map.put(:default_reasoning, Map.get(model, :default_reasoning))
-    |> Map.put(:thinking_level_map, Map.get(model, :thinking_level_map, %{}))
-    |> Reasoning.supported_levels()
-  end
-
-  def configurable_reasoning_levels(form) do
-    model_id = form["model_id"] || form["id"]
-    provider_id = form["provider_id"] || form["id"]
-
-    Reasoning.configurable_levels(%{id: model_id, provider_id: provider_id, reasoning: true})
-  end
-
-  defp put_default(form, _key, nil, _force?), do: form
-
-  defp put_default(form, key, value, true), do: Map.put(form, key, value)
-
-  defp put_default(form, key, value, false) do
-    case Map.get(form, key) do
-      nil -> Map.put(form, key, value)
-      "" -> Map.put(form, key, value)
-      _existing -> form
-    end
-  end
-
-  defp to_string_or_nil(nil), do: nil
-  defp to_string_or_nil(value) when is_binary(value), do: value
-  defp to_string_or_nil(value), do: to_string(value)
-
-  defp present_or(value, fallback) when is_binary(value) do
-    if String.trim(value) == "", do: fallback, else: value
-  end
-
-  defp present_or(nil, fallback), do: fallback
-  defp present_or(value, _fallback), do: value
-
-  defp parse_int(str, default) when is_binary(str) do
-    case Integer.parse(String.trim(str)) do
-      {int, _} -> int
-      :error -> default
-    end
-  end
-
-  defp parse_int(nil, default), do: default
-  defp parse_int(int, _default) when is_integer(int), do: int
-
-  defp parse_float(value) when is_binary(value) do
-    case Float.parse(String.trim(value)) do
-      {number, ""} -> number
-      {number, _rest} -> number
-      :error -> nil
-    end
-  end
-
-  defp parse_float(value) when is_integer(value), do: :erlang.float(value)
-  defp parse_float(value) when is_float(value), do: value
-
-  defp format_price_number(value) when is_integer(value), do: Integer.to_string(value)
-
-  defp format_price_number(value) when is_float(value) do
-    :erlang.float_to_binary(value, decimals: 6)
-    |> String.trim_trailing("0")
-    |> String.trim_trailing(".")
-  end
+  defp reasoning_level_checked?(form, level), do: Forms.reasoning_level_checked?(form, level)
 end
