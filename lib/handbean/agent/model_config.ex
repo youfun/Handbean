@@ -63,6 +63,11 @@ defmodule Handbean.Agent.ModelConfig do
   def default_model_for_workspace(workspace_root),
     do: Policy.default_model_for_workspace(workspace_root)
 
+  @doc "Return the explicitly configured default only when it is currently available."
+  @spec strict_default_model_for_workspace(Path.t()) :: String.t() | nil
+  def strict_default_model_for_workspace(workspace_root),
+    do: Policy.strict_default_model_for_workspace(workspace_root)
+
   @doc "Return whether a model is allowed by a workspace policy."
   @spec model_allowed_for_workspace?(Path.t(), String.t()) :: boolean()
   def model_allowed_for_workspace?(workspace_root, model_id),

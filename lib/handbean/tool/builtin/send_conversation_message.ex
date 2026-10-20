@@ -15,7 +15,7 @@ defmodule Handbean.Tool.Builtin.SendConversationMessage do
         conversation: %{
           type: "string",
           description:
-            "Target conversation id in the same workspace. Not a title. Free chats and internal tasks are not addressable."
+            "Exact target conversation id. A different workspace requires per-call approval unless the run is yolo. Not a title. Free chats and internal tasks are not addressable."
         },
         message: %{type: "string", maxLength: 8000},
         request_id: %{type: "string", maxLength: 128},

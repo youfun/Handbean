@@ -14,7 +14,8 @@ defmodule Handbean.Tool.Builtin.GetConversationTrajectory do
       properties: %{
         conversation: %{
           type: "string",
-          description: "Conversation id in the same workspace. Not a title."
+          description:
+            "Exact conversation id. A different workspace requires per-call approval unless the run is yolo. Not a title."
         },
         run_id: %{type: "string", description: "Optional durable run id filter."},
         turn: %{

@@ -48,6 +48,77 @@ defmodule Handbean.ConversationsTest do
              Conversations.list(%{}, %{c.context | conversation_id: c.target})
   end
 
+  test "a cross-workspace conversation grant is exact and operation scoped", c do
+    call = %{
+      id: "foreign-read",
+      name: "read_conversation",
+      input: %{"conversation" => c.foreign}
+    }
+
+    requirement = Handbean.Permissions.Boundary.requirement(call, c.context)
+    grant = Handbean.Permissions.Boundary.grant(call, c.context, requirement, :human)
+
+    approved =
+      c.context
+      |> Map.put(:tool_execution_grants, %{call.id => grant})
+      |> Handbean.Permissions.Boundary.invocation_context(call)
+
+    assert {:ok, _result} = Conversations.read(call.input, approved)
+
+    assert {:error, :not_accessible} =
+             Conversations.status(%{"conversation" => c.foreign}, approved)
+
+    changed = put_in(call, [:input, "conversation"], c.target)
+
+    changed_context =
+      c.context
+      |> Map.put(:tool_execution_grants, %{call.id => grant})
+      |> Handbean.Permissions.Boundary.invocation_context(changed)
+
+    refute Map.has_key?(changed_context, :boundary_grant)
+  end
+
+  test "yolo permits exact cross-workspace inspection but not discovery or hidden scopes", c do
+    {:ok, _} =
+      ConversationTranscriptStore.append(c.foreign, %{
+        "id" => "foreign-message",
+        "role" => "assistant",
+        "content" => "foreign exact result"
+      })
+
+    {:ok, hidden} =
+      ConversationStore.create("other", title: "Hidden", visibility: "internal")
+
+    {:ok, free} = ConversationStore.create_free(title: "Free")
+    yolo = Map.put(c.context, :approval_mode, :yolo)
+
+    assert {:ok, %{messages: messages}} =
+             Conversations.read(%{"conversation" => c.foreign}, yolo)
+
+    assert Enum.any?(messages, &(&1["content"] == "foreign exact result"))
+    assert {:ok, %{state: "idle"}} = Conversations.status(%{"conversation" => c.foreign}, yolo)
+
+    assert {:ok, %{records: records}} =
+             Conversations.trajectory(%{"conversation" => c.foreign}, yolo)
+
+    assert records != []
+
+    for id <- [hidden["id"], free["id"]] do
+      assert {:error, :not_accessible} = Conversations.read(%{"conversation" => id}, yolo)
+      assert {:error, :not_accessible} = Conversations.status(%{"conversation" => id}, yolo)
+      assert {:error, :not_accessible} = Conversations.trajectory(%{"conversation" => id}, yolo)
+    end
+
+    assert {:ok, %{conversations: listed}} = Conversations.list(%{"archived" => "all"}, yolo)
+    refute Enum.any?(listed, &(&1["id"] == c.foreign))
+
+    assert {:error, :not_accessible} =
+             Conversations.search_entries(
+               %{"query" => "foreign", "conversation" => c.foreign},
+               yolo
+             )
+  end
+
   test "same-time pagination binds query, caller and updates", c do
     for id <- [c.source, c.target], do: ConversationStore.update_meta(id, updated_at: "same")
     input = %{"limit" => 1}

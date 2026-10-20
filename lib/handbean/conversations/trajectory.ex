@@ -14,7 +14,7 @@ defmodule Handbean.Conversations.Trajectory do
              ~w(conversation run_id turn detail_level kinds errors_only limit max_chars cursor)
            ),
          {:ok, conversation_id} <- Conversations.text(input, "conversation", nil, 256),
-         {:ok, _meta} <- Conversations.authorize(context, conversation_id),
+         {:ok, _meta} <- Conversations.authorize(context, conversation_id, :trajectory),
          {:ok, run_id} <- optional_text(input, "run_id", 256),
          {:ok, turn_number} <- optional_integer(input, "turn", 1, 1_000_000),
          true <- is_nil(turn_number) or is_binary(run_id),

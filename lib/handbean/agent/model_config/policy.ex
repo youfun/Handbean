@@ -97,6 +97,36 @@ defmodule Handbean.Agent.ModelConfig.Policy do
   end
 
   @doc """
+  Return the explicitly configured default model only when it is currently available.
+
+  Unlike `default_model_for_workspace/1`, this never substitutes another catalog
+  entry when the configured default is missing or invalid.
+  """
+  @spec strict_default_model_for_workspace(Path.t()) :: String.t() | nil
+  def strict_default_model_for_workspace(workspace_root) do
+    available_ids =
+      workspace_root
+      |> available_models_for_workspace()
+      |> Enum.map(& &1.id)
+      |> MapSet.new()
+
+    configured =
+      case load_workspace_policy(workspace_root) do
+        :unrestricted ->
+          Loader.configured_default_model()
+
+        {:ok, policy} ->
+          default = Map.get(policy, "default", %{})
+          composite_model_id(default["provider"], default["model"])
+
+        {:error, _reason} ->
+          nil
+      end
+
+    if is_binary(configured) and MapSet.member?(available_ids, configured), do: configured
+  end
+
+  @doc """
   Check whether a composite model id is allowed in the workspace.
   """
   @spec model_allowed_for_workspace?(Path.t(), String.t()) :: boolean()
@@ -104,6 +134,12 @@ defmodule Handbean.Agent.ModelConfig.Policy do
     available = available_models_for_workspace(workspace_root)
     Enum.any?(available, &model_matches?(&1, model_id))
   end
+
+  defp composite_model_id(provider, model)
+       when is_binary(provider) and provider != "" and is_binary(model) and model != "",
+       do: provider <> "/" <> model
+
+  defp composite_model_id(_provider, _model), do: nil
 
   defp model_matches?(model, model_id) do
     model.id == model_id or model.model_id == model_id

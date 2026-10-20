@@ -132,9 +132,12 @@ defmodule Handbean.Conversations.Search do
   defp authorize_explicit(_context, nil), do: :ok
 
   defp authorize_explicit(context, conversation_id) do
-    case Conversations.authorize(context, conversation_id) do
-      {:ok, _metadata} -> :ok
-      {:error, _reason} -> {:error, :not_accessible}
+    with {:ok, source} <- Conversations.identity(context),
+         {:ok, target} <- Conversations.authorize(context, conversation_id),
+         true <- target["workspace_id"] == source["workspace_id"] do
+      :ok
+    else
+      _ -> {:error, :not_accessible}
     end
   end
 

@@ -3,8 +3,12 @@
 These tools operate on existing durable conversations; they do not introduce a
 second persistent entity or runtime.
 The runtime supplies caller conversation/workspace/run identity. Tool arguments
-cannot supply identity or a cross-workspace grant. Path-unsafe IDs, missing identity,
-and metadata marked `visibility: internal` or `task` are rejected. The bounded
+cannot supply identity or mint a cross-workspace grant. Exact cross-workspace operations
+are evaluated by the permission boundary: yolo runs proceed automatically, smart review
+runs use AutoReview and fall back to human approval, and interactive/safe runs require
+human approval. Every approval is bound to one tool call, its exact input, resource, and
+operation. Path-unsafe IDs, missing identity, sensitive credential paths, explicit denies,
+and metadata marked `visibility: internal` or `task` remain rejected. The bounded
 internal `task` tool remains separate: its conversations are excluded from these
 persistent conversation tools, and its run-scoped authorization and cleanup remain intact.
 
@@ -29,29 +33,21 @@ persistent conversation tools, and its run-scoped authorization and cleanup rema
   archive filter defaults to `all`, and results omit a total count rather than performing
   an unbounded scan. This deferred tool is loaded through `tool_search` when
   cross-conversation execution search is needed.
-- `read_conversation`: inclusive zero-based message range; at most 16,000 Unicode
-  codepoints and 50 message fragments per page. Stable message IDs and character
-  offsets allow long single messages to continue without silently dropping tails.
-  It returns visible text by default; `include_tools: true` adds bounded, redacted
-  persisted tool summaries and outputs.
-- `get_conversation_status`: idle/running/awaiting_approval and available last result.
-  No Session is required. Idle is not proof of successful completion.
-- `get_conversation_trajectory`: a versioned observability projection over persistent
-  conversation facts. `summary` returns aggregate stats plus bounded run/turn summaries;
-  `compact` additionally returns record metadata; `full` adds redacted persisted
-  content and tool input/output. Full means the complete persisted projection
-  available on that page, never unbounded raw output. Record pages are limited to
-  50 records and 16,000 characters. The tool is deferred and is loaded through
-  `tool_search` when execution-history inspection is needed.
+- `list_conversations`, `find_conversation`, and `search_conversations` remain scoped to
+  the caller's current workspace; there is no cross-workspace enumeration or body search.
+- `read_conversation`, `get_conversation_status`, and `get_conversation_trajectory` may
+  inspect a known exact conversation ID in another workspace after boundary authorization.
+  Free, internal, and task conversations remain inaccessible even in yolo.
 - Discovery/read cursors bind the caller, target/query, and projected snapshot and
   expire after one hour. Changes invalidate the cursor; callers restart rather
   than silently skipping or repeating data. Search cursors likewise become stale when any
   searched source changes; writes from the excluded invoking run do not invalidate them.
   Trajectory cursors additionally bind the entry/run/turn revision snapshot and the last
   consumed record sequence.
-- `list_models`: bounded, paginated id/name search over models allowed by the
-  current workspace. It is only needed to select a model other than the current
-  conversation model; the full catalog is never added to the prompt.
+- `list_models`: bounded, paginated id/name search over models allowed by the current
+  or an exact authorized target workspace. It includes supported/default reasoning
+  levels but never provider credentials. Listing a target catalog and creating a target
+  conversation are separate authorized operations.
 
 Trajectory uses Handbean's own execution hierarchy:
 
@@ -74,8 +70,9 @@ stable anchors with the follow-up readers to inspect context before drawing conc
 
 ## Handoffs and delegation
 
-Any visible conversation may message another visible conversation in the same
-workspace; there is no per-conversation opt-in. Conversations may exchange any number
+Any visible workspace conversation may message another known exact visible workspace
+conversation after boundary authorization; there is no per-conversation opt-in.
+Cross-workspace discovery is not provided. Conversations may exchange any number
 of handoffs (for example one conversation develops while another verifies), and a
 woken run gets no extra turn or token cap; its length is up to the model. Wakeups
 are paid runs. Created children keep a persisted parent route for the
@@ -83,11 +80,20 @@ are paid runs. Created children keep a persisted parent route for the
 peer. Creator is provenance, not a fixed completion route.
 
 `send_conversation_message` always uses Coordinator; running conversations default to
-`steer`, with `follow_up` only by explicit input. `create_conversation` inherits the
-caller's current model when `model` is omitted or is `current`. To select another
-model, use the complete workspace-allowed id returned by `list_models`. The child
-resolves that model's provider config itself; it does not copy the caller's
-provider module or provider config. Later wakes of a pinned child keep that model.
+`steer`, with `follow_up` only by explicit input. A cross-workspace wakeup rebuilds the
+target runtime from the target workspace's canonical path, checkout, settings,
+permission mode, model catalog, memory, and MCP scope; sender runtime configuration is
+never copied. A cross-workspace request carries only a restricted automatic terminal
+return route for that exact handoff, not general reverse access.
+
+`create_conversation` may target the current workspace or an exact authorized registered
+workspace. In the current workspace, omitting `model` or passing `current` inherits the
+caller's effective model; when `reasoning_level` is also omitted, it inherits the caller's
+effective reasoning level if that model supports it. Across workspaces, either model form
+selects the target workspace's explicit default model and never falls back to the source
+model; omitted reasoning uses that target model's default. An explicit model and the
+independent `reasoning_level` are validated against the target catalog. The child persists
+both selections and uses the target workspace's permission mode.
 
 `create_conversation` defaults to a persistent read-only child in the same shared
 directory, **not an isolated checkout or sandbox**. The child is a separate

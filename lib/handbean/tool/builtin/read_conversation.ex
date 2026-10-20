@@ -14,7 +14,8 @@ defmodule Handbean.Tool.Builtin.ReadConversation do
       properties: %{
         conversation: %{
           type: "string",
-          description: "Conversation id in the same workspace. Not a title."
+          description:
+            "Exact conversation id. A different workspace requires per-call approval unless the run is yolo. Not a title."
         },
         start_message: %{type: "integer", minimum: 0},
         end_message: %{type: "integer", minimum: 0},

@@ -541,6 +541,19 @@ defmodule Handbean.Agent.ModelConfig.Loader do
     end
   end
 
+  @doc "Return the explicitly configured global default composite model id."
+  @spec configured_default_model() :: String.t() | nil
+  def configured_default_model do
+    case load_raw_global_config() do
+      %{"defaultProvider" => provider, "defaultModel" => model}
+      when is_binary(provider) and provider != "" and is_binary(model) and model != "" ->
+        provider <> "/" <> model
+
+      _ ->
+        nil
+    end
+  end
+
   @doc """
   Returns all models from all providers in the global config.
 

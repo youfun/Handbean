@@ -7,7 +7,9 @@ defmodule Handbean.Conversations.Collaboration do
   dispatch is NEVER replayed automatically (at-most-once wakeup). The caller sees
   delivery_unknown and a human may inspect/intervene in the target conversation.
   """
-  alias Handbean.{ConversationStore, ConversationTranscriptStore, Conversations}
+  alias Handbean.{ConversationStore, ConversationTranscriptStore, Conversations, WorkspaceStore}
+  alias Handbean.Agent.{ModelConfig, Reasoning}
+  alias Handbean.Permissions.Boundary
 
   # Inspection and handoff only. Mutating, shell, browser, extension, and
   # further-delegation tools stay off this list.
@@ -19,7 +21,7 @@ defmodule Handbean.Conversations.Collaboration do
   )
 
   @purposes ~w(request progress result notification)
-  @dispatch_run_opts ~w(workspace_path transcript_store)a
+  @dispatch_run_opts ~w(transcript_store)a
 
   def completed(id, result, opts) do
     status = if is_map(result), do: Map.get(result, :status, :error), else: :error
@@ -52,7 +54,7 @@ defmodule Handbean.Conversations.Collaboration do
              ~w(conversation message request_id deliver_as handoff_id purpose)
            ),
          {:ok, source} <- Conversations.identity(context),
-         {:ok, target} <- Conversations.authorize(context, input["conversation"]) do
+         {:ok, target} <- Conversations.authorize(context, input["conversation"], :send) do
       locked(source, fn -> deliver(input, context, source, target, false) end)
     end
   end
@@ -83,31 +85,46 @@ defmodule Handbean.Conversations.Collaboration do
 
   def create(input, context) do
     with :ok <-
-           Conversations.validate(input, ~w(title message request_id model mode)),
+           Conversations.validate(
+             input,
+             ~w(title message request_id workspace model reasoning_level mode)
+           ),
          {:ok, source} <- Conversations.identity(context),
+         {:ok, target_workspace} <- target_workspace(input["workspace"], source, context),
+         true <-
+           Boundary.workspace_allowed?(
+             context,
+             target_workspace["id"],
+             :create_conversation
+           ),
          {:ok, title} <- Conversations.text(input, "title", nil, 200),
          {:ok, key} <- Conversations.text(input, "request_id", nil, 128),
          {:ok, _} <- Conversations.text(input, "message", nil, 8000),
          {:ok, read_only} <- access(input),
-         {:ok, selection} <- model_selection(input),
          true <- is_nil(source["collaboration"]),
-         {:ok, pinned} <- resolve_selection(selection, context) do
+         {:ok, selection} <- creation_selection(input, source, target_workspace, context) do
       locked(source, fn ->
         id = "delegated-" <> digest({source["id"], key})
 
         with {:ok, target} <-
                child(
                  source,
+                 target_workspace,
                  context,
                  id,
                  title,
                  read_only,
-                 pinned
+                 selection
                ),
-             {:ok, receipt} <- deliver(input, context, source, target, false) do
+             {:ok, receipt} <-
+               deliver(input, context, source, target, false, %{
+                 authorization_operation: :create_initial
+               }) do
           {:ok,
            Map.merge(receipt, %{
-             model: selection || "current",
+             workspace: target_workspace["id"],
+             model: selection.response_model,
+             reasoning_level: selection.reasoning_level,
              mode: if(read_only, do: "read_only", else: "write")
            })}
         end
@@ -126,6 +143,124 @@ defmodule Handbean.Conversations.Collaboration do
     end
   end
 
+  defp target_workspace(requested, source, context) when requested in [nil, ""] do
+    with {:ok, workspace} <-
+           workspace_facts(source["workspace_id"], source["checkout_path"], context) do
+      {:ok, Map.put(workspace, "selected_checkout_path", selected_checkout(workspace, source))}
+    end
+  end
+
+  defp target_workspace(requested, source, context) when is_binary(requested) do
+    if requested == source["workspace_id"] do
+      target_workspace(nil, source, context)
+    else
+      case WorkspaceStore.get(requested) do
+        {:ok, workspace} ->
+          checkout = workspace["default_checkout_path"] || workspace["path"]
+          {:ok, Map.put(workspace, "selected_checkout_path", checkout)}
+
+        _ ->
+          {:error, :not_accessible}
+      end
+    end
+  end
+
+  defp target_workspace(_requested, _source, _context), do: {:error, :invalid_input}
+
+  defp workspace_facts(workspace_id, checkout, context) do
+    case WorkspaceStore.get(workspace_id) do
+      {:ok, workspace} ->
+        {:ok, workspace}
+
+      _ ->
+        if workspace_id == context[:workspace_id] do
+          run_opts = context[:conversation_run_opts] || []
+
+          path =
+            Keyword.get(run_opts, :workspace_path) || Keyword.get(run_opts, :working_directory)
+
+          if is_binary(path) and path != "" do
+            {:ok,
+             %{
+               "id" => workspace_id,
+               "path" => path,
+               "default_checkout_path" =>
+                 checkout || Keyword.get(run_opts, :working_directory) || path
+             }}
+          else
+            {:ok,
+             %{
+               "id" => workspace_id,
+               "path" => nil,
+               "default_checkout_path" => checkout
+             }}
+          end
+        else
+          {:error, :not_found}
+        end
+    end
+  end
+
+  defp selected_checkout(workspace, source) do
+    source["checkout_path"] || workspace["default_checkout_path"] || workspace["path"]
+  end
+
+  defp creation_selection(input, source, workspace, context) do
+    same_workspace? = workspace["id"] == source["workspace_id"]
+
+    inherited_request? = Map.get(input, "model") in [nil, "", "current"]
+    reasoning_omitted? = Map.get(input, "reasoning_level") in [nil, ""]
+    inherited_model = inherited_model_candidate(source, workspace, context)
+
+    with {:ok, requested_model} <- model_selection(input),
+         {:ok, model_ref} <-
+           selected_model_ref(requested_model, same_workspace?, source, workspace, context),
+         {:ok, model} <- available_model(workspace["path"], model_ref),
+         {:ok, _provider_config, model_id} <-
+           ModelConfig.resolve_model_for_workspace(workspace["path"], model_ref),
+         {:ok, reasoning_level} <-
+           selected_reasoning_level(input, model, same_workspace?, source, context) do
+      {:ok,
+       %{
+         model_ref: model_ref,
+         provider: model.provider_id,
+         model: model_id,
+         reasoning_level: reasoning_level,
+         pin_runtime: not same_workspace? or not is_nil(requested_model),
+         response_model:
+           if(same_workspace? and is_nil(requested_model), do: "current", else: model_ref)
+       }}
+    else
+      {:error, :target_model_unavailable}
+      when same_workspace? and inherited_request? and is_nil(inherited_model) and
+             reasoning_omitted? ->
+        {:ok,
+         %{
+           model_ref: nil,
+           provider: nil,
+           model: nil,
+           reasoning_level: nil,
+           pin_runtime: false,
+           response_model: "current"
+         }}
+
+      {:error, :target_model_unavailable} ->
+        model_unavailable(same_workspace?)
+
+      {:error, :invalid_reasoning_level} ->
+        {:error, :invalid_reasoning_level}
+
+      _ ->
+        model_unavailable(same_workspace?)
+    end
+  end
+
+  defp model_unavailable(true) do
+    {:error, "The requested model is not available. Use list_models to inspect available models."}
+  end
+
+  defp model_unavailable(false), do: {:error, :target_model_unavailable}
+
   defp model_selection(input) do
     model = Map.get(input, "model")
 
@@ -136,74 +271,113 @@ defmodule Handbean.Conversations.Collaboration do
     end
   end
 
+  defp selected_model_ref(nil, true, source, workspace, context) do
+    source
+    |> inherited_model_candidate(workspace, context)
+    |> present_model_ref()
+  end
+
+  defp selected_model_ref(nil, false, _source, workspace, _context) do
+    workspace["path"]
+    |> ModelConfig.strict_default_model_for_workspace()
+    |> present_model_ref()
+  end
+
+  defp selected_model_ref(model_ref, _same?, _source, _workspace, _context),
+    do: present_model_ref(model_ref)
+
+  defp inherited_model_candidate(source, workspace, context) do
+    default =
+      case workspace["path"] do
+        path when is_binary(path) and path != "" -> ModelConfig.default_model_for_workspace(path)
+        _ -> nil
+      end
+
+    source["selected_model"] || inherited_model_ref(context[:conversation_run_opts]) || default
+  end
+
+  defp present_model_ref(model_ref) when is_binary(model_ref) and model_ref != "",
+    do: {:ok, model_ref}
+
+  defp present_model_ref(_model_ref), do: {:error, :target_model_unavailable}
+
+  defp available_model(path, model_ref) do
+    case Enum.find(ModelConfig.available_models_for_workspace(path), &(&1.id == model_ref)) do
+      nil -> {:error, :target_model_unavailable}
+      model -> {:ok, model}
+    end
+  end
+
+  defp selected_reasoning_level(input, model, same_workspace?, source, context) do
+    requested = Map.get(input, "reasoning_level")
+    supported = Reasoning.supported_levels(model)
+
+    cond do
+      is_binary(requested) and requested != "" ->
+        if String.valid?(requested) and String.length(requested) <= 32 and requested in supported,
+          do: {:ok, requested},
+          else: {:error, :invalid_reasoning_level}
+
+      supported == [] ->
+        {:ok, nil}
+
+      true ->
+        inherited =
+          if same_workspace?,
+            do:
+              source["selected_reasoning_level"] ||
+                inherited_reasoning(context[:conversation_run_opts])
+
+        level =
+          if inherited in supported,
+            do: inherited,
+            else: Reasoning.default_level(model)
+
+        if level in supported,
+          do: {:ok, level},
+          else: {:error, :invalid_reasoning_level}
+    end
+  end
+
+  defp inherited_reasoning(opts) when is_list(opts), do: Keyword.get(opts, :reasoning_level)
+  defp inherited_reasoning(_opts), do: nil
+
   defp catalog_ref?(value) do
     is_binary(value) and String.valid?(value) and String.length(value) <= 256 and
       String.contains?(value, "/") and not String.contains?(value, ["\n", "\r", "\0"])
   end
 
-  defp resolve_selection(nil, _context), do: {:ok, nil}
-
-  defp resolve_selection(model_ref, context) do
-    path = workspace_path(context)
-
-    if is_binary(path) and path != "" do
-      model =
-        Enum.find(
-          Handbean.Agent.ModelConfig.available_models_for_workspace(path),
-          &(&1.id == model_ref)
-        )
-
-      case model && Handbean.Agent.ModelConfig.resolve_model_for_workspace(path, model_ref) do
-        {:ok, _config, model_id} ->
-          {:ok, %{"provider" => model.provider_id, "model" => model_id}}
-
-        _ ->
-          {:error, "Model #{model_ref} is not available. Call list_models to find a model id."}
-      end
-    else
-      {:error, :missing_runtime_configuration}
-    end
-  end
-
-  defp workspace_path(context) do
-    opts = context[:conversation_run_opts] || []
-    Keyword.get(opts, :workspace_path) || Keyword.get(opts, :working_directory)
-  end
-
-  defp child(source, context, id, title, read_only, pinned) do
+  defp child(source, workspace, context, id, title, read_only, selection) do
     spec =
-      %{"read_only" => read_only}
-      |> maybe_put("provider", pinned && pinned["provider"])
-      |> maybe_put("model", pinned && pinned["model"])
-
-    selected_model = child_selected_model(source, pinned, context)
+      if selection.pin_runtime do
+        %{
+          "read_only" => read_only,
+          "provider" => selection.provider,
+          "model" => selection.model
+        }
+      else
+        %{"read_only" => read_only}
+      end
 
     case ConversationStore.get_metadata(id) do
       {:ok, target} ->
-        if child_matches?(target, source["id"], spec),
+        if child_matches?(target, source["id"], workspace["id"], spec, selection),
           do: {:ok, target},
           else: {:error, :idempotency_conflict}
 
       _ ->
-        ConversationStore.create(source["workspace_id"],
+        ConversationStore.create(workspace["id"],
           id: id,
           title: title,
           parent_conversation_id: source["id"],
           parent_run_id: context[:run_id],
           parent_tool_call_id: context[:tool_call_id],
-          checkout_path: source["checkout_path"],
-          selected_model: selected_model,
+          checkout_path: workspace["selected_checkout_path"],
+          selected_model: selection.model_ref,
+          selected_reasoning_level: selection.reasoning_level,
           collaboration: spec
         )
     end
-  end
-
-  defp child_selected_model(_source, %{"provider" => provider, "model" => model}, _context)
-       when is_binary(provider) and is_binary(model),
-       do: "#{provider}/#{model}"
-
-  defp child_selected_model(source, _pinned, context) do
-    source["selected_model"] || inherited_model_ref(context[:conversation_run_opts])
   end
 
   defp inherited_model_ref(opts) when is_list(opts) do
@@ -215,9 +389,6 @@ defmodule Handbean.Conversations.Collaboration do
 
   defp inherited_model_ref(_opts), do: nil
 
-  defp maybe_put(map, _key, nil), do: map
-  defp maybe_put(map, key, value), do: Map.put(map, key, value)
-
   defp normalize_optional_handoff(%{"handoff_id" => handoff_id} = input)
        when is_binary(handoff_id) do
     if String.trim(handoff_id) == "", do: Map.delete(input, "handoff_id"), else: input
@@ -225,18 +396,21 @@ defmodule Handbean.Conversations.Collaboration do
 
   defp normalize_optional_handoff(input), do: input
 
-  defp child_matches?(target, parent_id, spec) do
+  defp child_matches?(target, parent_id, workspace_id, spec, selection) do
     collab = target["collaboration"] || %{}
 
-    ConversationStore.parent_conversation_id(target) == parent_id and
-      Enum.all?(~w(read_only provider model), fn key ->
-        Map.get(collab, key) == Map.get(spec, key)
-      end)
+    target["workspace_id"] == workspace_id and
+      target["selected_model"] == selection.model_ref and
+      target["selected_reasoning_level"] == selection.reasoning_level and
+      ConversationStore.parent_conversation_id(target) == parent_id and
+      collab == spec
   end
 
   defp deliver(input, context, source, target, important, trusted \\ %{}) do
-    with {:ok, source} <- Conversations.authorize(context, source["id"]),
-         {:ok, target} <- Conversations.authorize(context, target["id"]),
+    authorization_operation = trusted[:authorization_operation] || :send
+
+    with {:ok, source} <- Conversations.authorize(context, source["id"], authorization_operation),
+         {:ok, target} <- Conversations.authorize(context, target["id"], authorization_operation),
          {:ok, message} <- Conversations.text(input, "message", nil, 8000),
          {:ok, key} <- Conversations.text(input, "request_id", nil, 128),
          mode <- Map.get(input, "deliver_as", "steer"),
@@ -373,6 +547,10 @@ defmodule Handbean.Conversations.Collaboration do
          covered_inbound_ids,
          automatic_report
        ) do
+    cross_workspace_return =
+      source["workspace_id"] != target["workspace_id"] and purpose == "request" and
+        not automatic_report
+
     entry = %{
       "id" => id,
       "content_type" => "conversation_handoff",
@@ -388,7 +566,10 @@ defmodule Handbean.Conversations.Collaboration do
       "important" => important,
       "purpose" => purpose,
       "covered_inbound_ids" => covered_inbound_ids,
-      "automatic_report" => automatic_report
+      "automatic_report" => automatic_report,
+      "cross_workspace_return" => cross_workspace_return,
+      "source_workspace_id" => source["workspace_id"],
+      "target_workspace_id" => target["workspace_id"]
     }
 
     with {:ok, _entry} <- ConversationTranscriptStore.append(source["id"], entry) do
@@ -434,6 +615,10 @@ defmodule Handbean.Conversations.Collaboration do
          purpose,
          automatic_report
        ) do
+    cross_workspace_return =
+      source["workspace_id"] != target["workspace_id"] and purpose == "request" and
+        not automatic_report
+
     origin = %{
       "kind" => "conversation",
       "conversation_id" => source["id"],
@@ -444,7 +629,12 @@ defmodule Handbean.Conversations.Collaboration do
       "important" => important,
       "purpose" => purpose,
       "expect_report" => purpose == "request",
-      "automatic_report" => automatic_report
+      "automatic_report" => automatic_report,
+      "cross_workspace_return" => cross_workspace_return,
+      "source_workspace_id" => source["workspace_id"],
+      "target_workspace_id" => target["workspace_id"],
+      "return_source_conversation_id" => target["id"],
+      "return_target_conversation_id" => source["id"]
     }
 
     with {:ok, base} <- pinned_run_opts(target, context) do
@@ -452,7 +642,7 @@ defmodule Handbean.Conversations.Collaboration do
         opts =
           base
           |> Keyword.merge(
-            workspace_id: source["workspace_id"],
+            workspace_id: target["workspace_id"],
             source: :conversation,
             channel: :conversation,
             origin: origin,
@@ -476,40 +666,39 @@ defmodule Handbean.Conversations.Collaboration do
   end
 
   defp pinned_run_opts(target, context) do
-    path = workspace_path(context)
     run_opts = context[:conversation_run_opts] || []
 
-    base =
-      run_opts
-      |> Keyword.take(@dispatch_run_opts)
-      |> then(fn opts ->
-        if is_binary(path) and path != "",
-          do: Keyword.put(opts, :workspace_path, path),
-          else: opts
-      end)
+    with {:ok, workspace} <-
+           workspace_facts(target["workspace_id"], target["checkout_path"], context),
+         path when is_binary(path) and path != "" <- workspace["path"],
+         checkout when is_binary(checkout) and checkout != "" <-
+           target["checkout_path"] || workspace["default_checkout_path"] || path,
+         true <- File.dir?(checkout) do
+      base =
+        run_opts
+        |> Keyword.take(@dispatch_run_opts)
+        |> Keyword.put(:workspace_path, path)
+        |> Keyword.put(:working_directory, checkout)
 
-    model_ref = target_model_ref(target, base)
+      model_ref = target_model_ref(target, base)
 
-    if is_binary(model_ref) do
-      case Handbean.Agent.ModelConfig.resolve_model_for_workspace(
-             workspace_path(%{conversation_run_opts: base}),
-             model_ref
-           ) do
-        {:ok, provider_config, model_id} ->
-          {:ok,
-           base
-           |> Keyword.put(:model, composite_model_id(model_ref, model_id))
-           |> Keyword.put(:provider_config, provider_config)
-           |> put_target_reasoning(target)}
+      if is_binary(model_ref) do
+        case ModelConfig.resolve_model_for_workspace(path, model_ref) do
+          {:ok, provider_config, model_id} ->
+            {:ok,
+             base
+             |> Keyword.put(:model, composite_model_id(model_ref, model_id))
+             |> Keyword.put(:provider_config, provider_config)
+             |> put_target_reasoning(target)}
 
-        {:error, reason} when is_binary(reason) ->
-          {:error, reason}
-
-        {:error, reason} ->
-          {:error, "Model is not allowed: #{inspect(reason)}"}
+          {:error, _reason} ->
+            {:error, :target_model_unavailable}
+        end
+      else
+        {:error, :target_model_unavailable}
       end
     else
-      {:error, :missing_runtime_configuration}
+      _ -> {:error, :missing_runtime_configuration}
     end
   end
 
@@ -626,7 +815,9 @@ defmodule Handbean.Conversations.Collaboration do
       conversation_id: source["id"],
       workspace_id: source["workspace_id"],
       run_id: run_id,
-      conversation_run_opts: opts
+      conversation_run_opts: opts,
+      conversation_return_grant:
+        terminal_return_grant(source, peer, handoff_id, inbound_ids, entries)
     }
 
     input = %{
@@ -637,14 +828,45 @@ defmodule Handbean.Conversations.Collaboration do
       "deliver_as" => "steer"
     }
 
-    with {:ok, target} <- Conversations.authorize(context, peer) do
+    with {:ok, target} <- Conversations.authorize(context, peer, :automatic_return) do
       locked(source, fn ->
         deliver(input, context, source, target, true, %{
           purpose: if(exceptional?, do: "notification", else: "result"),
           covered_inbound_ids: if(exceptional?, do: [], else: inbound_ids),
-          automatic_report: true
+          automatic_report: true,
+          authorization_operation: :automatic_return
         })
       end)
+    end
+  end
+
+  defp terminal_return_grant(source, peer, handoff_id, inbound_ids, entries) do
+    inbound_ids = MapSet.new(inbound_ids)
+
+    authorized? =
+      entries
+      |> Enum.filter(&MapSet.member?(inbound_ids, &1["id"]))
+      |> case do
+        [] ->
+          false
+
+        requests ->
+          Enum.all?(requests, fn entry ->
+            origin = entry["origin"] || %{}
+
+            origin["cross_workspace_return"] == true and
+              origin["return_source_conversation_id"] == source["id"] and
+              origin["return_target_conversation_id"] == peer and
+              origin["handoff_id"] == handoff_id
+          end)
+      end
+
+    if authorized? do
+      %Boundary.ReturnGrant{
+        source_conversation_id: source["id"],
+        target_conversation_id: peer,
+        handoff_id: handoff_id
+      }
     end
   end
 

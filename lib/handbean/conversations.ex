@@ -8,6 +8,7 @@ defmodule Handbean.Conversations do
   Each page has at most 16,000 codepoints and 50 message fragments.
   """
   alias Handbean.{ConversationStore, ConversationTranscriptStore}
+  alias Handbean.Permissions.Boundary
 
   def identity(%{conversation_id: id, workspace_id: workspace}) when is_binary(workspace) do
     with {:ok, meta} <- ConversationStore.get_metadata(id),
@@ -20,12 +21,12 @@ defmodule Handbean.Conversations do
 
   def identity(_), do: {:error, :unauthorized}
 
-  def authorize(context, id) do
+  def authorize(context, id, operation \\ :inspect) do
     with {:ok, source} <- identity(context),
-         {:ok, target} <- ConversationStore.get_metadata(id),
+         {:ok, target} <- Boundary.conversation_target(id),
          true <-
-           target["workspace_id"] == source["workspace_id"] and visible?(target) and
-             not free_chat?(target) do
+           target["workspace_id"] == source["workspace_id"] or
+             Boundary.conversation_allowed?(context, target["id"], operation) do
       {:ok, target}
     else
       _ -> {:error, :not_accessible}
@@ -133,7 +134,7 @@ defmodule Handbean.Conversations do
              ~w(conversation start_message end_message max_chars include_tools cursor)
            ),
          true <- is_boolean(Map.get(input, "include_tools", false)),
-         {:ok, _} <- authorize(context, input["conversation"]),
+         {:ok, _} <- authorize(context, input["conversation"], :read),
          {:ok, first} <- integer(input, "start_message", 0, 0, 1_000_000),
          {:ok, last} <- integer(input, "end_message", 1_000_000, first, 1_000_000),
          {:ok, max} <- integer(input, "max_chars", 8000, 1, 16_000),
@@ -166,7 +167,7 @@ defmodule Handbean.Conversations do
 
   def status(input, context) do
     with :ok <- validate(input, ["conversation"]),
-         {:ok, meta} <- authorize(context, input["conversation"]) do
+         {:ok, meta} <- authorize(context, input["conversation"], :status) do
       runtime =
         case Handbean.Agent.Coordinator.status(meta["id"]) do
           {:ok, value} -> value

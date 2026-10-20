@@ -125,6 +125,39 @@ defmodule Handbean.Agent.ModelConfigPolicyTest do
       assert default == "cloud-provider/cloud-model-v1"
     end
 
+    test "strict default requires an explicit valid global default" do
+      ws = tmp_workspace()
+
+      assert ModelConfig.strict_default_model_for_workspace(ws) ==
+               "cloud-provider/cloud-model-v1"
+
+      write_config(%{
+        "providers" => %{
+          "cloud-provider" => %{
+            "models" => [
+              %{"id" => "cloud-model-v1", "name" => "Cloud Model V1"},
+              %{"id" => "cloud-model-v2", "name" => "Cloud Model V2"}
+            ]
+          }
+        }
+      })
+
+      assert ModelConfig.default_model_for_workspace(ws) == "cloud-provider/cloud-model-v1"
+      assert ModelConfig.strict_default_model_for_workspace(ws) == nil
+
+      write_config(%{
+        "defaultProvider" => "cloud-provider",
+        "defaultModel" => "missing-model",
+        "providers" => %{
+          "cloud-provider" => %{
+            "models" => [%{"id" => "cloud-model-v1", "name" => "Cloud Model V1"}]
+          }
+        }
+      })
+
+      assert ModelConfig.strict_default_model_for_workspace(ws) == nil
+    end
+
     # ── 2. Policy restricts to one provider/model ──
 
     test "policy with single provider/model filters correctly" do
