@@ -25,14 +25,16 @@ export const StreamingMarkdown = {
     this.lastStreaming = false;
     this.unsubscribe = null;
     this.retryId = null;
+    this.applyingSource = false;
+    this.lastRenderedState = null;
     this.widgetCommandRequests = new Map();
     this.resizeHandler = (event) => resizeHtmlPreview(this.target, event);
     this.widgetMessageHandler = (event) => handleWidgetMessage(this, event);
     window.addEventListener("message", this.resizeHandler);
     window.addEventListener("message", this.widgetMessageHandler);
     this.handleEvent?.("widget-command-result", (result) => handleWidgetCommandResult(this, result));
-    this.controller = createSmoothMarkdownStream({}, () => this.renderSnapshot());
-    this.unsubscribe = this.controller.subscribe(() => this.renderSnapshot());
+    this.controller = createSmoothMarkdownStream();
+    this.unsubscribe = this.controller.subscribe(() => this.requestRender());
     this.applySource({ initial: true });
     this.retryId = setTimeout(() => {
       if (this.targetHasUnrenderedFallback()) this.applySource({ initial: true });
@@ -76,35 +78,48 @@ export const StreamingMarkdown = {
     this.retryId = null;
     this.unsubscribe = null;
     this.controller = null;
+    this.lastRenderedState = null;
   },
 
   applySource({ initial }) {
     const source = this.readSource();
     const final = this.readFinal();
     const streaming = this.readStreaming();
+    const sourceStateChanged =
+      source !== this.lastSource ||
+      final !== this.lastFinal ||
+      streaming !== this.lastStreaming;
 
-    if (
-      source === this.lastSource &&
-      final === this.lastFinal &&
-      streaming === this.lastStreaming &&
-      !initial &&
-      !this.targetHasUnrenderedFallback()
-    ) return;
+    if (!initial && !sourceStateChanged && !this.targetHasUnrenderedFallback()) {
+      this.requestRender();
+      return;
+    }
 
-    if (!streaming) {
-      this.controller.reset(source);
-      this.controller.finish({ flush: true });
-    } else if (initial || !source.startsWith(this.lastSource) || this.lastFinal || !this.lastStreaming) {
-      this.controller.reset("");
-      if (source) this.controller.enqueue(source);
-    } else {
-      const delta = source.slice(this.lastSource.length);
-      if (delta) this.controller.enqueue(delta);
+    this.applyingSource = true;
+    try {
+      if (!streaming) {
+        this.controller.reset(source);
+        this.controller.finish({ flush: true });
+      } else if (initial || !source.startsWith(this.lastSource) || this.lastFinal || !this.lastStreaming) {
+        this.controller.reset("");
+        if (source) this.controller.enqueue(source);
+      } else {
+        const delta = source.slice(this.lastSource.length);
+        if (delta) this.controller.enqueue(delta);
+      }
+    } finally {
+      this.applyingSource = false;
     }
 
     this.lastSource = source;
     this.lastFinal = final;
     this.lastStreaming = streaming;
+    this.requestRender();
+  },
+
+  requestRender() {
+    if (this.applyingSource) return;
+
     this.renderSnapshot();
   },
 
@@ -127,15 +142,30 @@ export const StreamingMarkdown = {
   renderSnapshot() {
     if (!this.target || !this.controller) return;
     const snapshot = this.controller.getSnapshot();
-    const markdown = patchStreamingMarkdown(snapshot.visible, snapshot.final || this.readFinal());
+    const final = this.readFinal();
+    const streaming = this.readStreaming();
+    const widget = widgetContext(this.el);
+    const state = {
+      visible: snapshot.visible,
+      finalMarkdown: snapshot.final || final,
+      streaming: streaming && !snapshot.final,
+      renderMermaid: !streaming && final,
+      widgetConversationId: widget?.conversationId || null,
+      widgetEntryId: widget?.entryId || null
+    };
+
+    if (sameRenderState(state, this.lastRenderedState) && !this.targetHasUnrenderedFallback()) return;
+
+    const markdown = patchStreamingMarkdown(snapshot.visible, state.finalMarkdown);
     let html = renderMarkdown(markdown, { linkTargetBlank: true });
     html = injectCopyButtons(html);
     applyRenderedHtml(this.target, html, snapshot.visible, {
-      diagrams: !(this.readStreaming() && !snapshot.final),
-      widgetContext: widgetContext(this.el)
+      diagrams: state.renderMermaid,
+      widgetContext: widget
     });
+    this.lastRenderedState = state;
 
-    if (this.readStreaming() && !snapshot.final) {
+    if (state.streaming) {
       this.insertCursor();
       return;
     }
@@ -261,6 +291,16 @@ export const StreamingMarkdown = {
     }, 2500);
   }
 };
+
+function sameRenderState(left, right) {
+  return Boolean(right) &&
+    left.visible === right.visible &&
+    left.finalMarkdown === right.finalMarkdown &&
+    left.streaming === right.streaming &&
+    left.renderMermaid === right.renderMermaid &&
+    left.widgetConversationId === right.widgetConversationId &&
+    left.widgetEntryId === right.widgetEntryId;
+}
 
 function widgetContext(element) {
   const conversationId = element?.dataset?.conversationId;
