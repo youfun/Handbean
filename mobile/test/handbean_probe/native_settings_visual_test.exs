@@ -120,7 +120,8 @@ defmodule HandbeanProbe.NativeSettingsVisualTest do
     saved_text = flatten_text(saved)
     saved_input = find_type(saved, :text_field, "{:model_field, :api_key}")
     assert saved_input.props.value == ""
-    assert saved_input.props.placeholder == "••••real"
+    assert saved_input.props.placeholder == "fixt••••"
+    refute saved_input.props.placeholder =~ "real"
     assert saved_input.props.secure
     refute saved_text =~ gettext("API key: configured")
     refute saved_text =~ gettext("API key: not configured")

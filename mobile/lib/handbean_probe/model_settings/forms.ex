@@ -173,7 +173,7 @@ defmodule HandbeanProbe.ModelSettings.Forms do
   defp key_preview(key) when is_binary(key) do
     if String.length(key) <= 4,
       do: "••••••••",
-      else: "••••" <> String.slice(key, -4, 4)
+      else: String.slice(key, 0, 4) <> "••••"
   end
 
   defp key_preview(_), do: nil
