@@ -11,6 +11,8 @@
 - Android CI 先构建 Developer 包，再构建标准 ARM64/x86_64 包，并以独立 artifact 发布，避免 Developer host profile 或 rootfs 混入标准 APK。
 - 设置页显示当前应用版本；高级设置可以按时间范围和状态导出脱敏错误诊断 JSON，导出不会自动上传。
 - 改善窄屏输入区的运行活动展示，并支持从关联入口定位到对应的历史消息。
+- 实验性的 Linux / Windows GUI 封装版本。
+- 实验性的电脑控制功能，目前仅在 macOS GUI 封装版本中测试过。
 
 ### 修复
 - 修复 Android 标准版与 Developer 版在扁平 OTP 布局下加载随包技能时出现 `unknown application :handbean`，避免消息运行因技能发现失败而中断。
@@ -25,7 +27,6 @@
 
 ### 安全与兼容性
 - 跨工作区协作只接受明确目标，不提供跨工作区会话枚举或正文搜索；授权只绑定单次工具调用、具体输入、资源和操作。
-- macOS 原生电脑控制的每次输入均需原生确认；普通应用中的点击和滚动尚未开放。窗口截图可能包含敏感内容，并会发送给所选模型供应商。
 - Developer shell 与应用使用同一 Android UID，不是安全沙箱；同步 Bash 仍经过高权限审批，后台 Bash job 与 terminal 保持关闭。
 - 标准 Android 包继续使用 targetSdk 35，不包含 Termux rootfs，也不开放 Bash。Developer 包使用 targetSdk 28 以兼容私有目录中的原生可执行文件，只用于用户主动侧载，未来 Android 或 OEM 可能进一步限制此行为。
 - 当前 GitHub APK 使用 CI debug 签名，不承诺跨构建覆盖升级；签名变化时需要卸载重装，卸载会删除对应应用的私有数据。
