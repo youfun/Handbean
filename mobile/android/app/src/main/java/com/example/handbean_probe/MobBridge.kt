@@ -1,40 +1,27 @@
 package com.example.handbean_probe
 
 import android.app.Activity
-import android.app.NotificationManager
-import android.app.PendingIntent
-import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.net.Uri
 import android.os.Build
-import android.os.Looper
 import android.util.Log
 import android.view.HapticFeedbackConstants
 import android.view.WindowManager
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.compose.foundation.ScrollState
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
-import androidx.core.app.ActivityCompat
-import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
-import java.io.File
+import com.example.handbean_probe.MobRenderStatsCodec.FrameSample
 import java.lang.ref.WeakReference
 import java.util.concurrent.ConcurrentHashMap
-import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -64,7 +51,8 @@ data class RootState(val navKey: Int, val transition: String, val node: MobNode?
 
 // JNI resolves this class by its original package and name. Platform methods
 // remain forwarding entry points with their original descriptors/static form;
-// native declarations and the root/navigation/frame locks stay owned here.
+// native declarations, root/navigation state and sampling lifecycle stay here.
+// Each extracted helper has one instance/owner; this remains the only JNI facade.
 object MobBridge {
 
     private val _rootState = mutableStateOf(RootState(0, "none", null))
@@ -156,145 +144,18 @@ object MobBridge {
         scrollHandlesById.computeIfAbsent(id) { ScrollHandle() }
 
     // ── Element frame registry (positions without a screenshot) ────────────────
-    //
-    // Any rendered node with an :id gets a frameTrackingModifier that records its
-    // window bounds (px) here and tags it with a Compose testTag. elementFrames()
-    // returns them in dp so an agent can locate/drive elements by id over dist
-    // with no image bytes. Populated by RenderNodeInner.
-    //
-    // Concurrent: written from the Compose main thread (onGloballyPositioned),
-    // iterated from the NIF/binder thread (elementFrames). ConcurrentHashMap's
-    // weakly-consistent iteration can't throw ConcurrentModificationException.
-    private val elementFramesById = ConcurrentHashMap<String, FloatArray>()
+    private val frameRegistry = MobFrameRegistry()
 
-    // Nav generation, and the gate that makes the clear in setRootJson stick.
-    //
-    // Clearing the registry on navigation is only half a fix, and what the
-    // other half has to do changed with MOB-146.
-    //
-    // It was written for AnimatedContent, which kept the OUTGOING composition
-    // mounted for the whole exit animation: that screen went on being
-    // re-laid-out on every display frame as it slid away, firing
-    // onGloballyPositioned long after setRootJson emptied the map, so it
-    // refilled the registry with mid-animation coordinates belonging to a
-    // screen the user was no longer looking at.
-    //
-    // There is no outgoing composition any more — one mount point, and the
-    // tree is replaced in place — so that particular refill cannot happen.
-    // What the gate now guards is the mirror image of it: the mount point
-    // SURVIVES navigation, so every node Compose reuses across one keeps the
-    // generation it captured for the previous screen. Without a re-key those
-    // writes are refused for ever, and element_frames silently loses the ids
-    // it used to report. The epoch in frameTrackingModifier below is what
-    // re-keys them; see MainActivity's MobNavHost.
-    //
-    // So: a tracker captures the generation current when it first composes and
-    // stamps every write with it, and a write stamped older than the current
-    // generation is refused.
-    //
-    // This is one of the three parts iOS carries, not all of them. iOS also has
-    // a purge keyed on the live id set, run on EVERY set_root including "none",
-    // and an .onDisappear compare-and-delete keyed on a write sequence number.
-    // Android has neither. Two consequences worth knowing: a same-screen
-    // re-render that drops an :id leaves that element's last frame in the map
-    // for ever, and a row scrolled out of a lazy list or a tab left behind
-    // keeps reporting its last position. See mob's
-    // decisions/2026-08-27-frame-registry-liveness.md for the reasoning this
-    // half is taken from.
-    //
-    // A private counter rather than reusing navKey directly HERE, while
-    // MainActivity provides navKey as the tracker epoch. The two jobs are
-    // different and it is worth being precise about which is which.
-    //
-    // This counter is what a write is STAMPED with, and the gate compares
-    // against it. It stays private because a tracker reading `_rootState` for
-    // it would subscribe every tagged node to every root update, and would
-    // read whatever is current when it writes rather than the value belonging
-    // to the tree it was composed into — precisely the write this gate refuses.
-    //
-    // The epoch is a different question: "was a new tree installed here", which
-    // is what decides when a tracker must re-capture. navKey answers exactly
-    // that, and MOB-146 made re-capturing necessary, since the mount point now
-    // survives navigation and reused nodes would otherwise keep a superseded
-    // generation for ever.
-    //
-    // The two cannot drift apart: `setRootJson` bumps this counter and navKey
-    // under the same `if (transition != "none")`, so a navigation that stalls
-    // the epoch stalls the generation with it and reused trackers still match.
-    // That lockstep is load-bearing — splitting those two bumps would break
-    // the re-key silently.
-    //
-    // One monitor covers the counter AND the registry, rather than an atomic
-    // counter beside an unguarded map. An atomic makes each individual access
-    // safe and still leaves recordElementFrame as a check-then-act across two
-    // objects, which is the race this gate exists to lose. Taking one lock for
-    // both is also what iOS does, and it is cheap: uncontended, once per
-    // tracked element per layout pass, against a monitor nothing else wants.
-    //
-    // Starts at 1 so the very first trackers, which capture 1, are accepted
-    // (1 < 1 is false). Unlike iOS there is no 0 sentinel to reserve, because
-    // remember always runs before the modifier is built.
-    /**
-     * The navigation this subtree belongs to — `navKey`, provided by
-     * MainActivity's MobNavHost.
-     *
-     * `frameTrackingModifier` keys its generation capture on this, which is
-     * what keeps the gate above working now that navigation preserves the
-     * composition instead of replacing it. navKey moves on every non-"none"
-     * transition and nothing else, which is exactly when the trackers must
-     * re-capture — and it moves under the same guard in setRootJson that bumps
-     * `frameGeneration`, so the two cannot drift apart.
-     *
-     * Provided through a CompositionLocal rather than read from the root state
-     * directly: a tracker reading `_rootState` would resubscribe every tagged
-     * node to every root update, and the value it wants is a property of the
-     * tree it was composed into, not of whatever is current when it writes.
-     *
-     * `compositionLocalOf`, deliberately NOT `staticCompositionLocalOf`. A
-     * static local invalidates its whole provided subtree unconditionally,
-     * ignoring skipping. That is free today only because nothing in this tree
-     * can skip — `MobNode` holds a `Map` and a `List`, so Compose infers it
-     * unstable, and this toolchain has no strong skipping. The moment
-     * `MobNode` is annotated `@Immutable`, a static local here would force a
-     * full recomposition of every node on every navigation and silently eat
-     * the skipping that annotation just bought. A dynamic local invalidates
-     * exactly the composables that read it, which is precisely the tracked
-     * nodes that must re-run their capture.
-     */
+    // MainActivity supplies navKey as the epoch of the composed tree. A dynamic
+    // local invalidates only trackers that read it; reading rootState here would
+    // subscribe every tagged node to every same-screen render. Reused slots must
+    // re-capture their generation on navigation, even when their id is unchanged.
     val LocalSlotEpoch = androidx.compose.runtime.compositionLocalOf { 0 }
 
-    private val frameLock = Any()
-    private var frameGeneration = 1L
+    fun currentFrameGeneration(): Long = frameRegistry.currentGeneration()
 
-    /**
-     * The generation current right now. Read once per tracker, during
-     * composition, so the value captured is the one belonging to the tree that
-     * tracker is part of.
-     */
-    fun currentFrameGeneration(): Long = synchronized(frameLock) { frameGeneration }
-
-    fun recordElementFrame(id: String, generation: Long, x: Float, y: Float, w: Float, h: Float) {
-        // Refuse a tracker belonging to a superseded tree.
-        //
-        // The check and the write are one critical section, and the bump and
-        // the clear in setRootJson are the same one. Ordering alone is not
-        // enough, which is worth being precise about because it is tempting to
-        // think it is: the two run on different threads, so with an unguarded
-        // check-then-act a tracker can read a generation that is still current,
-        // lose the thread, and have setRootJson bump and clear before its write
-        // lands. Bumping before the clear narrows that window to the gap
-        // between this read and this write; it does not close it, and
-        // ConcurrentHashMap.clear() is not atomic against a concurrent put
-        // either. Holding the lock across both closes it.
-        //
-        // This is what iOS does. mob_register_frame performs the generation
-        // check and the dictionary write inside @synchronized(reg), and the
-        // bump takes the same monitor.
-        synchronized(frameLock) {
-            if (generation < frameGeneration) return
-            elementFramesById[id] = floatArrayOf(x, y, w, h)
-        }
-    }
+    fun recordElementFrame(id: String, generation: Long, x: Float, y: Float, w: Float, h: Float) =
+        frameRegistry.record(id, generation, x, y, w, h)
 
     @Composable
     fun frameTrackingModifier(id: String): Modifier =
@@ -302,7 +163,7 @@ object MobBridge {
 
     @JvmStatic
     fun elementFrames(): String =
-        MobAutomation.elementFrames(elementFramesById)
+        MobAutomation.elementFrames(frameRegistry.frames)
 
     @JvmStatic
     fun screenshot(format: String, quality: Int, scale: Double): ByteArray? =
@@ -349,8 +210,8 @@ object MobBridge {
         // Thread-local and throws off a Looper thread, so it has to be taken
         // here rather than lazily from whichever thread samples first.
         mainHandler.post { mainChoreographer = android.view.Choreographer.getInstance() }
-        extractOtpIfNeeded(activity)
-        copyMobLogos(activity)
+        MobRuntimeAssets.extractOtpIfNeeded(activity)
+        MobRuntimeAssets.copyMobLogos(activity)
         MobUsb.ensureUsbReceiver(activity.applicationContext)
         HandbeanBridge.onInit(activity)
     }
@@ -398,72 +259,6 @@ object MobBridge {
                 activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             } else {
                 activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            }
-        }
-    }
-
-    /**
-     * Extracts the bundled OTP runtime from `assets/otp.zip` into `<filesDir>/otp/`.
-     *
-     * Release builds (assembleRelease / bundleRelease) ship the OTP tree as an
-     * asset zip because Play Store installs can't `adb push` it. The extractor
-     * runs once on first launch (and again after each app update, keyed by
-     * PackageInfo.lastUpdateTime).
-     *
-     * Debug builds skip extraction — `mix mob.deploy --native --android` pushes
-     * the OTP tree directly to `<filesDir>/otp/` via adb, so no asset zip exists
-     * and this method becomes a no-op.
-     *
-     * Pattern mirrors elixir-desktop's `Bridge.kt:unpackZip()`.
-     */
-    private fun extractOtpIfNeeded(activity: Activity) {
-        val assetList = try { activity.assets.list("") ?: emptyArray() } catch (_: Exception) { return }
-        if ("otp.zip" !in assetList) return
-
-        val otpDir = java.io.File(activity.filesDir, "otp")
-        val marker = java.io.File(otpDir, ".installed_version")
-        val expectedVersion = activity.packageManager
-            .getPackageInfo(activity.packageName, 0).lastUpdateTime.toString()
-
-        if (marker.exists() && marker.readText() == expectedVersion) return
-
-        if (otpDir.exists()) otpDir.deleteRecursively()
-        otpDir.mkdirs()
-
-        activity.assets.open("otp.zip").use { input ->
-            java.util.zip.ZipInputStream(java.io.BufferedInputStream(input)).use { zis ->
-                val buffer = ByteArray(8192)
-                while (true) {
-                    val entry = zis.nextEntry ?: break
-                    val out = java.io.File(otpDir, entry.name)
-                    if (entry.isDirectory) {
-                        out.mkdirs()
-                    } else {
-                        out.parentFile?.mkdirs()
-                        java.io.FileOutputStream(out).use { fos ->
-                            var n = zis.read(buffer)
-                            while (n != -1) { fos.write(buffer, 0, n); n = zis.read(buffer) }
-                        }
-                    }
-                    zis.closeEntry()
-                }
-            }
-        }
-
-        marker.writeText(expectedVersion)
-        android.util.Log.i("MobBridge", "extracted OTP runtime, version=$expectedVersion")
-    }
-
-    /** Extracts Mob logo PNGs from APK assets to the OTP root so Elixir can reference them. */
-    private fun copyMobLogos(activity: Activity) {
-        val otpDir = java.io.File(activity.filesDir, "otp").also { it.mkdirs() }
-        listOf("mob_logo_dark.png", "mob_logo_light.png").forEach { name ->
-            try {
-                activity.assets.open(name).use { input ->
-                    java.io.File(otpDir, name).outputStream().use { output -> input.copyTo(output) }
-                }
-            } catch (e: Exception) {
-                android.util.Log.w("MobBridge", "Could not copy logo asset $name: $e")
             }
         }
     }
@@ -518,8 +313,6 @@ object MobBridge {
 
     private const val RENDER_STAT_SAMPLES = 240
 
-    private class FrameSample(val applyUs: Double, val seq: Long, val transition: String)
-
     private val renderStatSlots = arrayOfNulls<FrameSample>(RENDER_STAT_SAMPLES)
 
     // Counts every sample ever recorded, not just the retained ones, so a
@@ -565,37 +358,7 @@ object MobBridge {
                 Pair(renderStatSlots.filterNotNull().sortedByDescending { it.seq }, renderStatSeq)
             }
 
-        val dropped = if (recorded > RENDER_STAT_SAMPLES) recorded - RENDER_STAT_SAMPLES else 0L
-        val out = StringBuilder(64 + samples.size * 64)
-        out.append("{\"enabled\":").append(renderStatsOn)
-            .append(",\"recorded\":").append(recorded)
-            .append(",\"dropped\":").append(dropped)
-            .append(",\"samples\":[")
-        samples.forEachIndexed { i, sample ->
-            if (i > 0) out.append(',')
-            out.append("{\"apply_us\":").append(sample.applyUs)
-                .append(",\"transition\":\"").append(jsonEscape(sample.transition))
-                .append("\",\"seq\":").append(sample.seq).append('}')
-        }
-        return out.append("]}").toString()
-    }
-
-    // `transition` is not a closed vocabulary at the boundary: nif_set_transition
-    // takes any atom up to 15 chars verbatim, and Mob.Sender types it as
-    // `atom()`. One containing a quote would emit invalid JSON and cost the
-    // reader the whole window rather than the one sample. iOS gets this for
-    // free by building its payload through NSJSONSerialization.
-    private fun jsonEscape(value: String): String {
-        val out = StringBuilder(value.length + 8)
-        for (c in value) {
-            when {
-                c == '"' -> out.append("\\\"")
-                c == '\\' -> out.append("\\\\")
-                c < ' ' -> out.append(String.format("\\u%04x", c.code))
-                else -> out.append(c)
-            }
-        }
-        return out.toString()
+        return MobRenderStatsCodec.encode(renderStatsOn, recorded, RENDER_STAT_SAMPLES, samples)
     }
 
     private fun recordFrameSample(applyUs: Double, transition: String) {
@@ -662,28 +425,9 @@ object MobBridge {
         // Navigation transitions mean a genuinely different screen — old list state
         // is no longer relevant and would scroll the wrong list to a stale position.
         val newKey = if (transition != "none") {
-            // Bump the frame generation BEFORE the clears, not after. Both run
-            // on the NIF thread while the Compose main thread may be midway
-            // through a layout pass, so an outgoing onGloballyPositioned that
-            // landed between the clear and the bump would still be accepted and
-            // would survive as a stale entry.
-            //
-            // Ordering alone does NOT close that race, and it is important not
-            // to believe it does: the gate in recordElementFrame is a
-            // check-then-act across two objects, so a tracker can read a
-            // generation that is still current, lose the thread, and have this
-            // block run before its write lands. What closes it is that both
-            // sides take frameLock, which is why the bump and the clear are
-            // inside it here. Removing the lock and keeping this ordering
-            // reintroduces the bug.
-            //
-            // It also has to precede the _rootState write below, and does:
-            // composition of the incoming tree is what that write schedules, so
-            // the incoming trackers capture the counter only after it moved.
-            synchronized(frameLock) {
-                frameGeneration++
-                elementFramesById.clear()
-            }
+            // Invalidate outgoing trackers before publishing the incoming tree.
+            // Generation and navKey advance in this same conditional branch.
+            frameRegistry.advanceNavigation()
             lazyListStates.clear()
             scrollHandlesById.clear()
             _rootState.value.navKey + 1
@@ -854,47 +598,22 @@ object MobBridge {
     @JvmStatic external fun nativeDeliverAlertAction(action: String)
 
     // ── Pending callback PIDs ──────────────────────────────────────────────
-    var pendingPermissionPid:  Long = 0
-    var pendingPermissionCap:  String = ""
-    var pendingFilesPid:       Long = 0
+    private val permissions = MobPermissions(::activity, ::nativeDeliverAtom3)
+
+    var pendingPermissionPid: Long
+        get() = permissions.pendingPid
+        set(value) { permissions.pendingPid = value }
+    var pendingPermissionCap: String
+        get() = permissions.pendingCap
+        set(value) { permissions.pendingCap = value }
+    var pendingFilesPid: Long = 0
 
     // ── Permissions ────────────────────────────────────────────────────────
     @JvmStatic
-    fun request_permission(pid: Long, cap: String) {
-        pendingPermissionPid = pid
-        pendingPermissionCap = cap
-        val activity = activityRef?.get() ?: run {
-            nativeDeliverAtom3(pid, "permission", cap, "denied"); return
-        }
-        val perms = when (cap) {
-            "camera"        -> arrayOf(android.Manifest.permission.CAMERA)
-            "microphone"    -> arrayOf(android.Manifest.permission.RECORD_AUDIO)
-            "photo_library" -> if (android.os.Build.VERSION.SDK_INT >= 33)
-                arrayOf(android.Manifest.permission.READ_MEDIA_IMAGES, android.Manifest.permission.READ_MEDIA_VIDEO)
-            else arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE)
-            "notifications" -> if (android.os.Build.VERSION.SDK_INT >= 33)
-                arrayOf(android.Manifest.permission.POST_NOTIFICATIONS)
-            else { nativeDeliverAtom3(pid, "permission", "notifications", "granted"); return }
-            "calendar" -> arrayOf(
-                android.Manifest.permission.READ_CALENDAR,
-                android.Manifest.permission.WRITE_CALENDAR,
-            )
-            // Fall through to a plugin-supplied capability (e.g. mob_location
-            // once :location leaves core). Unknown -> denied.
-            else -> io.mob.plugin.MobPluginBootstrap.permissionsFor(cap)
-                ?: run { nativeDeliverAtom3(pid, "permission", cap, "denied"); return }
-        }
-        if (perms.all { ContextCompat.checkSelfPermission(activity, it) == PackageManager.PERMISSION_GRANTED }) {
-            nativeDeliverAtom3(pid, "permission", cap, "granted")
-        } else {
-            ActivityCompat.requestPermissions(activity, perms, PERM_REQUEST_CODE)
-        }
-    }
+    fun request_permission(pid: Long, cap: String) = permissions.request(pid, cap)
 
     @JvmStatic
-    fun onPermissionResult(granted: Boolean) {
-        nativeDeliverAtom3(pendingPermissionPid, "permission", pendingPermissionCap, if (granted) "granted" else "denied")
-    }
+    fun onPermissionResult(granted: Boolean) = permissions.onResult(granted)
 
     @JvmStatic
     fun files_pick(pid: Long, typesJson: String) =
@@ -969,76 +688,16 @@ object MobBridge {
     // ── Alerts / action sheets / toasts ───────────────────────────────────
 
     @JvmStatic
-    fun alert_show(title: String, message: String, buttonsJson: String) {
-        val activity = activityRef?.get() ?: return
-        val buttons = parseButtonsJson(buttonsJson)
-        activity.runOnUiThread {
-            val builder = android.app.AlertDialog.Builder(activity)
-            if (title.isNotEmpty()) builder.setTitle(title)
-            if (message.isNotEmpty()) builder.setMessage(message)
-            val positives = buttons.filter { it["style"] != "cancel" }
-            val cancels   = buttons.filter { it["style"] == "cancel" }
-            positives.firstOrNull()?.let { btn ->
-                val action = btn["action"] ?: "dismiss"
-                builder.setPositiveButton(btn["label"]) { _, _ -> nativeDeliverAlertAction(action) }
-            }
-            positives.getOrNull(1)?.let { btn ->
-                val action = btn["action"] ?: "dismiss"
-                builder.setNeutralButton(btn["label"]) { _, _ -> nativeDeliverAlertAction(action) }
-            }
-            cancels.firstOrNull()?.let { btn ->
-                val action = btn["action"] ?: "dismiss"
-                builder.setNegativeButton(btn["label"]) { _, _ -> nativeDeliverAlertAction(action) }
-            }
-            builder.setOnCancelListener { nativeDeliverAlertAction("dismiss") }
-            builder.show()
-        }
-    }
+    fun alert_show(title: String, message: String, buttonsJson: String) =
+        MobAlerts.show(title, message, buttonsJson)
 
     @JvmStatic
-    fun action_sheet_show(title: String, buttonsJson: String) {
-        val activity = activityRef?.get() ?: return
-        val buttons = parseButtonsJson(buttonsJson)
-        val nonCancel = buttons.filter { it["style"] != "cancel" }
-        val cancel    = buttons.firstOrNull { it["style"] == "cancel" }
-        val labels    = nonCancel.map { it["label"] ?: "" }.toTypedArray()
-        activity.runOnUiThread {
-            val builder = android.app.AlertDialog.Builder(activity)
-            if (title.isNotEmpty()) builder.setTitle(title)
-            builder.setItems(labels) { _, which ->
-                val action = nonCancel[which]["action"] ?: "dismiss"
-                nativeDeliverAlertAction(action)
-            }
-            cancel?.let { btn ->
-                val action = btn["action"] ?: "dismiss"
-                builder.setNegativeButton(btn["label"]) { _, _ -> nativeDeliverAlertAction(action) }
-            }
-            builder.setOnCancelListener { nativeDeliverAlertAction("dismiss") }
-            builder.show()
-        }
-    }
+    fun action_sheet_show(title: String, buttonsJson: String) =
+        MobAlerts.showActionSheet(title, buttonsJson)
 
     @JvmStatic
-    fun toast_show(message: String, duration: String) {
-        val activity = activityRef?.get() ?: return
-        activity.runOnUiThread {
-            val dur = if (duration == "long") android.widget.Toast.LENGTH_LONG
-                      else android.widget.Toast.LENGTH_SHORT
-            android.widget.Toast.makeText(activity, message, dur).show()
-        }
-    }
-
-    private fun parseButtonsJson(json: String): List<Map<String, String>> {
-        return try {
-            val arr = org.json.JSONArray(json)
-            (0 until arr.length()).map { i ->
-                val obj = arr.getJSONObject(i)
-                mapOf("label"  to obj.optString("label"),
-                      "style"  to obj.optString("style"),
-                      "action" to obj.optString("action"))
-            }
-        } catch (e: Exception) { emptyList() }
-    }
+    fun toast_show(message: String, duration: String) =
+        MobAlerts.showToast(message, duration)
 
     @JvmStatic
     fun webview_eval_js(code: String) =
@@ -1076,8 +735,6 @@ object MobBridge {
     // mob_notify plugin (io.mob.notify.MobNotifyBridge); shared delivery state
     // lives in the generated io.mob.plugin.MobNotifyHub. The channel id +
     // delivery thunks/receiver stay host-side (delivery is core/host-owned).
-    private const val PERM_REQUEST_CODE = 9001
-
     @JvmStatic
     fun setLaunchNotification(json: String?) {
         nativeSetLaunchNotification(json)
@@ -1311,41 +968,3 @@ internal fun MobSheetSlot(
     node: MobNode,
     content: @Composable (MobSheetPresentationState) -> Unit
 ) = MobLayoutSheetSlot(node, content)
-
-// ── Notification broadcast receiver ─────────────────────────────────────────
-// Receives alarms from AlarmManager and posts the notification to the system tray.
-// Also delivers the event to the running BEAM screen process if one is registered.
-class NotificationReceiver : BroadcastReceiver() {
-    override fun onReceive(context: android.content.Context, intent: android.content.Intent) {
-        val title   = intent.getStringExtra("title") ?: ""
-        val body    = intent.getStringExtra("body")  ?: ""
-        val id      = intent.getStringExtra("id")    ?: "mob"
-        val dataStr = intent.getStringExtra("data")  ?: "{}"
-
-        // Payload MainActivity.onCreate / onNewIntent expect under this key; they
-        // forward it to the BEAM (delivered now if running, else on next boot).
-        val json = """{"id":"$id","title":"$title","body":"$body","source":"local","data":$dataStr}"""
-
-        // Tap action: bring MainActivity (singleTop) to the foreground carrying
-        // the payload. Without a content intent the tap is a no-op.
-        val tapIntent = android.content.Intent(context, MainActivity::class.java).apply {
-            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
-                android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP
-            putExtra("mob_notification_json", json)
-        }
-        val contentPi = PendingIntent.getActivity(
-            context, id.hashCode(), tapIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-
-        val nm = context.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as NotificationManager
-        val notif = NotificationCompat.Builder(context, io.mob.plugin.MobNotifyHub.CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle(title)
-            .setContentText(body)
-            .setContentIntent(contentPi)
-            .setAutoCancel(true)
-            .build()
-        nm.notify(id.hashCode(), notif)
-    }
-
-}
