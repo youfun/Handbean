@@ -233,6 +233,24 @@ defmodule Handbean.Platform.ProcessSandboxTest do
       assert reason =~ "Path traversal"
     end
 
+    test "sandboxed false keeps workspace identity without wrapping the command", %{
+      workspace: workspace
+    } do
+      assert {:ok,
+              %{
+                executable: "/bin/bash",
+                args: ["-c", "echo x"],
+                env: [{"PROJECT_MARKER", "loaded"}],
+                pid_namespace?: false,
+                process_group?: false
+              }} =
+               ProcessSandbox.wrap(@shell, "echo x", workspace,
+                 workspace_path: workspace,
+                 sandboxed: false,
+                 env: [{"PROJECT_MARKER", "loaded"}]
+               )
+    end
+
     test "no workspace means no sandbox and no extra environment" do
       assert {:ok,
               %{

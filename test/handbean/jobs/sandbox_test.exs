@@ -45,7 +45,53 @@ defmodule Handbean.Jobs.SandboxTest do
   end
 
   @tag :os_sandbox
-  test "managed and explicit jobs retain cwd authorization without granting outside writes", %{
+  test "yolo job writes outside the workspace without an unsandboxed flag", %{
+    workspace: workspace,
+    context: context
+  } do
+    outside = workspace <> "-outside"
+    old_capture = Application.get_env(:handbean, :workspace_environment_capture)
+
+    Application.put_env(:handbean, :workspace_environment_capture, fn _path ->
+      {:ok,
+       %{
+         "PATH" => System.get_env("PATH"),
+         "HANDBEAN_YOLO_JOB_MARKER" => "yolo-job"
+       }}
+    end)
+
+    Handbean.Platform.WorkspaceEnvironment.clear()
+
+    on_exit(fn ->
+      if old_capture,
+        do: Application.put_env(:handbean, :workspace_environment_capture, old_capture),
+        else: Application.delete_env(:handbean, :workspace_environment_capture)
+
+      Handbean.Platform.WorkspaceEnvironment.clear()
+    end)
+
+    scoped =
+      Map.merge(context, %{
+        workspace_id: "job-workspace",
+        tool_call_id: "yolo-job",
+        approval_mode: :yolo
+      })
+
+    command =
+      "target=$(printf '%s' '#{outside}'); printf %s \"$HANDBEAN_YOLO_JOB_MARKER\" > \"$target\""
+
+    assert {:ok, _, %{job: %{job_id: id}}} =
+             Bash.execute(
+               %{"command" => command, "job" => true, "wait_ms" => 100},
+               scoped
+             )
+
+    assert {:ok, %{state: :completed, exit_code: 0}} = Jobs.status(id, 0, 5_000, context)
+    assert File.read!(outside) == "yolo-job"
+  end
+
+  @tag :os_sandbox
+  test "approved external cwd stays read-only for managed and explicit jobs", %{
     workspace: workspace,
     context: context
   } do
@@ -57,14 +103,14 @@ defmodule Handbean.Jobs.SandboxTest do
     assert {:error, reason} = Jobs.start("pwd", outside, 10_000, 1_000, context)
     assert reason =~ "Path traversal"
 
-    for approval_mode <- [:yolo, :smart], explicit? <- [false, true] do
-      id = "#{approval_mode}-#{explicit?}"
+    for explicit? <- [false, true] do
+      id = "smart-#{explicit?}"
 
       scoped =
         Map.merge(context, %{
           workspace_id: "job-workspace",
           tool_call_id: id,
-          approval_mode: approval_mode
+          approval_mode: :smart
         })
 
       input = %{
@@ -76,18 +122,14 @@ defmodule Handbean.Jobs.SandboxTest do
         "wait_ms" => 100
       }
 
-      approved =
-        if approval_mode == :smart do
-          call = %{id: id, name: "bash", input: input}
-          requirement = Handbean.Permissions.Boundary.requirement(call, scoped)
-          grant = Handbean.Permissions.Boundary.grant(call, scoped, requirement, :human)
+      call = %{id: id, name: "bash", input: input}
+      requirement = Handbean.Permissions.Boundary.requirement(call, scoped)
+      grant = Handbean.Permissions.Boundary.grant(call, scoped, requirement, :human)
 
-          scoped
-          |> Map.put(:tool_execution_grants, %{id => grant})
-          |> Handbean.Permissions.Boundary.invocation_context(call)
-        else
-          scoped
-        end
+      approved =
+        scoped
+        |> Map.put(:tool_execution_grants, %{id => grant})
+        |> Handbean.Permissions.Boundary.invocation_context(call)
 
       assert {:ok, _, %{job: %{job_id: job_id}}} = Bash.execute(input, approved)
 

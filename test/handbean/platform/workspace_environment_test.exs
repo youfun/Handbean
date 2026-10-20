@@ -80,6 +80,27 @@ defmodule Handbean.Platform.WorkspaceEnvironmentTest do
              {:error, {:workspace_environment_failed, {:capture_exception, RuntimeError}}}
   end
 
+  test "unsandboxed process keeps the captured workspace environment" do
+    workspace = File.cwd!()
+
+    Application.put_env(:handbean, :workspace_environment_capture, fn ^workspace ->
+      {:ok,
+       %{
+         "PATH" => System.get_env("PATH"),
+         "HANDBEAN_YOLO_PROJECT_MARKER" => "project-env"
+       }}
+    end)
+
+    assert {:ok, "project-env", %{exit_code: 0}} =
+             ProcessRunner.run_bash(
+               "printf %s \"$HANDBEAN_YOLO_PROJECT_MARKER\"",
+               workspace,
+               5_000,
+               workspace_path: workspace,
+               sandboxed: false
+             )
+  end
+
   test "process startup propagates workspace capture failures" do
     Application.put_env(:handbean, :workspace_environment_capture, fn _path ->
       {:error, {:helper_exit_status, 9}}

@@ -33,21 +33,28 @@ defmodule Handbean.Jobs do
     with {:ok, owner} <- owner(context), do: call({:close, owner}, 5_000)
   end
 
-  def start(command, cwd, timeout_ms, wait_ms, context)
-      when is_integer(wait_ms) and wait_ms > 0 do
+  def start(command, cwd, timeout_ms, wait_ms, context, opts \\ [])
+
+  def start(command, cwd, timeout_ms, wait_ms, context, opts)
+      when is_integer(wait_ms) and wait_ms > 0 and is_list(opts) do
     with :ok <- shell_supported(),
          {:ok, owner} <- owner(context),
          {:ok, wait} <- wait_budget(wait_ms, context),
          :ok <- valid_timeout(timeout_ms),
          {:ok, call_id} <- call_id(context),
-         {:ok, cwd} <- resolve_cwd(cwd, context) do
+         {:ok, cwd} <- resolve_cwd(cwd, context),
+         {:ok, sandboxed?} <- sandboxed(opts) do
       capture = Handbean.WorkspaceChangeCapture.start(elem(owner, 2))
       deadline = now() + wait
-      call({:start, owner, call_id, command, cwd, timeout_ms, deadline, capture}, wait)
+
+      call(
+        {:start, owner, call_id, command, cwd, timeout_ms, deadline, capture, sandboxed?},
+        wait
+      )
     end
   end
 
-  def start(_, _, _, _, _), do: {:error, "Job launch wait_ms must be a positive integer"}
+  def start(_, _, _, _, _, _), do: {:error, "Job launch wait_ms must be a positive integer"}
 
   @doc "Start trusted BEAM work; the callback receives a bounded output sink."
   def start_beam(kind, fun, timeout_ms, wait_ms, context)
@@ -59,7 +66,8 @@ defmodule Handbean.Jobs do
       capture = Handbean.WorkspaceChangeCapture.start(elem(owner, 2))
 
       call(
-        {:start, owner, call_id, {:beam, kind, fun}, nil, timeout_ms, now() + wait, capture},
+        {:start, owner, call_id, {:beam, kind, fun}, nil, timeout_ms, now() + wait, capture,
+         true},
         wait
       )
     end
@@ -152,6 +160,13 @@ defmodule Handbean.Jobs do
     with :ok <- Handbean.Security.PathValidator.reject_resolved(expanded),
          {:ok, canonical} <- Handbean.Security.PathValidator.canonicalize(expanded) do
       Handbean.Agent.Tool.resolve_path(canonical, context, :execute)
+    end
+  end
+
+  defp sandboxed(opts) do
+    case Keyword.get(opts, :sandboxed, true) do
+      value when is_boolean(value) -> {:ok, value}
+      _ -> {:error, "sandboxed must be a boolean"}
     end
   end
 

@@ -264,6 +264,55 @@ defmodule Handbean.Tool.Builtin.BashTest do
       assert reason =~ "Path traversal" or reason =~ "outside workspace"
     end
 
+    @tag :os_sandbox
+    test "model input cannot select yolo or disable the sandbox" do
+      workspace =
+        Path.join(System.tmp_dir!(), "bash-input-policy-#{System.unique_integer([:positive])}")
+
+      outside = workspace <> "-outside"
+      File.mkdir_p!(workspace)
+      on_exit(fn -> File.rm_rf!(workspace) end)
+      on_exit(fn -> File.rm(outside) end)
+
+      command = "target=$(printf '%s' '#{outside}'); printf escaped > \"$target\""
+
+      assert {:ok, _output, _meta} =
+               Bash.execute(
+                 %{
+                   "command" => command,
+                   "approval_mode" => "yolo",
+                   "delegated_approval" => "yolo",
+                   "sandboxed" => false
+                 },
+                 %{working_directory: workspace}
+               )
+
+      refute File.exists?(outside)
+    end
+
+    @tag :os_sandbox
+    test "yolo writes outside the workspace without an unsandboxed retry" do
+      workspace =
+        Path.join(System.tmp_dir!(), "bash-yolo-workspace-#{System.unique_integer([:positive])}")
+
+      outside =
+        Path.join(System.tmp_dir!(), "bash-yolo-outside-#{System.unique_integer([:positive])}")
+
+      File.mkdir_p!(workspace)
+      on_exit(fn -> File.rm_rf!(workspace) end)
+      on_exit(fn -> File.rm(outside) end)
+
+      command = "target=$(printf '%s' '#{outside}'); printf yolo > \"$target\""
+
+      assert {:ok, _output, %{exit_code: 0}} =
+               Bash.execute(%{"command" => command}, %{
+                 working_directory: workspace,
+                 approval_mode: :yolo
+               })
+
+      assert File.read!(outside) == "yolo"
+    end
+
     test "yolo runs with a cwd outside the workspace" do
       outside =
         Path.join(System.tmp_dir!(), "handbean-yolo-cwd-#{System.unique_integer([:positive])}")
@@ -622,6 +671,12 @@ defmodule Handbean.Tool.Builtin.BashTest do
     end
   end
 
+  test "yolo selects unsandboxed execution without a model flag" do
+    assert Bash.unsandboxed_execution?(%{}, %{approval_mode: :yolo})
+    assert Bash.unsandboxed_execution?(%{}, %{"approval_mode" => "yolo"})
+    assert Bash.unsandboxed_execution?(%{}, %{delegated_approval: :yolo})
+  end
+
   test "external cwd approval does not select unsandboxed execution" do
     assert Bash.unsandboxed_execution?(%{"unsandboxed" => true})
 
@@ -651,7 +706,7 @@ defmodule Handbean.Tool.Builtin.BashTest do
                    %{working_directory: File.cwd!()}
                  )
 
-        assert reason =~ "unsandboxed is not available for job=true"
+        assert reason =~ "job=true is not available on this host"
       end
 
       test "does not tell the model to retry after a sandbox write denial" do

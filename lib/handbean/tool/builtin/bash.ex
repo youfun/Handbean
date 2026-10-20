@@ -28,7 +28,7 @@ defmodule Handbean.Tool.Builtin.Bash do
       "Supports timeout control and working directory override. " <>
       sandbox_description() <>
       "Commands that name sensitive credential paths are " <>
-      "rejected before execution; unsandboxed=true does not bypass that, and the " <>
+      "rejected before execution; yolo and unsandboxed=true do not bypass that, and the " <>
       "precheck is not a complete shell parser. " <>
       job_description() <>
       "if it is still running, pass the returned cursor to job_status. Do not launch another Bash " <>
@@ -83,13 +83,13 @@ defmodule Handbean.Tool.Builtin.Bash do
           default: false,
           description:
             if Handbean.Platform.ProcessSandbox.os_enforced?() and Handbean.Host.shell_jobs?() do
-              "Run outside the OS sandbox. Use only after the sandbox denied a needed write; " <>
-                "requires approval unless the run is in yolo mode. Does not permit sensitive credential paths. " <>
-                "Not available for job=true."
+              "Run outside the OS sandbox. Yolo runs are already unsandboxed; in other modes, " <>
+                "use only after the sandbox denied a needed write and obtain approval. " <>
+                "Does not permit sensitive credential paths."
             else
               "This platform has no OS sandbox; bash already uses the unsandboxed approval gate. " <>
                 "You can omit this flag. Requires approval unless the run is in yolo mode. " <>
-                "Does not permit sensitive credential paths. Not available for job=true."
+                "Does not permit sensitive credential paths."
             end
         }
       },
@@ -125,32 +125,23 @@ defmodule Handbean.Tool.Builtin.Bash do
          :ok <- preflight_cwd(Map.get(input, "cwd"), working_directory),
          {:ok, cwd} <- resolve_cwd(Map.get(input, "cwd"), working_directory, context),
          :ok <- preflight_sensitive(command, cwd) do
-      unsandboxed? = unsandboxed_execution?(input)
+      unsandboxed? = unsandboxed_execution?(input, context)
 
-      cond do
-        Map.get(input, "job", false) == true and not Handbean.Host.shell_jobs?() ->
+      case {Map.get(input, "job", false), Handbean.Host.shell_jobs?()} do
+        {true, false} ->
           {:error, "job=true is not available on this host"}
 
-        unsandboxed? and Map.get(input, "job", false) == true ->
-          {:error, "unsandboxed is not available for job=true"}
+        {true, true} ->
+          start_job(command, timeout_sec, cwd, input, context, unsandboxed?)
 
-        unsandboxed? or not managed_context?(context) ->
-          execute_command(command, timeout_sec, cwd, context, unsandboxed?)
+        {false, _} ->
+          if unsandboxed? or not managed_context?(context) do
+            execute_command(command, timeout_sec, cwd, context, unsandboxed?)
+          else
+            managed_command(command, timeout_sec, cwd, input, context)
+          end
 
-        Map.get(input, "job", false) == false ->
-          managed_command(command, timeout_sec, cwd, input, context)
-
-        Map.get(input, "job", false) == true ->
-          Handbean.Jobs.start(
-            command,
-            cwd,
-            timeout_sec * 1_000,
-            Map.get(input, "wait_ms", 1_000),
-            context
-          )
-          |> Handbean.Jobs.format()
-
-        true ->
+        _ ->
           {:error, "job must be a boolean"}
       end
     end
@@ -161,9 +152,17 @@ defmodule Handbean.Tool.Builtin.Bash do
   end
 
   @doc false
-  def unsandboxed_execution?(input) when is_map(input) do
-    Map.get(input, "unsandboxed") == true or
+  def unsandboxed_execution?(input, context \\ %{}) when is_map(input) and is_map(context) do
+    Map.get(input, "unsandboxed") == true or yolo?(context) or
       not Handbean.Platform.ProcessSandbox.os_enforced?()
+  end
+
+  defp yolo?(context) do
+    Handbean.Utils.SafeMap.get_any(context, :approval_mode, "approval_mode") in [:yolo, "yolo"] or
+      Handbean.Utils.SafeMap.get_any(context, :delegated_approval, "delegated_approval") in [
+        :yolo,
+        "yolo"
+      ]
   end
 
   # ── Validation ──
@@ -237,12 +236,7 @@ defmodule Handbean.Tool.Builtin.Bash do
   end
 
   defp managed_command(command, timeout_sec, cwd, input, context) do
-    wait_ms = Map.get(input, "wait_ms", 1_000)
-
-    result =
-      command
-      |> Handbean.Jobs.start(cwd, timeout_sec * 1_000, wait_ms, context)
-      |> Handbean.Jobs.format()
+    result = start_job(command, timeout_sec, cwd, input, context, false)
 
     case result do
       {:ok, text, meta} ->
@@ -261,16 +255,30 @@ defmodule Handbean.Tool.Builtin.Bash do
     end
   end
 
+  defp start_job(command, timeout_sec, cwd, input, context, unsandboxed?) do
+    command
+    |> Handbean.Jobs.start(
+      cwd,
+      timeout_sec * 1_000,
+      Map.get(input, "wait_ms", 1_000),
+      context,
+      sandboxed: not unsandboxed?
+    )
+    |> Handbean.Jobs.format()
+  end
+
   defp execute_command(command, timeout_sec, cwd, context, unsandboxed?) do
     working_directory = context[:working_directory]
     capture = Handbean.WorkspaceChangeCapture.start(working_directory)
     timeout_ms = timeout_sec * 1000
     sandboxed? = working_directory != nil and not unsandboxed?
-    # resolve_cwd/3 has checked this exact directory; it does not become writable.
-    opts =
-      if sandboxed?,
-        do: [workspace_path: working_directory, authorized_cwd: cwd],
-        else: []
+    # Workspace identity also selects project shell settings and captured env;
+    # `:sandboxed` independently controls OS confinement.
+    opts = [
+      workspace_path: working_directory,
+      authorized_cwd: cwd,
+      sandboxed: sandboxed?
+    ]
 
     opts =
       if is_pid(Process.get(:tool_owner)),

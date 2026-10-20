@@ -52,7 +52,11 @@ defmodule Handbean.Jobs.Server do
     {:reply, :ok, close_scope(state, owner)}
   end
 
-  def handle_call({:start, owner, call_id, command, cwd, timeout, deadline, capture}, from, state) do
+  def handle_call(
+        {:start, owner, call_id, command, cwd, timeout, deadline, capture, sandboxed?},
+        from,
+        state
+      ) do
     duplicate =
       Enum.find_value(state.jobs, fn {_id, job} ->
         if job.owner == owner and job.call_id == call_id, do: job
@@ -75,7 +79,18 @@ defmodule Handbean.Jobs.Server do
         {:reply, {:error, "Job capacity exhausted"}, state}
 
       true ->
-        launch(state, owner, call_id, command, cwd, timeout, deadline, capture, from)
+        launch(
+          state,
+          owner,
+          call_id,
+          command,
+          cwd,
+          timeout,
+          deadline,
+          capture,
+          sandboxed?,
+          from
+        )
     end
   end
 
@@ -368,6 +383,7 @@ defmodule Handbean.Jobs.Server do
          timeout,
          deadline,
          capture,
+         _sandboxed?,
          from
        ) do
     id = "job_" <> Base.url_encode64(:crypto.strong_rand_bytes(18), padding: false)
@@ -414,14 +430,28 @@ defmodule Handbean.Jobs.Server do
     end
   end
 
-  defp launch(state, owner, call_id, command, cwd, timeout, deadline, capture, from) do
+  defp launch(
+         state,
+         owner,
+         call_id,
+         command,
+         cwd,
+         timeout,
+         deadline,
+         capture,
+         sandboxed?,
+         from
+       ) do
     {_, _, workspace} = owner
 
-    case ProcessRunner.open_gated_bash(command, cwd,
-           workspace_path: workspace,
-           authorized_cwd: cwd,
-           startup_timeout: min(1_000, max(0, deadline - now()))
-         ) do
+    opts = [
+      workspace_path: workspace,
+      authorized_cwd: cwd,
+      sandboxed: sandboxed?,
+      startup_timeout: min(1_000, max(0, deadline - now()))
+    ]
+
+    case ProcessRunner.open_gated_bash(command, cwd, opts) do
       {:ok, port, group} ->
         id = "job_" <> Base.url_encode64(:crypto.strong_rand_bytes(18), padding: false)
 

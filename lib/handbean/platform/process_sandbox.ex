@@ -32,8 +32,9 @@ defmodule Handbean.Platform.ProcessSandbox do
   supported backend. This describes policy, not whether the backend executable is
   currently installed; wrapping still validates that and fails closed.
 
-  Native Windows has no such backend. Callers must not pass `workspace_path`
-  there; the bash tool routes through the unsandboxed approval gate instead.
+  Native Windows has no such backend. Callers retain `workspace_path` for
+  project environment resolution and select `sandboxed: false`; the bash tool
+  routes that execution through the unsandboxed approval gate.
   """
   @spec os_enforced?() :: boolean()
   def os_enforced? do
@@ -42,7 +43,10 @@ defmodule Handbean.Platform.ProcessSandbox do
   end
 
   @doc """
-  Wraps a command without changing the workspace write boundary.
+  Wraps a command, applying the workspace write boundary unless `:sandboxed`
+  is explicitly false. `:workspace_path` still identifies the project whose
+  shell configuration and captured environment the caller loaded; it is not
+  itself the decision to isolate the process.
 
   `:authorized_cwd` is a canonical directory already authorized by the caller for
   this invocation. It permits only that exact cwd; the frozen value is compared
@@ -53,21 +57,31 @@ defmodule Handbean.Platform.ProcessSandbox do
   def wrap(shell, command, cwd, opts) do
     env = Keyword.get(opts, :env, [])
 
-    case Keyword.get(opts, :workspace_path) do
-      nil ->
-        {:ok,
-         %{
-           executable: shell.path,
-           args: shell.args ++ [command],
-           cwd: cwd,
-           env: env,
-           pid_namespace?: false,
-           process_group?: false
-         }}
+    case {Keyword.get(opts, :workspace_path), Keyword.get(opts, :sandboxed, true)} do
+      {_, false} ->
+        unconfined(shell, command, cwd, env)
 
-      workspace ->
+      {nil, true} ->
+        unconfined(shell, command, cwd, env)
+
+      {workspace, true} ->
         wrap_workspace(shell, command, cwd || workspace, workspace, opts)
+
+      {_workspace, _invalid} ->
+        {:error, "sandboxed must be a boolean"}
     end
+  end
+
+  defp unconfined(shell, command, cwd, env) do
+    {:ok,
+     %{
+       executable: shell.path,
+       args: shell.args ++ [command],
+       cwd: cwd,
+       env: env,
+       pid_namespace?: false,
+       process_group?: false
+     }}
   end
 
   @doc """
