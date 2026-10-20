@@ -330,6 +330,27 @@ defmodule HandbeanWeb.WorkspaceLive.PolicyAndControlsTest do
   end
 
   describe "tool permissions menu" do
+    test "permission event without a workspace reports failure and keeps the session usable", %{
+      conn: conn
+    } do
+      {:ok, workspace} = Handbean.WorkspaceStore.ensure_default!()
+      :ok = Handbean.WorkspaceSettings.update_permission_mode(workspace["path"], :prompt)
+      settings_path = Handbean.WorkspaceSettings.path(workspace["path"])
+      original = File.read!(settings_path)
+      {:ok, conversation} = Handbean.ConversationStore.create_free(title: "Permission regression")
+      {:ok, view, _html} = live(conn, "/c/#{conversation["id"]}")
+
+      assert capture_log(fn ->
+               html = render_click(view, "select_permission_mode", %{"mode" => "yolo"})
+               assert html =~ "Failed to update permission mode"
+             end) =~ "invalid_path"
+
+      assert File.read!(settings_path) == original
+      render_click(view, "select_permission_mode", %{})
+      render_click(view, "select_permission_mode", %{"mode" => "invalid"})
+      assert render(view) =~ "Permission regression"
+    end
+
     test "toggles permission menu and selects new permission mode", %{conn: conn} do
       {:ok, default_ws} = Handbean.WorkspaceStore.ensure_default!()
       workspace_root = default_ws["path"]

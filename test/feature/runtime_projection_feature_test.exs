@@ -18,6 +18,8 @@ defmodule HandbeanWeb.Feature.RuntimeProjectionFeatureTest do
     id = conversation["id"]
     on_exit(fn -> E2EHarness.cancel!(id) end)
 
+    owner = self()
+
     opts = [
       workspace_path: workspace,
       model: "fake",
@@ -25,12 +27,22 @@ defmodule HandbeanWeb.Feature.RuntimeProjectionFeatureTest do
       tools: [],
       middleware: [],
       provider: Handbean.TestSupport.ProjectionProvider,
-      provider_config: %{notify: self()},
-      streaming: true
+      provider_config: %{notify: owner},
+      streaming: true,
+      on_event: fn
+        {:message_delta, %{chunk: chunk}} when is_binary(chunk) ->
+          if String.ends_with?(chunk, " stream"),
+            do: send(owner, :projected_suffix_persisted),
+            else: :ok
+
+        _event ->
+          :ok
+      end
     ]
 
     {:ok, %{run_id: run_id}} = Coordinator.add_message(id, "stream once", opts)
     assert_receive {:projected_stream, provider}, 5_000
+    assert_receive :projected_suffix_persisted, 5_000
     %{id: id, run_id: run_id, provider: provider}
   end
 

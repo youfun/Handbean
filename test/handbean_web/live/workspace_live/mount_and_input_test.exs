@@ -195,6 +195,24 @@ defmodule HandbeanWeb.WorkspaceLive.MountAndInputTest do
       refute html =~ "id=\"speech-input-button\""
     end
 
+    test "speech activity follows transcription independently of an agent run", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/")
+      assigns = :sys.get_state(view.pid).socket.assigns
+
+      for running <- [false, true], speech_state <- [:disabled, :ready, :transcribing] do
+        html =
+          render_component(
+            &HandbeanWeb.WorkspaceLive.ChatComposerComponents.composer/1,
+            Map.merge(assigns, %{running: running, speech_state: speech_state})
+          )
+
+        assert html
+               |> Floki.parse_document!()
+               |> Floki.find("#composer-activity")
+               |> Floki.attribute("data-active") == [to_string(speech_state == :transcribing)]
+      end
+    end
+
     test "ai input textarea does not render leading whitespace around the value", %{conn: conn} do
       {:ok, _view, html} = live(conn, "/")
 

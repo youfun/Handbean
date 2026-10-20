@@ -28,6 +28,36 @@ defmodule HandbeanWeb.WorkspaceLive.WorkspaceManagementTest do
       {:ok, ws_dir: ws_dir, home_dir: home_dir}
     end
 
+    test "outdated workspace configuration stays intact and can be retried after repair", %{
+      conn: conn
+    } do
+      path = Handbean.WorkspaceStore.storage_path()
+      {:ok, workspace} = Handbean.WorkspaceStore.ensure_default!()
+      current = File.read!(path)
+
+      legacy =
+        Handbean.JSON.encode!(%{"workspaces" => [Map.take(workspace, ["id", "name", "path"])]})
+
+      File.write!(path, legacy)
+
+      for route <- ["/", "/w/#{workspace["id"]}/c/missing", "/c/missing"] do
+        {:ok, view, html} = live(conn, route)
+        assert html =~ "Workspace configuration needs attention"
+        assert html =~ "older workspace format"
+        assert html =~ path
+        assert has_element?(view, "a[href='/']", "Retry")
+        assert File.read!(path) == legacy
+      end
+
+      File.write!(path, current)
+      {:ok, view, _html} = live(conn, "/")
+      assert has_element?(view, "#workspace-shell")
+      assert {:ok, restored} = Handbean.WorkspaceStore.get(workspace["id"])
+
+      assert restored["path"] ==
+               Handbean.Security.PathValidator.resolve_symlink(workspace["path"])
+    end
+
     test "checkout picker heading has a zh_CN translation" do
       assert {:ok, _translation} =
                HandbeanWeb.Gettext.lgettext("zh_CN", "default", "Choose a checkout", %{})
