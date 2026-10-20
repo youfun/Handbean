@@ -1,5 +1,5 @@
 defmodule Handbean.Skills.BundledSkillsTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Handbean.Skills.Loader
 
@@ -9,10 +9,18 @@ defmodule Handbean.Skills.BundledSkillsTest do
   @max_skill_bytes 65_536
 
   setup %{tmp_dir: tmp} do
+    previous_host = Application.get_env(:handbean, :host)
     workspace = Path.join(tmp, "workspace")
     home = Path.join(tmp, "home")
     File.mkdir_p!(workspace)
     File.mkdir_p!(home)
+
+    on_exit(fn ->
+      if previous_host,
+        do: Application.put_env(:handbean, :host, previous_host),
+        else: Application.delete_env(:handbean, :host)
+    end)
+
     {:ok, workspace: workspace, home: home, opts: [workspace: workspace, user_home: home]}
   end
 
@@ -105,6 +113,17 @@ defmodule Handbean.Skills.BundledSkillsTest do
     {:ok, canonical_skills} = Handbean.Security.PathValidator.canonicalize(skills)
 
     assert Loader.bundled_dirs_from_priv(priv) == [{canonical_skills, :bundled}]
+  end
+
+  test "a flat OTP host loads bundled skills from its configured priv", c do
+    priv = Path.join(c.tmp_dir, "flat-otp/priv")
+    skill_dir = Path.join(priv, "skills/flat-bundled")
+    write_named_skill(skill_dir, "flat-bundled", "flat host layout")
+    Handbean.Host.put!(%{priv_dir: priv})
+
+    result = Loader.load(c.opts)
+
+    assert Enum.any?(result.skills, &(&1.name == "flat-bundled" and &1.source == :bundled))
   end
 
   if match?({:unix, _}, :os.type()) do

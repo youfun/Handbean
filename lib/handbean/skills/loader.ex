@@ -10,13 +10,13 @@ defmodule Handbean.Skills.Loader do
 
   Skill files are limited to 64 KiB of UTF-8 text. Configured roots may not
   redirect through symlinks outside their trusted workspace/home anchor.
-  The release also loads bundled skills from this application's `priv/skills`
-  (OTP app `:handbean`). That directory is part of the installed BEAM release,
-  not a workspace or home path. Project, user, and explicit skills win on name
-  collision. Mix may copy or link the whole `priv` directory into `_build`;
-  that install-path link is resolved to a canonical priv anchor. The `skills`
-  directory under that anchor, and every path in the skill tree, must not be
-  a symlink.
+  Bundled skills come from `Handbean.Paths.priv_dir/0`, whose host-owned path
+  supports both a standard OTP install and a flat OTP mobile host. That
+  `priv/skills` directory is part of the installed BEAM release, not a workspace
+  or home path. Project, user, and explicit skills win on name collision. Mix
+  may copy or link the whole `priv` directory into `_build`; that install-path
+  link is resolved to a canonical priv anchor. The `skills` directory under
+  that anchor, and every path in the skill tree, must not be a symlink.
   Symlinks within a skill tree are conservatively unsupported, including
   links whose targets are inside the tree. This is not an OS filesystem sandbox.
   Validation and file opening are separate operations, not an atomic guarantee
@@ -135,7 +135,7 @@ defmodule Handbean.Skills.Loader do
   end
 
   defp bundled_dirs do
-    bundled_dirs_from_priv(Application.app_dir(:handbean, "priv"))
+    bundled_dirs_from_priv(Handbean.Paths.priv_dir())
   end
 
   @doc false
