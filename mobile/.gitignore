@@ -25,6 +25,10 @@ android/*.keystore
 android/app/src/main/assets/otp.zip
 android/app/src/debug/assets/otp.zip
 android/app/src/release/assets/otp.zip
+# Generated from config/termux-rootfs.lock.json; never hand-edit or commit the large rootfs.
+android/app/src/developerSideload/assets/termux-rootfs.tgz
+android/app/src/developerSideload/assets/termux-rootfs.json
+android/app/src/developerSideload/assets/termux-packages.json
 android/local.properties
 android/.gradle/
 android/app/build/

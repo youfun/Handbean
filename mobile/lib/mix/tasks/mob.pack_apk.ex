@@ -12,6 +12,16 @@ defmodule Mix.Tasks.Mob.PackApk do
       mix mob.pack_apk --abi arm64-v8a --no-install --output handbean_probe-arm64.apk
       mix mob.pack_apk --abi x86_64 --no-install --output handbean_probe-x86_64.apk
 
+  Standard packages keep `targetSdk 35`. The developer/sideload package is a
+  separate ARM64-only application with `targetSdk 28` and a pinned Termux rootfs:
+
+      mix mob.pack_apk --abi arm64-v8a --developer-sideload --no-install \
+        --output Handbean-Developer-arm64-v8a.apk
+
+  The developer package requires generated assets under
+  `android/app/src/developerSideload/assets`; it never falls back to an unpinned
+  download during an APK build.
+
   Default packaging stays `com.example.handbean_probe.nativechat`. Pass
   `--foundation-test-app` to forward Gradle `-PfoundationTestApp` (isolated
   `foundationtest` applicationId + dist 9300):
@@ -31,7 +41,10 @@ defmodule Mix.Tasks.Mob.PackApk do
 
   use Mix.Task
 
-  @activity "com.example.handbean_probe.nativechat/com.example.handbean_probe.MainActivity"
+  @standard_activity "com.example.handbean_probe.nativechat/com.example.handbean_probe.MainActivity"
+  @developer_activity "io.hndbean/com.example.handbean_probe.MainActivity"
+  @developer_assets Path.expand("android/app/src/developerSideload/assets")
+  @developer_lock Path.expand("config/termux-rootfs.lock.json")
 
   @impl Mix.Task
   def run(args) do
@@ -44,20 +57,24 @@ defmodule Mix.Tasks.Mob.PackApk do
           install: :boolean,
           output: :string,
           foundation_test_app: :boolean,
+          developer_sideload: :boolean,
           models_seed: :string
         ]
       )
 
+    abi = opts[:abi] || detect_abi(opts[:device])
+    validate_variant!(abi, opts)
+
     Mix.Task.run("compile")
-    Mix.Task.run("handbean.pack_mix_toolchain")
+    prepare_mix_toolchain!()
     # mob.exs is gitignored; pack from a fresh tree must install the
     # checked-in static_nifs template or Zig omits project C NIFs.
     Mix.Task.run("mob.write_mob_exs")
     # The Zig link can succeed with a stale table while project NIFs fail to load.
     Mix.Task.run("mob.regen_driver_tab")
     ensure_handbean_assets!()
+    ensure_developer_assets!(opts)
 
-    abi = opts[:abi] || detect_abi(opts[:device])
     slim? = Keyword.get(opts, :slim, true)
     install? = Keyword.get(opts, :install, true)
     app_name = Mix.Project.config()[:app] |> to_string()
@@ -82,10 +99,56 @@ defmodule Mix.Tasks.Mob.PackApk do
          {:ok, apk} <- assemble_debug(abi, opts),
          apk <- copy_output(apk, opts[:output]) do
       Mix.shell().info("  APK: #{apk}")
-      if install?, do: install_apk(apk, opts[:device]), else: :ok
+      if install?, do: install_apk(apk, opts[:device], opts), else: :ok
     else
       {:error, reason} -> Mix.raise(inspect(reason))
     end
+  end
+
+  @doc false
+  def validate_prepacked_mix_toolchain(manifest, expected_elixir, expected_otp)
+      when is_map(manifest) do
+    if manifest["elixir"] == expected_elixir and manifest["otp"] == expected_otp do
+      :ok
+    else
+      {:error,
+       "prepacked Mix toolchain is Elixir #{manifest["elixir"]}/OTP #{manifest["otp"]}; " <>
+         "expected Elixir #{expected_elixir}/OTP #{expected_otp}"}
+    end
+  end
+
+  defp prepare_mix_toolchain! do
+    if System.get_env("HANDBEAN_MIX_TOOLCHAIN_PREPACKED") == "1" do
+      validate_mix_toolchain_manifest!(Path.expand("priv/mix_toolchain/manifest.json"))
+    else
+      Mix.Task.run("handbean.pack_mix_toolchain")
+    end
+  end
+
+  defp validate_mix_toolchain_manifest!(manifest_path) do
+    manifest = manifest_path |> File.read!() |> Handbean.JSON.decode!()
+    {expected_elixir, expected_otp} = expected_mobile_beam_versions()
+
+    case validate_prepacked_mix_toolchain(manifest, expected_elixir, expected_otp) do
+      :ok -> :ok
+      {:error, reason} -> Mix.raise(reason)
+    end
+  end
+
+  defp expected_mobile_beam_versions do
+    versions = Path.expand(".tool-versions") |> File.read!()
+
+    elixir =
+      Regex.run(~r/^elixir\s+(\S+)/m, versions, capture: :all_but_first)
+      |> List.first()
+      |> String.split("-otp-", parts: 2)
+      |> List.first()
+
+    otp =
+      Regex.run(~r/^erlang\s+(\d+)/m, versions, capture: :all_but_first)
+      |> List.first()
+
+    {elixir, otp}
   end
 
   defp zig_native(abi, otp_dir) do
@@ -214,6 +277,7 @@ defmodule Mix.Tasks.Mob.PackApk do
         end)
 
         merge_priv!(dest)
+        add_developer_host_profile!(dest, opts)
         inject_or_reject_models_seed!(Path.join(dest, "priv"), opts)
         add_exqlite!(staging)
         add_bcrypt!(staging)
@@ -282,12 +346,16 @@ defmodule Mix.Tasks.Mob.PackApk do
         cp!(source <> "/.", dest_priv)
       end
     end)
+
+    if System.get_env("HANDBEAN_MIX_TOOLCHAIN_PREPACKED") == "1" do
+      validate_mix_toolchain_manifest!(Path.join(dest_priv, "mix_toolchain/manifest.json"))
+    end
   end
 
   defp priv_sources do
     [
-      Path.join(File.cwd!(), "priv"),
-      Path.expand("../priv", File.cwd!())
+      Path.expand("../priv", File.cwd!()),
+      Path.join(File.cwd!(), "priv")
     ]
   end
 
@@ -298,18 +366,25 @@ defmodule Mix.Tasks.Mob.PackApk do
   # Flattened ebin copies are not an OTP lib. Mint TLS falls back to
   # CAStore.file_path/0 → Application.app_dir(:castore), which needs
   # $OTP_ROOT/lib/castore-*/{ebin,priv/cacerts.pem}.
+  @doc false
+  def dep_build_dir(app) do
+    Path.join([Mix.Project.build_path(), "lib", to_string(app)])
+  end
+
   defp add_dep_lib!(staging, app) do
     name = to_string(app)
+    build_dir = dep_build_dir(app)
 
     with vsn when is_binary(vsn) <- MobDev.AppFile.dep_version(app),
-         [ebin | _] <- Path.wildcard("_build/dev/lib/#{name}/ebin") do
+         true <- File.dir?(Path.join(build_dir, "ebin")) do
+      ebin = Path.join(build_dir, "ebin")
       lib_dir = Path.join(staging, "lib/#{name}-#{vsn}")
       dest_ebin = Path.join(lib_dir, "ebin")
       File.mkdir_p!(dest_ebin)
 
       cp!("#{Path.expand(ebin)}/.", dest_ebin)
 
-      priv = Path.expand("_build/dev/lib/#{name}/priv")
+      priv = Path.join(build_dir, "priv")
 
       if File.dir?(priv) do
         dest_priv = Path.join(lib_dir, "priv")
@@ -325,7 +400,7 @@ defmodule Mix.Tasks.Mob.PackApk do
 
       :ok
     else
-      _ -> Mix.raise("required OTP lib #{name} missing from _build/dev")
+      _ -> Mix.raise("required OTP lib #{name} missing from #{Mix.Project.build_path()}")
     end
   end
 
@@ -402,11 +477,142 @@ defmodule Mix.Tasks.Mob.PackApk do
     end
   end
 
+  @doc false
+  def validate_variant!(abi, opts) do
+    developer? = Keyword.get(opts, :developer_sideload, false)
+    foundation? = Keyword.get(opts, :foundation_test_app, false)
+
+    cond do
+      developer? and foundation? ->
+        Mix.raise("--developer-sideload and --foundation-test-app are mutually exclusive")
+
+      developer? and abi != "arm64-v8a" ->
+        Mix.raise("--developer-sideload supports only --abi arm64-v8a")
+
+      true ->
+        :ok
+    end
+  end
+
+  defp ensure_developer_assets!(opts) do
+    if Keyword.get(opts, :developer_sideload, false) do
+      archive = Path.join(@developer_assets, "termux-rootfs.tgz")
+      manifest_path = Path.join(@developer_assets, "termux-rootfs.json")
+      package_manifest_path = Path.join(@developer_assets, "termux-packages.json")
+
+      with true <- File.regular?(archive),
+           true <- File.regular?(manifest_path),
+           true <- File.regular?(package_manifest_path),
+           true <- File.regular?(@developer_lock),
+           {:ok, manifest_json} <- File.read(manifest_path),
+           {:ok, manifest} when is_map(manifest) <- Handbean.JSON.decode(manifest_json),
+           :ok <- validate_rootfs_manifest(manifest),
+           {:ok, package_manifest_json} <- File.read(package_manifest_path),
+           {:ok, package_manifest} when is_map(package_manifest) <-
+             Handbean.JSON.decode(package_manifest_json),
+           :ok <- validate_package_manifest(package_manifest),
+           {:ok, digest} <- file_sha256(archive),
+           true <- digest == String.downcase(manifest["archive_sha256"]),
+           {:ok, lock_digest} <- file_sha256(@developer_lock),
+           true <- lock_digest == String.downcase(manifest["package_lock_sha256"]),
+           {:ok, package_digest} <- file_sha256(package_manifest_path),
+           true <- package_digest == String.downcase(manifest["package_manifest_sha256"]) do
+        :ok
+      else
+        false ->
+          Mix.raise(
+            "developer rootfs is missing or does not match termux-rootfs.json; " <>
+              "run script/build_termux_rootfs.exs first"
+          )
+
+        {:error, reason} ->
+          Mix.raise("invalid developer rootfs: #{inspect(reason)}")
+
+        other ->
+          Mix.raise("invalid developer rootfs manifest: #{inspect(other)}")
+      end
+    end
+  end
+
+  defp validate_rootfs_manifest(%{
+         "version" => version,
+         "archive_sha256" => digest,
+         "package_lock_sha256" => lock_digest,
+         "package_manifest_sha256" => package_digest,
+         "abi" => "arm64-v8a",
+         "prefix" => "/data/data/io.hndbean/files/usr"
+       })
+       when is_binary(version) and version != "" and is_binary(digest) and
+              byte_size(digest) == 64 and is_binary(lock_digest) and
+              byte_size(lock_digest) == 64 and is_binary(package_digest) and
+              byte_size(package_digest) == 64,
+       do: :ok
+
+  defp validate_rootfs_manifest(_), do: {:error, :invalid_manifest_contract}
+
+  @doc false
+  def validate_package_manifest(%{
+        "repository" => repository,
+        "index_sha256" => index_digest,
+        "license_review_required" => false,
+        "packages" => [_ | _]
+      })
+      when is_binary(repository) and repository != "" and is_binary(index_digest) and
+             byte_size(index_digest) == 64,
+      do: :ok
+
+  def validate_package_manifest(%{"license_review_required" => true}),
+    do: {:error, :license_review_required}
+
+  def validate_package_manifest(_), do: {:error, :invalid_package_manifest_contract}
+
+  defp file_sha256(path) do
+    digest =
+      path
+      |> File.stream!(1_048_576, [])
+      |> Enum.reduce(:crypto.hash_init(:sha256), &:crypto.hash_update(&2, &1))
+      |> :crypto.hash_final()
+      |> Base.encode16(case: :lower)
+
+    {:ok, digest}
+  rescue
+    error -> {:error, {:hash_failed, error.__struct__}}
+  end
+
+  defp add_developer_host_profile!(dest, opts) do
+    path = Path.join(dest, "priv/android_host_profile.json")
+
+    if Keyword.get(opts, :developer_sideload, false) do
+      profile = %{
+        "profile" => "android_developer_sideload",
+        "shell" => true,
+        "shell_jobs" => false,
+        "shell_isolation" => "none",
+        "termux_prefix" => "/data/data/io.hndbean/files/usr"
+      }
+
+      File.mkdir_p!(Path.dirname(path))
+      File.write!(path, Handbean.JSON.encode!(profile))
+    else
+      if File.exists?(path) do
+        Mix.raise("android_host_profile.json must not enter a standard APK")
+      end
+    end
+  end
+
+  @doc false
   def gradle_assemble_args(abi, opts \\ []) when is_binary(abi) do
     args = ["assembleDebug", "--no-daemon", "-PmobAbi=#{abi}"]
 
-    if Keyword.get(opts, :foundation_test_app, false) do
-      args ++ ["-PfoundationTestApp"]
+    args =
+      if Keyword.get(opts, :foundation_test_app, false) do
+        args ++ ["-PfoundationTestApp"]
+      else
+        args
+      end
+
+    if Keyword.get(opts, :developer_sideload, false) do
+      args ++ ["-PdeveloperSideload"]
     else
       args
     end
@@ -440,7 +646,7 @@ defmodule Mix.Tasks.Mob.PackApk do
     dest
   end
 
-  defp install_apk(apk, device) do
+  defp install_apk(apk, device, opts) do
     adb = System.find_executable("adb") || Mix.raise("adb not found")
     serial = device || default_serial()
     args = if serial, do: ["-s", serial, "install", "-r", apk], else: ["install", "-r", apk]
@@ -449,25 +655,31 @@ defmodule Mix.Tasks.Mob.PackApk do
     case System.cmd(adb, args, stderr_to_stdout: true) do
       {out, 0} ->
         Mix.shell().info(out)
-        launch(serial)
+        launch(serial, opts)
 
       {out, rc} ->
         Mix.raise("adb install failed (#{rc}): #{out}")
     end
   end
 
-  defp launch(nil), do: :ok
+  defp launch(nil, _opts), do: :ok
 
-  defp launch(serial) do
+  defp launch(serial, opts) do
     adb = System.find_executable("adb")
 
     System.cmd(
       adb,
-      ["-s", serial, "shell", "am", "start", "-n", @activity],
+      ["-s", serial, "shell", "am", "start", "-n", activity(opts)],
       stderr_to_stdout: true
     )
 
     :ok
+  end
+
+  defp activity(opts) do
+    if Keyword.get(opts, :developer_sideload, false),
+      do: @developer_activity,
+      else: @standard_activity
   end
 
   defp detect_abi(device) do

@@ -25,6 +25,14 @@ def mobOtpReleaseArm32 = localProps.getProperty('mob.otp_release_arm32', System.
 def mobOtpReleaseX86_64 = localProps.getProperty('mob.otp_release_x86_64', System.getenv('MOB_ANDROID_OTP_RELEASE_X86_64') ?: mobOtpRelease)
 def mobDir             = localProps.getProperty('mob.mob_dir',           System.getenv('MOB_DIR')                       ?: '')
 def foundationTestApp  = project.hasProperty('foundationTestApp')
+def developerSideload  = project.hasProperty('developerSideload')
+
+if (foundationTestApp && developerSideload) {
+    throw new GradleException('foundationTestApp and developerSideload are mutually exclusive')
+}
+if (developerSideload && project.hasProperty('mobAbi') && project.property('mobAbi') != 'arm64-v8a') {
+    throw new GradleException('developerSideload supports only arm64-v8a')
+}
 
 // Auto-detect ERTS version from the OTP release directory (arm64 is canonical).
 def ertsVsn = new File(mobOtpRelease).listFiles()
@@ -42,19 +50,25 @@ android {
     ndkVersion '27.2.12479018'
 
     defaultConfig {
-        applicationId foundationTestApp ? "com.example.handbean_probe.foundationtest" : "com.example.handbean_probe.nativechat"
+        // `io.hndbean` is intentionally the same byte length as `com.termux`.
+        // The pinned rootfs packer relocates Termux's compiled-in prefix in place.
+        applicationId developerSideload ? "io.hndbean" : (foundationTestApp ? "com.example.handbean_probe.foundationtest" : "com.example.handbean_probe.nativechat")
         minSdk 28
-        targetSdk 35
+        targetSdk developerSideload ? 28 : 35
         versionCode Integer.parseInt(releaseProps.getProperty('build'))
-        versionName releaseProps.getProperty('version')
+        versionName releaseProps.getProperty('version') + (developerSideload ? "-developer" : "")
         buildConfigField "boolean", "FOUNDATION_TEST_APP", foundationTestApp.toString()
+        buildConfigField "boolean", "DEVELOPER_SIDELOAD", developerSideload.toString()
+        manifestPlaceholders = [appLabel: developerSideload ? "Handbean Developer" : "Handbean"]
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
 
         // One OTP zip per APK. `mix mob.pack_apk --abi …` passes -PmobAbi so
         // Gradle does not pack native libs for the other ABIs.
         ndk {
-            if (project.hasProperty('mobAbi')) {
+            if (developerSideload) {
+                abiFilters 'arm64-v8a'
+            } else if (project.hasProperty('mobAbi')) {
                 abiFilters project.property('mobAbi')
             } else {
                 abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
@@ -70,6 +84,14 @@ android {
                           "-DERTS_VSN=${ertsVsn}",
                           "-DMOB_DIR=${mobDir}"
             }
+        }
+    }
+
+    sourceSets {
+        if (developerSideload) {
+            main.java.srcDir 'src/developerSideload/java'
+            main.assets.srcDir 'src/developerSideload/assets'
+            test.java.srcDir 'src/developerSideloadTest/java'
         }
     }
 
@@ -114,6 +136,12 @@ android {
             // split. useLegacyPackaging=true forces extraction.
             useLegacyPackaging true
         }
+    }
+
+    androidResources {
+        // AAPT transparently expands *.gz assets and strips the suffix. The
+        // Developer archive uses .tgz so AssetManager exposes the exact bytes.
+        if (developerSideload) noCompress += ['tgz']
     }
 
     buildTypes {
@@ -183,4 +211,8 @@ dependencies {
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
     debugImplementation 'androidx.compose.ui:ui-test-manifest'
+
+    if (developerSideload) {
+        implementation 'org.apache.commons:commons-compress:1.27.1'
+    }
 }

@@ -105,6 +105,11 @@ defmodule Handbean.Permissions.ToolPolicy do
       sensitive_call?(policy, call) ->
         :deny
 
+      # Explicit per-tool prompts are a workspace boundary, including in YOLO.
+      # They may strengthen capability-specific behavior but never weaken a hard deny.
+      Map.get(policy.per_tool, name) == :prompt ->
+        :prompt
+
       # Native host independently approves the app and every input. Workspace
       # rules (including yolo) cannot grant desktop control or remember it.
       name == "computer" ->

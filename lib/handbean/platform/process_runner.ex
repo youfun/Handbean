@@ -27,7 +27,8 @@ defmodule Handbean.Platform.ProcessRunner do
     script =
       "printf 'handbean-ready\\n'; IFS= read -r gate && [ \"$gate\" = go ] || exit 125; eval \"$1\""
 
-    with {:ok, opts} <- put_workspace_environment(opts),
+    with :ok <- validate_shell_isolation(),
+         {:ok, opts} <- put_workspace_environment(opts),
          {:ok, shell} <- ShellResolver.resolve(opts),
          {:ok, invocation} <-
            ProcessSandbox.wrap(
@@ -108,7 +109,8 @@ defmodule Handbean.Platform.ProcessRunner do
   end
 
   def open_tracked(opts) do
-    with {:ok, opts} <- put_workspace_environment(opts),
+    with :ok <- validate_shell_isolation(),
+         {:ok, opts} <- put_workspace_environment(opts),
          {:ok, shell} <- ShellResolver.resolve(opts),
          {:ok, invocation} <- ProcessSandbox.wrap(shell, opts[:command], opts[:cwd], opts) do
       port =
@@ -179,17 +181,27 @@ defmodule Handbean.Platform.ProcessRunner do
     "'" <> String.replace(str, "'", "'\\''") <> "'"
   end
 
+  defp validate_shell_isolation do
+    case Handbean.Host.shell_isolation() do
+      isolation when isolation in [:platform_required, :none] -> :ok
+      _ -> {:error, "Host shell isolation policy is invalid; refusing to execute"}
+    end
+  end
+
   defp put_workspace_environment(opts) do
+    host = Handbean.Host.shell_environment()
+    explicit = Keyword.get(opts, :env, []) |> Map.new()
+
     case Keyword.get(opts, :workspace_path) do
       path when is_binary(path) and path != "" ->
         with {:ok, environment} <- WorkspaceEnvironment.port_env(path) do
           project = Map.new(environment)
-          explicit = Keyword.get(opts, :env, []) |> Map.new()
-          {:ok, Keyword.put(opts, :env, project |> Map.merge(explicit) |> Map.to_list())}
+          merged = host |> Map.merge(project) |> Map.merge(explicit)
+          {:ok, Keyword.put(opts, :env, Map.to_list(merged))}
         end
 
       _ ->
-        {:ok, opts}
+        {:ok, Keyword.put(opts, :env, host |> Map.merge(explicit) |> Map.to_list())}
     end
   end
 

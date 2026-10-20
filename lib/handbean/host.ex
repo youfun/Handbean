@@ -7,7 +7,7 @@ defmodule Handbean.Host do
   The host stores declarations. It does not authorize a run, and it does not
   infer one capability from another.
 
-  Boolean capabilities (`shell`, `terminal`, `beam_eval`, `mcp`, `dist`,
+  Boolean capabilities (`shell`, `shell_jobs`, `terminal`, `beam_eval`, `mcp`, `dist`,
   `packaged_mix_toolchain`, `host_script`) are present only when explicitly
   true. A missing key is the desktop default, not a guess from the OS, UI, or
   another capability.
@@ -28,6 +28,11 @@ defmodule Handbean.Host do
     `request_directory_picker/1`. Desktop never sets it.
   * `speech_backend` — module implementing local speech-to-text inference. Desktop
     defaults to `Handbean.Speech.WhisperCpp`; other hosts must override it explicitly.
+  * `shell_isolation` — `:platform_required` or `:none`. The former fails closed
+    unless the platform sandbox can wrap a workspace command. `:none` is an explicit
+    high-privilege host declaration and routes every Bash call through approval.
+  * `shell_environment` — fixed string environment entries required by an injected
+    shell runtime. Call-specific and workspace environments still override them.
 
   `script_http: :platform_dns_ca` declares that the host configured Req's
   platform DNS and CA certificates before tool registration. It is guidance,
@@ -51,6 +56,9 @@ defmodule Handbean.Host do
     :data_dir,
     :priv_dir,
     :shell,
+    :shell_jobs,
+    :shell_isolation,
+    :shell_environment,
     :terminal,
     :browser_backend,
     :computer_use_backend,
@@ -70,6 +78,7 @@ defmodule Handbean.Host do
 
   @boolean_keys [
     :shell,
+    :shell_jobs,
     :terminal,
     :beam_eval,
     :mcp,
@@ -105,6 +114,28 @@ defmodule Handbean.Host do
 
   @spec shell?() :: boolean()
   def shell?, do: capability?(:shell, true)
+
+  @spec shell_jobs?() :: boolean()
+  def shell_jobs?, do: capability?(:shell_jobs, true)
+
+  @spec shell_isolation() :: :platform_required | :none | :invalid
+  def shell_isolation do
+    case declared(:shell_isolation, :platform_required) do
+      isolation when isolation in [:platform_required, :none] -> isolation
+      _ -> :invalid
+    end
+  end
+
+  @spec shell_environment() :: %{optional(String.t()) => String.t()}
+  def shell_environment do
+    case declared(:shell_environment, %{}) do
+      environment when is_map(environment) ->
+        Map.filter(environment, fn {key, value} -> is_binary(key) and is_binary(value) end)
+
+      _ ->
+        %{}
+    end
+  end
 
   @spec terminal?() :: boolean()
   def terminal?, do: capability?(:terminal, true)

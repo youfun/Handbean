@@ -1,5 +1,6 @@
 # Pack the Web UI OTP release for Linux x86_64, Linux ARM64, Windows amd64,
-# and macOS arm64, the native macOS WebKit app, both Android APKs, and a
+# and macOS arm64, the native macOS WebKit app, standard Android APKs,
+# the separate ARM64 Developer/Sideload APK with its pinned Termux rootfs, and a
 # re-signable iOS IPA. Manual runs upload artifacts unless publication is requested.
 # Pushes to dev or v* tags publish packages to GitHub Releases.
 # A dev push that changes version or build also creates the v* tag after
@@ -340,6 +341,12 @@ jobs:
           path: dist
 
       - uses: actions/download-artifact@v8
+        if: needs.android.result == 'success'
+        with:
+          name: handbean-android-developer-arm64-apk
+          path: dist
+
+      - uses: actions/download-artifact@v8
         with:
           name: handbean-macos-app-arm64
           path: dist
@@ -353,6 +360,7 @@ jobs:
       - name: Verify complete package set
         env:
           MOBILE_REQUIRED: ${{ needs.target.outputs.mobile_required }}
+          ANDROID_BUILT: ${{ needs.android.result == 'success' }}
         run: |
           set -euo pipefail
           for package in handbean-web-linux-x86_64 handbean-web-linux-arm64 \
@@ -363,8 +371,19 @@ jobs:
               exit 1
             fi
           done
+          if [[ "$ANDROID_BUILT" == true ]]; then
+            for apk in Handbean-arm64-v8a.apk Handbean-x86_64.apk \
+              Handbean-Developer-arm64-v8a.apk; do
+              if [[ ! -s "dist/$apk" ]]; then
+                echo "Missing Android package: $apk"
+                exit 1
+              fi
+            done
+          elif [[ "$MOBILE_REQUIRED" == true ]]; then
+            echo "Android packages are unavailable; Web publication may continue."
+          fi
           if [[ "$MOBILE_REQUIRED" == true ]]; then
-            echo "Mobile packages are optional. Missing Android or iOS packages do not block publication."
+            echo "iOS is optional. A missing iOS package does not block Web publication."
           fi
 
       - name: Release notes
@@ -380,6 +399,15 @@ jobs:
             echo "Handbean desktop, Web UI, and mobile packages."
             echo
             echo "macOS desktop: unpack \`Handbean-macos-arm64.zip\` and open \`Handbean.app\`."
+            if compgen -G "dist/Handbean-arm64-v8a.apk" >/dev/null; then
+              echo
+              echo "Android packages:"
+              echo "- \`Handbean-arm64-v8a.apk\`: standard ARM64 phone build; targetSdk 35, no Termux rootfs, Bash disabled."
+              echo "- \`Handbean-x86_64.apk\`: standard ChromeOS/x86_64 emulator build with the same capability boundary."
+              echo "- \`Handbean-Developer-arm64-v8a.apk\`: separate ARM64-only sideload build; targetSdk 28, application ID \`io.hndbean\`, with pinned Termux/Bionic Bash, Python, Node.js, Erlang/OTP, Elixir, Git, and OpenSSH."
+              echo "  The Developer shell runs under the app UID and is not a security sandbox. Background Bash jobs and terminal remain disabled. It can be installed beside the standard app and uses separate private data."
+              echo "  These APKs use CI debug signing and do not promise in-place upgrades across builds. A signing change requires uninstalling first, which deletes that app's private data; export anything important before reinstalling."
+            fi
             if compgen -G "dist/*.ipa" >/dev/null; then
               echo "iOS: \`Handbean-ios-sideload.ipa\` is ad-hoc signed and has no provisioning profile. Re-sign it with your own Apple ID in Sideloadly or AltStore, then install it. Bundle id: \`com.example.handbean_probe\`."
             fi
@@ -440,11 +468,11 @@ jobs:
           fi
 
   android:
-    name: Android APK
+    name: Android standard + Developer APKs
     needs: target
     if: needs.target.outputs.mobile_required == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 150
     defaults:
       run:
         working-directory: mobile
@@ -457,7 +485,7 @@ jobs:
       - uses: erlef/setup-beam@v1
         with:
           otp-version: "29.0"
-          elixir-version: "1.20"
+          elixir-version: "1.20.1"
 
       - uses: actions/setup-node@v7
         with:
@@ -501,7 +529,7 @@ jobs:
 
       - name: Host packages
         run: |
-          sudo apt-get update && sudo apt-get install -y --no-install-recommends zip libgit2-dev pkg-config
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends zip libgit2-dev pkg-config curl gnupg python3
           # Ubuntu's package has git2.h but not git2/sys/errors.h. Write it before
           # any mix command. ci_setup compiles ex_git and looks in /usr/include.
           if [[ ! -f /usr/include/git2/sys/errors.h ]]; then
@@ -526,22 +554,42 @@ jobs:
             ~/.hex
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: pack-apk-${{ runner.os }}-${{ hashFiles('mobile/mix.lock', 'mix.lock') }}
+            mobile/.build/termux-rootfs/downloads
+          key: pack-apk-${{ runner.os }}-${{ hashFiles('mobile/mix.lock', 'mix.lock', 'mobile/config/termux-rootfs.lock.json', 'mobile/script/build_termux_rootfs.exs', 'mobile/script/create_deterministic_tar.py') }}
           restore-keys: |
             pack-apk-${{ runner.os }}-
 
-      - name: Pack APKs
+      - name: Prepare Android packaging
         env:
-          # ex_git's host Makefile looks under $LIBGIT2_DIR/include. Ubuntu
-          # installs the headers in /usr, not /usr/local. The sys/errors.h
-          # shim is added by script/pack_android_apks.sh.
           LIBGIT2_DIR: /usr
-        run: bash script/pack_android_apks.sh --artifacts artifacts --skip-test
+        run: bash script/ci_setup_android.sh
 
-      - uses: actions/upload-artifact@v7
+      - name: Build pinned Developer rootfs
+        run: mix run --no-start script/build_termux_rootfs.exs
+
+      - name: Pack Developer ARM64 APK
+        env:
+          LIBGIT2_DIR: /usr
+        run: bash script/pack_android_apks.sh --developer --artifacts artifacts/developer --skip-setup --skip-test
+
+      - name: Pack standard APKs after Developer
+        env:
+          LIBGIT2_DIR: /usr
+        run: bash script/pack_android_apks.sh --artifacts artifacts/standard --skip-setup --skip-test
+
+      - name: Upload standard Android APKs
+        uses: actions/upload-artifact@v7
         with:
           name: handbean-android-apk
-          path: mobile/artifacts/*.apk
+          path: mobile/artifacts/standard/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Developer ARM64 APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: handbean-android-developer-arm64-apk
+          path: mobile/artifacts/developer/Handbean-Developer-arm64-v8a.apk
           if-no-files-found: error
           retention-days: 14
 

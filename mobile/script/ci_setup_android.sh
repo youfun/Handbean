@@ -6,6 +6,7 @@ set -euo pipefail
 
 PROBE_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROBE_ROOT"
+export MIX_TARGET=mobile
 
 android_home="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 if [[ -z "$android_home" ]]; then

@@ -207,9 +207,24 @@ class MainActivity : ComponentActivity() {
 
         // This worktree installs alongside the LiveView probe, including its
         // debug BEAM distribution listener. Do not steal the original's port.
-        android.system.Os.setenv("MOB_NODE_SUFFIX", if (BuildConfig.FOUNDATION_TEST_APP) "foundationtest" else "nativechat", true)
-        android.system.Os.setenv("MOB_DIST_PORT", if (BuildConfig.FOUNDATION_TEST_APP) "9300" else "9200", true)
-        android.system.Os.setenv("HANDBEAN_HTTP_PORT", if (BuildConfig.FOUNDATION_TEST_APP) "5188" else "5088", true)
+        val nodeSuffix = when {
+            BuildConfig.DEVELOPER_SIDELOAD -> "developer"
+            BuildConfig.FOUNDATION_TEST_APP -> "foundationtest"
+            else -> "nativechat"
+        }
+        val distPort = when {
+            BuildConfig.DEVELOPER_SIDELOAD -> "9400"
+            BuildConfig.FOUNDATION_TEST_APP -> "9300"
+            else -> "9200"
+        }
+        val httpPort = when {
+            BuildConfig.DEVELOPER_SIDELOAD -> "5288"
+            BuildConfig.FOUNDATION_TEST_APP -> "5188"
+            else -> "5088"
+        }
+        android.system.Os.setenv("MOB_NODE_SUFFIX", nodeSuffix, true)
+        android.system.Os.setenv("MOB_DIST_PORT", distPort, true)
+        android.system.Os.setenv("HANDBEAN_HTTP_PORT", httpPort, true)
 
         MobBridge.init(this)
         com.example.handbean_probe.attachments.PhotoPickerHost.attach(
@@ -319,8 +334,22 @@ class MainActivity : ComponentActivity() {
         Log.i(TAG, "onCreate — handing off to BEAM")
         nativeSetActivity(this)
         if (beamStarted.compareAndSet(false, true)) {
-            Thread({ nativeStartBeam() }, "beam-main").start()
+            Thread({
+                try {
+                    if (BuildConfig.DEVELOPER_SIDELOAD) prepareDeveloperRuntime()
+                    nativeStartBeam()
+                } catch (error: Throwable) {
+                    beamStarted.set(false)
+                    Log.e(TAG, "Developer runtime preparation failed; BEAM was not started", error)
+                }
+            }, "beam-main").start()
         }
+    }
+
+    private fun prepareDeveloperRuntime() {
+        val installer = Class.forName("com.example.handbean_probe.DeveloperRuntimeInstaller")
+        val install = installer.getMethod("install", Context::class.java)
+        install.invoke(null, applicationContext)
     }
 
     private fun extractPythonAssetsIfNeeded() {

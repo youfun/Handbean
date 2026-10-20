@@ -28,14 +28,17 @@ defmodule Handbean.Platform.ProcessSandbox do
         }
 
   @doc """
-  True when this OS can confine workspace bash with Bubblewrap or Seatbelt.
+  True when the host requires the platform workspace sandbox and this OS has a
+  supported backend. This describes policy, not whether the backend executable is
+  currently installed; wrapping still validates that and fails closed.
 
   Native Windows has no such backend. Callers must not pass `workspace_path`
   there; the bash tool routes through the unsandboxed approval gate instead.
   """
   @spec os_enforced?() :: boolean()
   def os_enforced? do
-    match?({:unix, os} when os in [:linux, :darwin], :os.type())
+    Handbean.Host.shell_isolation() == :platform_required and
+      match?({:unix, os} when os in [:linux, :darwin], :os.type())
   end
 
   @spec wrap(map(), String.t(), Path.t() | nil, keyword()) ::
@@ -134,10 +137,15 @@ defmodule Handbean.Platform.ProcessSandbox do
             Keyword.get(opts, :writable_paths, [])
         )
 
-      case :os.type() do
-        {:unix, :linux} -> wrap_linux(shell, command, cwd, workspace, writable, opts)
-        {:unix, :darwin} -> wrap_darwin(shell, command, cwd, workspace, writable, opts)
-        _ -> {:error, unsupported()}
+      case {Handbean.Host.shell_isolation(), :os.type()} do
+        {:platform_required, {:unix, :linux}} ->
+          wrap_linux(shell, command, cwd, workspace, writable, opts)
+
+        {:platform_required, {:unix, :darwin}} ->
+          wrap_darwin(shell, command, cwd, workspace, writable, opts)
+
+        _ ->
+          {:error, unsupported()}
       end
     end
   end

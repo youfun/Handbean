@@ -16,6 +16,7 @@ config :handbean,
   endpoint_adapter: HandbeanWeb.Endpoint
 
 config :handbean, :extension_hot_reload, false
+config :handbean, :chrome_control, false
 
 config :handbean, Handbean.Repo,
   database: Path.expand("../tmp/handbean_host.db", __DIR__),

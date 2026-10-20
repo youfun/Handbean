@@ -31,6 +31,9 @@ defmodule Handbean.Platform.ProcessSandboxTest do
   @shell %{path: "/bin/bash", args: ["-c"]}
 
   setup do
+    previous_host = Application.get_env(:handbean, :host)
+    Application.delete_env(:handbean, :host)
+
     root =
       Path.join(System.tmp_dir!(), "sbx-test-#{System.unique_integer([:positive])}")
       |> Path.expand()
@@ -40,7 +43,15 @@ defmodule Handbean.Platform.ProcessSandboxTest do
 
     workspace = Path.join(root, workspace_name)
     File.mkdir_p!(workspace)
-    on_exit(fn -> File.rm_rf!(root) end)
+
+    on_exit(fn ->
+      File.rm_rf!(root)
+
+      if previous_host,
+        do: Application.put_env(:handbean, :host, previous_host),
+        else: Application.delete_env(:handbean, :host)
+    end)
+
     %{root: root, workspace: workspace}
   end
 
@@ -131,6 +142,18 @@ defmodule Handbean.Platform.ProcessSandboxTest do
   end
 
   describe "wrap/4 fail-closed" do
+    test "a host that declares no isolation cannot request workspace confinement", %{
+      workspace: workspace
+    } do
+      Handbean.Host.put!(%{shell: true, shell_isolation: :none})
+      refute ProcessSandbox.os_enforced?()
+
+      assert {:error, reason} =
+               ProcessSandbox.wrap(@shell, "echo x", workspace, workspace_path: workspace)
+
+      assert reason =~ "not supported"
+    end
+
     test "missing sandbox executable is an error, not an unconfined shell", %{
       workspace: workspace
     } do

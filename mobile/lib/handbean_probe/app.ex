@@ -27,6 +27,10 @@ defmodule HandbeanProbe.App do
   def start_runtime! do
     Mob.DNS.configure_pure_beam()
 
+    # Load packaged defaults before applying device paths below. Otherwise the
+    # first ensure_all_started(:handbean) reloads the build-host Repo path from
+    # handbean.app and replaces the Android runtime override.
+    :ok = Application.ensure_loaded(:handbean)
     {:ok, _} = Application.ensure_all_started(:ecto_sqlite3)
     _ = Application.ensure_all_started(:bcrypt_elixir)
     # `:castore` is a Hex OTP app. Mob iOS/Android flatten BEAMs onto `-pa`,
@@ -107,24 +111,34 @@ defmodule HandbeanProbe.App do
     platform = HandbeanProbe.NativePlatform.detect()
     HandbeanProbe.NativePlatform.put!(platform)
 
-    Handbean.Host.put!(%{
-      data_dir: data_dir,
-      priv_dir: priv_dir,
-      shell: false,
-      terminal: false,
-      browser_backend: :webview,
-      speech_backend: nil,
-      artifact_delivery_backend: HandbeanProbe.AndroidIntent,
-      host_script: true,
-      directory_picker: HandbeanProbe.DirectoryPicker,
-      script_http: :platform_dns_ca,
-      dns_resolver: &HandbeanProbe.ReqDNS.resolve/1,
-      beam_eval: false,
-      mcp: true,
-      dist: debug?,
-      git_backend: Handbean.Git.ExGit,
-      packaged_mix_toolchain: true
-    })
+    host_shell = developer_shell_profile(priv_dir, data_dir)
+
+    Handbean.Host.put!(
+      Map.merge(
+        %{
+          data_dir: data_dir,
+          priv_dir: priv_dir,
+          shell: false,
+          shell_jobs: false,
+          shell_isolation: :none,
+          shell_environment: %{},
+          terminal: false,
+          browser_backend: :webview,
+          speech_backend: nil,
+          artifact_delivery_backend: HandbeanProbe.AndroidIntent,
+          host_script: true,
+          directory_picker: HandbeanProbe.DirectoryPicker,
+          script_http: :platform_dns_ca,
+          dns_resolver: &HandbeanProbe.ReqDNS.resolve/1,
+          beam_eval: false,
+          mcp: true,
+          dist: debug?,
+          git_backend: Handbean.Git.ExGit,
+          packaged_mix_toolchain: true
+        },
+        host_shell
+      )
+    )
 
     System.put_env("HOME", data_dir)
     System.put_env("HANDBEAN_WORKSPACE", Path.join(data_dir, "workspace"))
@@ -183,6 +197,53 @@ defmodule HandbeanProbe.App do
       watchers: [],
       live_reload: [patterns: []]
     )
+  end
+
+  @doc false
+  def developer_shell_profile(priv_dir, data_dir, opts \\ [])
+      when is_binary(priv_dir) and is_binary(data_dir) do
+    profile_path = Path.join(priv_dir, "android_host_profile.json")
+    expected_prefix = Keyword.get(opts, :expected_prefix, "/data/data/io.hndbean/files/usr")
+
+    with {:ok, encoded} <- File.read(profile_path),
+         {:ok,
+          %{
+            "profile" => "android_developer_sideload",
+            "shell" => true,
+            "shell_jobs" => false,
+            "shell_isolation" => "none",
+            "termux_prefix" => ^expected_prefix
+          }} <- Handbean.JSON.decode(encoded),
+         true <- File.regular?(Path.join(expected_prefix, "bin/bash")),
+         true <- File.regular?(Path.join(expected_prefix, "lib/libtermux-exec.so")) do
+      home = Path.join(data_dir, "home")
+      tmp = Path.join(data_dir, "tmp")
+      File.mkdir_p!(home)
+      File.mkdir_p!(tmp)
+
+      Application.put_env(:handbean, :shell_path, Path.join(expected_prefix, "bin/bash"))
+
+      %{
+        shell: true,
+        shell_jobs: false,
+        shell_isolation: :none,
+        shell_environment: %{
+          "HOME" => home,
+          "LANG" => "en_US.UTF-8",
+          "LD_LIBRARY_PATH" => Path.join(expected_prefix, "lib"),
+          "LD_PRELOAD" => Path.join(expected_prefix, "lib/libtermux-exec.so"),
+          "MIX_OS_CONCURRENCY_LOCK" => "0",
+          "PATH" => Path.join(expected_prefix, "bin"),
+          "PREFIX" => expected_prefix,
+          "SHELL" => Path.join(expected_prefix, "bin/bash"),
+          "TMPDIR" => tmp
+        }
+      }
+    else
+      _ ->
+        Application.delete_env(:handbean, :shell_path)
+        %{}
+    end
   end
 
   @doc false

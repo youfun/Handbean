@@ -98,6 +98,39 @@ defmodule Handbean.Platform.ProcessRunnerTest do
       end
     end
 
+    test "an invalid host isolation policy fails closed" do
+      previous_host = Application.get_env(:handbean, :host)
+      Handbean.Host.put!(%{shell: true, shell_isolation: :invented})
+
+      try do
+        assert {:error, reason} = ProcessRunner.run_bash("echo unsafe", nil, 5_000)
+        assert reason =~ "isolation policy is invalid"
+      after
+        restore_app_env(:host, previous_host)
+      end
+    end
+
+    test "host shell environment is inherited and explicit invocation values win" do
+      previous_host = Application.get_env(:handbean, :host)
+
+      Handbean.Host.put!(%{
+        shell: true,
+        shell_environment: %{"HANDBEAN_HOST_SHELL_TEST" => "host", "PATH" => "/host/path"}
+      })
+
+      try do
+        assert {:ok, "host:explicit", %{exit_code: 0}} =
+                 ProcessRunner.run_bash(
+                   ~S|printf '%s:%s' "$HANDBEAN_HOST_SHELL_TEST" "$PATH"|,
+                   nil,
+                   5_000,
+                   env: [{"PATH", "explicit"}]
+                 )
+      after
+        restore_app_env(:host, previous_host)
+      end
+    end
+
     test "keeps a packaged mobile OTP erl on PATH" do
       root =
         Path.join(System.tmp_dir!(), "handbean-mobile-otp-#{System.unique_integer([:positive])}")

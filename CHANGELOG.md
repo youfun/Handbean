@@ -1,5 +1,16 @@
 # 更新日志 (CHANGELOG)
 
+## [未发布] - Android Developer / Sideload 版本
+
+### 新增与改进
+- 正式构建新增独立的 `Handbean-Developer-arm64-v8a.apk`。它仅支持 ARM64，使用 `io.hndbean` 和 targetSdk 28，内置固定版本并校验摘要的 Termux/Bionic Bash、Python、Node.js、Git 与 OpenSSH；可与标准 Android 包同时安装，且不共享私有数据。
+- Android CI 先构建 Developer 包，再构建标准 ARM64/x86_64 包，并以独立 artifact 发布，避免 Developer host profile 或 rootfs 混入标准 APK。
+
+### 安全与兼容性
+- Developer shell 与应用使用同一 Android UID，不是安全沙箱；同步 Bash 仍经过高权限审批，后台 Bash job 与 terminal 保持关闭。
+- 标准 Android 包继续使用 targetSdk 35，不包含 Termux rootfs，也不开放 Bash。Developer 包使用 targetSdk 28 以兼容私有目录中的原生可执行文件，只用于用户主动侧载，未来 Android 或 OEM 可能进一步限制此行为。
+- 当前 GitHub APK 使用 CI debug 签名，不承诺跨构建覆盖升级；签名变化时需要卸载重装，卸载会删除对应应用的私有数据。
+
 ## [0.3.2] - 聊天交互、扩展与可信局域网
 
 ### 新增与改进

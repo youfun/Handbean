@@ -127,9 +127,10 @@ defmodule Handbean.Jobs do
   end
 
   defp shell_supported do
-    if Handbean.Host.shell?() and Handbean.Platform.ProcessManager.jobs_supported?(),
-      do: :ok,
-      else: {:error, "Bash jobs unavailable on this host; use synchronous Bash"}
+    if Handbean.Host.shell?() and Handbean.Host.shell_jobs?() and
+         Handbean.Platform.ProcessManager.jobs_supported?(),
+       do: :ok,
+       else: {:error, "Bash jobs unavailable on this host; use synchronous Bash"}
   end
 
   defp call_id(%{tool_call_id: id}) when is_binary(id) and id != "", do: {:ok, id}

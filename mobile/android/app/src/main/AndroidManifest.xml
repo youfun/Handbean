@@ -77,7 +77,7 @@
     </queries>
 
     <application
-        android:label="Handbean"
+        android:label="${appLabel}"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
         android:allowBackup="false"

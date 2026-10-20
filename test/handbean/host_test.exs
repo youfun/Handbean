@@ -21,6 +21,8 @@ defmodule Handbean.HostTest do
   test "desktop defaults keep shell and drop eval" do
     Application.delete_env(:handbean, :host)
     assert Host.shell?()
+    assert Host.shell_jobs?()
+    assert Host.shell_isolation() == :platform_required
     assert Host.terminal?()
     assert Host.browser_backend() == :cli
     assert Host.artifact_delivery_backend() == nil
@@ -40,6 +42,8 @@ defmodule Handbean.HostTest do
       data_dir: "/tmp/mob-data",
       priv_dir: "/tmp/mob-beams/priv",
       shell: false,
+      shell_jobs: false,
+      shell_isolation: :none,
       terminal: false,
       browser_backend: :webview,
       speech_backend: nil,
@@ -51,6 +55,8 @@ defmodule Handbean.HostTest do
 
     assert Host.configured?()
     refute Host.shell?()
+    refute Host.shell_jobs?()
+    assert Host.shell_isolation() == :none
     refute Host.terminal?()
     assert Host.browser_backend() == :webview
     assert Host.speech_backend() == nil
@@ -63,6 +69,12 @@ defmodule Handbean.HostTest do
     assert Host.data_dir() == "/tmp/mob-data"
     assert Host.priv_dir() == "/tmp/mob-beams/priv"
     assert Host.get(:git_backend) == nil
+  end
+
+  test "unknown shell isolation fails closed" do
+    Host.put!(%{shell: true, shell_isolation: :invented})
+    assert Host.shell_isolation() == :invalid
+    refute Handbean.Platform.ProcessSandbox.os_enforced?()
   end
 
   test "backend_kind uses module identity rather than a .CLI name suffix" do

@@ -102,6 +102,7 @@ defmodule Handbean.Permissions.ToolPolicyTest do
 
       assert ToolPolicy.decision(policy, call("bash", %{"command" => "mix test"})) ==
                bash_without_flag_mode()
+
       assert ToolPolicy.decision(policy, call("bash", %{"command" => "rm -rf tmp"})) == :prompt
       assert ToolPolicy.decision(policy, unsandboxed("mix test")) == :prompt
     end
@@ -139,6 +140,16 @@ defmodule Handbean.Permissions.ToolPolicyTest do
         assert ToolPolicy.decision(policy, unsandboxed()) == :deny
         assert ToolPolicy.decision(policy, call("bash", %{"command" => "ls"})) == :deny
       end
+    end
+
+    test "per_tool prompt still wins over yolo escalation" do
+      policy =
+        ToolPolicy.from_settings(%{
+          "tools" => %{"default_mode" => "yolo", "per_tool" => %{"bash" => "prompt"}}
+        })
+
+      assert ToolPolicy.decision(policy, unsandboxed()) == :prompt
+      assert ToolPolicy.decision(policy, call("bash", %{"command" => "ls"})) == :prompt
     end
   end
 
@@ -219,8 +230,10 @@ defmodule Handbean.Permissions.ToolPolicyTest do
       policy = ToolPolicy.from_settings(settings)
 
       assert ToolPolicy.decision(policy, call("bash", %{"command" => "rm -rf tmp"})) == :deny
+
       assert ToolPolicy.decision(policy, call("bash", %{"command" => "git status"})) ==
                bash_without_flag_mode()
+
       assert ToolPolicy.decision(policy, call("write")) == :deny
       assert ToolPolicy.decision(policy, call("read")) == :prompt
       assert ToolPolicy.decision(policy, call("mem_recall")) == :auto
@@ -620,6 +633,7 @@ defmodule Handbean.Permissions.ToolPolicyTest do
       end
 
       assert ToolPolicy.decision(policy, call("read", %{"file_path" => "lib/app.ex"})) == :auto
+
       assert ToolPolicy.decision(policy, call("bash", %{"command" => "ls lib"})) ==
                bash_without_flag_mode()
     end

@@ -19,6 +19,18 @@ defmodule Handbean.Tool.Builtin.BashTest do
 
   alias Handbean.Tool.Builtin.Bash
 
+  setup do
+    previous_host = Application.get_env(:handbean, :host)
+
+    on_exit(fn ->
+      if previous_host,
+        do: Application.put_env(:handbean, :host, previous_host),
+        else: Application.delete_env(:handbean, :host)
+    end)
+
+    :ok
+  end
+
   describe "basic command execution" do
     @describetag :os_sandbox
     test "executes a simple command and returns output" do
@@ -112,6 +124,16 @@ defmodule Handbean.Tool.Builtin.BashTest do
   end
 
   describe "validation" do
+    test "an explicit no-isolation host rejects background jobs" do
+      Handbean.Host.put!(%{shell: true, shell_jobs: false, shell_isolation: :none})
+
+      assert {:error, "job=true is not available on this host"} =
+               Bash.execute(
+                 %{"command" => "echo x", "job" => true},
+                 %{working_directory: File.cwd!()}
+               )
+    end
+
     test "rejects empty command" do
       {:error, reason} =
         Bash.execute(

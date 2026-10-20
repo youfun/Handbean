@@ -1,4 +1,6 @@
-# OTP zip is one ABI per APK. arm64-v8a is phones; x86_64 is Chromos/emulators.
+# Standard APKs are published for ARM64 phones and x86_64 ChromeOS/emulators.
+# The separate ARM64 Developer/Sideload APK bundles the pinned Termux/Bionic
+# userspace and is built before the standard variants to catch state leakage.
 # Local and CI share mobile/script/pack_android_apks.sh.
 name: Android APK
 
@@ -37,7 +39,7 @@ permissions:
 jobs:
   apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 150
     defaults:
       run:
         working-directory: mobile
@@ -48,7 +50,7 @@ jobs:
       - uses: erlef/setup-beam@v1
         with:
           otp-version: "29.0"
-          elixir-version: "1.20"
+          elixir-version: "1.20.1"
 
       - uses: actions/setup-node@v7
         with:
@@ -92,7 +94,7 @@ jobs:
 
       - name: Host packages
         run: |
-          sudo apt-get update && sudo apt-get install -y --no-install-recommends zip libgit2-dev pkg-config inotify-tools bubblewrap
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends zip libgit2-dev pkg-config inotify-tools bubblewrap curl gnupg python3
           if [[ ! -f /usr/include/git2/sys/errors.h ]]; then
             sudo mkdir -p /usr/include/git2/sys
             printf '%s\n' \
@@ -114,19 +116,42 @@ jobs:
             ~/.hex
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: mob-apk-${{ runner.os }}-${{ hashFiles('mobile/mix.lock', 'mix.lock') }}
+            mobile/.build/termux-rootfs/downloads
+          key: mob-apk-${{ runner.os }}-${{ hashFiles('mobile/mix.lock', 'mix.lock', 'mobile/config/termux-rootfs.lock.json', 'mobile/script/build_termux_rootfs.exs', 'mobile/script/create_deterministic_tar.py') }}
           restore-keys: |
             mob-apk-${{ runner.os }}-
 
-      - name: Pack APKs
+      - name: Prepare Android packaging
         env:
           LIBGIT2_DIR: /usr
-        run: bash script/pack_android_apks.sh --artifacts artifacts
+        run: bash script/ci_setup_android.sh
 
-      - uses: actions/upload-artifact@v7
+      - name: Build pinned Developer rootfs
+        run: mix run --no-start script/build_termux_rootfs.exs
+
+      - name: Pack Developer ARM64 APK
+        env:
+          LIBGIT2_DIR: /usr
+        run: bash script/pack_android_apks.sh --developer --artifacts artifacts/developer --skip-setup
+
+      - name: Pack standard APKs after Developer
+        env:
+          LIBGIT2_DIR: /usr
+        run: bash script/pack_android_apks.sh --artifacts artifacts/standard --skip-setup --skip-test
+
+      - name: Upload standard Android APKs
+        uses: actions/upload-artifact@v7
         with:
           name: handbean-android-apk
-          path: mobile/artifacts/*.apk
+          path: mobile/artifacts/standard/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Developer ARM64 APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: handbean-android-developer-arm64-apk
+          path: mobile/artifacts/developer/Handbean-Developer-arm64-v8a.apk
           if-no-files-found: error
           retention-days: 14
 
@@ -135,8 +160,19 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: android-latest
-          name: Android APK
+          name: Android APKs
           prerelease: true
-          generate_release_notes: true
           make_latest: false
-          files: mobile/artifacts/*.apk
+          body: |
+            Android 标准版与 Developer / Sideload 版是两个可同时安装的独立应用：
+
+            - `Handbean-arm64-v8a.apk`：标准手机包，targetSdk 35，不含 Termux rootfs，不开放 Bash。
+            - `Handbean-x86_64.apk`：标准 ChromeOS / x86_64 模拟器包，能力与标准 ARM64 包相同。
+            - `Handbean-Developer-arm64-v8a.apk`：仅 ARM64、targetSdk 28，内置固定并校验的 Termux/Bionic Bash、Python、Node.js、Erlang/OTP、Elixir、Git 和 OpenSSH。
+
+            Developer shell 与应用使用同一 Android UID，不是安全沙箱；后台 Bash job 和 terminal 仍关闭。Developer 包使用 `io.hndbean`，与标准包的数据目录完全分离。
+
+            当前 APK 使用 CI debug 签名，不承诺跨构建覆盖升级。签名变化时需要卸载重装，卸载会删除该包的应用私有数据；请先导出需要保留的内容。
+          files: |
+            mobile/artifacts/standard/*.apk
+            mobile/artifacts/developer/Handbean-Developer-arm64-v8a.apk

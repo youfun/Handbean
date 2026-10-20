@@ -52,11 +52,43 @@ case "${1:-}" in
   verify-apk)
     aapt="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}/build-tools/35.0.0/aapt"
     [[ -x "$aapt" ]] || aapt="$(command -v aapt)"
-    package="$("$aapt" dump badging "$2" | awk '/^package: /')"
+    badging="$("$aapt" dump badging "$2")"
+    entries="$(unzip -Z1 "$2")"
+    package="$(printf '%s\n' "$badging" | awk '/^package: /')"
     actual_version="$(printf '%s\n' "$package" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p")"
     actual_build="$(printf '%s\n' "$package" | sed -n "s/.*versionCode='\([^']*\)'.*/\1/p")"
-    [[ "$actual_version" == "$version" && "$actual_build" == "$build" ]] \
-      || fail "$2 has $actual_version ($actual_build), expected $version ($build)"
+    actual_package="$(printf '%s\n' "$package" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")"
+    actual_target="$(printf '%s\n' "$badging" | sed -n "s/^targetSdkVersion:'\([^']*\)'.*/\1/p")"
+
+    case "${3:-standard}" in
+      standard)
+        expected_version="$version"
+        expected_package="com.example.handbean_probe.nativechat"
+        expected_target="35"
+        if printf '%s\n' "$entries" | grep -Eq '^assets/termux-(rootfs|packages)'; then
+          fail "$2 unexpectedly contains Developer rootfs assets"
+        fi
+        ;;
+      developer)
+        expected_version="$version-developer"
+        expected_package="io.hndbean"
+        expected_target="28"
+        for asset in \
+          assets/termux-rootfs.tgz \
+          assets/termux-rootfs.json \
+          assets/termux-packages.json
+        do
+          printf '%s\n' "$entries" | grep -Fxq "$asset" \
+            || fail "$2 is missing exact Developer asset $asset"
+        done
+        ;;
+      *) fail "unknown APK variant: $3" ;;
+    esac
+
+    [[ "$actual_version" == "$expected_version" && "$actual_build" == "$build" ]] \
+      || fail "$2 has $actual_version ($actual_build), expected $expected_version ($build)"
+    [[ "$actual_package" == "$expected_package" && "$actual_target" == "$expected_target" ]] \
+      || fail "$2 has package $actual_package targetSdk $actual_target, expected $expected_package targetSdk $expected_target"
     ;;
-  *) fail "usage: $0 version|build|check-tag TAG|plist TEMPLATE OUTPUT|verify-web DIR|verify-plist FILE|verify-ipa FILE|verify-apk FILE" ;;
+  *) fail "usage: $0 version|build|check-tag TAG|plist TEMPLATE OUTPUT|verify-web DIR|verify-plist FILE|verify-ipa FILE|verify-apk FILE [standard|developer]" ;;
 esac

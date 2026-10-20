@@ -43,6 +43,63 @@ defmodule Mix.Tasks.Mob.PackApkTest do
              ["assembleDebug", "--no-daemon", "-PmobAbi=x86_64", "-PfoundationTestApp"]
   end
 
+  test "developer sideload is explicit and ARM64-only" do
+    assert Mix.Tasks.Mob.PackApk.gradle_assemble_args("arm64-v8a", developer_sideload: true) ==
+             ["assembleDebug", "--no-daemon", "-PmobAbi=arm64-v8a", "-PdeveloperSideload"]
+
+    assert :ok =
+             Mix.Tasks.Mob.PackApk.validate_variant!("arm64-v8a", developer_sideload: true)
+
+    assert_raise Mix.Error, ~r/only --abi arm64-v8a/, fn ->
+      Mix.Tasks.Mob.PackApk.validate_variant!("x86_64", developer_sideload: true)
+    end
+
+    assert_raise Mix.Error, ~r/mutually exclusive/, fn ->
+      Mix.Tasks.Mob.PackApk.validate_variant!("arm64-v8a",
+        developer_sideload: true,
+        foundation_test_app: true
+      )
+    end
+  end
+
+  test "developer package manifest requires completed license review" do
+    manifest = %{
+      "repository" => "https://packages.termux.dev/apt/termux-main",
+      "index_sha256" => String.duplicate("a", 64),
+      "license_review_required" => false,
+      "packages" => [%{"name" => "bash"}]
+    }
+
+    assert :ok = Mix.Tasks.Mob.PackApk.validate_package_manifest(manifest)
+
+    assert {:error, :license_review_required} =
+             Mix.Tasks.Mob.PackApk.validate_package_manifest(%{
+               manifest
+               | "license_review_required" => true
+             })
+  end
+
+  test "mobile target dependency libraries come from the active build path" do
+    assert Mix.Tasks.Mob.PackApk.dep_build_dir(:exqlite) ==
+             Path.join([Mix.Project.build_path(), "lib", "exqlite"])
+  end
+
+  test "prepacked Mix toolchain must match the Android runtime pin" do
+    manifest = %{"elixir" => "1.20.1", "otp" => "29"}
+
+    assert :ok =
+             Mix.Tasks.Mob.PackApk.validate_prepacked_mix_toolchain(manifest, "1.20.1", "29")
+
+    assert {:error, message} =
+             Mix.Tasks.Mob.PackApk.validate_prepacked_mix_toolchain(
+               %{"elixir" => "1.20.2", "otp" => "29"},
+               "1.20.1",
+               "29"
+             )
+
+    assert message =~ "prepacked Mix toolchain is Elixir 1.20.2/OTP 29"
+  end
+
   test "explicit model seed supports nativechat and foundation packs" do
     seed = Path.join(System.tmp_dir!(), "seed_#{System.unique_integer([:positive])}.json")
     File.write!(seed, "{}")

@@ -30,7 +30,7 @@ defmodule Handbean.Tool.Builtin.Bash do
       "Commands that name sensitive credential paths are " <>
       "rejected before execution; unsandboxed=true does not bypass that, and the " <>
       "precheck is not a complete shell parser. " <>
-      "Set job=true for a run-scoped job (Linux and macOS). The launch wait is capped at 5s; " <>
+      job_description() <>
       "if it is still running, pass the returned cursor to job_status. Do not launch another Bash " <>
       "sleep command just to wait for it. Query job_status until finished before ending this run: " <>
       "run completion cancels unfinished jobs. Not a detached dev server; descendants that escape " <>
@@ -82,7 +82,7 @@ defmodule Handbean.Tool.Builtin.Bash do
           type: "boolean",
           default: false,
           description:
-            if Handbean.Platform.ProcessSandbox.os_enforced?() do
+            if Handbean.Platform.ProcessSandbox.os_enforced?() and Handbean.Host.shell_jobs?() do
               "Run outside the OS sandbox. Use only after the sandbox denied a needed write; " <>
                 "requires approval unless the run is in yolo mode. Does not permit sensitive credential paths. " <>
                 "Not available for job=true."
@@ -120,6 +120,9 @@ defmodule Handbean.Tool.Builtin.Bash do
           not Handbean.Platform.ProcessSandbox.os_enforced?()
 
       cond do
+        Map.get(input, "job", false) == true and not Handbean.Host.shell_jobs?() ->
+          {:error, "job=true is not available on this host"}
+
         unsandboxed? and Map.get(input, "job", false) == true ->
           {:error, "unsandboxed is not available for job=true"}
 
@@ -291,6 +294,14 @@ defmodule Handbean.Tool.Builtin.Bash do
       "This platform has no OS sandbox. Bash is not workspace-confined; every command uses " <>
         "the unsandboxed approval gate (yolo auto-approves). Do not retry after a sandbox " <>
         "write denial — there is none. You can omit unsandboxed=true. "
+    end
+  end
+
+  defp job_description do
+    if Handbean.Host.shell_jobs?() do
+      "Set job=true for a run-scoped job (Linux and macOS). The launch wait is capped at 5s; "
+    else
+      "job=true is not available on this host. The launch wait is capped at 5s; "
     end
   end
 
