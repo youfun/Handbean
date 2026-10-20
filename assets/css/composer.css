@@ -288,6 +288,61 @@
   min-height: 32px;
 }
 
+/* Activity line shown while a run is active, and while voice is captured.
+   Flow is a quiet travelling pulse; recording makes it react to mic level. */
+.composer-activity {
+  display: none;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 20px;
+  margin-left: auto;
+  padding-right: 2px;
+  overflow: hidden;
+  color: var(--sig-text-tertiary);
+  pointer-events: none;
+}
+
+.composer-activity[data-active="true"],
+.composer-activity[data-client-active="true"] {
+  display: flex;
+}
+
+.composer-activity-dot {
+  width: 2px;
+  height: 2px;
+  flex: 0 0 auto;
+  border-radius: 1px;
+  background: currentColor;
+  opacity: 0.3;
+  transform-origin: center;
+  animation: composer-activity-pulse 2.6s var(--sig-motion-ease) infinite;
+  animation-delay: calc(var(--dot-index) * -110ms);
+}
+
+.composer-activity.is-listening .composer-activity-dot {
+  animation: none;
+  transition: transform 90ms linear, opacity 120ms linear;
+}
+
+@keyframes composer-activity-pulse {
+  0%, 100% { opacity: 0.22; transform: scaleY(1); }
+  45% { opacity: 0.85; transform: scaleY(2.5); }
+  70% { opacity: 0.35; transform: scaleY(1.5); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-activity-dot {
+    animation: none;
+  }
+
+  .composer-activity.is-listening .composer-activity-dot {
+    transition: none;
+  }
+}
+
 .composer-thumbs {
   display: none;
   align-items: center;

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import {
+  activityDotScale,
   ComposerSpeech,
   downsampleTo16Khz,
   encodeFloat32LittleEndian,
@@ -37,6 +38,17 @@ import {
   assert.ok(Math.abs(merged[0] - 0.1) < 0.000001);
   assert.ok(Math.abs(merged[1] - 0.2) < 0.000001);
   assert.ok(Math.abs(merged[2] - 0.3) < 0.000001);
+}
+
+{
+  const quiet = activityDotScale(0, 14, 28);
+  const loudMid = activityDotScale(1, 14, 28);
+  const loudEdge = activityDotScale(1, 0, 28);
+
+  assert.equal(quiet, 1);
+  assert.ok(loudMid > loudEdge);
+  assert.ok(loudEdge > quiet);
+  assert.ok(activityDotScale(0.5, 14, 28) > quiet);
 }
 
 {
@@ -112,6 +124,173 @@ import {
   } else {
     delete globalThis.navigator;
   }
+}
+
+{
+  const dom = new JSDOM(`
+    <!doctype html>
+    <div id="media-speech" data-speech-upload-name="speech_audio">
+      <textarea id="ai-input"></textarea>
+      <button id="speech-input-button" type="button"></button>
+    </div>
+  `);
+
+  const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const mediaRecorderDescriptor = Object.getOwnPropertyDescriptor(globalThis, "MediaRecorder");
+  let resolvePermission;
+  let trackStopped = false;
+
+  class FakeMediaRecorder {
+    constructor() {
+      this.listeners = new Map();
+      this.mimeType = "audio/webm";
+      this.state = "inactive";
+    }
+    addEventListener(name, callback) { this.listeners.set(name, callback); }
+    start() { this.state = "recording"; }
+    stop() { this.state = "inactive"; }
+    emitStop() { this.listeners.get("stop")?.(); }
+    static isTypeSupported() { return true; }
+  }
+
+  class FakeAudioNode {
+    connect() {}
+    disconnect() {}
+  }
+
+  class PendingAudioContext {
+    constructor() {
+      this.sampleRate = 16_000;
+      this.destination = new FakeAudioNode();
+    }
+    resume() { return new Promise(() => {}); }
+    createMediaStreamSource() { return new FakeAudioNode(); }
+    createAnalyser() { throw new Error("analysis unavailable"); }
+    close() { return Promise.resolve(); }
+  }
+
+  globalThis.window = dom.window;
+  globalThis.document = dom.window.document;
+  window.AudioContext = PendingAudioContext;
+  Object.defineProperty(globalThis, "MediaRecorder", {
+    value: FakeMediaRecorder,
+    configurable: true,
+  });
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: {
+      mediaDevices: {
+        getUserMedia: () => new Promise((resolve) => { resolvePermission = resolve; }),
+      },
+    },
+  });
+
+  const hook = {
+    ...ComposerSpeech,
+    el: document.querySelector("#media-speech"),
+    handleEvent: () => {},
+    pushEvent: () => {},
+    upload: () => {},
+  };
+
+  hook.mounted();
+
+  const pendingStart = hook.startRecording();
+  hook.cancelRecording();
+  resolvePermission({
+    getTracks: () => [{ stop: () => { trackStopped = true; } }],
+  });
+  await pendingStart;
+  assert.equal(trackStopped, true);
+  assert.equal(hook.mediaRecorder, null);
+
+  trackStopped = false;
+  navigator.mediaDevices.getUserMedia = async () => ({
+    getTracks: () => [{ stop: () => { trackStopped = true; } }],
+  });
+  await hook.startRecording();
+  const recorder = hook.mediaRecorder;
+  assert.equal(recorder.state, "recording");
+
+  hook.cancelRecording();
+  assert.equal(hook.finishing, true);
+  await hook.startRecording();
+  assert.equal(hook.mediaRecorder, recorder);
+
+  recorder.emitStop();
+  await Promise.resolve();
+  assert.equal(hook.finishing, false);
+  assert.equal(trackStopped, true);
+  hook.destroyed();
+
+  delete globalThis.window;
+  delete globalThis.document;
+  if (navigatorDescriptor) {
+    Object.defineProperty(globalThis, "navigator", navigatorDescriptor);
+  } else {
+    delete globalThis.navigator;
+  }
+  if (mediaRecorderDescriptor) {
+    Object.defineProperty(globalThis, "MediaRecorder", mediaRecorderDescriptor);
+  } else {
+    delete globalThis.MediaRecorder;
+  }
+}
+
+{
+  const dom = new JSDOM(`
+    <!doctype html>
+    <div id="decode-speech" data-speech-upload-name="speech_audio">
+      <textarea id="ai-input"></textarea>
+      <button id="speech-input-button" type="button"></button>
+    </div>
+  `);
+
+  let resolveDecode;
+  let markDecodeStarted;
+  const decodeStarted = new Promise((resolve) => { markDecodeStarted = resolve; });
+  const uploads = [];
+
+  class DeferredDecodeContext {
+    decodeAudioData() {
+      markDecodeStarted();
+      return new Promise((resolve) => { resolveDecode = resolve; });
+    }
+    close() { return Promise.resolve(); }
+  }
+
+  globalThis.window = dom.window;
+  globalThis.document = dom.window.document;
+  window.AudioContext = DeferredDecodeContext;
+
+  const hook = {
+    ...ComposerSpeech,
+    el: document.querySelector("#decode-speech"),
+    handleEvent: () => {},
+    pushEvent: () => {},
+    upload: (_name, files) => uploads.push(...files),
+  };
+
+  hook.mounted();
+  hook.captureRevision = 1;
+  hook.chunks = [new Blob(["encoded audio"], { type: "audio/webm" })];
+
+  const processing = hook.processMediaRecording(1, { mimeType: "audio/webm" });
+  await decodeStarted;
+  hook.cancelRecording();
+  resolveDecode({
+    length: 2,
+    numberOfChannels: 1,
+    sampleRate: 16_000,
+    getChannelData: () => new Float32Array([0.25, -0.25]),
+  });
+  await processing;
+
+  assert.equal(uploads.length, 0);
+  assert.equal(hook.finishing, false);
+  hook.destroyed();
+  delete globalThis.window;
+  delete globalThis.document;
 }
 
 {

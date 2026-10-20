@@ -1252,6 +1252,19 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
                 </div>
               </div>
 
+              <div
+                id="composer-activity"
+                class="composer-activity"
+                data-active={to_string(@running or @speech_state == :transcribing)}
+                aria-hidden="true"
+              >
+                <span
+                  :for={index <- 1..28}
+                  class="composer-activity-dot"
+                  style={"--dot-index: #{index}"}
+                ></span>
+              </div>
+
               <div class="composer-toolbar-actions">
                 <label class="composer-icon-btn" title={gettext("添加图片")}>
                   <span class="sr-only">{gettext("添加图片")}</span>

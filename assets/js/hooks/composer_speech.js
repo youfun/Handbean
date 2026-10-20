@@ -88,6 +88,17 @@ export function mixToMono(audioBuffer) {
   return mono;
 }
 
+/**
+ * Map a smoothed level (0..1) onto one dot of the activity line. Dots nearer
+ * the middle of the line react more, so speech reads as a waveform instead of a
+ * single uniform pulse.
+ */
+export function activityDotScale(level, index, count) {
+  const position = count > 1 ? index / (count - 1) : 0.5;
+  const shape = Math.sin(Math.PI * Math.min(1, Math.max(0, position)));
+  return 1 + Math.min(1, Math.max(0, level)) * (1.2 + 4.8 * shape);
+}
+
 function recorderOptions() {
   if (typeof MediaRecorder === "undefined" || typeof MediaRecorder.isTypeSupported !== "function") {
     return undefined;
@@ -124,9 +135,15 @@ export const ComposerSpeech = {
     this.pcmRecording = false;
     this.captureContext = null;
     this.captureSource = null;
+    this.captureAnalyser = null;
     this.captureProcessor = null;
     this.captureGain = null;
     this.captureSampleRate = TARGET_SAMPLE_RATE;
+    this.captureRevision = 0;
+    this.starting = false;
+    this.finishing = false;
+    this.levelFrame = null;
+    this.level = 0;
     this.discardRecording = false;
     this.localState = this.el.dataset.speechState || "idle";
     this.maxTimer = null;
@@ -170,6 +187,11 @@ export const ComposerSpeech = {
     if (this.localState === "recording" || this.localState === "processing") {
       this.setState(this.localState);
     }
+
+    if (this.localState === "recording" && this.captureAnalyser) {
+      this.stopLevelLoop();
+      this.startLevelLoop();
+    }
   },
 
   destroyed() {
@@ -183,14 +205,20 @@ export const ComposerSpeech = {
   },
 
   async startRecording() {
+    if (this.starting || this.finishing || this.isRecording()) return;
+
     const AudioContextClass = audioContextClass();
     if (!navigator.mediaDevices?.getUserMedia || (!AudioContextClass && typeof MediaRecorder === "undefined")) {
       this.reportError("unsupported");
       return;
     }
 
+    const revision = ++this.captureRevision;
+    let pendingStream = null;
+    this.starting = true;
+
     try {
-      this.stream = await navigator.mediaDevices.getUserMedia({
+      pendingStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
           echoCancellation: true,
@@ -198,50 +226,113 @@ export const ComposerSpeech = {
         },
       });
 
+      if (revision !== this.captureRevision) {
+        this.stopStream(pendingStream);
+        return;
+      }
+
+      this.stream = pendingStream;
+      pendingStream = null;
       this.chunks = [];
       this.pcmChunks = [];
       this.discardRecording = false;
 
       if (typeof MediaRecorder !== "undefined") {
         try {
-          this.startMediaRecorder();
+          this.startMediaRecorder(revision);
         } catch (error) {
-          if (!AudioContextClass) throw error;
           this.mediaRecorder = null;
-          await this.startPcmRecorder(AudioContextClass);
+          if (!AudioContextClass) throw error;
+
+          await this.prepareCaptureGraph(AudioContextClass);
+          if (revision !== this.captureRevision) return;
+          this.startPcmCapture();
+        }
+
+        if (this.mediaRecorder && AudioContextClass) {
+          try {
+            const resume = this.prepareCaptureGraph(AudioContextClass);
+            Promise.resolve(resume).catch(() => {
+              if (revision !== this.captureRevision) return;
+              this.stopLevelLoop();
+              this.cleanupCaptureGraph();
+              this.syncActivity(this.localState);
+            });
+          } catch (_error) {
+            this.cleanupCaptureGraph();
+          }
         }
       } else {
-        await this.startPcmRecorder(AudioContextClass);
+        await this.prepareCaptureGraph(AudioContextClass);
+        if (revision !== this.captureRevision) return;
+        this.startPcmCapture();
       }
 
       this.setState("recording");
+      this.startLevelLoop();
       this.maxTimer = window.setTimeout(() => this.stopRecording(), MAX_RECORDING_MS);
     } catch (error) {
-      this.cleanupPcmGraph();
+      this.stopStream(pendingStream);
+      if (revision !== this.captureRevision) return;
+
+      this.cleanupCaptureGraph();
       this.stopTracks();
       this.reportError(errorReason(error));
+    } finally {
+      if (revision === this.captureRevision) this.starting = false;
     }
   },
 
-  startMediaRecorder() {
-    const options = recorderOptions();
-    this.mediaRecorder = options
-      ? new MediaRecorder(this.stream, options)
-      : new MediaRecorder(this.stream);
-    this.mediaRecorder.addEventListener("dataavailable", (event) => {
-      if (event.data?.size > 0) this.chunks.push(event.data);
-    });
-    this.mediaRecorder.addEventListener("stop", () => this.processMediaRecording());
-    this.mediaRecorder.start();
-  },
-
-  async startPcmRecorder(AudioContextClass) {
-    if (!AudioContextClass) throw new Error("AudioContext is unavailable");
-
+  prepareCaptureGraph(AudioContextClass) {
     this.captureContext = new AudioContextClass();
-    await this.captureContext.resume?.();
     this.captureSampleRate = this.captureContext.sampleRate;
     this.captureSource = this.captureContext.createMediaStreamSource(this.stream);
+    this.prepareActivityAnalyser();
+    return this.captureContext.resume?.();
+  },
+
+  prepareActivityAnalyser() {
+    if (typeof this.captureContext?.createAnalyser !== "function") return;
+
+    try {
+      this.captureAnalyser = this.captureContext.createAnalyser();
+      this.captureAnalyser.fftSize = 1024;
+      this.captureAnalyser.smoothingTimeConstant = 0.7;
+      this.captureGain = this.captureContext.createGain();
+      this.captureGain.gain.value = 0;
+      this.captureSource.connect(this.captureAnalyser);
+      this.captureAnalyser.connect(this.captureGain);
+      this.captureGain.connect(this.captureContext.destination);
+    } catch (_error) {
+      for (const node of [this.captureSource, this.captureAnalyser, this.captureGain]) {
+        try { node?.disconnect?.(); } catch (_disconnectError) {}
+      }
+
+      this.captureAnalyser = null;
+      this.captureGain = null;
+    }
+  },
+
+  startMediaRecorder(revision) {
+    const options = recorderOptions();
+    const recorder = options
+      ? new MediaRecorder(this.stream, options)
+      : new MediaRecorder(this.stream);
+
+    this.mediaRecorder = recorder;
+    recorder.addEventListener("dataavailable", (event) => {
+      if (event.data?.size > 0 && revision === this.captureRevision) {
+        this.chunks.push(event.data);
+      }
+    });
+    recorder.addEventListener("stop", () => this.processMediaRecording(revision, recorder));
+    recorder.start();
+  },
+
+  startPcmCapture() {
+    if (!this.captureContext || !this.captureSource) {
+      throw new Error("AudioContext is unavailable");
+    }
 
     if (typeof this.captureContext.createScriptProcessor !== "function") {
       throw new Error("PCM capture is unavailable");
@@ -249,23 +340,83 @@ export const ComposerSpeech = {
 
     const inputChannels = Math.max(1, Math.min(2, this.captureSource.channelCount || 1));
     this.captureProcessor = this.captureContext.createScriptProcessor(4096, inputChannels, 1);
-    this.captureGain = this.captureContext.createGain();
-    this.captureGain.gain.value = 0;
     this.captureProcessor.onaudioprocess = (event) => {
       if (this.pcmRecording) this.pcmChunks.push(mixToMono(event.inputBuffer));
     };
     this.captureSource.connect(this.captureProcessor);
-    this.captureProcessor.connect(this.captureGain);
-    this.captureGain.connect(this.captureContext.destination);
+    this.captureProcessor.connect(this.captureContext.destination);
     this.pcmRecording = true;
+  },
+
+  startLevelLoop() {
+    if (!this.captureAnalyser || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      return;
+    }
+
+    const dots = this.activityDots();
+    if (dots.length === 0) return;
+
+    const buffer = new Uint8Array(this.captureAnalyser.fftSize);
+    const analyser = this.captureAnalyser;
+
+    const tick = () => {
+      analyser.getByteTimeDomainData(buffer);
+      let sum = 0;
+
+      for (let index = 0; index < buffer.length; index += 1) {
+        const sample = (buffer[index] - 128) / 128;
+        sum += sample * sample;
+      }
+
+      const rms = Math.sqrt(sum / buffer.length);
+      this.level = this.level * 0.6 + Math.min(1, rms * 6) * 0.4;
+      this.renderLevel(dots, this.level);
+
+      this.levelFrame = window.requestAnimationFrame(tick);
+    };
+
+    tick();
+  },
+
+  stopLevelLoop() {
+    if (this.levelFrame !== null) window.cancelAnimationFrame(this.levelFrame);
+    this.levelFrame = null;
+    this.level = 0;
+    this.resetActivityDots();
+  },
+
+  renderLevel(dots, level) {
+    dots.forEach((dot, index) => {
+      dot.style.transform = `scaleY(${activityDotScale(level, index, dots.length).toFixed(2)})`;
+      dot.style.opacity = String(0.35 + Math.min(1, level) * 0.55);
+    });
+  },
+
+  resetActivityDots() {
+    for (const dot of this.activityDots()) {
+      dot.style.transform = "";
+      dot.style.opacity = "";
+    }
+  },
+
+  activityElement() {
+    const form = this.el.closest("form");
+    return form?.querySelector("#composer-activity") ?? null;
+  },
+
+  activityDots() {
+    const container = this.activityElement();
+    return container ? Array.from(container.querySelectorAll(".composer-activity-dot")) : [];
   },
 
   stopRecording() {
     if (!this.isRecording()) return;
     this.cancelTimer();
     this.setState("processing");
+    this.stopLevelLoop();
 
     if (this.mediaRecorder?.state === "recording") {
+      this.finishing = true;
       this.mediaRecorder.stop();
       return;
     }
@@ -273,20 +424,24 @@ export const ComposerSpeech = {
     const chunks = this.pcmChunks;
     const sampleRate = this.captureSampleRate;
     this.pcmRecording = false;
-    this.cleanupPcmGraph();
+    this.cleanupCaptureGraph();
     this.stopTracks();
     this.processPcmRecording(chunks, sampleRate);
   },
 
   cancelRecording() {
+    this.captureRevision += 1;
+    this.starting = false;
     this.discardRecording = true;
     this.cancelTimer();
+    this.stopLevelLoop();
 
     if (this.mediaRecorder?.state === "recording") {
+      this.finishing = true;
       this.mediaRecorder.stop();
     } else {
       this.pcmRecording = false;
-      this.cleanupPcmGraph();
+      this.cleanupCaptureGraph();
       this.stopTracks();
       this.resetCapture();
     }
@@ -294,17 +449,21 @@ export const ComposerSpeech = {
     this.setState("idle");
   },
 
-  async processMediaRecording() {
+  async processMediaRecording(revision, recorder) {
+    this.finishing = true;
     this.stopTracks();
+    this.cleanupCaptureGraph();
 
-    if (this.discardRecording) {
+    if (this.discardRecording || revision !== this.captureRevision) {
       this.discardRecording = false;
       this.resetCapture();
+      this.finishing = false;
       return;
     }
 
     if (this.chunks.length === 0) {
       this.resetCapture();
+      this.finishing = false;
       this.reportError("empty_recording");
       return;
     }
@@ -312,18 +471,21 @@ export const ComposerSpeech = {
     let context;
 
     try {
-      const blob = new Blob(this.chunks, { type: this.mediaRecorder?.mimeType || "audio/webm" });
+      const blob = new Blob(this.chunks, { type: recorder?.mimeType || "audio/webm" });
       const AudioContextClass = audioContextClass();
       if (!AudioContextClass) throw new Error("AudioContext is unavailable");
 
       context = new AudioContextClass();
       const decoded = await context.decodeAudioData(await blob.arrayBuffer());
-      this.uploadSamples(mixToMono(decoded), decoded.sampleRate);
+      if (revision === this.captureRevision) {
+        this.uploadSamples(mixToMono(decoded), decoded.sampleRate);
+      }
     } catch (_error) {
-      this.reportError("decode_failed");
+      if (revision === this.captureRevision) this.reportError("decode_failed");
     } finally {
-      await context?.close?.();
+      try { await context?.close?.(); } catch (_error) {}
       this.resetCapture();
+      this.finishing = false;
     }
   },
 
@@ -355,14 +517,17 @@ export const ComposerSpeech = {
     this.upload(this.uploadName, [file]);
   },
 
-  cleanupPcmGraph() {
+  cleanupCaptureGraph() {
     if (this.captureProcessor) this.captureProcessor.onaudioprocess = null;
-    for (const node of [this.captureSource, this.captureProcessor, this.captureGain]) {
+
+    for (const node of [this.captureSource, this.captureAnalyser, this.captureProcessor, this.captureGain]) {
       try { node?.disconnect?.(); } catch (_error) {}
     }
-    this.captureContext?.close?.().catch?.(() => {});
+
+    this.captureContext?.close?.()?.catch?.(() => {});
     this.captureContext = null;
     this.captureSource = null;
+    this.captureAnalyser = null;
     this.captureProcessor = null;
     this.captureGain = null;
   },
@@ -375,8 +540,12 @@ export const ComposerSpeech = {
   },
 
   stopTracks() {
-    for (const track of this.stream?.getTracks?.() || []) track.stop();
+    this.stopStream(this.stream);
     this.stream = null;
+  },
+
+  stopStream(stream) {
+    for (const track of stream?.getTracks?.() || []) track.stop();
   },
 
   cancelTimer() {
@@ -387,6 +556,7 @@ export const ComposerSpeech = {
   setState(state) {
     this.localState = state;
     this.el.dataset.speechState = state;
+    this.syncActivity(state);
     const button = this.el.querySelector("#speech-input-button");
     if (!button) return;
 
@@ -403,6 +573,23 @@ export const ComposerSpeech = {
     if (label) {
       button.setAttribute("aria-label", label);
       button.title = label;
+    }
+  },
+
+  syncActivity(state) {
+    const container = this.activityElement();
+    if (!container) return;
+
+    if (state === "recording" || state === "processing") {
+      container.dataset.clientActive = "true";
+      container.classList.toggle(
+        "is-listening",
+        state === "recording" && this.captureAnalyser != null,
+      );
+    } else {
+      delete container.dataset.clientActive;
+      container.classList.remove("is-listening");
+      this.resetActivityDots();
     }
   },
 
