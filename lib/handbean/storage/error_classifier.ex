@@ -17,7 +17,8 @@ defmodule Handbean.Storage.ErrorClassifier do
         "sqlite_busy",
         "sqlite_locked",
         "database is locked",
-        "database is busy"
+        "database is busy",
+        "database busy"
       ]) ->
         :busy
 

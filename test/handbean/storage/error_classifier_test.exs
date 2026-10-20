@@ -5,6 +5,7 @@ defmodule Handbean.Storage.ErrorClassifierTest do
 
   test "classifies actionable SQLite failures without depending on exception type" do
     assert ErrorClassifier.classify(%Exqlite.Error{message: "database is locked"}) == :busy
+    assert ErrorClassifier.classify(%Exqlite.Error{message: "Database busy"}) == :busy
     assert ErrorClassifier.classify("database or disk is full") == :full
     assert ErrorClassifier.classify("disk I/O error") == :ioerr
     assert ErrorClassifier.classify("database disk image is malformed") == :corrupt
