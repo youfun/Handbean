@@ -46,7 +46,17 @@ defmodule Handbean.Agent.Middleware.Logger do
 
   @impl true
   def call(:on_error, %State{} = state) do
-    Logger.error("[Handbean] Error: #{state.error}")
+    message =
+      case state.error do
+        {%Handbean.Agent.ErrorReporter.AgentRunError{} = exception, stacktrace}
+        when is_list(stacktrace) ->
+          Exception.message(exception)
+
+        error ->
+          error
+      end
+
+    Logger.error("[Handbean] Error: #{message}")
     state
   end
 end

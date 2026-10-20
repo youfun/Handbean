@@ -147,7 +147,13 @@ defmodule Handbean.Agent.Provider.SSETest do
 
       assert_received {:handled, "first"}
       refute_received {:handled, "second"}
-      assert response.private.sse_acc.stream_error == "SSE event handler failed (RuntimeError)"
+      assert {exception, stacktrace} = response.private.sse_acc.stream_error
+      assert Exception.message(exception) =~ "sse_event_handler"
+      assert Exception.message(exception) =~ "RuntimeError"
+      assert [{__MODULE__, _, _, _} | _] = stacktrace
+      assert Enum.all?(stacktrace, fn {_, _, arity, _} -> is_integer(arity) end)
+      refute inspect({exception, stacktrace}) =~ "secret payload"
+      refute inspect({exception, stacktrace}) =~ "first"
     end
 
     test "builds a function that processes SSE chunks into accumulator" do

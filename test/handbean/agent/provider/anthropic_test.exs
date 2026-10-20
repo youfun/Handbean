@@ -9,6 +9,26 @@ defmodule Handbean.Agent.Provider.AnthropicTest do
     :ok
   end
 
+  test "stream preserves a safe callback exception with its original stack" do
+    config =
+      config_with_sse_stream([
+        ant_event("content_block_delta", %{
+          "index" => 0,
+          "delta" => %{"type" => "text_delta", "text" => "private response"}
+        })
+      ])
+
+    assert {:error, {exception, stacktrace}} =
+             Anthropic.stream([Message.user("Hi")], [], config, fn chunk ->
+               raise ArgumentError, chunk
+             end)
+
+    assert Exception.message(exception) =~ "ArgumentError"
+    assert Exception.message(exception) =~ "sse_event_handler"
+    assert [{__MODULE__, _, _, _} | _] = stacktrace
+    refute inspect({exception, stacktrace}) =~ "private response"
+  end
+
   describe "complete/3 with text response" do
     test "does not turn truncation or a missing stop reason into end_turn" do
       for reason <- ["max_tokens", "pause_turn", nil, "unknown"] do

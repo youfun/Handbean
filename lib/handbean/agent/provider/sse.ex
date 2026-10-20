@@ -56,7 +56,8 @@ defmodule Handbean.Agent.Provider.SSE do
   for SSE framing state.
 
   The accumulator is stored in `resp.private.sse_acc`. If the callback raises,
-  the stream halts with a bounded `:stream_error`; providers must return it.
+  the stream halts with a safe exception/stacktrace tuple in `:stream_error`;
+  providers must return it unchanged to the runtime reporting boundary.
   """
   @spec req_stream_handler(map(), (map(), sse_event() -> map() | {:halt, map()})) ::
           ({:data, String.t()}, {term(), term()} ->
@@ -76,8 +77,15 @@ defmodule Handbean.Agent.Provider.SSE do
             end
           rescue
             e ->
-              error = "SSE event handler failed (#{inspect(e.__struct__)})"
-              Logger.warning(error)
+              {exception, _stacktrace} =
+                error =
+                Handbean.Agent.ErrorReporter.capture_exception(
+                  e,
+                  __STACKTRACE__,
+                  :sse_event_handler
+                )
+
+              Logger.warning(Exception.message(exception))
 
               {:halt, {:halt, Map.put(acc, :stream_error, error)}}
           end

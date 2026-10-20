@@ -599,7 +599,7 @@ defmodule Handbean.Agent.Provider.OpenAI do
     String.match?(pattern, ~r/[\p{L}\p{N}]/u)
   end
 
-  defp build_stream_response(%{stream_error: error}, _config) when is_binary(error) do
+  defp build_stream_response(%{stream_error: error}, _config) when not is_nil(error) do
     {:error, error}
   end
 

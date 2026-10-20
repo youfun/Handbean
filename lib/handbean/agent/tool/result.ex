@@ -7,6 +7,10 @@ defmodule Handbean.Agent.Tool.Result do
   - `is_error` — derived from `status` for provider compatibility
   - `status` / `code` / `side_effect` / `recovery` / `artifacts` — recovery contract
 
+  `diagnostic` is executor-private and must be built with
+  `Handbean.Agent.ErrorReporter.capture_exception/3`. It is consumed before
+  results reach the UI, provider, or transcript.
+
   Failed results keep the concrete error in `content`. The executor appends
   the tool's `hint/0`, when one exists, before applying the output bound.
 
@@ -17,6 +21,7 @@ defmodule Handbean.Agent.Tool.Result do
   @type side_effect :: :not_started | :committed | :unknown
 
   @type t :: %__MODULE__{
+          diagnostic: {Exception.t(), Exception.stacktrace()} | nil,
           content: String.t(),
           details: map() | nil,
           is_error: boolean(),
@@ -33,6 +38,7 @@ defmodule Handbean.Agent.Tool.Result do
   defstruct [
     :content,
     :details,
+    :diagnostic,
     :operation_id,
     :code,
     :recovery,
@@ -79,6 +85,13 @@ defmodule Handbean.Agent.Tool.Result do
       status: :failed,
       side_effect: :not_started
     }
+  end
+
+  @doc "Construct an error with an executor-private, sanitized exception diagnostic."
+  @spec error(String.t(), map() | nil, {Exception.t(), Exception.stacktrace()}) :: t()
+  def error(content, details, {exception, stacktrace} = diagnostic)
+      when is_exception(exception) and is_list(stacktrace) do
+    %{error(content, details) | diagnostic: diagnostic}
   end
 
   @doc "Build a result that already names its recovery contract."

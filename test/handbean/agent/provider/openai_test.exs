@@ -11,6 +11,20 @@ defmodule Handbean.Agent.Provider.OpenAITest do
     :ok
   end
 
+  test "stream preserves a safe callback exception with its original stack" do
+    config = config_with_sse_stream([sse_response_output_text_delta("private response")])
+
+    assert {:error, {exception, stacktrace}} =
+             OpenAI.stream([Message.user("Hi")], [], config, fn chunk ->
+               raise ArgumentError, chunk
+             end)
+
+    assert Exception.message(exception) =~ "ArgumentError"
+    assert Exception.message(exception) =~ "sse_event_handler"
+    assert [{__MODULE__, _, _, _} | _] = stacktrace
+    refute inspect({exception, stacktrace}) =~ "private response"
+  end
+
   describe "complete/3 with text response" do
     test "returns normalized end_turn response" do
       config =
@@ -362,8 +376,15 @@ defmodule Handbean.Agent.Provider.OpenAITest do
           ])
 
         assert {:error, reason} = OpenAI.stream([Message.user("Hi")], [], config, on_chunk)
-        refute reason =~ "private callback data"
-        assert byte_size(reason) < 200
+        refute inspect(reason) =~ "private callback data"
+
+        message =
+          case reason do
+            {exception, stacktrace} when is_list(stacktrace) -> Exception.message(exception)
+            message when is_binary(message) -> message
+          end
+
+        assert byte_size(message) < 200
       end
     end
 

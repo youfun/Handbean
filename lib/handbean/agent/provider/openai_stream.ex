@@ -208,7 +208,7 @@ defmodule Handbean.Agent.Provider.OpenAIStream do
   # ── Response Building ────────────────────────────────────────────────
 
   @doc false
-  def build_response(%{stream_error: error}) when is_binary(error), do: {:error, error}
+  def build_response(%{stream_error: error}) when not is_nil(error), do: {:error, error}
 
   def build_response(%{finish_reason: reason}) when reason not in ["stop", "tool_calls"] do
     error =

@@ -72,6 +72,30 @@ defmodule Handbean.Agent.ErrorReporterTest do
     context = %{"source" => "agent_runner", "conversation_id" => "conversation-1"}
 
     assert :ok = ErrorReporter.report("database or disk is full", context)
+
+    assert :ok =
+             ErrorReporter.report(
+               {:error, %Exqlite.Error{message: "database is locked"}},
+               context
+             )
+
+    for message <- [
+          "database is locked",
+          "database or disk is full",
+          "disk I/O error",
+          "file is not a database"
+        ] do
+      diagnostic =
+        ErrorReporter.capture_exception(
+          RuntimeError.exception(message <> " private SQL"),
+          [],
+          :tool_execution
+        )
+
+      refute inspect(diagnostic) =~ "private SQL"
+      assert :ok = ErrorReporter.report(diagnostic, context)
+    end
+
     assert Repo.aggregate(Error, :count) == 0
     assert Repo.aggregate(Occurrence, :count) == 0
   end
@@ -116,6 +140,151 @@ defmodule Handbean.Agent.ErrorReporterTest do
 
     assert {:report, _category} =
              ErrorReporter.tool_failure_disposition("unknown failure", %{code: :new_unknown_code})
+  end
+
+  test "IDs and stack line numbers do not classify internal exceptions as provider errors" do
+    for digits <- ["4298", "401", "403"] do
+      reason =
+        RuntimeError.exception(
+          "Transcript persistence failed for #{Ecto.UUID.generate()}-#{digits}"
+        )
+
+      stack = [{__MODULE__, :internal_failure, 0, [file: "internal.ex", line: 429]}]
+      ErrorReporter.report({:error, {reason, stack}}, %{"source" => "agent_runner"})
+    end
+
+    occurrences = Repo.all(Occurrence)
+    assert length(occurrences) == 3
+    assert Enum.all?(occurrences, &(&1.context["failure_class"] == "exception"))
+    assert Enum.all?(Repo.all(Error), &(&1.kind == "Elixir.RuntimeError"))
+    assert Enum.all?(Repo.all(Error), &(&1.source_line == "internal.ex:429"))
+  end
+
+  test "HTTP statuses use explicit status positions, not unrelated body numbers" do
+    for {reason, expected} <- [
+          {{:retry_exhausted, 429, "authentication failed 401", []}, "provider_rate_limited"},
+          {{:http_error, 401, "request 4298"}, "provider_auth"},
+          {{:http_status, 403}, "provider_auth"},
+          {%{status: 503, body: "request 401"}, "provider_server"},
+          {"HTTP 429: retry later", "provider_rate_limited"},
+          {"HTTP 401: unauthorized", "provider_auth"},
+          {"HTTP status 403", "provider_auth"},
+          {"delegated-401-403-4298 failed", "agent_error"},
+          {"JS validation failed: setTimeout is forbidden", "agent_error"},
+          {"OpenAI API error 429 (after retries): request rejected", "provider_rate_limited"},
+          {"OpenAI API error 401: request rejected", "provider_auth"},
+          {"invalid_request_error: Incorrect API key provided: sample", "provider_auth"},
+          {%Req.TransportError{reason: :timeout}, "provider_timeout"},
+          {{:http_error, %Req.TransportError{reason: :timeout}}, "provider_timeout"},
+          {{%Req.TransportError{reason: :timeout}, []}, "provider_timeout"},
+          {%Req.TransportError{reason: :closed}, "provider_error"}
+        ] do
+      id = Ecto.UUID.generate()
+      ErrorReporter.report(reason, %{"case" => id})
+      occurrence = Enum.find(Repo.all(Occurrence), &(&1.context["case"] == id))
+      assert occurrence.context["failure_class"] == expected
+    end
+  end
+
+  test "recoverable input results stay expected while exceptions and unknown codes are reported" do
+    for reason <- [
+          :invalid_input,
+          :no_parent,
+          :idempotency_conflict,
+          "/tmp: Is a directory",
+          "/tmp/file: Binary file, cannot display as text",
+          "Offset 100 beyond file end (10 lines)",
+          "unsandboxed is not available for job=true"
+        ] do
+      assert {:expected, _} = ErrorReporter.tool_failure_disposition(reason)
+    end
+
+    for reason <- [
+          "question (max 8000 bytes) is required",
+          "message (max 16000 bytes) is required",
+          "diff parameter is required when mode=diff",
+          "child_conversation_id is required for get",
+          "pattern is required to search contents. Use glob to list files.",
+          "invalid_input\n\nTool hint: Fix input"
+        ] do
+      assert {:expected, _} = ErrorReporter.tool_failure_disposition(reason)
+    end
+
+    for code <- [:invalid_input, :no_parent, :idempotency_conflict] do
+      assert {:expected, _} = ErrorReporter.tool_failure_disposition("rejected", %{code: code})
+
+      assert {:expected, _} =
+               ErrorReporter.tool_failure_disposition("rejected", %{
+                 "code" => Atom.to_string(code)
+               })
+    end
+
+    for reason <- [
+          RuntimeError.exception("file_path is required"),
+          {:error, {RuntimeError.exception("permission denied"), []}},
+          "HTTP status 403",
+          "HTTP status 404",
+          "HTTP status 415",
+          "authentication service failed",
+          "invalid input!",
+          "internal configuration is required",
+          "index database file not found"
+        ] do
+      assert {:report, _} = ErrorReporter.tool_failure_disposition(reason)
+    end
+
+    assert {:report, _} =
+             ErrorReporter.tool_failure_disposition("file not found", %{code: :internal_failure})
+
+    assert {:report, category} =
+             ErrorReporter.tool_failure_disposition(
+               "JS validation failed: setTimeout is forbidden"
+             )
+
+    refute category == "timeout"
+    assert {:report, "timeout"} = ErrorReporter.tool_failure_disposition("request timed out")
+  end
+
+  test "plain and tuple exceptions preserve identity and redact configured credentials" do
+    for reason <- [
+          RuntimeError.exception("internal 401-403-4298 failure"),
+          {RuntimeError.exception("internal 401-403-4298 failure"), []},
+          {:error, RuntimeError.exception("internal 401-403-4298 failure")}
+        ] do
+      ErrorReporter.report(reason, %{})
+    end
+
+    assert Enum.all?(Repo.all(Occurrence), &(&1.context["failure_class"] == "exception"))
+
+    ErrorReporter.report(
+      {:error,
+       {RuntimeError.exception("failed with configured-secret"),
+        [{__MODULE__, :decode, 1, [file: "source.ex", line: 403]}]}},
+      %{},
+      provider_config: %{api_key: "configured-secret"}
+    )
+
+    refute inspect(Repo.all(Occurrence)) =~ "configured-secret"
+    refute inspect(Repo.all(Error)) =~ "configured-secret"
+    assert Enum.any?(Repo.all(Error), &(&1.source_line == "source.ex:403"))
+  end
+
+  test "captured diagnostics discard payloads and arguments but preserve call sites" do
+    exception = ArgumentError.exception("private-event-data")
+
+    stack = [
+      {__MODULE__, :decode, ["private-stack-argument"],
+       [file: "decoder.ex", line: 401, error_info: %{cause: "private-cause"}]}
+    ]
+
+    {safe, safe_stack} = ErrorReporter.capture_exception(exception, stack, :sse)
+    assert Exception.message(safe) == "sse failed (ArgumentError)"
+    assert safe_stack == [{__MODULE__, :decode, 1, [file: "decoder.ex", line: 401]}]
+    refute inspect({safe, safe_stack}) =~ "private-"
+    assert :ok = ErrorReporter.report({safe, safe_stack}, %{})
+    assert [occurrence] = Repo.all(Occurrence)
+    assert occurrence.context["failure_class"] == "exception"
+    refute inspect(occurrence) =~ "private-"
   end
 
   test "separates tool reason categories while grouping dynamic details" do

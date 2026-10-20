@@ -52,6 +52,31 @@ defmodule Handbean.Agent.Provider.OpenAIStreamTest do
     end
   end
 
+  test "stream returns safe callback diagnostics instead of a partial success" do
+    event =
+      Handbean.JSON.encode!(%{"choices" => [%{"delta" => %{"content" => "private response"}}]})
+
+    Req.Test.stub(__MODULE__, fn conn ->
+      conn = Plug.Conn.send_chunked(conn, 200)
+      {:ok, conn} = Plug.Conn.chunk(conn, "data: #{event}\n\n")
+      conn
+    end)
+
+    assert {:error, {exception, stacktrace}} =
+             OpenAIStream.stream(
+               "https://provider.test/chat/completions",
+               [],
+               %{},
+               fn chunk -> raise ArgumentError, chunk end,
+               plug: {Req.Test, __MODULE__}
+             )
+
+    assert Exception.message(exception) =~ "ArgumentError"
+    assert Exception.message(exception) =~ "sse_event_handler"
+    assert [{__MODULE__, _, _, _} | _] = stacktrace
+    refute inspect({exception, stacktrace}) =~ "private response"
+  end
+
   defp new_acc do
     %{
       buffer: "",

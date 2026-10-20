@@ -295,7 +295,7 @@ defmodule Handbean.Agent.Provider.Anthropic do
     Map.merge(existing, Map.reject(new, fn {_key, value} -> is_nil(value) end))
   end
 
-  defp build_stream_response(%{stream_error: error}, _config) when is_binary(error),
+  defp build_stream_response(%{stream_error: error}, _config) when not is_nil(error),
     do: {:error, error}
 
   defp build_stream_response(%{message_stopped?: false}, _config),

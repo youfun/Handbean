@@ -4,10 +4,22 @@ defmodule Handbean.EventRecorderTest do
   alias Handbean.EventRecorder
   alias Handbean.PubSub.AgentEvent
 
+  test "default event directory follows the configured Handbean home" do
+    sid = "event-recorder-default-#{System.unique_integer([:positive])}"
+    event = AgentEvent.new("session:#{sid}", :run_start, %{model: "fake"}, 1)
+    path = EventRecorder.event_path(sid)
+
+    on_exit(fn -> File.rm(path) end)
+
+    assert path == Path.join(Handbean.Home.expand("~/.handbean/events"), "#{sid}.jsonl")
+    assert :ok = EventRecorder.record(sid, event)
+    assert File.exists?(path)
+  end
+
   test "records important events to jsonl with redaction" do
     dir =
       "~/.handbean/events"
-      |> Path.expand()
+      |> Handbean.Home.expand()
       |> Path.join("test_#{System.unique_integer([:positive])}")
 
     sid = "event-recorder"
@@ -28,7 +40,7 @@ defmodule Handbean.EventRecorderTest do
   test "skips high-frequency message_delta events" do
     dir =
       "~/.handbean/events"
-      |> Path.expand()
+      |> Handbean.Home.expand()
       |> Path.join("test_skip_#{System.unique_integer([:positive])}")
 
     sid = "event-recorder-skip"
@@ -42,7 +54,7 @@ defmodule Handbean.EventRecorderTest do
   test "event_dir under ~/.handbean/events is accepted" do
     dir =
       "~/.handbean/events"
-      |> Path.expand()
+      |> Handbean.Home.expand()
       |> Path.join("subdir_#{System.unique_integer([:positive])}")
 
     event = AgentEvent.new("session:ev", :run_start, %{model: "fake"}, 1)

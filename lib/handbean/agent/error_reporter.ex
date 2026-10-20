@@ -40,6 +40,9 @@ defmodule Handbean.Agent.ErrorReporter do
     capability_unavailable
     cursor_invalid
     input_rejected
+    idempotency_conflict
+    invalid_input
+    no_parent
     invalid_arguments
     invalid_retry
     not_accessible
@@ -51,7 +54,14 @@ defmodule Handbean.Agent.ErrorReporter do
   )a
 
   @expected_tool_reason_categories ~w(
+    binary_file
     chunk_not_found
+    idempotency_conflict
+    invalid_input
+    is_a_directory
+    no_parent
+    offset_out_of_range
+    unsandboxed_job_unsupported
     dependency_not_installed
     error_not_found
     file_not_found
@@ -70,6 +80,38 @@ defmodule Handbean.Agent.ErrorReporter do
   @sensitive_keys MapSet.new(~w(
     api_key apikey token authorization cookie secret password pass openai_api_key
   ))
+
+  @doc "Captures an internal failure without retaining exception payloads or stack arguments."
+  @spec capture_exception(Exception.t(), Exception.stacktrace(), atom()) ::
+          {Exception.t(), Exception.stacktrace()}
+  def capture_exception(exception, stacktrace, phase)
+      when is_exception(exception) and is_list(stacktrace) and is_atom(phase) do
+    storage_category = ErrorClassifier.classify(exception)
+
+    storage_marker =
+      if storage_category in [:busy, :full, :ioerr, :corrupt],
+        do: " sqlite_#{storage_category}",
+        else: ""
+
+    safe =
+      AgentRunError.exception(
+        "#{phase} failed (#{inspect(exception.__struct__)})#{storage_marker}"
+      )
+
+    stacktrace =
+      Enum.flat_map(stacktrace, fn
+        {module, function, args, location} when is_list(args) and is_list(location) ->
+          [{module, function, length(args), Keyword.take(location, [:file, :line])}]
+
+        {module, function, arity, location} when is_integer(arity) and is_list(location) ->
+          [{module, function, arity, Keyword.take(location, [:file, :line])}]
+
+        _ ->
+          []
+      end)
+
+    {safe, stacktrace}
+  end
 
   @spec report(term(), map(), keyword()) :: :ok
   def report(reason, context, opts \\ []) when is_map(context) and is_list(opts) do
@@ -109,9 +151,11 @@ defmodule Handbean.Agent.ErrorReporter do
 
     disposition =
       cond do
+        exception_reason?(reason) -> :report
         permission in [:denied, "denied"] -> :expected
         expected_tool_code?(code) -> :expected
-        category in @expected_tool_reason_categories -> :expected
+        not is_nil(code) -> :report
+        expected_tool_reason?(reason) -> :expected
         true -> :report
       end
 
@@ -122,6 +166,9 @@ defmodule Handbean.Agent.ErrorReporter do
     Health.writable?() and
       ErrorClassifier.classify(reason) not in [:busy, :full, :ioerr, :corrupt]
   end
+
+  defp do_report({:error, reason}, failure_class, context, provider_config),
+    do: do_report(reason, failure_class, context, provider_config)
 
   defp do_report({%_{} = exception, stacktrace}, failure_class, context, provider_config)
        when is_exception(exception) and is_list(stacktrace) do
@@ -205,35 +252,125 @@ defmodule Handbean.Agent.ErrorReporter do
 
   defp failure_class(_reason, forced) when forced in @failure_classes, do: forced
 
+  defp failure_class({:error, reason}, forced), do: failure_class(reason, forced)
+  defp failure_class({:http_error, reason}, forced), do: failure_class(reason, forced)
+
+  defp failure_class({exception, stacktrace}, forced)
+       when is_exception(exception) and is_list(stacktrace),
+       do: failure_class(exception, forced)
+
+  defp failure_class(%Req.TransportError{reason: :timeout}, _forced), do: :provider_timeout
+  defp failure_class(%Req.TransportError{}, _forced), do: :provider_error
+
   defp failure_class(reason, _forced) do
-    text = reason |> render_reason() |> String.downcase()
+    text = classification_text(reason)
+    status = http_status(reason)
 
     cond do
-      contains?(text, ["server_is_overloaded", "overloaded", "capacity"]) ->
-        :provider_overloaded
+      exception_reason?(reason) ->
+        :exception
 
-      contains?(text, ["rate_limit", "rate limit", "too many requests", "429"]) ->
+      status == 429 ->
         :provider_rate_limited
 
-      contains?(text, ["unauthorized", "forbidden", "api key", "authentication", "401", "403"]) ->
+      status in [401, 403] ->
         :provider_auth
 
-      contains?(text, ["timeout", "timed out", "etimedout"]) ->
+      status in [408, 504] ->
         :provider_timeout
 
-      Regex.match?(~r/(?:http|status)[^0-9]{0,8}5\d\d|\b5\d\d\b/, text) ->
+      is_integer(status) and status >= 500 and status <= 599 ->
         :provider_server
+
+      is_integer(status) ->
+        :provider_error
+
+      contains?(text, ["server_is_overloaded", "overloaded"]) ->
+        :provider_overloaded
+
+      contains?(text, ["rate_limit", "rate limit", "too many requests"]) ->
+        :provider_rate_limited
+
+      Regex.match?(
+        ~r/^(?:unauthorized|forbidden|authentication(?:_error)?)(?:$|[:\s])|^api key (?:is |not |missing|invalid)|^invalid_request_error: incorrect api key provided:/,
+        text
+      ) ->
+        :provider_auth
+
+      Regex.match?(~r/\b(?:timeout|timed out|etimedout)\b/, text) ->
+        :provider_timeout
 
       contains?(text, ["provider", "gateway", "transport", "connection", "socket", "dns", "tls"]) ->
         :provider_error
-
-      exception_reason?(reason) ->
-        :exception
 
       true ->
         :agent_error
     end
   end
+
+  # Classify only the error tag/message; inspected payloads contain IDs, source code and stacks.
+  defp classification_text(reason) when is_binary(reason), do: String.downcase(reason)
+  defp classification_text(reason) when is_atom(reason), do: Atom.to_string(reason)
+
+  defp classification_text(reason)
+       when is_tuple(reason) and tuple_size(reason) > 0 and is_atom(elem(reason, 0)),
+       do: classification_text(elem(reason, 0))
+
+  defp classification_text(_reason), do: ""
+
+  defp http_status({:retry_exhausted, status, _body, _headers}) when is_integer(status),
+    do: status
+
+  defp http_status({:http_error, status, _body}) when is_integer(status), do: status
+  defp http_status({:http_status, status}) when is_integer(status), do: status
+  defp http_status(%{status: status}) when is_integer(status), do: status
+
+  defp http_status(reason) when is_binary(reason) do
+    case Regex.run(~r/(?:\bHTTP(?: status)?\s+|^OpenAI API error )(\d{3})\b/i, reason) do
+      [_, status] -> String.to_integer(status)
+      _ -> nil
+    end
+  end
+
+  defp http_status(_reason), do: nil
+
+  # Grouping is deliberately broader than suppression. A normalized category is
+  # not evidence that an arbitrary internal failure is a recoverable tool input.
+  defp expected_tool_reason?({:error, reason}), do: expected_tool_reason?(reason)
+
+  defp expected_tool_reason?(reason) when is_atom(reason),
+    do: Atom.to_string(reason) in @expected_tool_reason_categories
+
+  defp expected_tool_reason?(reason) when is_binary(reason) do
+    # Executor appends presentation-only recovery guidance to the original error.
+    reason = reason |> String.split("\n\nTool hint:", parts: 2) |> hd()
+
+    reason in @expected_tool_reason_categories or
+      Enum.any?(
+        [
+          ~r/^edit #\d+: Could not find text\./,
+          ~r/^Could not find text\./,
+          ~r/^[a-z_][a-z0-9_]* is required$/,
+          ~r/^question \(max 8000 bytes\) is required$/,
+          ~r/^message \(max 16000 bytes\) is required$/,
+          ~r/^diff parameter is required when mode=diff$/,
+          ~r/^child_conversation_id is required for [a-z_]+$/,
+          ~r/^pattern is required to search contents\./,
+          ~r/^File not found: /,
+          ~r/^.+: No such file$/,
+          ~r/^.+: Is a directory$/,
+          ~r/^.+: Binary file, cannot display as text$/,
+          ~r/^Offset \d+ beyond file end \(\d+ lines\)$/,
+          ~r/^Path traversal blocked: /,
+          ~r/^Sensitive path blocked: /,
+          ~r/^No subagent "[^"]+" in this conversation$/,
+          ~r/^unsandboxed is not available for job=true$/
+        ],
+        &Regex.match?(&1, reason)
+      )
+  end
+
+  defp expected_tool_reason?(_reason), do: false
 
   defp expected_tool_code?(code) when is_binary(code) do
     Enum.any?(@expected_tool_codes, &(Atom.to_string(&1) == code))
@@ -242,6 +379,8 @@ defmodule Handbean.Agent.ErrorReporter do
   defp expected_tool_code?(code), do: code in @expected_tool_codes
 
   defp contains?(text, markers), do: Enum.any?(markers, &String.contains?(text, &1))
+
+  defp exception_reason?({:error, reason}), do: exception_reason?(reason)
 
   defp exception_reason?({%_{} = exception, stacktrace}),
     do: is_exception(exception) and is_list(stacktrace)
@@ -282,6 +421,8 @@ defmodule Handbean.Agent.ErrorReporter do
   defp put_present(map, _key, ""), do: map
   defp put_present(map, key, value), do: Map.put(map, key, value)
 
+  defp reason_category({:error, reason}, safe_reason), do: reason_category(reason, safe_reason)
+
   defp reason_category(reason, _safe_reason) when is_atom(reason), do: Atom.to_string(reason)
 
   defp reason_category(reason, _safe_reason)
@@ -320,6 +461,18 @@ defmodule Handbean.Agent.ErrorReporter do
       Regex.match?(~r/\b(?:is|are) required\b/, first_line) ->
         "invalid_arguments"
 
+      Regex.match?(~r/^.+: is a directory$/, first_line) ->
+        "is_a_directory"
+
+      Regex.match?(~r/^.+: binary file, cannot display as text$/, first_line) ->
+        "binary_file"
+
+      Regex.match?(~r/^offset \d+ beyond file end \(\d+ lines\)$/, first_line) ->
+        "offset_out_of_range"
+
+      first_line == "unsandboxed is not available for job=true" ->
+        "unsandboxed_job_unsupported"
+
       String.contains?(first_line, "no subagent") ->
         "subagent_not_found"
 
@@ -335,7 +488,7 @@ defmodule Handbean.Agent.ErrorReporter do
       String.contains?(first_line, ["tls verification failed", "connection or tls"]) ->
         "connection_or_tls_failed"
 
-      String.contains?(first_line, ["timed out", "timeout"]) ->
+      Regex.match?(~r/\b(?:timed out|timeout)\b/, first_line) ->
         "timeout"
 
       String.contains?(first_line, "not installed") ->
