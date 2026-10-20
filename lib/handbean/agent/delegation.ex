@@ -22,9 +22,10 @@ defmodule Handbean.Agent.Delegation do
   """
   use GenServer
 
-  require Logger
+  alias Handbean.Agent.{Coordinator, Delegation.Policy}
 
-  alias Handbean.Agent.{Coordinator, Delegation.Policy, ErrorReporter}
+  alias Handbean.Agent.Delegation.{Job, Report, SessionData}
+
   alias Handbean.Agent.Subagent.{Profile, Worktree}
   alias Handbean.ConversationStore
   alias Handbean.PubSub.Session
@@ -167,7 +168,7 @@ defmodule Handbean.Agent.Delegation do
       %{status: :running} = job ->
         if open?(job) do
           job = %{job | runner: runner, runner_ref: Process.monitor(runner)}
-          {:reply, :ok, put_job(state, job)}
+          {:reply, :ok, Job.put(state, job)}
         else
           {:reply, {:error, :parent_closed}, state}
         end
@@ -181,7 +182,7 @@ defmodule Handbean.Agent.Delegation do
     case state.jobs[id] do
       %{status: :running} = job ->
         if open?(job),
-          do: {:reply, :ok, put_job(state, %{job | task: task})},
+          do: {:reply, :ok, Job.put(state, %{job | task: task})},
           else: {:reply, {:error, :delegation_closed}, state}
 
       _ ->
@@ -195,26 +196,26 @@ defmodule Handbean.Agent.Delegation do
       |> Map.values()
       |> Enum.filter(&(&1.parent_id == parent_id))
       |> Enum.sort_by(& &1.seq)
-      |> Enum.map(&public_session(&1, state.jobs[&1.id]))
+      |> Enum.map(&Report.public_session(&1, state.jobs[&1.id]))
 
     {:reply, {:ok, children}, state}
   end
 
   def handle_call({:status, parent_id, :get, ref}, _from, state) do
     reply =
-      with {:ok, session} <- owned_session(state, parent_id, ref) do
-        {:ok, public_session(session, state.jobs[session.id], report: true)}
+      with {:ok, session} <- Job.owned_session(state, parent_id, ref) do
+        {:ok, Report.public_session(session, state.jobs[session.id], report: true)}
       end
 
     {:reply, reply, state}
   end
 
   def handle_call({:status, parent_id, :cancel, ref}, _from, state) do
-    with {:ok, session} <- owned_session(state, parent_id, ref),
+    with {:ok, session} <- Job.owned_session(state, parent_id, ref),
          %{status: status} = job when status in [:running, :awaiting_approval] <-
            state.jobs[session.id] do
       {:reply, {:ok, %{child_conversation_id: session.id, status: :cancelled}},
-       put_job(state, close(job, :cancelled))}
+       Job.put(state, close(job, :cancelled))}
     else
       {:error, _} = error -> {:reply, error, state}
       _ -> {:reply, {:error, "Subagent is not running"}, state}
@@ -222,8 +223,8 @@ defmodule Handbean.Agent.Delegation do
   end
 
   def handle_call({:message, parent_id, ref, text, opts}, from, state) do
-    with {:ok, session} <- owned_session(state, parent_id, ref),
-         :ok <- messageable(session) do
+    with {:ok, session} <- Job.owned_session(state, parent_id, ref),
+         :ok <- Job.messageable(session) do
       case state.jobs[session.id] do
         %{status: :running} = job ->
           steer(state, job, session, text, opts, from)
@@ -246,7 +247,7 @@ defmodule Handbean.Agent.Delegation do
 
   def handle_call({:worktree_claim, parent_id, ref}, _from, state) do
     reply =
-      with {:ok, session} <- owned_session(state, parent_id, ref) do
+      with {:ok, session} <- Job.owned_session(state, parent_id, ref) do
         cond do
           is_nil(session.worktree) ->
             {:error, "Subagent has no worktree"}
@@ -268,20 +269,29 @@ defmodule Handbean.Agent.Delegation do
   def handle_call({:worktree_done, id, action, result}, _from, state) do
     state =
       case {result, state.sessions[id]} do
-        {{:error, _}, _} -> state
-        {_, nil} -> state
-        {_, session} -> put_session(state, %{session | worktree_status: done(action)})
+        {{:error, _}, _} ->
+          state
+
+        {_, nil} ->
+          state
+
+        {_, session} ->
+          Job.put_session(
+            state,
+            %{session | worktree_status: done(action)},
+            @session_limit
+          )
       end
 
     {:reply, :ok, state}
   end
 
   def handle_call({:resume_task, parent_id, ref}, from, state) do
-    with {:ok, session} <- owned_session(state, parent_id, ref),
-         :ok <- messageable(session),
+    with {:ok, session} <- Job.owned_session(state, parent_id, ref),
+         :ok <- Job.messageable(session),
          false <- Map.has_key?(state.jobs, session.id),
          false <- map_size(state.jobs) >= @global_limit do
-      prompt = resume_prompt(session)
+      prompt = SessionData.resume_prompt(session)
 
       start_follow_up(
         state,
@@ -300,7 +310,7 @@ defmodule Handbean.Agent.Delegation do
   end
 
   def handle_call({:resume_child, parent_id, ref, decisions}, _from, state) do
-    with {:ok, session} <- owned_session(state, parent_id, ref),
+    with {:ok, session} <- Job.owned_session(state, parent_id, ref),
          %{status: :awaiting_approval} = job <- state.jobs[session.id] do
       case Handbean.Agent.Runner.resume(job.id, decisions) do
         :ok ->
@@ -316,7 +326,7 @@ defmodule Handbean.Agent.Delegation do
               deadline_at: now() + remaining
           }
 
-          {:reply, :ok, put_job(state, job)}
+          {:reply, :ok, Job.put(state, job)}
 
         error ->
           {:reply, error, state}
@@ -342,8 +352,8 @@ defmodule Handbean.Agent.Delegation do
               worktree_base: worktree && worktree.base
           }
 
-          persist_descriptor(session)
-          put_session(state, session)
+          SessionData.persist_descriptor(session)
+          Job.put_session(state, session, @session_limit)
       end
 
     {:noreply, state}
@@ -365,9 +375,14 @@ defmodule Handbean.Agent.Delegation do
             error: view.error
         }
 
-        persist_descriptor(session)
-        state = put_session(state, session)
-        state = if forward?, do: queue_report(state, session, view.text), else: state
+        SessionData.persist_descriptor(session)
+        state = Job.put_session(state, session, @session_limit)
+
+        state =
+          if forward?,
+            do: Report.queue(state, session, view.text, self(), @report_flush_ms),
+            else: state
+
         {:noreply, state}
     end
   end
@@ -391,7 +406,7 @@ defmodule Handbean.Agent.Delegation do
           maybe_finish(%{job | reply_to: nil})
 
         {:error, reason} ->
-          report_startup_failure(job, reason)
+          Report.startup_failure(job, reason)
           close(%{job | reply_to: nil, error: reason}, :startup_failed)
       end
     end)
@@ -417,7 +432,12 @@ defmodule Handbean.Agent.Delegation do
       state,
       id,
       run_id,
-      &progress(&1, Handbean.Utils.SafeMap.get_any(payload, :tool, "tool"))
+      &Report.progress(
+        &1,
+        Handbean.Utils.SafeMap.get_any(payload, :tool, "tool"),
+        now(),
+        @progress_interval_ms
+      )
     )
   end
 
@@ -480,7 +500,7 @@ defmodule Handbean.Agent.Delegation do
           nil
 
         job ->
-          if job.from, do: GenServer.reply(job.from, report(job, :cleaning_up))
+          if job.from, do: GenServer.reply(job.from, Report.report(job, :cleaning_up))
           %{job | from: nil}
       end
     end)
@@ -494,7 +514,7 @@ defmodule Handbean.Agent.Delegation do
 
   def handle_info({:flush_reports, parent_id}, state) do
     {batch, reports} = Map.pop(state.reports, parent_id)
-    if batch, do: deliver_reports(parent_id, batch)
+    if batch, do: Report.deliver(parent_id, batch)
     {:noreply, %{state | reports: reports}}
   end
 
@@ -514,7 +534,7 @@ defmodule Handbean.Agent.Delegation do
           if job, do: Map.put(acc, id, job), else: acc
         end)
 
-      {:noreply, finish_removed(state, jobs)}
+      {:noreply, Job.finish_removed(state, jobs, @table)}
     end
   end
 
@@ -527,7 +547,7 @@ defmodule Handbean.Agent.Delegation do
               close(job, :parent_closed)
 
             ref == job.runner_ref and job.status in [:running, :awaiting_approval] ->
-              report_child_stopped(job, state.sessions[id], reason)
+              Report.child_stopped(job, state.sessions[id], reason)
               close(%{job | error: {:child_stopped, reason}}, :child_stopped)
 
             ref == job.runner_ref ->
@@ -535,7 +555,7 @@ defmodule Handbean.Agent.Delegation do
 
             ref == job.starter_ref and not job.started? ->
               error = {:startup_failed, :starter_down, reason}
-              report_startup_failure(job, error)
+              Report.startup_failure(job, error)
               reply_start(job, {:error, "Subagent failed to start"})
               job = %{job | started?: true, reply_to: nil, error: error}
 
@@ -558,68 +578,24 @@ defmodule Handbean.Agent.Delegation do
         if job, do: Map.put(acc, id, job), else: acc
       end)
 
-    {:noreply, finish_removed(state, jobs)}
+    {:noreply, Job.finish_removed(state, jobs, @table)}
   end
 
   def handle_info(_message, state), do: {:noreply, state}
-
-  defp report_child_stopped(job, session, reason) do
-    child_opts = (session && session.child_opts) || []
-
-    ErrorReporter.report(
-      {:child_stopped, reason},
-      %{
-        "source" => "delegation",
-        "conversation_id" => job.parent_id,
-        "run_id" => job.parent_run_id,
-        "child_conversation_id" => job.id,
-        "child_run_id" => job.run_id,
-        "subagent_type" => job.profile.name,
-        "subagent_mode" => job.mode,
-        "model" => child_opts[:model]
-      },
-      failure_class: :subagent_stopped,
-      provider: child_opts[:provider],
-      provider_config: child_opts[:provider_config]
-    )
-  end
 
   # ── Starting runs ──────────────────────────────────────────────────────
 
   defp start_initial(state, input, context, budget, profile, mode, from) do
     id = Ecto.UUID.generate()
 
-    session = %{
-      id: id,
-      seq: System.unique_integer([:monotonic, :positive]),
-      parent_id: context.conversation_id,
-      parent_run_id: context.run_id,
-      parent_runner_pid: context.runner_pid,
-      workspace: context.working_directory,
-      workspace_id: context[:workspace_id],
-      profile: profile,
-      mode: mode,
-      child_opts: nil,
-      wake_opts: wake_opts(context),
-      status: :running,
-      report: "",
-      report_truncated?: false,
-      usage: %{},
-      run_id: nil,
-      runs: 0,
-      worktree: nil,
-      worktree_base: nil,
-      worktree_status: nil,
-      diff_stat: nil,
-      error: nil
-    }
+    session = SessionData.new(id, context, profile, mode)
 
     job =
-      new_job(id, profile, mode, budget, context, from)
+      Job.open(id, profile, mode, budget, context, from, @table, self(), now())
       |> Map.merge(%{kind: :initial, forward?: mode == :background})
 
     owner = self()
-    prompt = child_prompt(profile, input)
+    prompt = SessionData.child_prompt(profile, input)
 
     {:ok, starter} =
       Task.Supervisor.start_child(Handbean.AgentRunTaskSupervisor, fn ->
@@ -628,10 +604,14 @@ defmodule Handbean.Agent.Delegation do
       end)
 
     job = %{job | starter_ref: Process.monitor(starter)}
-    state = state |> put_session(%{session | run_id: job.run_id, runs: 1}) |> put_job(job)
+
+    state =
+      state
+      |> Job.put_session(%{session | run_id: job.run_id, runs: 1}, @session_limit)
+      |> Job.put(job)
 
     if mode == :background do
-      {:reply, {:ok, background_ack(job), public_details(job, :running)}, state}
+      {:reply, {:ok, Report.background_ack(job), Report.public_details(job, :running)}, state}
     else
       {:noreply, state}
     end
@@ -669,7 +649,7 @@ defmodule Handbean.Agent.Delegation do
       send(owner, {:prepared, job.id, child_opts, worktree})
 
       startup_step(:add_message, fn ->
-        Coordinator.add_message(job.id, prompt, child_opts ++ run_opts(job, owner))
+        Coordinator.add_message(job.id, prompt, child_opts ++ Job.run_opts(job, owner))
       end)
     end
   end
@@ -691,7 +671,17 @@ defmodule Handbean.Agent.Delegation do
     context = %{conversation_id: session.parent_id, working_directory: session.workspace}
 
     job =
-      new_job(session.id, profile, :background, budget, context, nil)
+      Job.open(
+        session.id,
+        profile,
+        :background,
+        budget,
+        context,
+        nil,
+        @table,
+        self(),
+        now()
+      )
       |> Map.merge(%{
         kind: :dm,
         forward?: Keyword.get(opts, :forward_to_parent, false),
@@ -701,18 +691,18 @@ defmodule Handbean.Agent.Delegation do
     owner = self()
 
     child_opts =
-      case child_history(session) do
+      case SessionData.child_history(session) do
         {:error, reason} ->
           {:error, reason}
 
         history ->
           session.child_opts
-          |> refresh_follow_up_authority(job)
+          |> SessionData.refresh_follow_up_authority(job)
           |> Keyword.merge(
             history_messages: history,
             source: Keyword.get(opts, :source, :direct_message)
           )
-          |> Keyword.merge(run_opts(job, owner))
+          |> Keyword.merge(Job.run_opts(job, owner))
       end
 
     if match?({:error, _}, child_opts) do
@@ -720,17 +710,6 @@ defmodule Handbean.Agent.Delegation do
     else
       start_follow_up_task(state, session, job, text, child_opts, owner)
     end
-  end
-
-  defp refresh_follow_up_authority(child_opts, job) do
-    context = Keyword.get(child_opts, :context, %{})
-
-    delegation_parent =
-      context
-      |> Map.get(:delegation_parent, %{})
-      |> Map.merge(%{mode: :background, child_id: job.id})
-
-    Keyword.put(child_opts, :context, Map.put(context, :delegation_parent, delegation_parent))
   end
 
   defp start_follow_up_task(state, session, job, text, child_opts, owner) do
@@ -754,7 +733,10 @@ defmodule Handbean.Agent.Delegation do
         error: nil
     }
 
-    {:noreply, state |> put_session(session) |> put_job(job)}
+    {:noreply,
+     state
+     |> Job.put_session(session, @session_limit)
+     |> Job.put(job)}
   end
 
   defp steer(state, job, session, text, opts, from) do
@@ -790,171 +772,7 @@ defmodule Handbean.Agent.Delegation do
     end)
 
     forward? = job.forward? or Keyword.get(opts, :forward_to_parent, false)
-    {:noreply, put_job(state, %{job | forward?: forward?})}
-  end
-
-  defp new_job(id, profile, mode, budget, context, from) do
-    run_id = Ecto.UUID.generate()
-    :ets.insert(@table, {id, run_id})
-    sync? = mode == :sync
-
-    reply_timer =
-      if sync? do
-        Process.send_after(
-          self(),
-          {:reply_deadline, id, run_id},
-          budget + div(context.tool_timeout, 4)
-        )
-      end
-
-    %{
-      id: id,
-      run_id: run_id,
-      parent_id: context.conversation_id,
-      parent_run_id: context[:run_id],
-      workspace: context[:working_directory],
-      tool_call_id: context[:tool_call_id],
-      profile: profile,
-      mode: mode,
-      kind: :initial,
-      forward?: false,
-      from: if(sync?, do: from),
-      reply_to: nil,
-      parent_ref: if(sync?, do: Process.monitor(context.runner_pid)),
-      caller_ref: if(sync?, do: Process.monitor(elem(from, 0))),
-      parent_context: if(sync?, do: Map.take(context, [:conversation_id, :run_id, :runner_pid])),
-      budget: budget,
-      deadline_at: now() + budget,
-      remaining_ms: budget,
-      timer: Process.send_after(self(), {:deadline, id, run_id}, budget),
-      reply_timer: reply_timer,
-      approval_timer: nil,
-      runner: nil,
-      runner_ref: nil,
-      task: nil,
-      starter_ref: nil,
-      cleanup_ref: nil,
-      text: "",
-      truncated?: false,
-      usage: %{},
-      turn: nil,
-      current_tool: nil,
-      last_progress_at: 0,
-      started?: false,
-      cleaned?: false,
-      status: :running,
-      error: nil,
-      diff: nil
-    }
-  end
-
-  defp run_opts(job, owner) do
-    id = job.id
-    run_id = job.run_id
-
-    [
-      run_id: run_id,
-      delegation_owner: owner,
-      on_event: fn event -> send(owner, {:child_event, id, run_id, event}) end
-    ]
-  end
-
-  defp child_prompt(%Profile{name: "advisor", source: :builtin}, input) do
-    Handbean.Utils.SafeMap.get_any(input, "prompt", :prompt) || task_prompt(input)
-  end
-
-  defp child_prompt(_profile, input), do: task_prompt(input)
-
-  defp task_prompt(input) do
-    task = Handbean.Utils.SafeMap.get_any(input, "task", :task) || ""
-    criteria = Handbean.Utils.SafeMap.get_any(input, "criteria", :criteria) || ""
-    task <> "\n\nCompletion criteria:\n" <> criteria
-  end
-
-  defp child_history(session) do
-    access_context = %{
-      conversation_id: session.parent_id,
-      run_id: session.parent_run_id,
-      runner_pid: session.parent_runner_pid,
-      workspace_id: session.workspace_id
-    }
-
-    case Handbean.ConversationTranscriptStore.list(session.id,
-           access_context: access_context
-         ) do
-      {:error, reason} ->
-        {:error, reason}
-
-      {:ok, entries} ->
-        workspace = session.child_opts[:working_directory]
-
-        Handbean.Attachments.History.to_messages(entries, workspace, session.id)
-    end
-  end
-
-  defp persist_descriptor(session) do
-    path = descriptor_path(session)
-
-    if path do
-      body =
-        session
-        |> Map.take([
-          :id,
-          :parent_id,
-          :workspace,
-          :workspace_id,
-          :worktree,
-          :worktree_base,
-          :status,
-          :run_id,
-          :runs
-        ])
-        |> Map.put(:checkout_path, session.workspace)
-        |> Map.put(:parent_checkout_path, session.workspace)
-        |> Map.put(:workspace_path, session.child_opts && session.child_opts[:workspace_path])
-        |> Map.put(:profile, session.profile.name)
-        |> Handbean.JsonSafe.normalize()
-        |> Handbean.JSON.encode!()
-
-      File.mkdir_p(Path.dirname(path))
-      File.write(path, body)
-    end
-
-    :ok
-  end
-
-  defp descriptor_path(%{parent_id: parent, id: id}) when is_binary(parent) and is_binary(id) do
-    Path.join([
-      Handbean.ConversationArtifacts.root(),
-      "items",
-      parent,
-      "subagents",
-      id <> ".json"
-    ])
-  end
-
-  defp descriptor_path(_session), do: nil
-
-  defp resume_prompt(session) do
-    "Resume the interrupted task in this same child conversation and existing worktree. " <>
-      "Review the prior transcript and current files first. Do not repeat a tool operation " <>
-      "whose prior result says side_effect=committed. If a prior side effect is unknown, " <>
-      "reconcile it from the current file/process state before retrying. Continue from the " <>
-      "last unfinished step and report the completed outcome. Recovery attempt " <>
-      Integer.to_string((session.runs || 0) + 1) <> "."
-  end
-
-  defp wake_opts(context) do
-    case context[:conversation_run_opts] do
-      opts when is_list(opts) and opts != [] ->
-        Keyword.merge(opts,
-          workspace_id: context[:workspace_id],
-          tools: Handbean.Agent.default_tools()
-        )
-
-      _ ->
-        nil
-    end
+    {:noreply, Job.put(state, %{job | forward?: forward?})}
   end
 
   # ── Job lifecycle ──────────────────────────────────────────────────────
@@ -963,45 +781,13 @@ defmodule Handbean.Agent.Delegation do
     case state.jobs[id] do
       %{run_id: ^run_id} = job ->
         case fun.(job) do
-          nil -> {:noreply, remove_job(state, id)}
-          updated -> {:noreply, put_job(state, updated)}
+          nil -> {:noreply, Job.remove(state, id, @table)}
+          updated -> {:noreply, Job.put(state, updated)}
         end
 
       _ ->
         {:noreply, state}
     end
-  end
-
-  # Jobs removed while iterating (maybe_finish returned nil) already queued
-  # their side effects; only the job map needs replacing.
-  defp finish_removed(state, jobs) do
-    Enum.each(Map.keys(state.jobs) -- Map.keys(jobs), &:ets.delete(@table, &1))
-    %{state | jobs: jobs}
-  end
-
-  defp put_job(state, job), do: %{state | jobs: Map.put(state.jobs, job.id, job)}
-
-  defp remove_job(state, id) do
-    :ets.delete(@table, id)
-    %{state | jobs: Map.delete(state.jobs, id)}
-  end
-
-  defp put_session(state, session) do
-    sessions = Map.put(state.sessions, session.id, session)
-
-    sessions =
-      if map_size(sessions) > @session_limit do
-        {oldest, _} =
-          sessions
-          |> Enum.reject(fn {id, _} -> Map.has_key?(state.jobs, id) or id == session.id end)
-          |> Enum.min_by(fn {_, s} -> s.seq end, fn -> {nil, nil} end)
-
-        Map.delete(sessions, oldest)
-      else
-        sessions
-      end
-
-    %{state | sessions: sessions}
   end
 
   defp open?(%{mode: :sync} = job) do
@@ -1023,43 +809,7 @@ defmodule Handbean.Agent.Delegation do
 
   defp close(job, _status), do: job
 
-  defp cleanup(job) do
-    owner = self()
-    worktree = job.profile.isolation == :worktree
-
-    {:ok, pid} =
-      Task.Supervisor.start_child(Handbean.AgentRunTaskSupervisor, fn ->
-        Coordinator.cancel(job.id)
-
-        case Handbean.AgentRunSupervisor.stop_run(job.id) do
-          :ok -> :ok
-          {:error, :not_found} -> :ok
-          other -> exit({:cleanup_unconfirmed, other})
-        end
-
-        if job.task do
-          ref = Process.monitor(job.task)
-          Process.exit(job.task, :kill)
-
-          receive do
-            {:DOWN, ^ref, :process, _, _} -> :ok
-          end
-        end
-
-        diff =
-          if worktree do
-            case Worktree.diff(job.workspace, job.id) do
-              {:ok, info} -> Map.delete(info, :patch)
-              {:error, _} -> nil
-            end
-          end
-
-        # DynamicSupervisor termination is synchronous: all child processes stopped.
-        send(owner, {:cleaned, job.id, job.run_id, diff})
-      end)
-
-    %{job | cleanup_ref: Process.monitor(pid)}
-  end
+  defp cleanup(job), do: Job.cleanup(job, self())
 
   defp maybe_finish(%{cleaned?: true, started?: true} = job) do
     status =
@@ -1069,13 +819,13 @@ defmodule Handbean.Agent.Delegation do
       end
 
     job = %{job | status: status}
-    if job.from, do: GenServer.reply(job.from, report(job, status))
+    if job.from, do: GenServer.reply(job.from, Report.report(job, status))
     # A cancelled parent has nothing to wake, and an explicit cancel already
     # returned its result to the caller.
     forward? =
       job.mode == :background and job.forward? and status not in [:parent_closed, :cancelled]
 
-    send(self(), {:finished, job.id, forward?, finished_view(job)})
+    send(self(), {:finished, job.id, forward?, Report.finished(job)})
     publish_end(job)
     cancel_timer(job.timer)
     cancel_timer(job.reply_timer)
@@ -1101,265 +851,11 @@ defmodule Handbean.Agent.Delegation do
 
   defp reply_start(job, {:error, reason}), do: GenServer.reply(job.reply_to, {:error, reason})
 
-  defp finished_view(job) do
-    %{
-      status: job.status,
-      report: job.text,
-      report_truncated?: job.truncated?,
-      usage: job.usage,
-      diff_stat: job.diff && job.diff.stat,
-      error: public_error(job.error),
-      text: report_text(job)
-    }
-  end
-
-  # Reports that finish together share one follow-up so the parent wakes once.
-  defp queue_report(state, session, text) do
-    case state.reports[session.parent_id] do
-      nil ->
-        Process.send_after(self(), {:flush_reports, session.parent_id}, @report_flush_ms)
-        put_in(state.reports[session.parent_id], {session.wake_opts, [text]})
-
-      {wake_opts, texts} ->
-        put_in(
-          state.reports[session.parent_id],
-          {wake_opts || session.wake_opts, texts ++ [text]}
-        )
-    end
-  end
-
-  defp deliver_reports(parent_id, {wake_opts, texts}) do
-    text = Enum.join(texts, "\n\n")
-
-    if wake_opts do
-      opts =
-        Keyword.merge(wake_opts,
-          deliver_as: :follow_up,
-          source: :delegation,
-          channel: :internal,
-          require_running?: not Application.get_env(:handbean, :subagent_wake_parent, true)
-        )
-
-      Task.Supervisor.start_child(Handbean.AgentRunTaskSupervisor, fn ->
-        case Coordinator.add_message(parent_id, text, opts) do
-          {:ok, _} ->
-            :ok
-
-          {:error, reason} ->
-            Logger.info(
-              "[Delegation] report not delivered parent=#{parent_id}: #{inspect(reason)}"
-            )
-        end
-      end)
-    end
-
-    :ok
-  end
-
-  # ── Views ──────────────────────────────────────────────────────────────
-
-  defp report(job, status) do
-    data = public_details(job, status)
-    text = "Delegated report (requires parent review):\n" <> Handbean.JSON.encode!(data)
-    if status in [:completed, "completed"], do: {:ok, text, data}, else: {:error, text, data}
-  end
-
-  defp report_text(job) do
-    data = public_details(job, job.status)
-
-    "Background subagent report for child_conversation_id #{job.id} (requires your review; " <>
-      "use task_status to follow up):\n" <> Handbean.JSON.encode!(data)
-  end
-
-  defp public_details(job, status) do
-    %{
-      status: status,
-      subagent_type: job.profile.name,
-      child_conversation_id: job.id,
-      child_run_id: job.run_id,
-      mode: job.mode,
-      usage: job.usage,
-      report: job.text,
-      report_truncated?: job.truncated?,
-      usage_complete?: status in [:completed, "completed"]
-    }
-    |> put_if(public_error(job.error), :error, & &1)
-    |> put_if(job.diff, :diff_stat, & &1.stat)
-    |> put_if(job.diff, :worktree_base, & &1.base)
-  end
-
-  defp put_if(map, nil, _key, _fun), do: map
-  defp put_if(map, value, key, fun), do: Map.put(map, key, fun.(value))
-
-  defp public_session(session, job, opts \\ []) do
-    base = %{
-      child_conversation_id: session.id,
-      subagent_type: session.profile.name,
-      mode: session.mode,
-      status: (job && job.status) || session.status,
-      child_run_id: session.run_id,
-      runs: session.runs,
-      usage: (job && job.usage) || session.usage,
-      current_tool: job && job.current_tool,
-      worktree: session.worktree,
-      worktree_status: session.worktree_status,
-      diff_stat: session.diff_stat
-    }
-
-    base = put_if(base, (job && public_error(job.error)) || session.error, :error, & &1)
-
-    if Keyword.get(opts, :report, false) do
-      Map.merge(base, %{report: session.report, report_truncated?: session.report_truncated?})
-    else
-      base
-    end
-  end
-
-  defp background_ack(job) do
-    "Subagent started in the background. Its report arrives later as a follow-up message; " <>
-      "do not assume its findings before then.\n" <>
-      Handbean.JSON.encode!(%{
-        child_conversation_id: job.id,
-        status: :running,
-        subagent_type: job.profile.name,
-        mode: :background
-      })
-  end
-
   defp publish_end(job) do
-    payload = %{
-      tool_use_id: job.tool_call_id,
-      child_conversation_id: job.id,
-      child_run_id: job.run_id,
-      subagent_type: job.profile.name,
-      kind: job.kind,
-      status: job.status,
-      usage: job.usage,
-      report: job.text
-    }
-
-    publish(job, :subagent_end, put_if(payload, public_error(job.error), :error, & &1))
-  end
-
-  defp report_startup_failure(job, reason) do
-    stage = startup_stage(reason)
-    message = public_error(reason)
-
-    Logger.warning(
-      "[Delegation] subagent startup failed parent=#{job.parent_id} " <>
-        "parent_run=#{job.parent_run_id} child=#{job.id} child_run=#{job.run_id} " <>
-        "type=#{job.profile.name} mode=#{job.mode} stage=#{stage}: #{message}"
-    )
-
-    ErrorReporter.report(
-      startup_reason(reason),
-      %{
-        "source" => "delegation",
-        "conversation_id" => job.parent_id,
-        "run_id" => job.parent_run_id,
-        "child_conversation_id" => job.id,
-        "child_run_id" => job.run_id,
-        "subagent_type" => job.profile.name,
-        "subagent_mode" => job.mode,
-        "startup_stage" => stage
-      },
-      failure_class: :subagent_startup_failed
-    )
-  end
-
-  defp startup_stage({:startup_failed, stage, _reason}) when is_atom(stage), do: stage
-  defp startup_stage(_reason), do: :unknown
-
-  defp startup_reason({:startup_failed, _stage, reason}), do: startup_reason(reason)
-
-  defp startup_reason({exception, stacktrace}) when is_exception(exception),
-    do: {exception, stacktrace}
-
-  defp startup_reason({_kind, reason, _stacktrace}), do: reason
-  defp startup_reason(reason), do: reason
-
-  defp public_error(nil), do: nil
-
-  defp public_error({:startup_failed, stage, reason}) do
-    "Subagent failed to start during #{stage}: #{public_error_reason(reason)}"
-  end
-
-  defp public_error(reason), do: public_error_reason(reason)
-
-  defp public_error_reason(reason) do
-    case Handbean.Storage.ErrorClassifier.classify(reason) do
-      :busy ->
-        "Local database was busy"
-
-      category when category in [:full, :ioerr, :corrupt] ->
-        "Local storage was unavailable (#{category})"
-
-      _ ->
-        reason
-        |> render_public_error()
-        |> Handbean.Log.Redactor.redact()
-        |> String.slice(0, 500)
-    end
-  end
-
-  defp render_public_error(reason) when is_binary(reason), do: reason
-  defp render_public_error(reason) when is_atom(reason), do: Atom.to_string(reason)
-
-  defp render_public_error({exception, _stacktrace}) when is_exception(exception),
-    do: Exception.message(exception)
-
-  defp render_public_error({_kind, reason, _stacktrace}), do: render_public_error(reason)
-  defp render_public_error(reason), do: inspect(reason, limit: 20, printable_limit: 500)
-
-  defp progress(job, tool) do
-    t = now()
-    job = %{job | current_tool: tool}
-
-    if t - job.last_progress_at >= @progress_interval_ms do
-      publish(job, :subagent_progress, %{
-        tool_use_id: job.tool_call_id,
-        child_conversation_id: job.id,
-        turn: job.turn,
-        current_tool: tool,
-        usage: job.usage
-      })
-
-      %{job | last_progress_at: t}
-    else
-      job
-    end
+    publish(job, :subagent_end, Report.end_payload(job))
   end
 
   defp publish(job, kind, payload), do: Session.broadcast_event(job.parent_id, kind, payload)
-
-  # ── Lookup ─────────────────────────────────────────────────────────────
-
-  defp owned_session(state, parent_id, ref) when is_binary(ref) do
-    owned = state.sessions |> Map.values() |> Enum.filter(&(&1.parent_id == parent_id))
-
-    case Enum.find(owned, &(&1.id == ref)) do
-      nil ->
-        owned
-        |> Enum.filter(&(&1.profile.name == ref))
-        |> Enum.max_by(& &1.seq, fn -> nil end)
-        |> case do
-          nil -> {:error, "No subagent #{inspect(ref)} in this conversation"}
-          session -> {:ok, session}
-        end
-
-      session ->
-        {:ok, session}
-    end
-  end
-
-  defp owned_session(_state, _parent_id, _ref), do: {:error, "child_conversation_id is required"}
-
-  defp messageable(%{child_opts: nil}), do: {:error, "Subagent never started"}
-
-  defp messageable(%{worktree_status: status}) when status != nil,
-    do: {:error, "Subagent worktree was #{status}; start a new subagent"}
-
-  defp messageable(_session), do: :ok
 
   defp worktree_available?(context) do
     Handbean.Host.shell?() and
