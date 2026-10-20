@@ -288,7 +288,7 @@
   min-height: 32px;
 }
 
-/* Activity line shown while a run is active, and while voice is captured.
+/* Activity line shown while voice is captured or transcribed.
    Flow is a quiet travelling pulse; recording makes it react to mic level. */
 .composer-activity {
   display: none;
