@@ -11,6 +11,7 @@ defmodule Handbean.Agent.Runner do
   require Logger
 
   alias Handbean.Agent.{ErrorReporter, StreamBatch}
+  alias Handbean.Agent.Middleware.ToolGuard
   alias Handbean.PubSub.Session
 
   @default_inactivity_timeout_ms 300_000
@@ -106,6 +107,7 @@ defmodule Handbean.Agent.Runner do
     queue_pid = resolve_queue_pid!(Keyword.fetch!(opts, :queue_name))
     content = Keyword.fetch!(opts, :content)
     run_opts = Keyword.fetch!(opts, :run_opts)
+    :ok = Handbean.WorkspaceSettings.subscribe_permission_policy()
 
     # Delegated tasks stay linked so killing their Runner also kills the task.
     # Trap task exits so the monitor's DOWN can durably close a crashed child run.
@@ -402,34 +404,7 @@ defmodule Handbean.Agent.Runner do
       ) do
     with :ok <- validate_run_identity(state, expected_run_id),
          :ok <- validate_batch_identity(state, expected_batch_id) do
-      {deadline, timer} = resume_timeout(state)
-
-      run_opts =
-        state.opts
-        |> Keyword.put(:candidate_queue, state.queue_pid)
-        |> maybe_put_run_deadline(state, deadline)
-        |> put_compaction_callback(self())
-        |> put_persistence_callback(state.conversation_id)
-
-      resume = resume_fun(state)
-
-      Session.broadcast_event(state.conversation_id, :run_resumed, %{run_id: state.opts[:run_id]})
-
-      task =
-        Task.Supervisor.async_nolink(Keyword.fetch!(run_opts, :run_task_supervisor), fn ->
-          resume.(state.interrupted_state, decisions, run_opts)
-        end)
-
-      {:reply, :ok,
-       %{
-         state
-         | status: :running,
-           task: task,
-           interrupted_state: nil,
-           deadline: deadline,
-           deadline_timer: timer,
-           stream_started?: false
-       }}
+      {:reply, :ok, resume_with_decisions(state, decisions)}
     else
       {:error, reason} -> {:reply, {:error, reason}, state}
     end
@@ -466,22 +441,23 @@ defmodule Handbean.Agent.Runner do
 
     case result do
       %Handbean.Agent.State{status: :interrupted} = interrupted ->
-        if absolute_timeout?(state) do
-          {:noreply,
-           %{state | status: :awaiting_approval, interrupted_state: interrupted, task: nil}}
-        else
-          cancel_timeout(state.deadline_timer)
+        state =
+          if absolute_timeout?(state) do
+            %{state | status: :awaiting_approval, interrupted_state: interrupted, task: nil}
+          else
+            cancel_timeout(state.deadline_timer)
 
-          {:noreply,
-           %{
-             state
-             | status: :awaiting_approval,
-               interrupted_state: interrupted,
-               task: nil,
-               deadline: nil,
-               deadline_timer: nil
-           }}
-        end
+            %{
+              state
+              | status: :awaiting_approval,
+                interrupted_state: interrupted,
+                task: nil,
+                deadline: nil,
+                deadline_timer: nil
+            }
+          end
+
+        {:noreply, reconcile_permission_policy(state)}
 
       %Handbean.Agent.State{status: :halted} = halted ->
         finish_terminal(state, halted, :halted)
@@ -613,6 +589,14 @@ defmodule Handbean.Agent.Runner do
     abort_unreplayable(state, {:run_tree_exit, reason})
   end
 
+  def handle_info({:workspace_permission_policy_changed, settings_path}, state) do
+    if permission_settings_path(state) == {:ok, settings_path} do
+      {:noreply, reconcile_permission_policy(state)}
+    else
+      {:noreply, state}
+    end
+  end
+
   def handle_info(_message, state), do: {:noreply, state}
 
   @doc false
@@ -733,6 +717,52 @@ defmodule Handbean.Agent.Runner do
     if approval_batch_id(state) == expected_batch_id,
       do: :ok,
       else: {:error, :stale_approval}
+  end
+
+  defp resume_with_decisions(state, decisions) do
+    {deadline, timer} = resume_timeout(state)
+
+    run_opts =
+      state.opts
+      |> Keyword.put(:candidate_queue, state.queue_pid)
+      |> maybe_put_run_deadline(state, deadline)
+      |> put_compaction_callback(self())
+      |> put_persistence_callback(state.conversation_id)
+
+    resume = resume_fun(state)
+
+    Session.broadcast_event(state.conversation_id, :run_resumed, %{run_id: state.opts[:run_id]})
+
+    task =
+      Task.Supervisor.async_nolink(Keyword.fetch!(run_opts, :run_task_supervisor), fn ->
+        resume.(state.interrupted_state, decisions, run_opts)
+      end)
+
+    %{
+      state
+      | status: :running,
+        task: task,
+        interrupted_state: nil,
+        deadline: deadline,
+        deadline_timer: timer,
+        stream_started?: false
+    }
+  end
+
+  defp reconcile_permission_policy(%{status: :awaiting_approval} = state) do
+    case ToolGuard.auto_resume_decisions(state.interrupted_state) do
+      {:ok, decisions} -> resume_with_decisions(state, decisions)
+      :pending -> state
+    end
+  end
+
+  defp reconcile_permission_policy(state), do: state
+
+  defp permission_settings_path(state) do
+    case state.opts[:workspace_path] || state.opts[:working_directory] do
+      path when is_binary(path) and path != "" -> Handbean.WorkspaceSettings.resolve_path(path)
+      _missing -> :error
+    end
   end
 
   defp resume_fun(state) do

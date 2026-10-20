@@ -134,6 +134,85 @@ defmodule Handbean.Agent.Middleware.ToolGuardTest do
     assert [%{tool_call_id: "b1", tool_name: "bash"}] = data.action_requests
   end
 
+  test "a pending batch becomes resumable only when the latest policy allows every prompt" do
+    interrupted =
+      %{"tools" => %{"default_mode" => "prompt"}}
+      |> state([
+        %{type: "tool_use", id: "r1", name: "read", input: %{"file_path" => "README.md"}},
+        %{type: "tool_use", id: "w1", name: "write", input: %{"file_path" => "out.txt"}}
+      ])
+      |> then(&ToolGuard.call(:after_tool_request, &1))
+      |> then(fn {:interrupt, interrupted, _data} -> interrupted end)
+
+    assert :pending = ToolGuard.auto_resume_decisions(interrupted)
+
+    assert :ok =
+             Handbean.WorkspaceSettings.update_permission_mode(
+               interrupted.config.working_directory,
+               :yolo
+             )
+
+    assert {:ok, decisions} = ToolGuard.auto_resume_decisions(interrupted)
+    assert Enum.map(decisions, & &1["tool_call_id"]) == ["r1", "w1"]
+    assert Enum.all?(decisions, &(&1["action"] == "approve" and &1["remember"] == false))
+  end
+
+  test "policy reconciliation rechecks calls that were auto-approved before the wait" do
+    interrupted =
+      %{
+        "tools" => %{
+          "default_mode" => "prompt",
+          "per_tool" => %{"web_fetch" => "auto"}
+        }
+      }
+      |> state([
+        %{type: "tool_use", id: "r1", name: "read", input: %{"file_path" => "README.md"}},
+        %{
+          type: "tool_use",
+          id: "w1",
+          name: "web_fetch",
+          input: %{"url" => "https://example.com"}
+        }
+      ])
+      |> then(&ToolGuard.call(:after_tool_request, &1))
+      |> then(fn {:interrupt, interrupted, _data} -> interrupted end)
+
+    settings_path = Handbean.WorkspaceSettings.path(interrupted.config.working_directory)
+
+    File.write!(
+      settings_path,
+      Handbean.JSON.encode!(%{
+        "tools" => %{"default_mode" => "yolo", "deny" => ["web_fetch"]}
+      })
+    )
+
+    assert :pending = ToolGuard.auto_resume_decisions(interrupted)
+  end
+
+  test "yolo reconciliation keeps explicit prompts and computer control pending" do
+    interrupted =
+      %{
+        "tools" => %{
+          "default_mode" => "prompt",
+          "per_tool" => %{"read" => "prompt"}
+        }
+      }
+      |> state([
+        %{type: "tool_use", id: "r1", name: "read", input: %{"file_path" => "README.md"}},
+        %{type: "tool_use", id: "c1", name: "computer", input: %{"action" => "select"}}
+      ])
+      |> then(&ToolGuard.call(:after_tool_request, &1))
+      |> then(fn {:interrupt, interrupted, _data} -> interrupted end)
+
+    assert :ok =
+             Handbean.WorkspaceSettings.update_permission_mode(
+               interrupted.config.working_directory,
+               :yolo
+             )
+
+    assert :pending = ToolGuard.auto_resume_decisions(interrupted)
+  end
+
   test "mixed deny, prompt, and auto batches retain every classification" do
     settings = %{
       "tools" => %{

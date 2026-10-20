@@ -8,6 +8,7 @@ defmodule Handbean.WorkspaceSettings do
 
   @settings_relpath ".handbean/settings.jsonc"
   @lock_aborted_error "Failed to acquire workspace settings lock"
+  @permission_policy_topic "workspace:permission_policy"
 
   @default_content """
   {
@@ -277,41 +278,57 @@ defmodule Handbean.WorkspaceSettings do
         :yolo -> {"yolo", "user"}
       end
 
-    settings_path = path(workspace_root)
+    with {:ok, settings_path} <- resolve_path(workspace_root),
+         :ok <-
+           with_settings_lock(settings_path, fn ->
+             with :ok <- ensure_file_unlocked(settings_path),
+                  {:ok, content, settings} <- read_settings_for_update(settings_path),
+                  {:ok, content} <- put_approvals_reviewer(content, reviewer) do
+               content =
+                 if Regex.match?(~r/"default_mode"\s*:\s*"[^"]*"/, content) do
+                   Regex.replace(
+                     ~r/"default_mode"\s*:\s*"[^"]*"/,
+                     content,
+                     "\"default_mode\": \"#{default_mode}\"",
+                     global: false
+                   )
+                 else
+                   tools =
+                     settings
+                     |> Map.get("tools")
+                     |> ensure_map()
+                     |> Map.merge(%{
+                       "default_mode" => default_mode,
+                       "approvals_reviewer" => reviewer
+                     })
 
-    with_settings_lock(settings_path, fn ->
-      with :ok <- ensure_file_unlocked(settings_path),
-           {:ok, content, settings} <- read_settings_for_update(settings_path),
-           {:ok, content} <- put_approvals_reviewer(content, reviewer) do
-        content =
-          if Regex.match?(~r/"default_mode"\s*:\s*"[^"]*"/, content) do
-            Regex.replace(
-              ~r/"default_mode"\s*:\s*"[^"]*"/,
-              content,
-              "\"default_mode\": \"#{default_mode}\"",
-              global: false
-            )
-          else
-            tools =
-              settings
-              |> Map.get("tools")
-              |> ensure_map()
-              |> Map.merge(%{
-                "default_mode" => default_mode,
-                "approvals_reviewer" => reviewer
-              })
+                   settings |> Map.put("tools", tools) |> Handbean.JSON.encode!(pretty: true)
+                 end
 
-            settings |> Map.put("tools", tools) |> Handbean.JSON.encode!(pretty: true)
-          end
+               case atomic_write(settings_path, content) do
+                 :ok -> :ok
+                 {:error, reason} -> {:error, "Failed to write settings: #{inspect(reason)}"}
+               end
+             else
+               {:error, reason} -> {:error, reason}
+             end
+           end) do
+      broadcast_permission_policy_changed(settings_path)
+      :ok
+    end
+  end
 
-        case atomic_write(settings_path, content) do
-          :ok -> :ok
-          {:error, reason} -> {:error, "Failed to write settings: #{inspect(reason)}"}
-        end
-      else
-        {:error, reason} -> {:error, reason}
-      end
-    end)
+  @doc false
+  def subscribe_permission_policy do
+    Phoenix.PubSub.subscribe(Handbean.PubSub, @permission_policy_topic)
+  end
+
+  defp broadcast_permission_policy_changed(settings_path) do
+    Phoenix.PubSub.broadcast(
+      Handbean.PubSub,
+      @permission_policy_topic,
+      {:workspace_permission_policy_changed, settings_path}
+    )
   end
 
   @default_review_timeout_ms 30_000

@@ -127,6 +127,7 @@ defmodule HandbeanWeb.WorkspaceLive do
       |> assign(:file_browser_path, nil)
       |> assign(:sandbox_workspace?, WorkspaceNavigation.sandbox_workspace?())
       |> subscribe_workspace_import()
+      |> subscribe_permission_policy()
       |> subscribe_speech()
       |> assign(:terminal_available?, Handbean.Terminal.available?())
       |> assign(
@@ -1890,6 +1891,16 @@ defmodule HandbeanWeb.WorkspaceLive do
   end
 
   @impl true
+  def handle_info({:workspace_permission_policy_changed, settings_path}, socket) do
+    with workspace_path when is_binary(workspace_path) <-
+           ConversationState.current_workspace_path(socket),
+         {:ok, ^settings_path} <- Handbean.WorkspaceSettings.resolve_path(workspace_path) do
+      {:noreply, WorkspaceNavigation.load_permission_mode_into_socket(socket)}
+    else
+      _not_current_workspace -> {:noreply, socket}
+    end
+  end
+
   def handle_info({:speech_enabled, false}, socket) do
     {:noreply,
      socket
@@ -2423,6 +2434,11 @@ defmodule HandbeanWeb.WorkspaceLive do
       Phoenix.PubSub.subscribe(Handbean.PubSub, "runtime:schedules")
     end
 
+    socket
+  end
+
+  defp subscribe_permission_policy(socket) do
+    if connected?(socket), do: Handbean.WorkspaceSettings.subscribe_permission_policy()
     socket
   end
 

@@ -24,14 +24,7 @@ defmodule Handbean.Agent.Middleware.ToolGuard do
 
     tool_calls = last_tool_calls(state)
 
-    policy =
-      ToolPolicy.from_workspace(
-        policy_workspace(state),
-        state.config.working_directory,
-        state.tool_guard_overrides || %{},
-        state.tool_guard_session_allow || []
-      )
-      |> delegated_policy(state)
+    policy = policy(state)
 
     {denied, rest} = Enum.split_with(tool_calls, &(ToolPolicy.decision(policy, &1) == :deny))
 
@@ -53,6 +46,62 @@ defmodule Handbean.Agent.Middleware.ToolGuard do
   end
 
   def call(_hook, %State{} = state), do: state
+
+  @doc false
+  @spec auto_resume_decisions(State.t()) :: {:ok, [map()]} | :pending
+  def auto_resume_decisions(%State{status: :interrupted} = state) do
+    interrupt_data = state.interrupt_data || %{}
+    type = SafeMap.get_any(interrupt_data, :type, "type")
+    hitl_ids = SafeMap.get_any(interrupt_data, :hitl_tool_call_ids, "hitl_tool_call_ids") || []
+
+    auto_ids =
+      SafeMap.get_any(
+        interrupt_data,
+        :auto_approved_tool_call_ids,
+        "auto_approved_tool_call_ids"
+      ) || []
+
+    calls_by_id = Map.new(last_tool_calls(state), &{&1.id, &1})
+    executable_ids = Enum.uniq(hitl_ids ++ auto_ids)
+    executable_calls = Enum.map(executable_ids, &Map.get(calls_by_id, &1))
+    policy = policy(state)
+
+    cond do
+      type not in [:tool_approval, "tool_approval"] ->
+        :pending
+
+      executable_ids == [] or Enum.any?(executable_calls, &is_nil/1) ->
+        :pending
+
+      Enum.all?(executable_calls, &(ToolPolicy.decision(policy, &1) == :auto)) ->
+        {:ok,
+         Enum.map(hitl_ids, fn id ->
+           call = Map.fetch!(calls_by_id, id)
+
+           %{
+             "tool_call_id" => call.id,
+             "tool_name" => call.name,
+             "action" => "approve",
+             "remember" => false
+           }
+         end)}
+
+      true ->
+        :pending
+    end
+  end
+
+  def auto_resume_decisions(%State{}), do: :pending
+
+  defp policy(%State{} = state) do
+    ToolPolicy.from_workspace(
+      policy_workspace(state),
+      state.config.working_directory,
+      state.tool_guard_overrides || %{},
+      state.tool_guard_session_allow || []
+    )
+    |> delegated_policy(state)
+  end
 
   @doc false
   @spec resolve_approval(State.t(), [map()]) :: %{

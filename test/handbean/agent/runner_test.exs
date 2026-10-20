@@ -634,6 +634,82 @@ defmodule Handbean.Agent.RunnerTest do
     refute Process.alive?(io)
   end
 
+  test "permission mode changes reconcile an already pending approval inside Runner" do
+    sid = "runner-policy-reconcile-#{System.unique_integer([:positive])}"
+    workspace = default_prompt_workspace()
+    {:ok, _} = Handbean.ConversationStore.create("default", id: sid)
+    :ok = Session.subscribe(sid)
+
+    script = fn messages, _tools ->
+      if Enum.any?(messages, &(&1.role == :tool_result)) do
+        "completed after policy reconciliation"
+      else
+        {:tools,
+         [
+           %{
+             name: "run_elixir_script",
+             input: %{"path" => "approval.exs"}
+           }
+         ]}
+      end
+    end
+
+    assert {:ok, %{action: :started}} =
+             Coordinator.add_message(
+               sid,
+               "approve through policy",
+               opts(
+                 workspace_path: workspace,
+                 provider_config: %{scenario: {:script, script}},
+                 tools: [Handbean.Tool.Builtin.RunElixirScript],
+                 middleware: [Handbean.Agent.Middleware.ToolGuard]
+               )
+             )
+
+    assert_receive {:agent_event, %{kind: :tool_approval_requested}}, 1_000
+
+    assert_eventually(fn ->
+      assert {:ok, %{status: :awaiting_approval}} = Coordinator.status(sid)
+    end)
+
+    assert :ok = Handbean.WorkspaceSettings.update_permission_mode(workspace, :yolo)
+    assert_receive {:agent_event, %{kind: :run_resumed}}, 1_000
+
+    assert_receive {:agent_event, %{kind: :run_end, payload: %{status: status}}}
+                   when status in [:completed, "completed"],
+                   1_000
+  end
+
+  test "yolo does not reconcile a per-tool prompt" do
+    sid = "runner-explicit-prompt-#{System.unique_integer([:positive])}"
+    workspace = approval_workspace()
+    {:ok, _} = Handbean.ConversationStore.create("default", id: sid)
+    :ok = Session.subscribe(sid)
+
+    assert {:ok, %{action: :started}} =
+             Coordinator.add_message(
+               sid,
+               "keep prompting",
+               opts(
+                 workspace_path: workspace,
+                 provider: ApprovalProvider,
+                 tools: [Handbean.Tool.Builtin.RunElixirScript],
+                 middleware: [Handbean.Agent.Middleware.ToolGuard]
+               )
+             )
+
+    assert_receive {:agent_event, %{kind: :tool_approval_requested}}, 1_000
+
+    assert_eventually(fn ->
+      assert {:ok, %{status: :awaiting_approval}} = Coordinator.status(sid)
+    end)
+
+    assert :ok = Handbean.WorkspaceSettings.update_permission_mode(workspace, :yolo)
+    refute_receive {:agent_event, %{kind: :run_resumed}}, 100
+    assert {:ok, %{status: :awaiting_approval}} = Coordinator.status(sid)
+    assert :ok = Coordinator.cancel(sid)
+  end
+
   test "Runner validates run and approval batch identities atomically" do
     sid = "runner-approval-identity-#{System.unique_integer([:positive])}"
     workspace = approval_workspace()
@@ -1687,6 +1763,19 @@ defmodule Handbean.Agent.RunnerTest do
     send(provider, :finish_stream)
     assert_receive {:agent_event, %{kind: :run_end}}, 1_000
     :ok
+  end
+
+  defp default_prompt_workspace do
+    workspace = Path.join(Handbean.Host.data_dir(), "default-prompt-workspace")
+    File.mkdir_p!(Path.join(workspace, ".handbean"))
+    File.write!(Path.join(workspace, "approval.exs"), "1\n")
+
+    File.write!(
+      Handbean.WorkspaceSettings.path(workspace),
+      Handbean.JSON.encode!(%{"tools" => %{"default_mode" => "prompt"}})
+    )
+
+    workspace
   end
 
   defp approval_workspace do

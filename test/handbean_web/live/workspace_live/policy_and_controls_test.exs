@@ -363,6 +363,30 @@ defmodule HandbeanWeb.WorkspaceLive.PolicyAndControlsTest do
       assert get_in(settings, ["tools", "approvals_reviewer"]) == "auto_review"
     end
 
+    test "permission mode changes propagate to other live sessions", %{conn: conn} do
+      {:ok, default_ws} = Handbean.WorkspaceStore.ensure_default!()
+      workspace_root = default_ws["path"]
+      :ok = Handbean.WorkspaceSettings.update_permission_mode(workspace_root, :auto_review)
+
+      {:ok, first_view, _html} = live(conn, "/")
+      create_default_conversation(first_view)
+      {:ok, second_view, _html} = live(conn, "/")
+      create_default_conversation(second_view)
+
+      assert render(first_view) =~ "智能审批"
+      assert render(second_view) =~ "智能审批"
+
+      first_view |> element("button[phx-click='toggle_permission_menu']") |> render_click()
+
+      first_view
+      |> element("button[phx-click='select_permission_mode'][phx-value-mode='yolo']")
+      |> render_click()
+
+      assert render(first_view) =~ "yolo"
+      assert render(second_view) =~ "yolo"
+      refute render(second_view) =~ "智能审批"
+    end
+
     test "smart approval replaces yolo policy and safe mode restores human review", %{conn: conn} do
       {:ok, default_ws} = Handbean.WorkspaceStore.ensure_default!()
       workspace_root = default_ws["path"]
