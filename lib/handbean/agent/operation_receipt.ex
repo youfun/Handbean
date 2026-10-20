@@ -17,6 +17,7 @@ defmodule Handbean.Agent.OperationReceipt do
 
   alias Handbean.Repo
   alias Handbean.Storage.OperationReceipt, as: StoredReceipt
+  alias Handbean.Storage.WriteTransaction
 
   def reserve(scope, request_id, fingerprint, opts \\ [])
 
@@ -25,10 +26,13 @@ defmodule Handbean.Agent.OperationReceipt do
   def reserve(scope, request_id, fingerprint, _opts) when is_binary(request_id) do
     key = key(scope, request_id)
 
-    case fetch(key) do
-      nil -> insert_reservation(key, fingerprint)
-      receipt -> reserve_existing(receipt, fingerprint, false)
-    end
+    WriteTransaction.run(fn ->
+      case fetch(key) do
+        nil -> insert_reservation(key, fingerprint)
+        receipt -> reserve_existing(receipt, fingerprint, false)
+      end
+    end)
+    |> transaction_result()
   end
 
   def complete(scope, request_id, receipt, opts \\ [])
@@ -54,7 +58,7 @@ defmodule Handbean.Agent.OperationReceipt do
   def release_reserved(scope, request_id, fingerprint, _opts) when is_binary(request_id) do
     key = key(scope, request_id)
 
-    Repo.transaction(fn ->
+    WriteTransaction.run(fn ->
       case fetch(key) do
         %StoredReceipt{fingerprint: ^fingerprint, status: "reserved"} ->
           case receipt_write_fault() do
@@ -102,7 +106,7 @@ defmodule Handbean.Agent.OperationReceipt do
   defp insert_reservation(key, fingerprint) do
     ensure_write!()
 
-    Repo.transaction(fn ->
+    WriteTransaction.run(fn ->
       now = DateTime.utc_now()
 
       attrs =
@@ -175,6 +179,11 @@ defmodule Handbean.Agent.OperationReceipt do
     do: reserve_existing(receipt, fingerprint, true)
 
   defp mutate(scope, request_id, status, receipt) do
+    WriteTransaction.run(fn -> mutate_in_tx(scope, request_id, status, receipt) end)
+    |> transaction_result()
+  end
+
+  defp mutate_in_tx(scope, request_id, status, receipt) do
     key = key(scope, request_id)
 
     case fetch(key) do

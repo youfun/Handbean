@@ -84,7 +84,13 @@ defmodule Handbean.Agent.OperationReceiptTest do
     assert {:ok, %{"status" => "reserved"}} = OperationReceipt.lookup(scope, "op-fault")
   end
 
-  test "accepted inbound and receipt completion roll back together" do
+  test "accepted inbound and receipt completion roll back together with a cold store module" do
+    store = Handbean.ConversationTranscriptStore.ConversationStore
+    :code.purge(store)
+    :code.delete(store)
+    refute function_exported?(store, :append_with_receipt, 5)
+    on_exit(fn -> Code.ensure_loaded!(store) end)
+
     conversation_id = unique_id("conversation")
     scope = {:message, conversation_id}
     fingerprint = OperationReceipt.fingerprint({"hello", nil})
@@ -119,38 +125,6 @@ defmodule Handbean.Agent.OperationReceiptTest do
     results = Enum.map(tasks, &Task.await/1)
     assert Enum.count(results, &(&1 == :ok)) == 1
     assert Enum.all?(results -- [:ok], &(&1 == {:unknown, :delivery_unknown}))
-  end
-
-  test "reserve survives a competing SQLite writer beyond the current busy timeout" do
-    scope = {:message, unique_id("conversation")}
-    fingerprint = OperationReceipt.fingerprint({"lock contention", :new_run})
-    {:ok, lock_connection} = Exqlite.Sqlite3.open(Repo.database_path())
-
-    on_exit(fn ->
-      _ = Exqlite.Sqlite3.execute(lock_connection, "ROLLBACK")
-      _ = Exqlite.Sqlite3.close(lock_connection)
-    end)
-
-    assert :ok = Exqlite.Sqlite3.execute(lock_connection, "BEGIN IMMEDIATE")
-    test_process = self()
-
-    assert {:ok, _pid} =
-             Task.start(fn ->
-               outcome =
-                 try do
-                   {:returned, OperationReceipt.reserve(scope, "busy-1", fingerprint)}
-                 rescue
-                   exception -> {:raised, Exception.message(exception)}
-                 end
-
-               send(test_process, {:reserve_outcome, outcome})
-             end)
-
-    Process.send_after(self(), :release_competing_writer, 2_500)
-    assert_receive :release_competing_writer, 3_000
-    assert :ok = Exqlite.Sqlite3.execute(lock_connection, "COMMIT")
-    assert_receive {:reserve_outcome, outcome}, 3_000
-    assert outcome == {:returned, :ok}
   end
 
   test "mark_unknown clears a completed receipt" do

@@ -12,7 +12,7 @@ defmodule Handbean.ConversationTranscriptStore.ConversationStore do
 
   alias Ecto.Changeset
   alias Handbean.Repo
-  alias Handbean.Storage.{Conversation, ConversationEntry, ConversationRun}
+  alias Handbean.Storage.{Conversation, ConversationEntry, ConversationRun, WriteTransaction}
 
   @envelope_keys ~w(id conversation_id sequence revision role content_type message_type direction phase status run_id turn_number tool_call_id tool_status content created_at updated_at)
   @entry_fields [
@@ -87,7 +87,7 @@ defmodule Handbean.ConversationTranscriptStore.ConversationStore do
     entry = stringify_keys(entry)
 
     fn -> insert_entry(conversation_id, entry) end
-    |> Repo.transaction()
+    |> WriteTransaction.run()
     |> append_result(conversation_id)
   end
 
@@ -95,7 +95,7 @@ defmodule Handbean.ConversationTranscriptStore.ConversationStore do
   def append_with_receipt(conversation_id, entry, request_id, receipt, _opts) do
     entry = stringify_keys(entry)
 
-    Repo.transaction(fn ->
+    WriteTransaction.run(fn ->
       persisted = insert_entry(conversation_id, entry)
 
       case Handbean.Agent.OperationReceipt.complete(
@@ -132,7 +132,7 @@ defmodule Handbean.ConversationTranscriptStore.ConversationStore do
   @impl true
   def complete_tool_call(conversation_id, tool_entry, media_entry, media_ids, _opts)
       when is_binary(conversation_id) and is_map(tool_entry) and is_list(media_ids) do
-    Repo.transaction(fn ->
+    WriteTransaction.run(fn ->
       with {:ok, saved_tool} <- upsert_entry_in_tx(conversation_id, stringify_keys(tool_entry)),
            {:ok, saved_media} <-
              complete_media_in_tx(conversation_id, saved_tool, media_entry, media_ids) do
@@ -242,7 +242,7 @@ defmodule Handbean.ConversationTranscriptStore.ConversationStore do
       patch = stringify_keys(patch)
 
       if Handbean.ConversationStore.exists?(conversation_id) do
-        Repo.transaction(fn ->
+        WriteTransaction.run(fn ->
           Enum.each(ids, fn id ->
             case consume_cas(conversation_id, id, patch, 32) do
               :ok -> :ok
@@ -279,7 +279,7 @@ defmodule Handbean.ConversationTranscriptStore.ConversationStore do
   @impl true
   def replace_all(conversation_id, entries, _opts) do
     if Handbean.ConversationStore.exists?(conversation_id) do
-      Repo.transaction(fn ->
+      WriteTransaction.run(fn ->
         Repo.delete_all(
           from entry in ConversationEntry, where: entry.conversation_id == ^conversation_id
         )
@@ -385,7 +385,7 @@ defmodule Handbean.ConversationTranscriptStore.ConversationStore do
   @doc false
   def settle_run(conversation_id, run_id, status, error, opts) do
     if Handbean.ConversationStore.exists?(conversation_id) do
-      Repo.transaction(fn ->
+      WriteTransaction.run(fn ->
         with :ok <- settle_tools(conversation_id, run_id, status, error),
              :ok <- settle_assistants(conversation_id, run_id, status, error),
              :ok <- record_terminal_usage(conversation_id, run_id, opts[:terminal_usage]) do
@@ -500,7 +500,7 @@ defmodule Handbean.ConversationTranscriptStore.ConversationStore do
     RETURNING next_entry_sequence - 1
     """
 
-    case Ecto.Adapters.SQL.query(Repo, sql, [conversation_id]) do
+    case Repo.query(sql, [conversation_id]) do
       {:ok, %{rows: [[sequence]]}} -> sequence
       {:ok, %{rows: []}} -> Repo.rollback(:not_found)
       {:error, reason} -> Repo.rollback(reason)
@@ -683,12 +683,14 @@ defmodule Handbean.ConversationTranscriptStore.ConversationStore do
   defp maybe_put_content_payload(payload, content), do: Map.put(payload, "__content", content)
 
   defp authorize_read(conversation_id, opts) do
-    if Handbean.ConversationStore.internal?(conversation_id) and
-         not runtime_reader?(conversation_id, opts) and
-         not trusted_runtime_reader?() do
-      Handbean.ConversationStore.authorize_read(conversation_id, opts)
-    else
-      :ok
+    with {:ok, summary} <- Handbean.ConversationStore.get_summary(conversation_id) do
+      if Handbean.ConversationStore.internal?(summary) and
+           not runtime_reader?(conversation_id, opts) and
+           not trusted_runtime_reader?() do
+        Handbean.ConversationStore.authorize_read(conversation_id, opts)
+      else
+        :ok
+      end
     end
   end
 
