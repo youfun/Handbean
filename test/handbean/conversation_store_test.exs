@@ -4,6 +4,343 @@ defmodule Handbean.ConversationStoreTest do
   alias Handbean.{ConversationStore, ConversationTranscriptStore}
   alias Handbean.Storage.ConversationRunUsage
 
+  test "metadata and timeline-free lists keep query counts bounded as conversations grow" do
+    for scope <- [:workspace, :free] do
+      create = fn id ->
+        opts = [
+          id: id,
+          editor_files: [%{"path" => id}],
+          active_file: id,
+          timeline: [%{"id" => "entry", "content" => "persisted"}]
+        ]
+
+        case scope do
+          :workspace -> ConversationStore.create("query-workspace", opts)
+          :free -> ConversationStore.create_free(opts)
+        end
+      end
+
+      metadata = fn ->
+        case scope do
+          :workspace -> ConversationStore.list_metadata("query-workspace")
+          :free -> ConversationStore.list_free_metadata()
+        end
+      end
+
+      detailed = fn ->
+        case scope do
+          :workspace ->
+            ConversationStore.list_for_workspace("query-workspace", include_timeline?: false)
+
+          :free ->
+            ConversationStore.list_free(include_timeline?: false)
+        end
+      end
+
+      {:ok, first} = create.("query-#{scope}-1")
+      :ok = ConversationStore.record_run_usage(first["id"], "run", %{"input_tokens" => 3})
+      :ok = ConversationStore.add_token_usage(first["id"], %{"input_tokens" => 5})
+      :ok = ConversationStore.record_delegated_usage(first["id"], "child", %{"input_tokens" => 7})
+      {[_], one_metadata} = count_queries(metadata)
+      {[_], one_detailed} = count_queries(detailed)
+
+      for index <- 2..5, do: create.("query-#{scope}-#{index}")
+
+      :ok =
+        ConversationStore.record_run_usage("query-#{scope}-2", "run", %{
+          "input_tokens" => 11,
+          "unknown" => true
+        })
+
+      {rows, many_metadata} = count_queries(metadata)
+      {details, many_detailed} = count_queries(detailed)
+
+      assert length(rows) == 5
+      assert length(details) == 5
+      assert many_metadata == one_metadata
+      assert many_detailed == one_detailed
+      assert many_metadata <= 2
+      assert many_detailed <= 3
+
+      for row <- rows do
+        assert {:ok, ^row} = ConversationStore.get_metadata(row["id"])
+      end
+
+      for detail <- details do
+        assert {:ok, ^detail} = ConversationStore.get(detail["id"], include_timeline?: false)
+        assert detail["timeline"] == []
+      end
+
+      populated = Enum.find(rows, &(&1["id"] == first["id"]))
+      assert populated["token_usage"]["input_tokens"] == 8
+      assert populated["usage_legacy"]["input_tokens"] == 5
+      assert populated["delegated_usage"]["child"]["input_tokens"] == 7
+      refute populated["token_usage"]["unknown"]
+      second = Enum.find(rows, &(&1["id"] == "query-#{scope}-2"))
+      assert second["token_usage"]["input_tokens"] == 11
+      assert second["token_usage"]["unknown"]
+      assert second["delegated_usage"] == %{}
+
+      {full, sources} =
+        query_sources(fn ->
+          case scope do
+            :workspace -> ConversationStore.list_for_workspace("query-workspace")
+            :free -> ConversationStore.list_free()
+          end
+        end)
+
+      assert length(sources) == 3 + 2 * length(full)
+      assert Enum.count(sources, &(&1 == ConversationRunUsage.__schema__(:source))) == 1
+
+      assert Enum.count(
+               sources,
+               &(&1 == Handbean.Storage.ConversationEditorState.__schema__(:source))
+             ) == 1
+
+      assert Enum.map(full, &Map.put(&1, "timeline", [])) == details
+
+      for row <- full,
+          do: assert([%{"id" => "entry", "content" => "persisted"}] = row["timeline"])
+    end
+
+    assert {all, 3} = count_queries(fn -> ConversationStore.list(include_timeline?: false) end)
+    assert length(all) == 10
+    assert {full, sources} = query_sources(fn -> ConversationStore.list() end)
+    assert length(sources) == 23
+    assert Enum.map(full, &Map.put(&1, "timeline", [])) == all
+    assert Enum.all?(full, &(length(&1["timeline"]) == 1))
+  end
+
+  test "authorization avoids usage queries and detailed reads fetch usage once" do
+    {:ok, conversation} = ConversationStore.create_free(id: "query-read")
+    assert :ok = ConversationStore.record_run_usage(conversation["id"], "run", %{})
+
+    assert {:ok, 1} =
+             count_queries(fn -> ConversationStore.authorize_read(conversation["id"], []) end)
+
+    assert {{:ok, _}, 2} =
+             count_queries(fn -> ConversationStore.get_metadata(conversation["id"]) end)
+
+    assert {{:ok, _}, 3} =
+             count_queries(fn ->
+               ConversationStore.get(conversation["id"], include_timeline?: false)
+             end)
+  end
+
+  test "summaries recognize persisted custom IDs without widening metadata authorization" do
+    ids = ["summary:custom", String.duplicate("x", 129)]
+
+    for id <- ids, visibility <- ["internal", "user"] do
+      id = id <> visibility
+      assert {:ok, created} = ConversationStore.create_free(id: id, visibility: visibility)
+      assert created["id"] == id
+      assert ConversationStore.exists?(id)
+      assert ConversationStore.internal?(id) == (visibility == "internal")
+      assert {:error, :not_found} = ConversationStore.get_metadata(id)
+
+      assert {{:error, :not_found}, 0} =
+               count_queries(fn -> ConversationStore.authorize_read(id, []) end)
+
+      assert {{:ok, summary}, 1} = count_queries(fn -> ConversationStore.get_summary(id) end)
+      assert summary["id"] == id
+      assert summary["visibility"] == visibility
+    end
+
+    assert {:error, :not_found} = ConversationStore.authorize_read(nil, [])
+  end
+
+  test "single summaries expose internal ancestry but exclude content and inactive rows" do
+    {:ok, _} = ConversationStore.create_free(id: "summary-owner")
+
+    {:ok, conversation} =
+      ConversationStore.create_free(
+        id: "summary-private",
+        visibility: "internal",
+        parent_conversation_id: "summary-owner",
+        parent_run_id: "run",
+        parent_tool_call_id: "tool",
+        editor_files: [%{"path" => "private.txt"}]
+      )
+
+    assert {{:ok, summary}, 1} =
+             count_queries(fn -> ConversationStore.get_summary(conversation["id"]) end)
+
+    assert summary["visibility"] == "internal"
+    assert summary["parent_conversation_id"] == "summary-owner"
+    assert summary["parent_run_id"] == "run"
+    assert summary["parent_tool_call_id"] == "tool"
+
+    refute Enum.any?(
+             ~w(token_usage run_usage usage_legacy delegated_usage editor_files timeline),
+             &Map.has_key?(summary, &1)
+           )
+
+    assert {{:error, :not_found}, 1} =
+             count_queries(fn -> ConversationStore.get(conversation["id"]) end)
+
+    assert {{:error, :not_found}, 1} =
+             count_queries(fn -> ConversationStore.authorize_read(conversation["id"], []) end)
+
+    Repo.update_all(
+      from(row in Handbean.Storage.Conversation, where: row.id == ^conversation["id"]),
+      set: [status: "pending_delete"]
+    )
+
+    assert {:error, :not_found} = ConversationStore.get_summary(conversation["id"])
+
+    for id <- [nil, "../invalid", "missing"],
+        do: assert({:error, :not_found} = ConversationStore.get_summary(id))
+  end
+
+  test "internal reads retain live parent, run and workspace authorization" do
+    {:ok, _} = ConversationStore.create("authorization", id: "authorization-parent")
+
+    {:ok, _} =
+      ConversationStore.create("authorization",
+        id: "authorization-child",
+        visibility: "internal",
+        parent_conversation_id: "authorization-parent",
+        parent_run_id: "run"
+      )
+
+    context = %{
+      conversation_id: "authorization-parent",
+      run_id: "run",
+      workspace_id: "authorization",
+      runner_pid: self()
+    }
+
+    assert {:error, :not_found} =
+             ConversationStore.authorize_read("authorization-child", access_context: context)
+
+    {:ok, _} =
+      Registry.register(Handbean.AgentRunRegistry, "authorization-parent", %{
+        run_id: "run",
+        active?: true
+      })
+
+    assert :ok = ConversationStore.authorize_read("authorization-child", access_context: context)
+
+    assert {:ok, _} =
+             ConversationStore.get("authorization-child",
+               access_context: context,
+               include_timeline?: false
+             )
+
+    for invalid <- [
+          %{context | run_id: "wrong"},
+          %{context | workspace_id: "other"},
+          %{context | conversation_id: "other"}
+        ] do
+      assert {:error, :not_found} =
+               ConversationStore.authorize_read("authorization-child", access_context: invalid)
+
+      assert {:error, :not_found} =
+               ConversationStore.get("authorization-child", access_context: invalid)
+    end
+
+    Registry.unregister(Handbean.AgentRunRegistry, "authorization-parent")
+
+    assert {:error, :not_found} =
+             ConversationStore.authorize_read("authorization-child", access_context: context)
+
+    assert {:error, :not_found} =
+             ConversationStore.get("authorization-child", access_context: context)
+  end
+
+  test "timeline-free lists preserve filtering, order, empty usage and missing editor defaults" do
+    {:ok, _} = ConversationStore.create("batch-filter", id: "batch-older")
+    {:ok, _} = ConversationStore.create("batch-filter", id: "batch-newer")
+    {:ok, _} = ConversationStore.create("batch-filter", id: "batch-archived")
+
+    {:ok, _} =
+      ConversationStore.create("batch-filter", id: "batch-internal", visibility: "internal")
+
+    {:ok, _} = ConversationStore.archive("batch-archived")
+
+    {:ok, _} =
+      ConversationStore.update_meta("batch-older",
+        updated_at: "2000-01-01T00:00:00Z",
+        touch: false
+      )
+
+    {:ok, _} =
+      ConversationStore.update_meta("batch-newer",
+        updated_at: "2001-01-01T00:00:00Z",
+        touch: false
+      )
+
+    Repo.delete_all(
+      from(state in Handbean.Storage.ConversationEditorState,
+        where: state.conversation_id == "batch-older"
+      )
+    )
+
+    rows = ConversationStore.list_for_workspace("batch-filter", include_timeline?: false)
+    assert Enum.map(rows, & &1["id"]) == ["batch-newer", "batch-older"]
+    assert List.last(rows)["editor_files"] == []
+    assert List.last(rows)["active_file"] == nil
+    assert List.last(rows)["token_usage"]["input_tokens"] == 0
+    assert List.last(rows)["delegated_usage"] == %{}
+    assert Enum.all?(rows, &(&1["timeline"] == []))
+
+    all =
+      ConversationStore.list_for_workspace("batch-filter",
+        include_timeline?: false,
+        include_archived?: true,
+        include_internal?: true
+      )
+
+    assert Enum.sort(Enum.map(all, & &1["id"])) ==
+             ~w(batch-archived batch-internal batch-newer batch-older)
+
+    assert Enum.map(ConversationStore.list(include_timeline?: false), & &1["id"]) ==
+             Enum.map(ConversationStore.list_metadata("batch-filter"), & &1["id"])
+
+    assert {[], 1} =
+             count_queries(fn ->
+               ConversationStore.list_for_workspace("empty-workspace", include_timeline?: false)
+             end)
+  end
+
+  defp count_queries(operation) do
+    {result, sources} = query_sources(operation)
+    {result, length(sources)}
+  end
+
+  defp query_sources(operation) do
+    ref = make_ref()
+    handler = {__MODULE__, ref}
+
+    :ok =
+      :telemetry.attach(
+        handler,
+        [:handbean, :repo, :query],
+        &__MODULE__.record_query/4,
+        {self(), ref}
+      )
+
+    try do
+      result = operation.()
+      {result, drain_queries(ref, [])}
+    after
+      :telemetry.detach(handler)
+    end
+  end
+
+  @doc false
+  def record_query(_event, _measurements, metadata, {caller, ref}) do
+    if self() == caller, do: send(caller, {:store_query, ref, metadata.source})
+  end
+
+  defp drain_queries(ref, sources) do
+    receive do
+      {:store_query, ^ref, source} -> drain_queries(ref, [source | sources])
+    after
+      0 -> Enum.reverse(sources)
+    end
+  end
+
   test "creates one conversation with editor state and transcript in a transaction" do
     assert {:ok, conversation} =
              ConversationStore.create("workspace-a",

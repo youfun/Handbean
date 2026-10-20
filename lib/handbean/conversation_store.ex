@@ -6,15 +6,13 @@ defmodule Handbean.ConversationStore do
   representation stay private to this module.
   """
 
-  import Ecto.Query
-
   alias Ecto.Changeset
+  alias Handbean.ConversationStore.{Codec, Projection, Usage}
   alias Handbean.Repo
-  alias Handbean.Storage.{Conversation, ConversationEditorState, ConversationRunUsage}
+  alias Handbean.Storage.{Conversation, ConversationEditorState}
 
   @type conversation :: map()
   @title_max_length 80
-  @unkeyed_run_id "__unkeyed__"
   @metadata_fields [
     :scope,
     :workspace_id,
@@ -51,14 +49,9 @@ defmodule Handbean.ConversationStore do
   @doc "List every persisted conversation."
   @spec list(keyword()) :: [conversation()]
   def list(opts \\ []) do
-    include_internal? = Keyword.get(opts, :include_internal?, false)
-
-    Conversation
-    |> where([conversation], conversation.status == "active")
-    |> maybe_exclude_internal(include_internal?)
-    |> order_by([conversation], desc: conversation.updated_at, desc: conversation.id)
-    |> Repo.all()
-    |> Enum.map(&conversation_map(&1, opts))
+    opts
+    |> Projection.list()
+    |> attach_timelines(opts)
   end
 
   @doc "List conversations for a workspace id."
@@ -66,23 +59,13 @@ defmodule Handbean.ConversationStore do
     do: list_for_workspace(workspace_id, include_archived?: false)
 
   def list_for_workspace(workspace_id, opts) when is_binary(workspace_id) do
-    metadata_query(opts)
-    |> where([conversation], conversation.scope == "workspace")
-    |> where([conversation], conversation.workspace_id == ^workspace_id)
-    |> Repo.all()
-    |> Enum.map(&conversation_map(&1, opts))
+    workspace_id
+    |> Projection.list_for_workspace(opts)
+    |> attach_timelines(opts)
   end
 
-  def list_metadata(workspace_id) when is_binary(workspace_id) do
-    Conversation
-    |> where([conversation], conversation.status == "active")
-    |> where([conversation], conversation.scope == "workspace")
-    |> where([conversation], conversation.workspace_id == ^workspace_id)
-    |> where([conversation], conversation.visibility != "internal")
-    |> order_by([conversation], desc: conversation.updated_at, desc: conversation.id)
-    |> Repo.all()
-    |> Enum.map(&metadata_map/1)
-  end
+  def list_metadata(workspace_id) when is_binary(workspace_id),
+    do: Projection.list_metadata(workspace_id)
 
   @doc "List conversation summaries with aggregate transcript/run counts in one query."
   def list_conversation_summaries(workspace_id) when is_binary(workspace_id) do
@@ -113,58 +96,36 @@ defmodule Handbean.ConversationStore do
   def search_entries(workspace_id, opts),
     do: Handbean.ConversationStore.EntrySearch.search(workspace_id, opts)
 
-  def list_free_metadata do
-    Conversation
-    |> where([conversation], conversation.status == "active")
-    |> where([conversation], conversation.scope == "free")
-    |> where([conversation], conversation.visibility != "internal")
-    |> order_by([conversation], desc: conversation.updated_at, desc: conversation.id)
-    |> Repo.all()
-    |> Enum.map(&metadata_map/1)
-  end
+  def list_free_metadata, do: Projection.list_free_metadata()
+  def fetch_summaries, do: Projection.fetch_summaries()
 
-  def fetch_summaries do
-    summaries =
-      Conversation
-      |> where([conversation], conversation.status == "active")
-      |> where([conversation], conversation.visibility != "internal")
-      |> order_by([conversation], desc: conversation.updated_at, desc: conversation.id)
-      |> Repo.all()
-      |> Enum.map(&summary_map/1)
+  def list_summaries(workspace_id) when is_binary(workspace_id),
+    do: Projection.list_summaries(workspace_id)
 
-    {:ok, summaries}
-  rescue
-    error -> {:error, error}
-  end
-
-  def list_summaries(workspace_id) when is_binary(workspace_id) do
-    with {:ok, summaries} <- fetch_summaries() do
-      Enum.filter(summaries, &(&1["scope"] == "workspace" and &1["workspace_id"] == workspace_id))
-    else
-      _ -> []
-    end
-  end
-
-  def list_free_summaries do
-    with {:ok, summaries} <- fetch_summaries() do
-      Enum.filter(summaries, &(&1["scope"] == "free"))
-    else
-      _ -> []
-    end
-  end
+  def list_free_summaries, do: Projection.list_free_summaries()
 
   def list_free(opts \\ []) do
-    metadata_query(opts)
-    |> where([conversation], conversation.scope == "free")
-    |> Repo.all()
-    |> Enum.map(&conversation_map(&1, opts))
+    opts
+    |> Projection.list_free()
+    |> attach_timelines(opts)
   end
 
   def get_metadata(id) when is_binary(id) do
-    if valid_id?(id), do: fetch_metadata(id), else: {:error, :not_found}
+    if valid_id?(id), do: Projection.get_metadata(id), else: {:error, :not_found}
   end
 
   def get_metadata(_id), do: {:error, :not_found}
+
+  @doc """
+  Read an active conversation summary, including internal visibility, without usage or content.
+
+  Accepts persisted binary IDs, including custom IDs outside the metadata read API's
+  restricted format. This storage lookup does not authorize transcript access.
+  """
+  @spec get_summary(String.t()) :: {:ok, map()} | {:error, :not_found}
+  def get_summary(id) when is_binary(id), do: Projection.get_summary(id)
+
+  def get_summary(_id), do: {:error, :not_found}
 
   @doc """
   Read titles for many conversations in one query.
@@ -174,36 +135,18 @@ defmodule Handbean.ConversationStore do
   stored title projects to `""`.
   """
   @spec titles_for_ids([String.t()]) :: %{String.t() => String.t()}
-  def titles_for_ids(ids) when is_list(ids) do
-    case ids |> Enum.filter(&present?/1) |> Enum.uniq() do
-      [] ->
-        %{}
-
-      ids ->
-        from(conversation in Conversation,
-          where: conversation.id in ^ids and conversation.status == "active",
-          select: {conversation.id, conversation.title}
-        )
-        |> Repo.all()
-        |> Map.new(fn {id, title} -> {id, title_text(title)} end)
-    end
-  end
+  def titles_for_ids(ids) when is_list(ids), do: Projection.titles_for_ids(ids)
 
   def titles_for_ids(_ids), do: %{}
 
-  def transcript_empty?(id) when is_binary(id) do
-    valid_id?(id) and exists?(id) and
-      Repo.aggregate(
-        from(entry in Handbean.Storage.ConversationEntry, where: entry.conversation_id == ^id),
-        :count
-      ) == 0
-  end
+  def transcript_empty?(id) when is_binary(id),
+    do: valid_id?(id) and Projection.transcript_empty?(id)
 
   def transcript_empty?(_id), do: false
 
   def get(id, opts \\ []) when is_binary(id) do
-    with {:ok, conversation} <- fetch_row(id),
-         true <- accessible?(metadata_map(conversation), opts) do
+    with {:ok, conversation} <- Projection.fetch_active_row(id),
+         true <- accessible?(Codec.base_metadata(conversation), opts) do
       {:ok, conversation_map(conversation, opts)}
     else
       _ -> {:error, :not_found}
@@ -213,15 +156,7 @@ defmodule Handbean.ConversationStore do
   def internal?(%{"visibility" => "internal"}), do: true
   def internal?(%{visibility: "internal"}), do: true
 
-  def internal?(id) when is_binary(id) do
-    case Repo.one(
-           from conversation in Conversation,
-             where: conversation.id == ^id and conversation.status == "active"
-         ) do
-      %Conversation{visibility: "internal"} -> true
-      _ -> false
-    end
-  end
+  def internal?(id) when is_binary(id), do: Projection.internal?(id)
 
   def internal?(_value), do: false
 
@@ -232,7 +167,8 @@ defmodule Handbean.ConversationStore do
   def parent_conversation_id(_conversation), do: nil
 
   def authorize_read(id, opts) do
-    with {:ok, meta} <- get_metadata(id),
+    with true <- is_binary(id) and valid_id?(id),
+         {:ok, meta} <- get_summary(id),
          true <- accessible?(meta, opts),
          do: :ok,
          else: (_ -> {:error, :not_found})
@@ -240,27 +176,12 @@ defmodule Handbean.ConversationStore do
 
   def get_meta(id) when is_binary(id), do: get_metadata(id)
 
-  def exists?(id) when is_binary(id),
-    do:
-      Repo.exists?(
-        from conversation in Conversation,
-          where: conversation.id == ^id and conversation.status == "active"
-      )
+  def exists?(id) when is_binary(id), do: Projection.exists?(id)
 
   def active?(id) when is_binary(id), do: exists?(id)
   def active?(_id), do: false
 
-  def lifecycle_status(id) when is_binary(id) do
-    case Repo.one(
-           from conversation in Conversation,
-             where: conversation.id == ^id,
-             select: conversation.status
-         ) do
-      "active" -> :active
-      "pending_delete" -> :pending_delete
-      nil -> :missing
-    end
-  end
+  def lifecycle_status(id) when is_binary(id), do: Projection.lifecycle_status(id)
 
   def lifecycle_status(_id), do: :missing
 
@@ -299,15 +220,7 @@ defmodule Handbean.ConversationStore do
   def free?(%{"scope" => "free"}), do: true
   def free?(%{scope: scope}) when scope in ["free", :free], do: true
 
-  def free?(id) when is_binary(id) do
-    case Repo.one(
-           from conversation in Conversation,
-             where: conversation.id == ^id and conversation.status == "active"
-         ) do
-      %Conversation{scope: "free"} -> true
-      _ -> false
-    end
-  end
+  def free?(id) when is_binary(id), do: Projection.free?(id)
 
   def free?(_value), do: false
 
@@ -450,12 +363,8 @@ defmodule Handbean.ConversationStore do
     Handbean.ConversationTranscriptStore.replace_all(conversation_id, entries)
   end
 
-  def load_files(conversation_id) when is_binary(conversation_id) do
-    case Repo.get(ConversationEditorState, conversation_id) do
-      nil -> empty_files()
-      state -> editor_map(state)
-    end
-  end
+  def load_files(conversation_id) when is_binary(conversation_id),
+    do: Projection.load_files(conversation_id)
 
   def save_files(conversation_id, files_data) when is_map(files_data) do
     if exists?(conversation_id) do
@@ -521,100 +430,19 @@ defmodule Handbean.ConversationStore do
     ArgumentError -> {:error, :invalid_field}
   end
 
-  def get_token_usage(conversation_id)
-      when is_binary(conversation_id) and conversation_id != "" do
-    if exists?(conversation_id),
-      do: {:ok, aggregate_usage(conversation_id)},
-      else: {:error, :not_found}
-  end
+  def get_token_usage(conversation_id), do: Usage.get_token_usage(conversation_id)
+  def add_token_usage(conversation_id, usage), do: Usage.add_token_usage(conversation_id, usage)
 
-  def get_token_usage(_conversation_id), do: {:ok, empty_token_usage()}
+  def record_run_usage(conversation_id, run_id, usage),
+    do: Usage.record_run_usage(conversation_id, run_id, usage)
 
-  def add_token_usage(conversation_id, usage)
-      when is_binary(conversation_id) and conversation_id != "" and is_map(usage) do
-    normalized = normalize_usage(usage)
+  def rebuild_token_usage_from_events(conversation_id, events),
+    do: Usage.rebuild_token_usage_from_events(conversation_id, events)
 
-    if exists?(conversation_id) do
-      sql = """
-      INSERT INTO conversation_run_usage
-        (conversation_id, run_id, source, input_tokens, output_tokens, cache_read_tokens,
-         cache_write_tokens, total_input_tokens, usage_incomplete, inserted_at, updated_at)
-      VALUES (?, ?, 'unkeyed', ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(conversation_id, source, run_id) DO UPDATE SET
-        input_tokens = input_tokens + excluded.input_tokens,
-        output_tokens = output_tokens + excluded.output_tokens,
-        cache_read_tokens = cache_read_tokens + excluded.cache_read_tokens,
-        cache_write_tokens = cache_write_tokens + excluded.cache_write_tokens,
-        total_input_tokens = total_input_tokens + excluded.total_input_tokens,
-        usage_incomplete = usage_incomplete OR excluded.usage_incomplete,
-        updated_at = excluded.updated_at
-      """
+  def record_delegated_usage(conversation_id, child_run_id, usage),
+    do: Usage.record_delegated_usage(conversation_id, child_run_id, usage)
 
-      timestamp = now_naive()
-
-      params = [
-        conversation_id,
-        @unkeyed_run_id,
-        normalized.input_tokens,
-        normalized.output_tokens,
-        normalized.cache_read_tokens,
-        normalized.cache_write_tokens,
-        normalized.total_input_tokens,
-        if(normalized.usage_incomplete, do: 1, else: 0),
-        timestamp,
-        timestamp
-      ]
-
-      case Repo.query(sql, params) do
-        {:ok, _result} -> :ok
-        {:error, reason} -> {:error, reason}
-      end
-    else
-      {:error, :not_found}
-    end
-  end
-
-  def record_run_usage(conversation_id, run_id, usage)
-      when is_binary(conversation_id) and conversation_id != "" and is_binary(run_id) and
-             run_id != "" and is_map(usage) do
-    put_usage_once(conversation_id, "parent", run_id, usage)
-  end
-
-  def rebuild_token_usage_from_events(conversation_id, events)
-      when is_binary(conversation_id) and conversation_id != "" and is_list(events) do
-    if exists?(conversation_id) do
-      Repo.transaction(fn ->
-        Repo.delete_all(
-          from usage in ConversationRunUsage,
-            where:
-              usage.conversation_id == ^conversation_id and usage.source in ["parent", "unkeyed"]
-        )
-
-        events
-        |> Enum.with_index()
-        |> Enum.filter(fn {event, _index} -> terminal_usage_event?(event) end)
-        |> Enum.each(fn {event, index} ->
-          run_id = event_run_key(event, index)
-          insert_usage!(conversation_id, "parent", run_id, event_usage(event))
-        end)
-      end)
-      |> case do
-        {:ok, _} -> :ok
-        {:error, reason} -> {:error, reason}
-      end
-    else
-      {:error, :not_found}
-    end
-  end
-
-  def record_delegated_usage(conversation_id, child_run_id, usage) do
-    put_usage_once(conversation_id, "delegated", to_string(child_run_id), usage)
-  end
-
-  def delegated_usage(conversation_id) do
-    usage_rows(conversation_id, "delegated")
-    |> Map.new(fn row -> {row.run_id, usage_string_map(row)} end)
-  end
+  def delegated_usage(conversation_id), do: Usage.delegated_usage(conversation_id)
 
   defp create_conversation(scope, workspace_id, opts) do
     with {:ok, checkout_path} <- checkout_path_for_create(scope, workspace_id, opts) do
@@ -764,106 +592,27 @@ defmodule Handbean.ConversationStore do
     with {:ok, _meta} <- update_meta(id, updates), do: get(id)
   end
 
-  defp metadata_query(opts) do
-    include_archived? = Keyword.get(opts, :include_archived?, false)
-    include_internal? = Keyword.get(opts, :include_internal?, false)
-
-    Conversation
-    |> where([conversation], conversation.status == "active")
-    |> maybe_exclude_internal(include_internal?)
-    |> maybe_exclude_archived(include_archived?)
-    |> order_by([conversation], desc: conversation.updated_at, desc: conversation.id)
-  end
-
-  defp maybe_exclude_internal(query, true), do: query
-
-  defp maybe_exclude_internal(query, false),
-    do: where(query, [conversation], conversation.visibility != "internal")
-
-  defp maybe_exclude_archived(query, true), do: query
-
-  defp maybe_exclude_archived(query, false),
-    do: where(query, [conversation], is_nil(conversation.archived_at))
-
-  defp fetch_row(id) do
-    case Repo.one(
-           from conversation in Conversation,
-             where: conversation.id == ^id and conversation.status == "active"
-         ) do
-      nil -> {:error, :not_found}
-      row -> {:ok, row}
-    end
-  end
-
-  defp fetch_metadata(id) do
-    with {:ok, row} <- fetch_row(id), do: {:ok, metadata_map(row)}
-  end
+  defp fetch_row(id), do: Projection.fetch_active_row(id)
 
   defp conversation_map(row, opts) do
-    files = load_files(row.id)
-    timeline = if Keyword.get(opts, :include_timeline?, true), do: load_messages(row.id), else: []
-
-    metadata_map(row)
-    |> Map.merge(files)
-    |> Map.put("timeline", timeline)
-  end
-
-  defp new_conversation_map(row, editor_attrs) do
     row
-    |> base_metadata_map()
-    |> Map.merge(empty_usage_metadata())
-    |> Map.merge(editor_map(editor_attrs))
-    |> Map.put("timeline", [])
+    |> Projection.detail()
+    |> attach_timeline(opts)
   end
 
-  defp metadata_map(row) do
-    row
-    |> base_metadata_map()
-    |> Map.merge(usage_metadata(row.id))
-  end
+  defp new_conversation_map(row, editor_attrs), do: Projection.new_detail(row, editor_attrs)
+  defp metadata_map(row), do: Projection.metadata(row)
 
-  defp base_metadata_map(row) do
-    %{
-      "id" => row.id,
-      "scope" => row.scope,
-      "workspace_id" => row.workspace_id,
-      "checkout_path" => row.checkout_path,
-      "visibility" => row.visibility,
-      "parent_conversation_id" => parent_conversation_id(row),
-      "parent_run_id" => row.parent_run_id,
-      "parent_tool_call_id" => row.parent_tool_call_id,
-      "title" => row.title,
-      "title_source" => row.title_source,
-      "selected_model" => row.selected_model,
-      "selected_reasoning_level" => row.selected_reasoning_level,
-      "collaboration" => row.collaboration,
-      "last_run_result" => row.last_run_result,
-      "status" => row.status,
-      "loaded_tools" => decode_list(row.loaded_tools),
-      "archived_at" => iso8601(row.archived_at),
-      "pinned_at" => iso8601(row.pinned_at),
-      "created_at" => iso8601(row.created_at),
-      "updated_at" => iso8601(row.updated_at)
-    }
-  end
+  defp attach_timelines(conversations, opts),
+    do: Enum.map(conversations, &attach_timeline(&1, opts))
 
-  defp summary_map(row) do
-    %{
-      "id" => row.id,
-      "visibility" => row.visibility,
-      "parent_conversation_id" => parent_conversation_id(row),
-      "parent_run_id" => row.parent_run_id,
-      "parent_tool_call_id" => row.parent_tool_call_id,
-      "scope" => row.scope,
-      "workspace_id" => row.workspace_id,
-      "checkout_path" => row.checkout_path,
-      "title" => row.title,
-      "title_source" => row.title_source,
-      "archived_at" => iso8601(row.archived_at),
-      "pinned_at" => iso8601(row.pinned_at),
-      "created_at" => iso8601(row.created_at),
-      "updated_at" => iso8601(row.updated_at)
-    }
+  defp attach_timeline(conversation, opts) do
+    timeline =
+      if Keyword.get(opts, :include_timeline?, true),
+        do: load_messages(conversation["id"]),
+        else: []
+
+    Map.put(conversation, "timeline", timeline)
   end
 
   defp accessible?(conversation, opts) do
@@ -978,214 +727,6 @@ defmodule Handbean.ConversationStore do
     }
   end
 
-  defp editor_map(state) do
-    %{
-      "editor_files" => decode_list(state.editor_files),
-      "active_file" => state.active_file,
-      "file_preview_error" => decode_nullable(state.file_preview_error)
-    }
-  end
-
-  defp empty_files, do: %{"editor_files" => [], "active_file" => nil, "file_preview_error" => nil}
-
-  defp put_usage_once(conversation_id, source, run_id, usage) do
-    if exists?(conversation_id) do
-      attrs = usage_attrs(conversation_id, source, run_id, usage)
-
-      Repo.insert_all(ConversationRunUsage, [attrs],
-        on_conflict: :nothing,
-        conflict_target: [:conversation_id, :source, :run_id]
-      )
-
-      :ok
-    else
-      {:error, :not_found}
-    end
-  end
-
-  defp insert_usage!(conversation_id, source, run_id, usage) do
-    Repo.insert_all(ConversationRunUsage, [usage_attrs(conversation_id, source, run_id, usage)],
-      on_conflict: :nothing,
-      conflict_target: [:conversation_id, :source, :run_id]
-    )
-  end
-
-  defp usage_attrs(conversation_id, source, run_id, usage) do
-    normalized = normalize_usage(usage)
-    timestamp = now()
-
-    normalized
-    |> Map.from_struct()
-    |> Map.take([
-      :input_tokens,
-      :output_tokens,
-      :cache_read_tokens,
-      :cache_write_tokens,
-      :total_input_tokens,
-      :usage_incomplete
-    ])
-    |> Map.merge(%{
-      conversation_id: conversation_id,
-      source: source,
-      run_id: run_id,
-      inserted_at: timestamp,
-      updated_at: timestamp
-    })
-  end
-
-  defp usage_rows(conversation_id, source) do
-    Repo.all(
-      from usage in ConversationRunUsage,
-        where: usage.conversation_id == ^conversation_id and usage.source == ^source
-    )
-  end
-
-  defp empty_usage_metadata do
-    %{
-      "token_usage" => atom_usage_to_string(empty_token_usage()),
-      "run_usage" => %{},
-      "usage_legacy" => atom_usage_to_string(empty_token_usage()),
-      "delegated_usage" => %{}
-    }
-  end
-
-  defp usage_metadata(conversation_id) do
-    parent = usage_rows(conversation_id, "parent")
-    unkeyed = usage_rows(conversation_id, "unkeyed")
-    delegated = usage_rows(conversation_id, "delegated")
-    total = Enum.reduce(parent ++ unkeyed, empty_token_usage(), &sum_usage/2)
-
-    %{
-      "token_usage" => atom_usage_to_string(total),
-      "run_usage" => Map.new(parent, &{&1.run_id, usage_string_map(&1)}),
-      "usage_legacy" =>
-        unkeyed |> Enum.reduce(empty_token_usage(), &sum_usage/2) |> atom_usage_to_string(),
-      "delegated_usage" => Map.new(delegated, &{&1.run_id, usage_string_map(&1)})
-    }
-  end
-
-  defp aggregate_usage(conversation_id) do
-    conversation_id
-    |> then(fn id -> usage_rows(id, "parent") ++ usage_rows(id, "unkeyed") end)
-    |> Enum.reduce(empty_token_usage(), &sum_usage/2)
-  end
-
-  defp sum_usage(row, acc) do
-    %{
-      input_tokens: acc.input_tokens + row.input_tokens,
-      output_tokens: acc.output_tokens + row.output_tokens,
-      cache_read_tokens: acc.cache_read_tokens + row.cache_read_tokens,
-      cache_write_tokens: acc.cache_write_tokens + row.cache_write_tokens,
-      total_input_tokens: acc.total_input_tokens + row.total_input_tokens,
-      usage_incomplete: acc.usage_incomplete or row.usage_incomplete
-    }
-  end
-
-  defp normalize_usage(usage) do
-    input = usage_number(usage, [:input_tokens, "input_tokens"])
-    output = usage_number(usage, [:output_tokens, "output_tokens"])
-
-    read =
-      usage_number(usage, [
-        :cache_read_input_tokens,
-        "cache_read_input_tokens",
-        :cache_read_tokens,
-        "cache_read_tokens"
-      ])
-
-    write =
-      usage_number(usage, [
-        :cache_creation_input_tokens,
-        "cache_creation_input_tokens",
-        :cache_write_tokens,
-        "cache_write_tokens"
-      ])
-
-    total =
-      case usage_fetch(usage, [:total_input_tokens, "total_input_tokens"]) do
-        number when is_number(number) -> round(number)
-        _ -> input + read + write
-      end
-
-    %ConversationRunUsage{
-      input_tokens: input,
-      output_tokens: output,
-      cache_read_tokens: read,
-      cache_write_tokens: write,
-      total_input_tokens: total,
-      usage_incomplete:
-        usage_fetch(usage, [:unknown?, "unknown?", :unknown, "unknown"]) in [true, "true"]
-    }
-  end
-
-  defp usage_number(usage, keys) do
-    case usage_fetch(usage, keys) do
-      number when is_number(number) -> round(number)
-      _ -> 0
-    end
-  end
-
-  defp usage_fetch(usage, keys) do
-    Enum.find_value(keys, fn key ->
-      case Map.fetch(usage, key) do
-        {:ok, value} -> value
-        :error -> nil
-      end
-    end)
-  end
-
-  defp empty_token_usage do
-    %{
-      input_tokens: 0,
-      output_tokens: 0,
-      cache_read_tokens: 0,
-      cache_write_tokens: 0,
-      total_input_tokens: 0,
-      usage_incomplete: false
-    }
-  end
-
-  defp usage_string_map(row) do
-    %{
-      "input_tokens" => row.input_tokens,
-      "output_tokens" => row.output_tokens,
-      "cache_read_tokens" => row.cache_read_tokens,
-      "cache_write_tokens" => row.cache_write_tokens,
-      "total_input_tokens" => row.total_input_tokens,
-      "unknown" => row.usage_incomplete
-    }
-  end
-
-  defp atom_usage_to_string(usage) do
-    %{
-      "input_tokens" => usage.input_tokens,
-      "output_tokens" => usage.output_tokens,
-      "cache_read_tokens" => usage.cache_read_tokens,
-      "cache_write_tokens" => usage.cache_write_tokens,
-      "total_input_tokens" => usage.total_input_tokens,
-      "unknown" => usage.usage_incomplete
-    }
-  end
-
-  defp terminal_usage_event?(event) when is_map(event) do
-    kind = usage_fetch(event, [:kind, "kind"])
-    payload = usage_fetch(event, [:payload, "payload"]) || %{}
-    status = usage_fetch(payload, [:status, "status"])
-    kind in [:run_end, "run_end"] and status not in [:interrupted, "interrupted", nil]
-  end
-
-  defp terminal_usage_event?(_event), do: false
-
-  defp event_usage(event),
-    do: usage_fetch(usage_fetch(event, [:payload, "payload"]) || %{}, [:usage, "usage"]) || %{}
-
-  defp event_run_key(event, index) do
-    payload = usage_fetch(event, [:payload, "payload"]) || %{}
-
-    usage_fetch(payload, [:run_id, "run_id"]) || usage_fetch(event, [:run_id, "run_id"]) ||
-      "event-#{index}"
-  end
-
   defp normalize_field(key, value) when key in [:loaded_tools, "loaded_tools"],
     do: encode_json!(value || [])
 
@@ -1207,85 +748,15 @@ defmodule Handbean.ConversationStore do
   defp valid_id?(id), do: byte_size(id) in 1..128 and Regex.match?(~r/\A[A-Za-z0-9_-]+\z/, id)
   defp present?(value), do: is_binary(value) and value != ""
 
-  defp title_text(title) when is_binary(title) do
-    case String.trim(title) do
-      "" -> ""
-      trimmed -> trimmed
-    end
-  end
-
-  defp title_text(_title), do: ""
-
-  defp map_value(map, key), do: Handbean.Utils.SafeMap.get(map, key)
-
-  defp string_value(map, key) do
-    case map_value(map, key) do
-      nil -> nil
-      value when is_binary(value) -> value
-      value -> to_string(value)
-    end
-  end
-
-  defp list_value(map, key) do
-    case map_value(map, key) do
-      list when is_list(list) -> list
-      _ -> []
-    end
-  end
-
-  defp encode_json!(value), do: value |> Handbean.JsonSafe.normalize() |> Handbean.JSON.encode!()
-
-  defp decode_list(nil), do: []
-
-  defp decode_list(value) when is_binary(value) do
-    case Handbean.JSON.decode(value) do
-      {:ok, list} when is_list(list) -> list
-      _ -> []
-    end
-  end
-
-  defp encode_nullable(nil), do: nil
-  defp encode_nullable(value), do: encode_json!(value)
-
-  defp decode_nullable(nil), do: nil
-
-  defp decode_nullable(value) do
-    case Handbean.JSON.decode(value) do
-      {:ok, decoded} -> decoded
-      _ -> value
-    end
-  end
-
-  defp parse_time(nil), do: nil
-  defp parse_time(%DateTime{} = value), do: microsecond_precision(value)
-
-  defp parse_time(%NaiveDateTime{} = value),
-    do: value |> DateTime.from_naive!("Etc/UTC") |> microsecond_precision()
-
-  defp parse_time(value) when is_binary(value) do
-    case DateTime.from_iso8601(value) do
-      {:ok, timestamp, _offset} -> microsecond_precision(timestamp)
-      _ -> nil
-    end
-  end
-
-  defp microsecond_precision(%DateTime{microsecond: {microsecond, _precision}} = value),
-    do: %{value | microsecond: {microsecond, 6}}
-
-  defp iso8601(nil), do: nil
-
-  defp iso8601(%DateTime{microsecond: {0, _precision}} = value),
-    do: value |> DateTime.truncate(:second) |> DateTime.to_iso8601()
-
-  defp iso8601(%DateTime{} = value), do: DateTime.to_iso8601(value)
-
-  defp iso8601(%NaiveDateTime{} = value),
-    do: value |> DateTime.from_naive!("Etc/UTC") |> DateTime.to_iso8601()
+  defp map_value(map, key), do: Codec.map_value(map, key)
+  defp string_value(map, key), do: Codec.string_value(map, key)
+  defp list_value(map, key), do: Codec.list_value(map, key)
+  defp encode_json!(value), do: Codec.encode_json!(value)
+  defp decode_list(value), do: Codec.decode_list(value)
+  defp encode_nullable(value), do: Codec.encode_nullable(value)
+  defp parse_time(value), do: Codec.parse_time(value)
 
   defp now, do: DateTime.utc_now() |> DateTime.truncate(:microsecond)
-
-  defp now_naive,
-    do: DateTime.utc_now() |> DateTime.to_naive() |> NaiveDateTime.truncate(:microsecond)
 
   defp ensure_transaction!(:ok), do: :ok
   defp ensure_transaction!({:error, reason}), do: Repo.rollback(reason)
