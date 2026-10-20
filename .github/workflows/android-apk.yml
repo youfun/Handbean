@@ -139,6 +139,9 @@ jobs:
           LIBGIT2_DIR: /usr
         run: bash script/pack_android_apks.sh --artifacts artifacts/standard --skip-setup --skip-test
 
+      - name: Print Android APK SHA-256
+        run: sha256sum artifacts/standard/*.apk artifacts/developer/*.apk
+
       - name: Upload standard Android APKs
         uses: actions/upload-artifact@v7
         with:
