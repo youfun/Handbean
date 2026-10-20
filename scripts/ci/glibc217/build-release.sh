@@ -35,6 +35,13 @@ export GGML_F16C=OFF
 export GGML_BMI2=OFF
 mkdir -p "$MIX_HOME" "$HEX_HOME" "$CARGO_HOME"
 
+# Mix loads its home configuration before compiling dependencies. Keep the
+# source-build override scoped to Exqlite and this dedicated CI Mix home.
+cat >"$MIX_HOME/config.exs" <<'EOF'
+import Config
+config :elixir_make, :force_build, exqlite: true
+EOF
+
 wrapper_bin="$build/bin"
 mkdir -p "$wrapper_bin"
 ln -s "$workspace/scripts/ci/glibc217/zig-wrapper.sh" "$wrapper_bin/zig"
@@ -43,13 +50,6 @@ export PATH="$wrapper_bin:$PATH"
 cd "$source_dir"
 tar -xzf "$input/handbean-static.tar.gz"
 test -s priv/static/cache_manifest.json
-
-cat >config/glibc217.exs <<'EOF'
-import Config
-import_config "config.exs"
-config :elixir_make, :force_build, exqlite: true
-EOF
-export MIX_CONFIG="$source_dir/config/glibc217.exs"
 
 # Source-building whisper_cpp activates its optional Rustler compiler. This
 # edit exists only in the disposable container copy and never changes mix.exs.
