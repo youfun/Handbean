@@ -15,6 +15,7 @@ defmodule HandbeanProbe.NativeUI do
   @hint "#9C9590"
   @added "#24834A"
   @danger "#B42318"
+  @error_surface "#FFF0EE"
   @change_row "#F4F1EA"
   @change_tab "#DCE7F7"
   @change_ink "#8D857A"
@@ -60,6 +61,7 @@ defmodule HandbeanProbe.NativeUI do
   def color(:hint), do: @hint
   def color(:added), do: @added
   def color(:danger), do: @danger
+  def color(:error_surface), do: @error_surface
   def color(:change_row), do: @change_row
   def color(:change_tab), do: @change_tab
   def color(:change_ink), do: @change_ink
@@ -482,6 +484,23 @@ defmodule HandbeanProbe.NativeUI do
   end
 
   def notice(nil), do: nil
+
+  def notice(%{kind: :error, text: message}) when is_binary(message) do
+    text(message,
+      id: "notice-error",
+      fill_width: true,
+      text_color: color(:danger),
+      background: color(:error_surface),
+      border_color: color(:danger),
+      border_width: 1,
+      corner_radius: 10,
+      padding: 12,
+      font_weight: "bold",
+      accessibility_role: "alert"
+    )
+  end
+
+  def notice(%{text: message}) when is_binary(message), do: notice(message)
 
   def notice(message),
     do: text(message, text_color: color(:muted), padding_top: 8, padding_bottom: 8)

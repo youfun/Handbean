@@ -369,6 +369,20 @@ defmodule HandbeanProbe.ModelSettingsTest do
     assert model_form =~ "gpt-4o" or model_form =~ "claude-sonnet-4"
   end
 
+  test "provider save rejects a Base URL containing multiple pasted values", %{ws_a: ws} do
+    state = ensure_provider(ws, "alpha", "https://alpha.example/v1")
+    state = ModelSettings.action({:edit_provider, "alpha"}, state, ws)
+
+    malformed = "https://alpha.example/v1\n，https://other.example/v1\n，/v1"
+
+    changed = ModelSettings.change(state, :base_url, malformed)
+    rejected = ModelSettings.action(:save_provider, changed, ws)
+
+    assert rejected.form.base_url == malformed
+    assert rejected.notice == gettext("Enter a valid HTTPS Base URL")
+    assert read_models()["providers"]["alpha"]["baseUrl"] == "https://alpha.example/v1"
+  end
+
   test "toggling a model off hides it from chat choices and toggling it on restores it", %{
     ws_a: ws
   } do

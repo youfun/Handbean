@@ -2725,3 +2725,13 @@ msgstr "启用后，压缩会生成可审核的记忆候选。"
 #, elixir-autogen, elixir-format
 msgid "Save memory reflection settings"
 msgstr "保存记忆反思设置"
+
+#: lib/handbean_probe/home_screen/settings.ex
+#, elixir-autogen, elixir-format
+msgid "Model list is unavailable. The existing list was kept."
+msgstr "模型列表暂时不可用，已保留现有列表。"
+
+#: lib/handbean_probe/home_screen/settings.ex
+#, elixir-autogen, elixir-format
+msgid "Provider Base URL is invalid. Edit the provider and try again. The existing list was kept."
+msgstr "提供商 Base URL 无效，请编辑后重试。已保留现有列表。"

@@ -471,6 +471,24 @@ defmodule Handbean.Agent.Provider.ModelCatalogTest do
     assert [%{"id" => "kept"}] = config["providers"]["magpie"]["models"]
   end
 
+  test "a malformed provider Base URL is rejected before the request and keeps saved models" do
+    :ok =
+      ModelConfig.add_provider("magpie", %{
+        "name" => "Magpie",
+        "api" => "openai-chat-completions",
+        "baseUrl" => "https://example.com/v1\n，https://other.example/v1",
+        "apiKey" => "magpie",
+        "models" => [%{"id" => "kept", "name" => "Kept", "input" => ["text"]}]
+      })
+
+    assert {:error, message} = ModelCatalog.discover("magpie", req_module: ReqMock)
+    assert message =~ "Base URL is invalid"
+    refute_received {:models_request, _, _}
+
+    {:ok, config} = ModelConfig.read_config()
+    assert [%{"id" => "kept"}] = config["providers"]["magpie"]["models"]
+  end
+
   test "anthropic and non-xAI oauth providers are not fetched from /v1/models" do
     refute ModelCatalog.fetchable?(%{
              "api" => "anthropic-messages",

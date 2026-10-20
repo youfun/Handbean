@@ -216,17 +216,17 @@ defmodule HandbeanProbe.ModelSettings.Providers do
   defp persist_provider(state) do
     f = state.form
     name = String.trim(f.name || "")
-    url = URI.parse(String.trim(f.base_url || ""))
+    base_url = String.trim(f.base_url || "")
 
     with :ok <- require_display_name(name),
-         :ok <- require_https(url),
+         :ok <- require_https(base_url),
          {:ok, config} <- Forms.read_config() do
       providers = config["providers"] || %{}
 
       attrs =
         %{
           "name" => name,
-          "baseUrl" => String.trim(f.base_url),
+          "baseUrl" => base_url,
           "api" => f.api || Forms.default_api()
         }
         |> Forms.maybe_put_key(f.api_key)
@@ -372,8 +372,23 @@ defmodule HandbeanProbe.ModelSettings.Providers do
   defp require_display_name(""), do: {:error, gettext("Display name is required")}
   defp require_display_name(_), do: :ok
 
-  defp require_https(%URI{scheme: "https", host: host}) when is_binary(host) and host != "",
-    do: :ok
+  defp require_https(url) when is_binary(url) do
+    case URI.new(url) do
+      {:ok,
+       %URI{
+         scheme: "https",
+         host: host,
+         userinfo: nil,
+         query: nil,
+         fragment: nil
+       }}
+      when is_binary(host) and host != "" ->
+        :ok
+
+      _ ->
+        {:error, gettext("Enter a valid HTTPS Base URL")}
+    end
+  end
 
   defp require_https(_), do: {:error, gettext("Enter a valid HTTPS Base URL")}
 

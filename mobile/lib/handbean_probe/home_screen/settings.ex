@@ -216,7 +216,8 @@ defmodule HandbeanProbe.HomeScreen.Settings do
       end)
 
     socket
-    |> assign(:models, %{socket.assigns.models | notice: gettext("Fetching models…")})
+    |> clear_fetch_error()
+    |> put_models_notice(gettext("Fetching models…"))
     |> Requests.register(task.ref, :models_fetched, scope: @scope, generation: generation)
   end
 
@@ -247,9 +248,18 @@ defmodule HandbeanProbe.HomeScreen.Settings do
       end)
 
     socket
+    |> clear_fetch_error()
     |> action({:fetch_models, provider_id})
-    |> assign(:models, %{socket.assigns.models | notice: gettext("Fetching models…")})
+    |> put_models_notice(gettext("Fetching models…"))
     |> Requests.register(task.ref, :models_fetched, scope: @scope, generation: generation)
+  end
+
+  defp clear_fetch_error(socket) do
+    Notice.put(socket, Notice.clear_kind(socket.assigns.notice, :error))
+  end
+
+  defp put_models_notice(socket, message) do
+    assign(socket, :models, %{socket.assigns.models | notice: message})
   end
 
   defp apply_fetched_models(socket, :ok) do
@@ -267,12 +277,26 @@ defmodule HandbeanProbe.HomeScreen.Settings do
   end
 
   defp apply_fetched_models(socket, {:error, message}) when is_binary(message) do
-    Notice.put_error(socket, message)
+    Notice.put_error(socket, catalog_error_message(message))
   end
 
   defp apply_fetched_models(socket, _result) do
     Notice.put_error(socket, gettext("Model discovery failed"))
   end
+
+  defp catalog_error_message(
+         "Provider Base URL is invalid. Edit the provider and try again. The existing list was kept."
+       ) do
+    gettext(
+      "Provider Base URL is invalid. Edit the provider and try again. The existing list was kept."
+    )
+  end
+
+  defp catalog_error_message("Model list is unavailable. The existing list was kept.") do
+    gettext("Model list is unavailable. The existing list was kept.")
+  end
+
+  defp catalog_error_message(message), do: message
 
   defp start_subscription(socket, provider_id) do
     {_generation, socket} = Requests.bump(socket, @subscription_scope)

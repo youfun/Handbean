@@ -63,7 +63,7 @@ defmodule HandbeanProbe.HomeScreen.Render do
     page(
       [
         header(a),
-        notice(if(a.stopping, do: gettext("Stopping…"), else: Notice.text(notice))),
+        notice(if(a.stopping, do: gettext("Stopping…"), else: notice)),
         content(a),
         if(a.page != :history, do: HandbeanProbe.NativeModelInputs.render(a.input_warning)),
         if(a.page == :chat && a.chat && a.chat.pending_approval && a.approval_open,

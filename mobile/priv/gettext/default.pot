@@ -2690,3 +2690,13 @@ msgstr ""
 #, elixir-autogen, elixir-format
 msgid "Save memory reflection settings"
 msgstr ""
+
+#: lib/handbean_probe/home_screen/settings.ex
+#, elixir-autogen, elixir-format
+msgid "Model list is unavailable. The existing list was kept."
+msgstr ""
+
+#: lib/handbean_probe/home_screen/settings.ex
+#, elixir-autogen, elixir-format
+msgid "Provider Base URL is invalid. Edit the provider and try again. The existing list was kept."
+msgstr ""

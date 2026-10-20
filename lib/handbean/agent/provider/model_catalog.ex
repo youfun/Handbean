@@ -179,13 +179,42 @@ defmodule Handbean.Agent.Provider.ModelCatalog do
     api = provider["api"]
     base_url = provider["baseUrl"]
 
-    case resolve_api_key(provider) do
-      key when is_binary(key) and key != "" ->
-        {:ok, models_url(base_url, api), key}
+    with {:ok, url} <- validate_models_url(base_url, api) do
+      case resolve_api_key(provider) do
+        key when is_binary(key) and key != "" ->
+          {:ok, url, key}
+
+        _ ->
+          {:error, "API key is not configured"}
+      end
+    end
+  end
+
+  defp validate_models_url(base_url, api) when is_binary(base_url) do
+    url = models_url(base_url, api)
+
+    case URI.new(url) do
+      {:ok,
+       %URI{
+         scheme: scheme,
+         host: host,
+         userinfo: nil,
+         query: nil,
+         fragment: nil
+       }}
+      when scheme in ["http", "https"] and is_binary(host) and host != "" ->
+        {:ok, url}
 
       _ ->
-        {:error, "API key is not configured"}
+        invalid_base_url()
     end
+  end
+
+  defp validate_models_url(_base_url, _api), do: invalid_base_url()
+
+  defp invalid_base_url do
+    {:error,
+     "Provider Base URL is invalid. Edit the provider and try again. The existing list was kept."}
   end
 
   defp resolve_api_key(%{"apiKey" => "env:" <> var}) do

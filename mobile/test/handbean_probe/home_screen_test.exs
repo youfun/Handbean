@@ -4,6 +4,7 @@ defmodule HandbeanProbe.HomeScreenTest do
   import HandbeanProbe.ScreenSettle
 
   alias HandbeanProbe.{HomeScreen, ModelSettings, NativeApproval, NativeChat, PendingRequests}
+  alias HandbeanProbe.HomeScreen.{Notice, Settings}
   alias Handbean.ArtifactDelivery
   alias Handbean.PubSub.AgentEvent
   alias HandbeanWeb.WorkspaceHelper
@@ -973,6 +974,50 @@ defmodule HandbeanProbe.HomeScreenTest do
     secure = Enum.find(flatten(tree(view)), &(&1.type == :text_field and &1.props[:secure]))
     assert secure.props.value == ""
     refute inspect(tree(view)) =~ "fixture-key-not-real"
+  end
+
+  test "model fetch clears an old error, preserves durable notices, and keeps its provider selection",
+       %{
+         view: view
+       } do
+    assert :ok =
+             Handbean.Agent.ModelConfig.write_config(%{
+               "defaultProvider" => "alpha",
+               "providers" => %{
+                 "alpha" => %{
+                   "name" => "Alpha",
+                   "baseUrl" => "invalid alpha",
+                   "apiKey" => "fixture-key",
+                   "api" => "openai-completions",
+                   "models" => []
+                 },
+                 "beta" => %{
+                   "name" => "Beta",
+                   "baseUrl" => "invalid beta",
+                   "apiKey" => "fixture-key",
+                   "api" => "openai-completions",
+                   "models" => []
+                 }
+               }
+             })
+
+    socket =
+      view.socket
+      |> Mob.Socket.assign(:models, ModelSettings.load(assigns(view).workspace))
+      |> Notice.put_error("old catalog error")
+      |> then(&Settings.handle({:tap, {:fetch_models, "beta"}}, &1))
+
+    assert socket.assigns.notice == nil
+    assert socket.assigns.models.selected_provider == "beta"
+    assert socket.assigns.models.notice == gettext("Fetching models…")
+
+    socket =
+      socket
+      |> Notice.put_info("Send outcome unknown", :share)
+      |> then(&Settings.handle({:tap, {:fetch_models, "alpha"}}, &1))
+
+    assert socket.assigns.notice.kind == :share
+    assert socket.assigns.models.selected_provider == "alpha"
   end
 
   test "model validation rejects HTTP and corrupt config without losing form", %{view: view} do

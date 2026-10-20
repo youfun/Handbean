@@ -83,6 +83,14 @@ defmodule HandbeanProbe.NativeSettingsVisualTest do
     assert ModelSettings.load(ws).defaults.reasoning == "off"
   end
 
+  test "error notices expose alert semantics" do
+    notice = NativeUI.notice(%{kind: :error, text: "Could not fetch models"})
+
+    assert notice.type == :text
+    assert notice.props.text == "Could not fetch models"
+    assert notice.props.accessibility_role == "alert"
+  end
+
   test "labeled fields do not repeat the label as placeholder" do
     node = NativeUI.field("API Key", "", {:model_field, :api_key})
     [label, input] = node.children
