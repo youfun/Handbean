@@ -44,8 +44,20 @@ download_sha256() {
 
   if [[ ! -f "$path" ]]; then
     rm -f "$path.part"
-    curl -fL --retry 8 --retry-delay 2 --connect-timeout 20 -o "$path.part" "$url"
-    mv "$path.part" "$path"
+    local attempt
+    for ((attempt = 1; attempt <= 8; attempt++)); do
+      if curl -fL --connect-timeout 20 -o "$path.part" "$url"; then
+        mv "$path.part" "$path"
+        break
+      fi
+
+      rm -f "$path.part"
+      if [[ $attempt == 8 ]]; then
+        echo "download failed after $attempt attempts: $url" >&2
+        return 1
+      fi
+      sleep 2
+    done
   fi
 
   verify_sha256 "$expected" "$path"
