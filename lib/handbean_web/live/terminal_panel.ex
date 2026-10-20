@@ -4,7 +4,7 @@ defmodule HandbeanWeb.Live.TerminalPanel do
 
   Opens an interactive shell for the current workspace. Click the screen to
   type freely (including Ctrl-C, Tab, and arrows). The line below sends a
-  command on Enter. Preset buttons start or focus a dedicated session.
+  command on Enter.
   """
 
   use HandbeanWeb, :live_component
@@ -15,15 +15,6 @@ defmodule HandbeanWeb.Live.TerminalPanel do
   alias Handbean.Terminal.{Session, Supervisor}
 
   @session_call_timeout 2_000
-
-  @preset_commands [
-    %{label: "mix phx.server", name: "dev-server", cmd: "mix", args: ["phx.server"]},
-    %{label: "mix test", name: "tests", cmd: "mix", args: ["test"]},
-    %{label: "mix compile", name: "compile", cmd: "mix", args: ["compile"]},
-    %{label: "iex -S mix", name: "iex", cmd: "iex", args: ["-S", "mix"]},
-    %{label: "npm run dev", name: "npm-dev", cmd: "npm", args: ["run", "dev"]},
-    %{label: "git log", name: "git-log", cmd: "git", args: ["log", "--oneline"]}
-  ]
 
   @impl true
   def mount(socket) do
@@ -51,7 +42,6 @@ defmodule HandbeanWeb.Live.TerminalPanel do
       |> assign_new(:activity, fn -> %{} end)
       |> assign_new(:bootstrapped, fn -> false end)
       |> assign_new(:command_nonce, fn -> 0 end)
-      |> assign(:preset_commands, @preset_commands)
       |> then(fn sock ->
         if workspace_id && checkout_path,
           do: assign_terminals(sock, workspace_id),
@@ -68,8 +58,6 @@ defmodule HandbeanWeb.Live.TerminalPanel do
     <div id={@id} class="terminal-panel flex flex-col h-full min-h-0 bg-main">
       <style>
         #terminal-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-        #terminal-panel .terminal-presets { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--color-border, #333); }
-        #terminal-panel .terminal-preset { border: 1px solid var(--color-border, #333); border-radius: 4px; background: transparent; color: var(--color-text-tertiary, #888); font-family: ui-monospace, monospace; font-size: 10px; padding: 2px 8px; cursor: pointer; }
         #terminal-panel .terminal-viewport { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: #1e1e2e; }
         #terminal-panel .terminal-screen { flex: 1 1 auto; min-height: 0; width: 100%; height: 100%; overflow: auto; background: #1e1e2e; }
         #terminal-panel .terminal-screen pre { margin: 0 !important; padding: 8px !important; line-height: 1.2 !important; font-size: 13px !important; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important; background: #1e1e2e !important; color: #cdd6f4 !important; border-radius: 0 !important; overflow: hidden !important; white-space: pre !important; box-sizing: border-box !important; }
@@ -130,19 +118,6 @@ defmodule HandbeanWeb.Live.TerminalPanel do
             ×
           </button>
         </div>
-      </div>
-
-      <div class="terminal-presets">
-        <button
-          :for={preset <- @preset_commands}
-          phx-click="run_preset"
-          phx-value-name={preset.name}
-          phx-target={@myself}
-          class="terminal-preset"
-          title={"Open #{preset.label}"}
-        >
-          {preset.label}
-        </button>
       </div>
 
       <div :if={@confirm_close} class="border-b bg-surface p-3">
@@ -273,27 +248,6 @@ defmodule HandbeanWeb.Live.TerminalPanel do
 
   def handle_event("retry_shell", _params, socket) do
     {:noreply, start_shell(socket)}
-  end
-
-  def handle_event("run_preset", %{"name" => name}, socket) do
-    preset = Enum.find(@preset_commands, &(&1.name == name))
-
-    socket =
-      cond do
-        is_nil(preset) ->
-          socket
-
-        terminal_running?(socket.assigns.terminals, name) ->
-          activate_terminal(socket, name)
-
-        terminal_known?(socket.assigns.terminals, name) ->
-          restart_named(socket, name, preset.cmd, preset.args)
-
-        true ->
-          start_named(socket, name, preset.cmd, preset.args)
-      end
-
-    {:noreply, clear_activity(socket, name)}
   end
 
   def handle_event("send_line", params, socket) do
@@ -591,10 +545,6 @@ defmodule HandbeanWeb.Live.TerminalPanel do
   defp shell_cmd?(_), do: false
 
   defp terminal_known?(terminals, name), do: Enum.any?(terminals, &(&1.name == name))
-
-  defp terminal_running?(terminals, name) do
-    Enum.any?(terminals, &(&1.name == name && &1.status == :running))
-  end
 
   defp terminal_exited?(terminals, name) do
     Enum.any?(terminals, &(&1.name == name && &1.status == :exited))

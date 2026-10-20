@@ -346,6 +346,8 @@ defmodule HandbeanWeb.WorkspaceLive.AgentEventsFilesAndRunsTest do
 
       assert has_element?(view, "#workspace-panel #terminal-panel")
       assert has_element?(view, "#terminal-command-form input[name='line']")
+      refute has_element?(view, "#terminal-panel .terminal-presets")
+      refute has_element?(view, "#terminal-panel [phx-click='run_preset']")
       refute has_element?(view, "button", "+ New Terminal")
       refute render(view) =~ "args (space-separated)"
       refute render(view) =~ "no terminals"

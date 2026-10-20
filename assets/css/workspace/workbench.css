@@ -608,32 +608,6 @@ button.workspace-file-row:hover,
   background: var(--color-surface-hover);
 }
 
-#workspace-panel .terminal-presets {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface);
-}
-
-#workspace-panel .terminal-preset {
-  border: 1px solid var(--color-border);
-  border-radius: var(--sig-radius-sm);
-  background: var(--color-background);
-  color: var(--color-text-tertiary);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  line-height: 1.4;
-  padding: 2px 8px;
-  cursor: pointer;
-}
-
-#workspace-panel .terminal-preset:hover {
-  color: var(--color-text-primary);
-  border-color: var(--color-primary);
-}
-
 #workspace-panel .terminal-viewport {
   flex: 1 1 auto;
   min-height: 0;
