@@ -1,0 +1,9 @@
+build/
+dist/
+resources/handbean-web/
+Handbean-windows-amd64-experimental.zip
+Handbean-windows-amd64-experimental.zip.sha256
+Handbean-linux-amd64-experimental.tar.gz
+Handbean-linux-amd64-experimental.tar.gz.sha256
+Handbean-linux-amd64-experimental.deb
+Handbean-linux-amd64-experimental.deb.sha256

@@ -18,7 +18,7 @@ func TestLaunchEnvironment(t *testing.T) {
 		"erl_epmd_address":      "0.0.0.0",
 		"erl_zflags":            "+S 2 -kernel inet_dist_use_interface {0,0,0,0}",
 	}
-	launch := Launch(`C:\Handbean\handbean-web`, 5008, "secret", "spawn-cookie", `C:\Users\a\.handbean\handbean.db`, `C:\Handbean\runtime`, inherited)
+	launch := LaunchForOS("windows", `C:\Handbean\handbean-web`, 5008, "secret", "spawn-cookie", `C:\Users\a\.handbean\handbean.db`, `C:\Handbean\runtime`, inherited)
 	env := launch.Environment
 	checks := map[string]string{
 		"PHX_SERVER":           "true",
@@ -59,7 +59,7 @@ func TestLaunchEnvironment(t *testing.T) {
 	if launch.Executable != "cmd.exe" {
 		t.Errorf("Executable = %q, want cmd.exe", launch.Executable)
 	}
-	if !reflect.DeepEqual(launch.Arguments, ReleaseArguments("start")) {
+	if !reflect.DeepEqual(launch.Arguments, ReleaseArgumentsForOS("windows", "start")) {
 		t.Errorf("Arguments = %v", launch.Arguments)
 	}
 	if launch.WorkingDirectory != `C:\Handbean\handbean-web` {
@@ -71,8 +71,8 @@ func TestLaunchEnvironment(t *testing.T) {
 }
 
 func TestLaunchIsolatesBackendNodes(t *testing.T) {
-	first := Launch("release", 5008, "secret", "first-cookie", "db", "runtime", nil)
-	second := Launch("release", 5009, "secret", "second-cookie", "db", "runtime", nil)
+	first := LaunchForOS("windows", "release", 5008, "secret", "first-cookie", "db", "runtime", nil)
+	second := LaunchForOS("windows", "release", 5009, "secret", "second-cookie", "db", "runtime", nil)
 	if first.Environment["RELEASE_NODE"] == second.Environment["RELEASE_NODE"] {
 		t.Fatal("different backend ports must have different RPC targets")
 	}

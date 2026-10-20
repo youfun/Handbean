@@ -7,6 +7,27 @@ target="${1:?target name, e.g. linux-x86_64}"
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
+# Mix supports a target-specific deps path, but the application esbuild config
+# normally resolves Phoenix JavaScript from repo_root/deps. When packaging with
+# an isolated MIX_DEPS_PATH, load the normal project config through a temporary
+# overlay and point only esbuild's NODE_PATH at the actual dependency tree.
+mix_config_override=""
+cleanup() {
+  if [[ -n "$mix_config_override" ]]; then
+    rm -f -- "$mix_config_override"
+  fi
+}
+trap cleanup EXIT
+if [[ -n "${MIX_DEPS_PATH:-}" ]]; then
+  mix_config_override="$(mktemp "${TMPDIR:-/tmp}/handbean-mix-config.XXXXXX")"
+  printf '%s\n' \
+    'import Config' \
+    'import_config System.fetch_env!("HANDBEAN_ROOT_MIX_CONFIG")' \
+    'config :esbuild, :handbean, env: %{"NODE_PATH" => System.fetch_env!("MIX_DEPS_PATH")}' \
+    > "$mix_config_override"
+  export HANDBEAN_ROOT_MIX_CONFIG="$root/config/config.exs"
+fi
+
 mix local.hex --force
 mix local.rebar --force
 mix deps.get
@@ -14,7 +35,11 @@ npm ci
 export MIX_ENV=prod
 mix compile
 mix esbuild.install --if-missing
-mix assets.deploy
+if [[ -n "$mix_config_override" ]]; then
+  mix do loadconfig "$mix_config_override" + assets.deploy
+else
+  mix assets.deploy
+fi
 mix release --overwrite
 
 release_dir="${MIX_BUILD_PATH:-_build/prod}/rel/handbean"

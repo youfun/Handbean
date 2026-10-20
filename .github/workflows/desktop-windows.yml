@@ -21,24 +21,24 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version-file: desktop/windows/go.mod
+          go-version-file: desktop/mygo/go.mod
 
       - name: Test shell
-        working-directory: desktop/windows
+        working-directory: desktop/mygo
         run: go test ./...
 
       - name: Fetch web release
-        working-directory: desktop/windows
+        working-directory: desktop/mygo
         shell: pwsh
         run: ./scripts/fetch_web_release.ps1 "${{ inputs.web_tag }}"
 
       - name: Build app
-        working-directory: desktop/windows
+        working-directory: desktop/mygo
         shell: pwsh
         run: ./scripts/build_app.ps1
 
       - uses: actions/upload-artifact@v7
         with:
-          name: Handbean-windows-amd64
-          path: desktop/windows/Handbean-windows-amd64.zip*
+          name: Handbean-windows-amd64-experimental
+          path: desktop/mygo/Handbean-windows-amd64-experimental.zip*
           retention-days: 7

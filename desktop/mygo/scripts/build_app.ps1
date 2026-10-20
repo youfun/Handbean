@@ -58,7 +58,7 @@ if (Test-Path $webOut) {
     throw "mygo build did not copy resources/handbean-web next to $exe"
 }
 
-$archive = Join-Path $ROOT "Handbean-windows-amd64.zip"
+$archive = Join-Path $ROOT "Handbean-windows-amd64-experimental.zip"
 $sum = "$archive.sha256"
 if (Test-Path $archive) { Remove-Item $archive -Force }
 if (Test-Path $sum) { Remove-Item $sum -Force }

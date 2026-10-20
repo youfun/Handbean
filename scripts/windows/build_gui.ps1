@@ -5,7 +5,7 @@
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$guiRoot = Join-Path $repoRoot "desktop/windows"
+$guiRoot = Join-Path $repoRoot "desktop/mygo"
 Set-Location $repoRoot
 
 # Locate the MSVC environment for the storage NIF (Makefile.win).

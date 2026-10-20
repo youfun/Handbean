@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	mygo "github.com/egoist/mygo"
-	"github.com/youfun/Handbean/desktop/windows/internal/core"
+	"github.com/youfun/Handbean/desktop/mygo/internal/core"
 )
 
 // HostWindow is the single shell window: starting overlay, app page, or

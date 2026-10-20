@@ -3,5 +3,10 @@
   "identifier": "com.youfun.handbean",
   "version": "0.0.0",
   "copyright": "Copyright © 2026 youfun. Licensed under FSL-1.1-ALv2.",
-  "out": "build"
+  "out": "build",
+  "linux": {
+    "comment": "自主可控的通用 AI 助手",
+    "categories": ["Utility"],
+    "command": "handbean"
+  }
 }

@@ -1,4 +1,4 @@
-module github.com/youfun/Handbean/desktop/windows
+module github.com/youfun/Handbean/desktop/mygo
 
 go 1.27.1
 

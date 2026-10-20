@@ -159,6 +159,12 @@ jobs:
           otp-version: "29.0"
           elixir-version: "1.20"
 
+      - uses: actions/setup-go@v6
+        if: matrix.target == 'windows-amd64'
+        with:
+          go-version-file: desktop/mygo/go.mod
+          cache-dependency-path: desktop/mygo/go.sum
+
       - name: Install Windows ARM64 OTP
         if: matrix.target == 'windows-arm64'
         shell: pwsh
@@ -194,6 +200,25 @@ jobs:
         shell: pwsh
         if: startsWith(matrix.target, 'windows-')
         run: ./scripts/pack_webui.ps1 ${{ matrix.target }}
+
+      - name: Test Windows shell
+        if: matrix.target == 'windows-amd64'
+        working-directory: desktop/mygo
+        shell: pwsh
+        run: go test ./...
+
+      - name: Pack native Windows app
+        if: matrix.target == 'windows-amd64'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $env:HANDBEAN_WEB_ZIP = (Resolve-Path "handbean-web-windows-amd64.zip").Path
+          try {
+            & ./desktop/mygo/scripts/fetch_web_release.ps1
+            & ./desktop/mygo/scripts/build_app.ps1
+          } finally {
+            Remove-Item Env:HANDBEAN_WEB_ZIP -ErrorAction SilentlyContinue
+          }
 
       - name: Test macOS shell
         if: matrix.target == 'macos-arm64'
@@ -233,6 +258,14 @@ jobs:
         with:
           name: handbean-web-windows-amd64-toolchain
           path: handbean-web-windows-amd64-toolchain.*
+          if-no-files-found: error
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v7
+        if: matrix.target == 'windows-amd64'
+        with:
+          name: handbean-windows-app-amd64-experimental
+          path: desktop/mygo/Handbean-windows-amd64-experimental.zip*
           if-no-files-found: error
           retention-days: 14
 
@@ -364,6 +397,11 @@ jobs:
           path: dist
 
       - uses: actions/download-artifact@v8
+        with:
+          name: handbean-windows-app-amd64-experimental
+          path: dist
+
+      - uses: actions/download-artifact@v8
         if: needs.ios.result == 'success'
         with:
           name: handbean-ios-ipa
@@ -377,7 +415,8 @@ jobs:
           set -euo pipefail
           for package in handbean-web-linux-x86_64 handbean-web-linux-arm64 \
             handbean-web-windows-amd64 handbean-web-windows-amd64-toolchain \
-            handbean-web-macos-arm64 Handbean-macos-arm64; do
+            handbean-web-macos-arm64 Handbean-macos-arm64 \
+            Handbean-windows-amd64-experimental; do
             if [[ ! -s "dist/$package.tar.gz" && ! -s "dist/$package.zip" ]]; then
               echo "Missing package: $package"
               exit 1
@@ -402,7 +441,7 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          files=(dist/handbean-web-* dist/Handbean-macos-* dist/*.apk dist/*.ipa dist/*.ipa.sha256)
+          files=(dist/handbean-web-* dist/Handbean-macos-* dist/Handbean-windows-* dist/*.apk dist/*.ipa dist/*.ipa.sha256)
           if [[ ${#files[@]} -eq 0 ]]; then
             echo "No packages were built"
             exit 1
@@ -411,6 +450,7 @@ jobs:
             echo "Handbean desktop, Web UI, and mobile packages."
             echo
             echo "macOS desktop: unpack \`Handbean-macos-arm64.zip\` and open \`Handbean.app\`."
+            echo "Windows desktop (experimental): unpack \`Handbean-windows-amd64-experimental.zip\` and run \`Handbean.exe\`. It bundles the Web UI and uses the system WebView2 runtime (included with Windows 11)."
             if compgen -G "dist/Handbean-android-arm64-v8a.apk" >/dev/null; then
               echo
               echo "Android packages:"
@@ -425,7 +465,7 @@ jobs:
               echo "iOS: \`Handbean-ios-sideload.ipa\` is ad-hoc signed and has no provisioning profile. Re-sign it with your own Apple ID in Sideloadly or AltStore, then install it. Bundle id: \`com.example.handbean_probe\`."
             fi
             echo "Linux and macOS Web UI: unpack the platform tarball and run \`./start.sh\`."
-            echo "Windows: unpack and run \`start.bat\`."
+            echo "Windows Web UI: unpack \`handbean-web-windows-amd64.zip\` and run \`start.bat\`."
             echo "Default URL: http://localhost:5008"
             echo
             echo "Windows packages do not include the in-browser terminal. Ghostty has no Windows NIF."
@@ -478,7 +518,7 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          files=(dist/handbean-web-* dist/Handbean-macos-* dist/*.apk dist/*.ipa dist/*.ipa.sha256)
+          files=(dist/handbean-web-* dist/Handbean-macos-* dist/Handbean-windows-* dist/*.apk dist/*.ipa dist/*.ipa.sha256)
           if [[ ${#files[@]} -eq 0 ]]; then
             echo "No packages to upload"
             exit 1

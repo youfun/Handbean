@@ -16,13 +16,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/youfun/Handbean/desktop/windows/internal/core"
-	"github.com/youfun/Handbean/desktop/windows/internal/shell"
+	"github.com/youfun/Handbean/desktop/mygo/internal/core"
+	"github.com/youfun/Handbean/desktop/mygo/internal/shell"
 )
 
 // State is the backend lifecycle state the window reacts to.
@@ -122,10 +123,10 @@ func (c *Controller) boot(generation int) {
 		c.publishReady(generation, true)
 		return
 	}
-	// Phase 1 does no storage-lock PID arbitration on Windows: the lock is a
-	// NIF flock with no PID payload, and Windows has no lsof. An explicitly
-	// configured port with a live Handbean server attaches; anything else
-	// spawns, and a busy database surfaces as a backend boot failure.
+	// Phase 1 does no storage-lock PID arbitration in the MyGo shell. An
+	// explicitly configured port with a live Handbean server attaches;
+	// anything else spawns, and a busy database surfaces as a backend boot
+	// failure.
 	if c.allowsConfiguredPortAttachment && Probe(c.port, 3*time.Second) {
 		shell.Log(fmt.Sprintf("attaching to explicitly configured port %d", c.port))
 		c.setReady(generation, core.PageURL(c.port, false, ""), true)
@@ -146,9 +147,13 @@ func (c *Controller) spawn(generation int) error {
 	if err != nil {
 		return err
 	}
-	bat := filepath.Join(root, "bin", "handbean.bat")
-	if _, err := os.Stat(bat); err != nil {
-		return fmt.Errorf("找不到 Web 发行版（缺少 %s）。先运行 scripts/fetch_web_release.ps1，或附加到已在运行的服务", bat)
+	launcher := core.ReleaseLauncher(root)
+	info, err := os.Stat(launcher)
+	if err != nil {
+		return fmt.Errorf("找不到 Web 发行版（缺少 %s）。请先导入对应平台的 Web 发行版，或附加到已在运行的服务", launcher)
+	}
+	if runtime.GOOS != "windows" && info.Mode()&0o111 == 0 {
+		return fmt.Errorf("Web 发行版启动程序不可执行：%s", launcher)
 	}
 	runtimeDir, err := shell.RuntimeDir()
 	if err != nil {
@@ -182,6 +187,7 @@ func (c *Controller) spawn(generation int) error {
 		return err
 	}
 	cmd := exec.Command(launch.Executable, launch.Arguments...)
+	configureProcess(cmd)
 	cmd.Env = envSlice(launch.Environment)
 	cmd.Dir = launch.WorkingDirectory
 	cmd.Stdout = handle
@@ -198,7 +204,7 @@ func (c *Controller) spawn(generation int) error {
 	c.mu.Lock()
 	if c.intentionalStop || c.generation != generation {
 		c.mu.Unlock()
-		killProcessTree(cmd.Process.Pid)
+		_ = forceProcessTreeStop(cmd.Process.Pid)
 		<-exited
 		handle.Close()
 		return errBootSuperseded
@@ -256,7 +262,7 @@ func (c *Controller) publishReady(generation int, spawned bool) {
 }
 
 // StopOwned gives the owned backend up to 8 seconds to stop through release
-// RPC, including the stop command itself. Forced process-tree cleanup is bounded
+// RPC, including the stop command itself. Process-group escalation is bounded
 // separately. An attached server is never signalled.
 func (c *Controller) StopOwned() {
 	c.mu.Lock()
@@ -270,11 +276,14 @@ func (c *Controller) StopOwned() {
 		c.removePidFile()
 		return
 	}
-	select {
-	case <-exited:
-		c.finishStop()
+	pid := cmd.Process.Pid
+	if channelClosed(exited) {
+		if finalizeOwnedProcessTree(pid, exited) {
+			c.finishStop()
+		} else {
+			shell.Log("backend process tree remained after its leader exited; preserving PID file")
+		}
 		return
-	default:
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
@@ -282,33 +291,102 @@ func (c *Controller) StopOwned() {
 	// The node name, cookie and VM flags belong to this exact launch, not
 	// the current host environment. cmd.Path is the resolved command interpreter.
 	stop := exec.CommandContext(ctx, cmd.Path, core.ReleaseArguments("stop")...)
+	configureProcess(stop)
 	stop.Dir = cmd.Dir
 	stop.Env = cmd.Env
 	stop.Cancel = func() error {
-		if err := killProcessTree(stop.Process.Pid); err != nil {
+		if err := forceProcessTreeStop(stop.Process.Pid); err != nil {
 			return stop.Process.Kill()
 		}
 		return nil
 	}
-	if err := stop.Run(); err != nil {
-		shell.Log(fmt.Sprintf("backend stop command failed: %v", err))
-	}
-	select {
-	case <-exited:
-		c.finishStop()
-		return
-	case <-ctx.Done():
+	stopErr := stop.Run()
+	if stopErr != nil {
+		shell.Log(fmt.Sprintf("backend stop command failed: %v", stopErr))
+	} else {
+		select {
+		case <-exited:
+			if finalizeOwnedProcessTree(pid, exited) {
+				c.finishStop()
+			} else {
+				shell.Log("backend process tree remained after release stop; preserving PID file")
+			}
+			return
+		case <-ctx.Done():
+		}
 	}
 
-	if err := killProcessTree(cmd.Process.Pid); err != nil {
-		shell.Log(fmt.Sprintf("backend process-tree cleanup failed: %v", err))
+	if stopOwnedProcessTree(pid, exited) {
+		c.finishStop()
+		return
+	}
+	// Preserve the PID file when termination of either the leader or its
+	// process group could not be confirmed.
+	shell.Log("backend process-tree exit not confirmed after forced cleanup")
+}
+
+func stopOwnedProcessTree(pid int, exited <-chan struct{}) bool {
+	if err := requestProcessTreeStop(pid); err != nil {
+		shell.Log(fmt.Sprintf("backend graceful process-tree cleanup failed: %v", err))
+	}
+	if waitForOwnedProcessTreeExit(pid, exited, time.Second) {
+		return true
+	}
+	if err := forceProcessTreeStop(pid); err != nil {
+		shell.Log(fmt.Sprintf("backend forced process-tree cleanup failed: %v", err))
+	}
+	return waitForOwnedProcessTreeExit(pid, exited, 2*time.Second)
+}
+
+func finalizeOwnedProcessTree(pid int, exited <-chan struct{}) bool {
+	if processTreeAlive(pid) {
+		if err := forceProcessTreeStop(pid); err != nil {
+			shell.Log(fmt.Sprintf("backend lingering process-tree cleanup failed: %v", err))
+		}
+	}
+	return waitForOwnedProcessTreeExit(pid, exited, 2*time.Second)
+}
+
+func waitForOwnedProcessTreeExit(pid int, exited <-chan struct{}, timeout time.Duration) bool {
+	leaderExited := channelClosed(exited)
+	leaderExit := exited
+	if leaderExited {
+		leaderExit = nil
+	}
+	if leaderExited && !processTreeAlive(pid) {
+		return true
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-leaderExit:
+			leaderExited = true
+			leaderExit = nil
+			if !processTreeAlive(pid) {
+				return true
+			}
+		case <-ticker.C:
+			if leaderExited && !processTreeAlive(pid) {
+				return true
+			}
+		case <-timer.C:
+			return leaderExited && !processTreeAlive(pid)
+		}
+	}
+}
+
+func channelClosed(ch <-chan struct{}) bool {
+	if ch == nil {
+		return true
 	}
 	select {
-	case <-exited:
-		c.finishStop()
-	case <-time.After(2 * time.Second):
-		// Preserve the PID file when termination could not be confirmed.
-		shell.Log("backend exit not confirmed after forced cleanup")
+	case <-ch:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -403,12 +481,6 @@ func (c *Controller) removePidFile() {
 		return
 	}
 	_ = os.Remove(path)
-}
-
-func killProcessTree(pid int) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	return exec.CommandContext(ctx, "taskkill", "/PID", strconv.Itoa(pid), "/T", "/F").Run()
 }
 
 // Probe reports whether a Handbean server answers the health check on port.
