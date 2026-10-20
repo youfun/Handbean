@@ -120,7 +120,13 @@ defmodule HandbeanWeb.SettingsLiveTest do
       refute html =~ "即将推出"
 
       app_version = :handbean |> Application.spec(:vsn) |> to_string()
+
       assert has_element?(view, "#settings-app-version", "Handbean v#{app_version}")
+
+      assert has_element?(
+               view,
+               "#settings-source-link[href='https://github.com/youfun/Handbean'][target='_blank'][rel='noopener noreferrer']"
+             )
     end
 
     test "has back-to-workspace link", %{conn: conn} do

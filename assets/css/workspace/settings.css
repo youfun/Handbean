@@ -771,6 +771,35 @@ select.settings-input {
   line-height: 1.25;
 }
 
+.settings-source-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin: -5px -5px -5px 0;
+  border-radius: var(--radius-md);
+  color: inherit;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease;
+}
+
+.settings-source-link:hover {
+  color: var(--color-text-primary);
+  background: var(--color-surface-hover);
+}
+
+.settings-source-link:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.settings-source-icon {
+  width: 14px;
+  height: 14px;
+}
+
 .settings-page-content {
   min-width: 0;
 }
