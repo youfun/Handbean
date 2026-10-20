@@ -55,6 +55,7 @@ defmodule Handbean.Agent.Turn do
       resolution.denied_blocks,
       opts
     )
+    |> run_continuation()
     |> finish_run(opts)
   end
 
@@ -77,7 +78,7 @@ defmodule Handbean.Agent.Turn do
     |> ToolExecution.append_results([result_msg])
     |> mw_run(:after_tool_execution)
     |> CandidateMessages.inject(opts, :steer)
-    |> do_turn(opts)
+    |> continue_turn(opts)
   end
 
   defp continue_after_approval(state, executable, batch_calls, denied_blocks, opts) do
@@ -129,7 +130,7 @@ defmodule Handbean.Agent.Turn do
     |> Map.update!(:messages, &Handbean.Tool.Images.bound_history/1)
     |> mw_run(:after_tool_execution)
     |> CandidateMessages.inject(execution.opts, :steer)
-    |> do_turn(execution.opts)
+    |> continue_turn(execution.opts)
   end
 
   defp emit_resumed_turn_end(state, opts) do
@@ -197,7 +198,7 @@ defmodule Handbean.Agent.Turn do
         %{model: state.config.model}
       )
 
-      result = do_turn(state, opts)
+      result = run_turns(state, opts)
 
       duration_ms = System.monotonic_time(:millisecond) - run_start
 
@@ -270,12 +271,19 @@ defmodule Handbean.Agent.Turn do
       status: if(state.status == :running, do: :completed, else: state.status)
     })
 
-    do_turn(state, opts)
+    continue_turn(state, opts)
   end
 
   # ── Turn loop ──
 
-  defp do_turn(%State{status: :interrupted} = state, opts) do
+  defp run_turns(%State{} = state, opts) do
+    case run_turn(state, opts) do
+      {:continue, next_state, next_opts} -> run_turns(next_state, next_opts)
+      %State{} = result -> result
+    end
+  end
+
+  defp run_turn(%State{status: :interrupted} = state, opts) do
     if stall_check?(state) do
       emit(opts, :stall_check_requested, state.interrupt_data)
     end
@@ -283,18 +291,18 @@ defmodule Handbean.Agent.Turn do
     state
   end
 
-  defp do_turn(%State{status: status} = state, _opts)
+  defp run_turn(%State{status: status} = state, _opts)
        when status in [:stalled, :max_turns, :error, :halted, :budget_exceeded] do
     state
   end
 
-  defp do_turn(%State{turn: turn, config: %{max_turns: max_turns}} = state, _opts)
+  defp run_turn(%State{turn: turn, config: %{max_turns: max_turns}} = state, _opts)
        when is_integer(max_turns) and turn >= max_turns do
     Logger.warning(fn -> "[Turn] max_turns reached turn=#{turn} max=#{max_turns}" end)
     %{state | status: :max_turns}
   end
 
-  defp do_turn(%State{} = state, opts) do
+  defp run_turn(%State{} = state, opts) do
     turn_number = state.turn + 1
 
     # turn_start hook (read-only notification)
@@ -337,23 +345,24 @@ defmodule Handbean.Agent.Turn do
       t0 = System.monotonic_time(:millisecond)
       turn_end_count = turn_end_count()
       result = do_completion(state, opts)
+      result_state = continuation_state(result)
       duration_ms = System.monotonic_time(:millisecond) - t0
 
       Logger.debug(
-        "[Turn] stop turn=#{turn_number} status=#{result.status} duration_ms=#{duration_ms}"
+        "[Turn] stop turn=#{turn_number} status=#{result_state.status} duration_ms=#{duration_ms}"
       )
 
       :telemetry.execute(
         [:handbean, :turn, :stop],
         %{duration_ms: duration_ms},
-        %{turn: turn_number, status: result.status}
+        %{turn: turn_number, status: result_state.status}
       )
 
-      if turn_end_count() == turn_end_count and not tool_approval_interrupted?(result) do
+      if turn_end_count() == turn_end_count and not tool_approval_interrupted?(result_state) do
         Events.emit_turn_end(opts, %{
           turn: turn_number,
           stop_reason: "completed",
-          status: result.status,
+          status: result_state.status,
           duration_ms: duration_ms
         })
       end
@@ -361,6 +370,11 @@ defmodule Handbean.Agent.Turn do
       result
     end
   end
+
+  defp continue_turn(%State{} = state, opts), do: {:continue, state, opts}
+  defp run_continuation({:continue, %State{} = state, opts}), do: run_turns(state, opts)
+  defp continuation_state({:continue, %State{} = state, _opts}), do: state
+  defp continuation_state(%State{} = state), do: state
 
   # Apply Compactor before each provider call so a long-running conversation
   # cannot indefinitely grow the message history and stall the provider with
@@ -721,7 +735,7 @@ defmodule Handbean.Agent.Turn do
 
     state
     |> State.append_messages(follow_up_messages)
-    |> do_turn(opts)
+    |> continue_turn(opts)
   end
 
   defp continue_with_pending_or_complete(state, opts) do
@@ -828,7 +842,7 @@ defmodule Handbean.Agent.Turn do
     }
 
     state
-    |> do_turn(opts)
+    |> run_turns(opts)
     |> finish_run(opts)
   end
 

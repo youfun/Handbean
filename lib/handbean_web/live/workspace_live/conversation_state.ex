@@ -93,12 +93,11 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationState do
       |> assign(:timeline, timeline)
       |> assign(:history_before, history_before)
       |> assign(:history_has_more?, history_has_more?)
-      |> maybe_reset_timeline_stream(timeline, running_for_conversation?)
-
-    socket =
-      if Keyword.get(opts, :force_transcript?, false),
-        do: stream(socket, :timeline, timeline, reset: true),
-        else: socket
+      |> maybe_reset_timeline_stream(
+        timeline,
+        running_for_conversation?,
+        timeline != current_timeline or not timeline_stream_initialized?(socket)
+      )
 
     socket
     |> assign(:selected_model, selected_model)
@@ -495,9 +494,11 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationState do
     running_for_conversation?(socket, Map.get(socket.assigns, :current_conversation_id))
   end
 
-  defp maybe_reset_timeline_stream(socket, _timeline, true), do: socket
+  defp maybe_reset_timeline_stream(socket, timeline, true, changed?) do
+    maybe_reset_changed_timeline(socket, timeline, changed?)
+  end
 
-  defp maybe_reset_timeline_stream(socket, timeline, false) do
+  defp maybe_reset_timeline_stream(socket, timeline, false, changed?) do
     socket
     |> assign(:running, false)
     |> assign(:running_conversation_id, nil)
@@ -508,7 +509,19 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationState do
     |> assign(:thinking_content, "")
     |> assign(:think_buffer, "")
     |> maybe_assign_idle_status()
-    |> stream(:timeline, timeline, reset: true)
+    |> maybe_reset_changed_timeline(timeline, changed?)
+  end
+
+  defp maybe_reset_changed_timeline(socket, timeline, true),
+    do: stream(socket, :timeline, timeline, reset: true)
+
+  defp maybe_reset_changed_timeline(socket, _timeline, false), do: socket
+
+  defp timeline_stream_initialized?(socket) do
+    case Map.get(socket.assigns, :streams) do
+      %{} = streams -> Map.has_key?(streams, :timeline)
+      _ -> false
+    end
   end
 
   defp running_for_conversation?(socket, conv_id) when is_binary(conv_id) do

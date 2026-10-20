@@ -464,6 +464,48 @@ defmodule Handbean.Agent.TurnTest do
   end
 
   describe "tool_use → tool_result → final answer loop" do
+    test "closes each turn before starting the next provider request" do
+      owner = self()
+      handler_id = "turn-boundary-#{System.unique_integer([:positive])}"
+
+      :ok =
+        :telemetry.attach(
+          handler_id,
+          [:handbean, :turn, :stop],
+          fn _event, _measurements, metadata, pid ->
+            if self() == pid, do: send(pid, {:turn_stopped, metadata.turn})
+          end,
+          owner
+        )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+
+      config = %Config{
+        provider: FakeProvider,
+        model: "fake",
+        max_turns: 2,
+        working_directory: File.cwd!() |> Path.join("test/fixtures"),
+        provider_config: %{scenario: :tool_use_chain, notify: owner}
+      }
+
+      result = Turn.run_loop(State.init(config, "run"), [])
+
+      events = for _index <- 1..8, do: receive(do: (event -> event))
+
+      assert [
+               {:provider_config, _},
+               {:provider_messages, _},
+               {:provider_tool_defs, _},
+               {:turn_stopped, 1},
+               {:provider_config, _},
+               {:provider_messages, _},
+               {:provider_tool_defs, _},
+               {:turn_stopped, 2}
+             ] = events
+
+      assert result.status == :completed
+    end
+
     test "completes a full tool loop with fake provider" do
       config = %Config{
         provider: FakeProvider,

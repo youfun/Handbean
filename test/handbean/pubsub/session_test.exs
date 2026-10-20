@@ -24,7 +24,10 @@ defmodule Handbean.PubSub.SessionTest do
     def load(_session_id, opts), do: {:ok, Keyword.fetch!(opts, :snapshot)}
 
     @impl true
-    def save(_session_id, _snapshot, _opts), do: :ok
+    def save(_session_id, snapshot, opts) do
+      if notify = opts[:notify], do: send(notify, {:snapshot_saved, snapshot})
+      :ok
+    end
 
     @impl true
     def delete(_session_id, _opts), do: :ok
@@ -130,6 +133,41 @@ defmodule Handbean.PubSub.SessionTest do
 
       %{events: [event | _]} = Session.snapshot(sid)
       assert event.topic == "session:#{sid}"
+    end
+
+    test "coalesces per-turn snapshot writes and flushes the completed run" do
+      sid = "test-#{System.unique_integer([:positive])}"
+
+      {:ok, _pid} =
+        Session.start_link(
+          session_id: sid,
+          session_store: SnapshotStore,
+          session_store_enabled?: true,
+          session_store_opts: [snapshot: %{}, notify: self()]
+        )
+
+      Session.broadcast_event(sid, :run_start, %{})
+      assert_receive {:snapshot_saved, %{"seq" => 1}}
+
+      Session.broadcast_event(sid, :turn_start, %{turn: 1})
+      Session.broadcast_event(sid, :provider_items, %{items: []})
+      Session.broadcast_event(sid, :usage_updated, %{usage: %{}})
+      Session.broadcast_event(sid, :tool_start, %{tool_use_id: "tool"})
+      Session.broadcast_event(sid, :tool_end, %{tool_use_id: "tool"})
+      Session.broadcast_event(sid, :turn_end, %{turn: 1})
+
+      assert %{last_seq: 7} = Session.snapshot(sid)
+      refute_receive {:snapshot_saved, _snapshot}
+
+      Session.broadcast_event(sid, :run_end, %{status: :completed})
+
+      assert_receive {:snapshot_saved, %{"seq" => 8, "control_events" => events}}
+      assert Enum.any?(events, &(&1.kind == :tool_end))
+
+      Session.broadcast_event(sid, :tool_start, %{tool_use_id: "slow-tool"})
+
+      assert_receive {:snapshot_saved, %{"seq" => 9, "control_events" => events}}, 700
+      assert Enum.any?(events, &(&1.payload[:tool_use_id] == "slow-tool"))
     end
   end
 

@@ -25,18 +25,27 @@ defmodule Handbean.PubSub.Session do
   @throttle_default_ms 50
   @pending_queue_timeout_ms 100
 
-  # Disk-save throttle window for bursty events (e.g. :message_delta).
-  # Structural events (run_start, tool_start/end, run_end) always force-save.
+  # Disk-save throttle window for bursty streaming and per-turn events.
+  # Run lifecycle, approval and candidate-message boundaries always force-save.
   @save_throttle_ms 500
 
   # Events that are emitted at high frequency during streaming.
   # These are broadcast via cast (no waiting) and their disk snapshot is throttled.
   @high_freq_events [:message_delta, :thinking_delta]
 
-  # turn_end events unwind in a burst when a multi-turn run finishes. Persisting
-  # every event rewrites the full snapshot repeatedly and can delay the terminal
-  # mark_run_finished call beyond GenServer's timeout. run_end still force-saves.
-  @throttled_snapshot_events @high_freq_events ++ [:turn_end]
+  # Per-turn events are already held in memory and their canonical transcript
+  # data is persisted separately. Re-encoding the full reconnect snapshot for
+  # each one makes long tool runs monopolize the Session process. Lifecycle,
+  # approval and candidate-message boundaries still force-save immediately.
+  @throttled_snapshot_events @high_freq_events ++
+                               [
+                                 :turn_start,
+                                 :provider_items,
+                                 :usage_updated,
+                                 :tool_start,
+                                 :tool_end,
+                                 :turn_end
+                               ]
 
   @doc false
   def throttle_default_ms, do: @throttle_default_ms
@@ -239,6 +248,7 @@ defmodule Handbean.PubSub.Session do
       next_turn_messages: SnapshotCodec.messages(Map.get(loaded, "next_turn_messages", [])),
       extension_state: Map.get(loaded, "extension_state", %{}),
       last_throttle: 0,
+      save_timer: nil,
       session_store: session_store,
       store_opts: store_opts,
       recorder_opts: recorder_opts(opts)
@@ -563,6 +573,14 @@ defmodule Handbean.PubSub.Session do
   end
 
   @impl true
+  def handle_info({:save_snapshot, save_ref}, %{save_timer: {_timer_ref, save_ref}} = state) do
+    {:noreply, maybe_save(%{state | save_timer: nil})}
+  end
+
+  def handle_info({:save_snapshot, _save_ref}, state) do
+    {:noreply, state}
+  end
+
   def handle_info({:DOWN, ref, :process, pid, reason}, state) do
     cond do
       pid == state.agent_pid ->
@@ -814,6 +832,8 @@ defmodule Handbean.PubSub.Session do
   end
 
   defp maybe_save(state) do
+    state = cancel_scheduled_save(state)
+
     if session_store_enabled?(state.store_opts) do
       state.session_store.save(state.session_id, SnapshotCodec.encode(state), state.store_opts)
     end
@@ -837,9 +857,24 @@ defmodule Handbean.PubSub.Session do
         maybe_save(state)
 
       true ->
-        state
+        schedule_save(state, @save_throttle_ms - elapsed)
     end
   end
+
+  defp schedule_save(%{save_timer: nil} = state, delay) do
+    save_ref = make_ref()
+    timer_ref = Process.send_after(self(), {:save_snapshot, save_ref}, delay)
+    %{state | save_timer: {timer_ref, save_ref}}
+  end
+
+  defp schedule_save(state, _delay), do: state
+
+  defp cancel_scheduled_save(%{save_timer: {timer_ref, _save_ref}} = state) do
+    Process.cancel_timer(timer_ref)
+    %{state | save_timer: nil}
+  end
+
+  defp cancel_scheduled_save(state), do: state
 
   defp event_recorder_enabled?(opts) do
     Keyword.get(

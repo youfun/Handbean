@@ -292,7 +292,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRenderingTest do
       send(view.pid, {:agent_event, agent_event(:message_delta, %{chunk: "done"}, 3)})
 
       rendered = render(view)
-      assert rendered =~ "Explored 1 file"
+      assert rendered =~ "test.rb"
       assert rendered =~ "done"
     end
 

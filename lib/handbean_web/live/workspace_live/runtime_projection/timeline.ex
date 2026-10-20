@@ -10,24 +10,31 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection.Timeline do
     pending_ids = pending_id_set(socket)
     collapse_opts = Keyword.take(opts, [:trailing_open?])
 
-    {timeline, position, inserted?} =
+    {timeline, position, inserted?, incremental?} =
       previous_timeline
       |> upsert_in_sequence(entry, pending_ids)
       |> then(fn {entries, position, inserted?} ->
-        {HandbeanWeb.WorkspaceHelper.apply_tool_work_collapse(
-           entries,
-           expanded,
-           collapse_opts
-         ), position, inserted?}
+        if incremental_open_tool?(entries, position, inserted?, pending_ids, collapse_opts) do
+          {project_open_tool(entries, position), position, inserted?, true}
+        else
+          timeline =
+            HandbeanWeb.WorkspaceHelper.apply_tool_work_collapse(
+              entries,
+              expanded,
+              collapse_opts
+            )
+
+          {timeline, position, inserted?, false}
+        end
       end)
 
     entry_id = Map.get(entry, "id")
     projected = Enum.find(timeline, &(Map.get(&1, "id") == entry_id)) || entry
 
     socket
-    |> assign(:timeline, timeline)
+    |> put_timeline(timeline, incremental?)
     |> stream_timeline_entry(projected, position, inserted?)
-    |> stream_changed_entries(previous_timeline, timeline, entry_id)
+    |> stream_changed_entries(previous_timeline, timeline, entry_id, incremental?)
     |> stream_related_handoffs(timeline, projected, inserted?)
   end
 
@@ -304,6 +311,55 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection.Timeline do
     |> MapSet.new()
   end
 
+  defp incremental_open_tool?(entries, position, inserted?, pending_ids, opts) do
+    entry = Enum.at(entries, position)
+
+    Keyword.get(opts, :trailing_open?, false) and tool_entry?(entry) and
+      if inserted? do
+        open_tool_insert?(entries, position, pending_ids)
+      else
+        is_binary(Map.get(entry, "work_group_id")) and
+          Map.get(entry, "work_group_complete") == false
+      end
+  end
+
+  defp open_tool_insert?(entries, position, pending_ids) do
+    before = if position > 0, do: Enum.at(entries, position - 1)
+
+    previous_group_open? =
+      not tool_entry?(before) or Map.get(before, "work_group_complete") == false
+
+    trailing? =
+      entries
+      |> Enum.drop(position + 1)
+      |> Enum.all?(&MapSet.member?(pending_ids, Map.get(&1, "id")))
+
+    previous_group_open? and trailing?
+  end
+
+  defp project_open_tool(entries, position) do
+    previous = if position > 0, do: Enum.at(entries, position - 1)
+    entry = Enum.fetch!(entries, position)
+    group_id = if tool_entry?(previous), do: previous["work_group_id"], else: entry["id"]
+    line = HandbeanWeb.WorkspaceHelper.tool_work_line(entry)
+
+    projected =
+      entry
+      |> Map.put("work_group_id", group_id)
+      |> Map.put("work_group_first", entry["id"] == group_id)
+      |> Map.put("work_group_complete", false)
+      |> Map.put("work_collapsed", false)
+      |> Map.put("work_summary", nil)
+      |> Map.put("work_indent", 1)
+      |> Map.put("work_verb", line.verb)
+      |> Map.put("work_target", line.target)
+
+    List.replace_at(entries, position, projected)
+  end
+
+  defp tool_entry?(entry) when is_map(entry), do: Map.get(entry, "content_type") == "tool"
+  defp tool_entry?(_entry), do: false
+
   def hydrate_timeline_entries(socket, ids) when is_list(ids) do
     present = MapSet.new(socket.assigns.timeline || [], &Map.get(&1, "id"))
     missing = Enum.filter(ids, &(is_binary(&1) and not MapSet.member?(present, &1)))
@@ -372,7 +428,15 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection.Timeline do
   defp stream_timeline_entry(socket, entry, _position, false),
     do: stream_insert(socket, :timeline, entry)
 
-  defp stream_changed_entries(socket, previous, timeline, inserted_id) do
+  defp put_timeline(socket, timeline, true) do
+    %{socket | assigns: Map.put(socket.assigns, :timeline, timeline)}
+  end
+
+  defp put_timeline(socket, timeline, false), do: assign(socket, :timeline, timeline)
+
+  defp stream_changed_entries(socket, _previous, _timeline, _inserted_id, true), do: socket
+
+  defp stream_changed_entries(socket, previous, timeline, inserted_id, false) do
     previous_by_id = Map.new(previous, &{Map.get(&1, "id"), &1})
 
     Enum.reduce(timeline, socket, fn entry, acc ->
