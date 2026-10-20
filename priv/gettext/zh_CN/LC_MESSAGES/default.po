@@ -3,6 +3,48 @@
 msgid ""
 msgstr ""
 
+msgid "Error diagnostics"
+msgstr "错误诊断"
+
+msgid "Download a JSON file to share with a developer. Includes error counts and code locations; excludes messages, conversations, credentials and local paths. Nothing is uploaded."
+msgstr "下载 JSON 文件交给开发者分析。包含错误次数和代码位置，不含错误原文、对话、凭据及本机路径，不会上传任何数据。"
+
+msgid "Time range"
+msgstr "时间范围"
+
+msgid "Last 24 hours"
+msgstr "最近 24 小时"
+
+msgid "Last 7 days"
+msgstr "最近 7 天"
+
+msgid "Last 30 days"
+msgstr "最近 30 天"
+
+msgid "All retained history"
+msgstr "全部保留记录"
+
+msgid "Error status"
+msgstr "错误状态"
+
+msgid "Unresolved"
+msgstr "未解决"
+
+msgid "All statuses"
+msgstr "全部状态"
+
+msgid "Up to 100 error groups and 3 recent occurrences per group. Muted errors are included."
+msgstr "最多导出 100 组错误，每组保留最近 3 次详情，包含已静默的错误。"
+
+msgid "Download diagnostics JSON"
+msgstr "下载诊断 JSON"
+
+msgid "Choose a valid diagnostic time range and status."
+msgstr "请选择有效的诊断时间范围和错误状态。"
+
+msgid "Could not export error diagnostics. Please try again."
+msgstr "无法导出错误诊断，请重试。"
+
 # ── 中文源 (自映射) ──
 #: lib/handbean_web/live/file_browser_component.ex:55
 #, elixir-autogen

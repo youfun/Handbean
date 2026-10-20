@@ -319,7 +319,7 @@
         )}
       </div>
 
-      <!-- Advanced settings: local voice input and browser capability diagnostics. -->
+      <!-- Advanced settings: local voice input and diagnostics. -->
       <div :if={@active_tab == :local_webgpu} class="settings-content-wrap">
         <div class="settings-content-card settings-form-section">
           <div class="settings-section-heading">
@@ -388,6 +388,50 @@
               </div>
             </div>
           </div>
+
+          <div class="settings-section-heading settings-advanced-divider">
+            <div class="settings-section-title">{gettext("Error diagnostics")}</div>
+            <div class="settings-help-text">
+              {gettext(
+                "Download a JSON file to share with a developer. Includes error counts and code locations; excludes messages, conversations, credentials and local paths. Nothing is uploaded."
+              )}
+            </div>
+          </div>
+          <form
+            id="error-diagnostics-export"
+            action={~p"/settings/error-diagnostics"}
+            method="get"
+            class="settings-card"
+          >
+            <div class="settings-field-row">
+              <label for="diagnostics-range" class="settings-field-title">{gettext("Time range")}</label>
+              <select id="diagnostics-range" name="range" class="settings-select">
+                <option value="24h">{gettext("Last 24 hours")}</option>
+                <option value="7d" selected>{gettext("Last 7 days")}</option>
+                <option value="30d">{gettext("Last 30 days")}</option>
+                <option value="all">{gettext("All retained history")}</option>
+              </select>
+            </div>
+            <div class="settings-field-row">
+              <label for="diagnostics-status" class="settings-field-title">{gettext(
+                "Error status"
+              )}</label>
+              <select id="diagnostics-status" name="status" class="settings-select">
+                <option value="unresolved">{gettext("Unresolved")}</option>
+                <option value="all">{gettext("All statuses")}</option>
+              </select>
+            </div>
+            <div class="settings-field-row">
+              <div class="settings-field-desc">
+                {gettext(
+                  "Up to 100 error groups and 3 recent occurrences per group. Muted errors are included."
+                )}
+              </div>
+              <button type="submit" class="settings-btn settings-btn-primary">{gettext(
+                "Download diagnostics JSON"
+              )}</button>
+            </div>
+          </form>
 
           <div class="settings-section-heading settings-advanced-divider">
             <div class="settings-section-title">{gettext("Local WebGPU capability probe")}</div>
