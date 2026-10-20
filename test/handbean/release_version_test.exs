@@ -72,6 +72,56 @@ defmodule Handbean.ReleaseVersionTest do
     assert {_, 1} = run(root, ["verify-web", web])
   end
 
+  test "APK verification handles large entry listings without pipefail false negatives", %{
+    root: root
+  } do
+    android_home = Path.join(root, "android-sdk")
+    aapt = Path.join(android_home, "build-tools/35.0.0/aapt")
+    fake_bin = Path.join(root, "bin")
+    unzip = Path.join(fake_bin, "unzip")
+    apk = Path.join(root, "developer.apk")
+
+    File.mkdir_p!(Path.dirname(aapt))
+    File.mkdir_p!(fake_bin)
+    File.write!(apk, "fixture")
+
+    File.write!(
+      aapt,
+      """
+      #!/bin/sh
+      printf '%s\\n' \
+        "package: name='io.hndbean' versionCode='28' versionName='0.12.34-developer'" \
+        "targetSdkVersion:'28'"
+      """
+    )
+
+    File.write!(
+      unzip,
+      """
+      #!/bin/sh
+      printf '%s\\n' \
+        assets/termux-rootfs.tgz \
+        assets/termux-rootfs.json \
+        assets/termux-packages.json
+      i=0
+      while [ "$i" -lt 10000 ]; do
+        printf 'assets/filler/%05d\\n' "$i"
+        i=$((i + 1))
+      done
+      """
+    )
+
+    File.chmod!(aapt, 0o755)
+    File.chmod!(unzip, 0o755)
+
+    env = [
+      {"ANDROID_HOME", android_home},
+      {"PATH", fake_bin <> ":" <> System.fetch_env!("PATH")}
+    ]
+
+    assert {_, 0} = run(root, ["verify-apk", apk, "developer"], env)
+  end
+
   if :os.type() == {:unix, :darwin} do
     test "mobile preparation alias generates the plist before native packaging", %{root: root} do
       mobile = Path.join(root, "mobile")
@@ -139,10 +189,11 @@ defmodule Handbean.ReleaseVersionTest do
     end
   end
 
-  defp run(root, args) do
+  defp run(root, args, env \\ []) do
     System.cmd("bash", [Path.join(root, "scripts/version.sh") | args],
       cd: System.tmp_dir!(),
-      stderr_to_stdout: true
+      stderr_to_stdout: true,
+      env: env
     )
   end
 end

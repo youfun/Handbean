@@ -65,7 +65,7 @@ case "${1:-}" in
         expected_version="$version"
         expected_package="com.example.handbean_probe.nativechat"
         expected_target="35"
-        if printf '%s\n' "$entries" | grep -Eq '^assets/termux-(rootfs|packages)'; then
+        if grep -Eq '^assets/termux-(rootfs|packages)' <<<"$entries"; then
           fail "$2 unexpectedly contains Developer rootfs assets"
         fi
         ;;
@@ -78,7 +78,7 @@ case "${1:-}" in
           assets/termux-rootfs.json \
           assets/termux-packages.json
         do
-          printf '%s\n' "$entries" | grep -Fxq "$asset" \
+          grep -Fxq "$asset" <<<"$entries" \
             || fail "$2 is missing exact Developer asset $asset"
         done
         ;;
