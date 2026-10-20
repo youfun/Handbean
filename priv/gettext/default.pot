@@ -3114,3 +3114,163 @@ msgstr ""
 #, elixir-autogen, elixir-format
 msgid "Record a little longer and try again."
 msgstr ""
+
+# ── Computer Control settings ──
+#: lib/handbean_web/live/settings_live.ex:577
+#: lib/handbean_web/live/settings_live.html.heex:518
+#, elixir-autogen, elixir-format
+msgid "Computer Control"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:521
+#, elixir-autogen, elixir-format
+msgid "Manage the browser connection and the native macOS capability available to this Agent."
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:533
+#, elixir-autogen, elixir-format
+msgid "Google Chrome"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.ex:602
+#: lib/handbean_web/live/settings_live.html.heex:536
+#, elixir-autogen, elixir-format
+msgid "Unavailable"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:538
+#, elixir-autogen, elixir-format
+msgid "Waiting for extension"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:545
+#, elixir-autogen, elixir-format
+msgid "Connect Handbean to ordinary tabs in your current Chrome profile. Tabs are managed automatically while this switch is on; risky actions still use Handbean confirmations."
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:559
+#, elixir-autogen, elixir-format
+msgid "Enable Chrome extension connection"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:573
+#, elixir-autogen, elixir-format
+msgid "Extension connection"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:576
+#, elixir-autogen, elixir-format
+msgid "Relay:"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:584
+#, elixir-autogen, elixir-format
+msgid "Extension:"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:592
+#, elixir-autogen, elixir-format
+msgid "Available tabs:"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:596
+#, elixir-autogen, elixir-format
+msgid "agent-browser:"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:602
+#, elixir-autogen, elixir-format
+msgid "%{version} · upgrade required"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:606
+#, elixir-autogen, elixir-format
+msgid "Not found"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:613
+#, elixir-autogen, elixir-format
+msgid "For Phase 0, load the unpacked extension from %{path}, then paste the pairing URL into its popup. Requires agent-browser 0.39.1 or later."
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:627
+#, elixir-autogen, elixir-format
+msgid "Copy pairing URL"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:635
+#: lib/handbean_web/live/settings_live.html.heex:715
+#, elixir-autogen, elixir-format
+msgid "Refresh"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:641
+#, elixir-autogen, elixir-format
+msgid "Desktop"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:646
+#: lib/handbean_web/live/settings_live.html.heex:668
+#, elixir-autogen, elixir-format
+msgid "Enable computer control"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:649
+#, elixir-autogen, elixir-format
+msgid "macOS native"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:655
+#, elixir-autogen, elixir-format
+msgid "Allows the Agent to observe an approved window and request foreground input. Every input still requires native confirmation."
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:679
+#, elixir-autogen, elixir-format
+msgid "macOS permissions"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:682
+#, elixir-autogen, elixir-format
+msgid "Screen Recording"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:690
+#, elixir-autogen, elixir-format
+msgid "Accessibility"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:698
+#, elixir-autogen, elixir-format
+msgid "Input control"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:722
+#, elixir-autogen, elixir-format
+msgid "Pointer input"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:725
+#, elixir-autogen, elixir-format
+msgid "Typing and supported keys are available. Click and scroll stay closed until real-device targeting acceptance passes."
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.ex:594
+#, elixir-autogen, elixir-format
+msgid "Allowed"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.ex:595
+#, elixir-autogen, elixir-format
+msgid "Permission required"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.ex:596
+#, elixir-autogen, elixir-format
+msgid "Unknown"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.ex:601
+#, elixir-autogen, elixir-format
+msgid "In verification"
+msgstr ""

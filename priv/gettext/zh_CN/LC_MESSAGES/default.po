@@ -3112,3 +3112,163 @@ msgstr "语音转写失败，请重试。"
 #, elixir-autogen, elixir-format
 msgid "Record a little longer and try again."
 msgstr "请多录制一会儿，然后重试。"
+
+# ── 电脑控制设置 ──
+#: lib/handbean_web/live/settings_live.ex:577
+#: lib/handbean_web/live/settings_live.html.heex:518
+#, elixir-autogen, elixir-format
+msgid "Computer Control"
+msgstr "电脑控制"
+
+#: lib/handbean_web/live/settings_live.html.heex:521
+#, elixir-autogen, elixir-format
+msgid "Manage the browser connection and the native macOS capability available to this Agent."
+msgstr "管理此 Agent 可用的浏览器连接和 macOS 原生控制能力。"
+
+#: lib/handbean_web/live/settings_live.html.heex:533
+#, elixir-autogen, elixir-format
+msgid "Google Chrome"
+msgstr "Google Chrome"
+
+#: lib/handbean_web/live/settings_live.ex:602
+#: lib/handbean_web/live/settings_live.html.heex:536
+#, elixir-autogen, elixir-format
+msgid "Unavailable"
+msgstr "不可用"
+
+#: lib/handbean_web/live/settings_live.html.heex:538
+#, elixir-autogen, elixir-format
+msgid "Waiting for extension"
+msgstr "等待扩展连接"
+
+#: lib/handbean_web/live/settings_live.html.heex:545
+#, elixir-autogen, elixir-format
+msgid "Connect Handbean to ordinary tabs in your current Chrome profile. Tabs are managed automatically while this switch is on; risky actions still use Handbean confirmations."
+msgstr "将 Handbean 连接到当前 Chrome 配置文件中的普通网页标签页。开启后，标签页将自动纳入管理；高风险操作仍需经过 Handbean 确认。"
+
+#: lib/handbean_web/live/settings_live.html.heex:559
+#, elixir-autogen, elixir-format
+msgid "Enable Chrome extension connection"
+msgstr "启用 Chrome 扩展连接"
+
+#: lib/handbean_web/live/settings_live.html.heex:573
+#, elixir-autogen, elixir-format
+msgid "Extension connection"
+msgstr "扩展连接"
+
+#: lib/handbean_web/live/settings_live.html.heex:576
+#, elixir-autogen, elixir-format
+msgid "Relay:"
+msgstr "中继服务："
+
+#: lib/handbean_web/live/settings_live.html.heex:584
+#, elixir-autogen, elixir-format
+msgid "Extension:"
+msgstr "扩展："
+
+#: lib/handbean_web/live/settings_live.html.heex:592
+#, elixir-autogen, elixir-format
+msgid "Available tabs:"
+msgstr "可用标签页："
+
+#: lib/handbean_web/live/settings_live.html.heex:596
+#, elixir-autogen, elixir-format
+msgid "agent-browser:"
+msgstr "agent-browser："
+
+#: lib/handbean_web/live/settings_live.html.heex:602
+#, elixir-autogen, elixir-format
+msgid "%{version} · upgrade required"
+msgstr "%{version} · 需要升级"
+
+#: lib/handbean_web/live/settings_live.html.heex:606
+#, elixir-autogen, elixir-format
+msgid "Not found"
+msgstr "未找到"
+
+#: lib/handbean_web/live/settings_live.html.heex:613
+#, elixir-autogen, elixir-format
+msgid "For Phase 0, load the unpacked extension from %{path}, then paste the pairing URL into its popup. Requires agent-browser 0.39.1 or later."
+msgstr "在 Phase 0 阶段，请从 %{path} 加载未打包的扩展，然后将配对 URL 粘贴到扩展弹窗中。需要 agent-browser 0.39.1 或更高版本。"
+
+#: lib/handbean_web/live/settings_live.html.heex:627
+#, elixir-autogen, elixir-format
+msgid "Copy pairing URL"
+msgstr "复制配对 URL"
+
+#: lib/handbean_web/live/settings_live.html.heex:635
+#: lib/handbean_web/live/settings_live.html.heex:715
+#, elixir-autogen, elixir-format
+msgid "Refresh"
+msgstr "刷新"
+
+#: lib/handbean_web/live/settings_live.html.heex:641
+#, elixir-autogen, elixir-format
+msgid "Desktop"
+msgstr "桌面"
+
+#: lib/handbean_web/live/settings_live.html.heex:646
+#: lib/handbean_web/live/settings_live.html.heex:668
+#, elixir-autogen, elixir-format
+msgid "Enable computer control"
+msgstr "启用电脑控制"
+
+#: lib/handbean_web/live/settings_live.html.heex:649
+#, elixir-autogen, elixir-format
+msgid "macOS native"
+msgstr "macOS 原生"
+
+#: lib/handbean_web/live/settings_live.html.heex:655
+#, elixir-autogen, elixir-format
+msgid "Allows the Agent to observe an approved window and request foreground input. Every input still requires native confirmation."
+msgstr "允许 Agent 查看已授权的窗口并请求在前台执行输入操作。每次输入操作仍需通过 macOS 原生确认。"
+
+#: lib/handbean_web/live/settings_live.html.heex:679
+#, elixir-autogen, elixir-format
+msgid "macOS permissions"
+msgstr "macOS 权限"
+
+#: lib/handbean_web/live/settings_live.html.heex:682
+#, elixir-autogen, elixir-format
+msgid "Screen Recording"
+msgstr "屏幕录制"
+
+#: lib/handbean_web/live/settings_live.html.heex:690
+#, elixir-autogen, elixir-format
+msgid "Accessibility"
+msgstr "辅助功能"
+
+#: lib/handbean_web/live/settings_live.html.heex:698
+#, elixir-autogen, elixir-format
+msgid "Input control"
+msgstr "输入控制"
+
+#: lib/handbean_web/live/settings_live.html.heex:722
+#, elixir-autogen, elixir-format
+msgid "Pointer input"
+msgstr "指针操作"
+
+#: lib/handbean_web/live/settings_live.html.heex:725
+#, elixir-autogen, elixir-format
+msgid "Typing and supported keys are available. Click and scroll stay closed until real-device targeting acceptance passes."
+msgstr "当前可使用文本输入和受支持的按键。在真机目标定位验收通过前，点击和滚动功能保持关闭。"
+
+#: lib/handbean_web/live/settings_live.ex:594
+#, elixir-autogen, elixir-format
+msgid "Allowed"
+msgstr "已授权"
+
+#: lib/handbean_web/live/settings_live.ex:595
+#, elixir-autogen, elixir-format
+msgid "Permission required"
+msgstr "需要授权"
+
+#: lib/handbean_web/live/settings_live.ex:596
+#, elixir-autogen, elixir-format
+msgid "Unknown"
+msgstr "未知"
+
+#: lib/handbean_web/live/settings_live.ex:601
+#, elixir-autogen, elixir-format
+msgid "In verification"
+msgstr "验证中"

@@ -312,6 +312,52 @@ defmodule HandbeanWeb.SettingsLiveTest do
       refute render(view) =~ "tabs explicitly approved"
     end
 
+    test "Computer Control is fully translated in Chinese", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/settings?locale=zh_CN")
+
+      assert has_element?(
+               view,
+               ~s|button[phx-value-tab="computer_use"]|,
+               "电脑控制"
+             )
+
+      view
+      |> element(~s|button[phx-value-tab="computer_use"]|)
+      |> render_click()
+
+      html = render(view)
+
+      for translation <- [
+            "管理此 Agent 可用的浏览器连接和 macOS 原生控制能力。",
+            "将 Handbean 连接到当前 Chrome 配置文件中的普通网页标签页。",
+            "桌面",
+            "启用电脑控制",
+            "macOS 权限",
+            "屏幕录制",
+            "辅助功能",
+            "输入控制",
+            "未知",
+            "刷新",
+            "指针操作",
+            "在真机目标定位验收通过前，点击和滚动功能保持关闭。"
+          ] do
+        assert html =~ translation
+      end
+
+      for {source, translation} <- [
+            {"Waiting for extension", "等待扩展连接"},
+            {"Extension connection", "扩展连接"},
+            {"Relay:", "中继服务："},
+            {"Copy pairing URL", "复制配对 URL"},
+            {"Allowed", "已授权"},
+            {"Permission required", "需要授权"},
+            {"In verification", "验证中"}
+          ] do
+        assert {:ok, ^translation} =
+                 HandbeanWeb.Gettext.lgettext("zh_CN", "default", source, %{})
+      end
+    end
+
     test "Local WebGPU tab exposes the browser-only capability probe", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/settings")
 

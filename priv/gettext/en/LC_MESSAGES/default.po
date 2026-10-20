@@ -3114,3 +3114,163 @@ msgstr "Voice transcription failed. Please try again."
 #, elixir-autogen, elixir-format
 msgid "Record a little longer and try again."
 msgstr "Record a little longer and try again."
+
+# ── Computer Control settings ──
+#: lib/handbean_web/live/settings_live.ex:577
+#: lib/handbean_web/live/settings_live.html.heex:518
+#, elixir-autogen, elixir-format
+msgid "Computer Control"
+msgstr "Computer Control"
+
+#: lib/handbean_web/live/settings_live.html.heex:521
+#, elixir-autogen, elixir-format
+msgid "Manage the browser connection and the native macOS capability available to this Agent."
+msgstr "Manage the browser connection and the native macOS capability available to this Agent."
+
+#: lib/handbean_web/live/settings_live.html.heex:533
+#, elixir-autogen, elixir-format
+msgid "Google Chrome"
+msgstr "Google Chrome"
+
+#: lib/handbean_web/live/settings_live.ex:602
+#: lib/handbean_web/live/settings_live.html.heex:536
+#, elixir-autogen, elixir-format
+msgid "Unavailable"
+msgstr "Unavailable"
+
+#: lib/handbean_web/live/settings_live.html.heex:538
+#, elixir-autogen, elixir-format
+msgid "Waiting for extension"
+msgstr "Waiting for extension"
+
+#: lib/handbean_web/live/settings_live.html.heex:545
+#, elixir-autogen, elixir-format
+msgid "Connect Handbean to ordinary tabs in your current Chrome profile. Tabs are managed automatically while this switch is on; risky actions still use Handbean confirmations."
+msgstr "Connect Handbean to ordinary tabs in your current Chrome profile. Tabs are managed automatically while this switch is on; risky actions still use Handbean confirmations."
+
+#: lib/handbean_web/live/settings_live.html.heex:559
+#, elixir-autogen, elixir-format
+msgid "Enable Chrome extension connection"
+msgstr "Enable Chrome extension connection"
+
+#: lib/handbean_web/live/settings_live.html.heex:573
+#, elixir-autogen, elixir-format
+msgid "Extension connection"
+msgstr "Extension connection"
+
+#: lib/handbean_web/live/settings_live.html.heex:576
+#, elixir-autogen, elixir-format
+msgid "Relay:"
+msgstr "Relay:"
+
+#: lib/handbean_web/live/settings_live.html.heex:584
+#, elixir-autogen, elixir-format
+msgid "Extension:"
+msgstr "Extension:"
+
+#: lib/handbean_web/live/settings_live.html.heex:592
+#, elixir-autogen, elixir-format
+msgid "Available tabs:"
+msgstr "Available tabs:"
+
+#: lib/handbean_web/live/settings_live.html.heex:596
+#, elixir-autogen, elixir-format
+msgid "agent-browser:"
+msgstr "agent-browser:"
+
+#: lib/handbean_web/live/settings_live.html.heex:602
+#, elixir-autogen, elixir-format
+msgid "%{version} · upgrade required"
+msgstr "%{version} · upgrade required"
+
+#: lib/handbean_web/live/settings_live.html.heex:606
+#, elixir-autogen, elixir-format
+msgid "Not found"
+msgstr "Not found"
+
+#: lib/handbean_web/live/settings_live.html.heex:613
+#, elixir-autogen, elixir-format
+msgid "For Phase 0, load the unpacked extension from %{path}, then paste the pairing URL into its popup. Requires agent-browser 0.39.1 or later."
+msgstr "For Phase 0, load the unpacked extension from %{path}, then paste the pairing URL into its popup. Requires agent-browser 0.39.1 or later."
+
+#: lib/handbean_web/live/settings_live.html.heex:627
+#, elixir-autogen, elixir-format
+msgid "Copy pairing URL"
+msgstr "Copy pairing URL"
+
+#: lib/handbean_web/live/settings_live.html.heex:635
+#: lib/handbean_web/live/settings_live.html.heex:715
+#, elixir-autogen, elixir-format
+msgid "Refresh"
+msgstr "Refresh"
+
+#: lib/handbean_web/live/settings_live.html.heex:641
+#, elixir-autogen, elixir-format
+msgid "Desktop"
+msgstr "Desktop"
+
+#: lib/handbean_web/live/settings_live.html.heex:646
+#: lib/handbean_web/live/settings_live.html.heex:668
+#, elixir-autogen, elixir-format
+msgid "Enable computer control"
+msgstr "Enable computer control"
+
+#: lib/handbean_web/live/settings_live.html.heex:649
+#, elixir-autogen, elixir-format
+msgid "macOS native"
+msgstr "macOS native"
+
+#: lib/handbean_web/live/settings_live.html.heex:655
+#, elixir-autogen, elixir-format
+msgid "Allows the Agent to observe an approved window and request foreground input. Every input still requires native confirmation."
+msgstr "Allows the Agent to observe an approved window and request foreground input. Every input still requires native confirmation."
+
+#: lib/handbean_web/live/settings_live.html.heex:679
+#, elixir-autogen, elixir-format
+msgid "macOS permissions"
+msgstr "macOS permissions"
+
+#: lib/handbean_web/live/settings_live.html.heex:682
+#, elixir-autogen, elixir-format
+msgid "Screen Recording"
+msgstr "Screen Recording"
+
+#: lib/handbean_web/live/settings_live.html.heex:690
+#, elixir-autogen, elixir-format
+msgid "Accessibility"
+msgstr "Accessibility"
+
+#: lib/handbean_web/live/settings_live.html.heex:698
+#, elixir-autogen, elixir-format
+msgid "Input control"
+msgstr "Input control"
+
+#: lib/handbean_web/live/settings_live.html.heex:722
+#, elixir-autogen, elixir-format
+msgid "Pointer input"
+msgstr "Pointer input"
+
+#: lib/handbean_web/live/settings_live.html.heex:725
+#, elixir-autogen, elixir-format
+msgid "Typing and supported keys are available. Click and scroll stay closed until real-device targeting acceptance passes."
+msgstr "Typing and supported keys are available. Click and scroll stay closed until real-device targeting acceptance passes."
+
+#: lib/handbean_web/live/settings_live.ex:594
+#, elixir-autogen, elixir-format
+msgid "Allowed"
+msgstr "Allowed"
+
+#: lib/handbean_web/live/settings_live.ex:595
+#, elixir-autogen, elixir-format
+msgid "Permission required"
+msgstr "Permission required"
+
+#: lib/handbean_web/live/settings_live.ex:596
+#, elixir-autogen, elixir-format
+msgid "Unknown"
+msgstr "Unknown"
+
+#: lib/handbean_web/live/settings_live.ex:601
+#, elixir-autogen, elixir-format
+msgid "In verification"
+msgstr "In verification"
