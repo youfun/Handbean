@@ -19,7 +19,17 @@ defmodule Handbean.Agent.Provider.Cursor.Session do
   use GenServer
 
   alias Handbean.Agent.Message
-  alias Handbean.Agent.Provider.Cursor.{Blobs, CheckpointStore, Connect, Native, Proto, Transport}
+
+  alias Handbean.Agent.Provider.Cursor.{
+    Blobs,
+    CheckpointStore,
+    Connect,
+    Native,
+    Proto,
+    RequestEncoder,
+    ToolResultEncoder,
+    Transport
+  }
 
   require Logger
 
@@ -261,10 +271,16 @@ defmodule Handbean.Agent.Provider.Cursor.Session do
          :ok <- require_model(model),
          {:ok, transport} <- connect_transport(transport_mod, config),
          {:ok, transport} <- open_run_transport(transport_mod, transport, token, config) do
-      {payload, blobs, first_ids, first_nils, extra_users} =
-        encode_run(messages, model, config, state)
+      encoded =
+        RequestEncoder.encode(
+          messages,
+          model,
+          config,
+          state.blobs,
+          state.cursor_conversation_id
+        )
 
-      case transport_mod.send_message(transport, payload) do
+      case transport_mod.send_message(transport, encoded.payload) do
         {:ok, transport} ->
           generation = state.generation + 1
           {pid, _} = from
@@ -273,7 +289,7 @@ defmodule Handbean.Agent.Provider.Cursor.Session do
             state
             | transport_mod: transport_mod,
               transport: transport,
-              blobs: blobs,
+              blobs: encoded.blobs,
               phase: :running,
               caller: from,
               caller_mon: Process.monitor(pid),
@@ -286,12 +302,12 @@ defmodule Handbean.Agent.Provider.Cursor.Session do
               on_event: Map.get(config, :on_event),
               identity: identity(config, state.id),
               generation: generation,
-              consumed_user_ids: first_ids,
-              consumed_nil_users: first_nils,
+              consumed_user_ids: encoded.consumed_user_ids,
+              consumed_nil_users: encoded.consumed_nil_users,
               uncertain_run_id: nil
           }
 
-          state = send_user_actions(state, extra_users)
+          state = send_user_actions(state, encoded.extra_users)
 
           {:noreply, schedule_heartbeat(arm_timeout(state, timeout))}
 
@@ -326,7 +342,7 @@ defmodule Handbean.Agent.Provider.Cursor.Session do
   end
 
   defp continue_with_results(messages, tool_defs, config, on_chunk, from, state) do
-    results = tool_results_from(messages)
+    results = ToolResultEncoder.from_messages(messages)
 
     missing =
       Enum.reject(state.pending_execs, fn exec ->
@@ -377,38 +393,14 @@ defmodule Handbean.Agent.Provider.Cursor.Session do
   end
 
   defp send_exec_result(state, exec, output, is_error?) do
-    encoded = Native.encode_result(exec.kind, output, is_error?)
-
-    case encoded do
-      frames when is_list(frames) ->
-        result =
-          Enum.reduce_while(frames, {:ok, state}, fn
-            {:stream, payload}, {:ok, state} ->
-              msg = Proto.encode_exec_client(exec.id, exec.exec_id, exec.result_field, payload)
-
-              case send_proto(state, Proto.encode_client(%{exec_client: msg})) do
-                {:ok, state} -> {:cont, {:ok, state}}
-                {:error, state, reason} -> {:halt, {:error, state, reason}}
-              end
-
-            :stream_close, {:ok, state} ->
-              control = Proto.encode_stream_close(exec.id)
-
-              case send_proto(state, Proto.encode_client(%{exec_control: control})) do
-                {:ok, state} -> {:cont, {:ok, state}}
-                {:error, state, reason} -> {:halt, {:error, state, reason}}
-              end
-
-            _, acc ->
-              {:cont, acc}
-          end)
-
-        result
-
-      payload when is_binary(payload) ->
-        msg = Proto.encode_exec_client(exec.id, exec.exec_id, exec.result_field, payload)
-        send_proto(state, Proto.encode_client(%{exec_client: msg}))
-    end
+    exec
+    |> ToolResultEncoder.client_payloads(output, is_error?)
+    |> Enum.reduce_while({:ok, state}, fn payload, {:ok, state} ->
+      case send_proto(state, payload) do
+        {:ok, state} -> {:cont, {:ok, state}}
+        {:error, state, reason} -> {:halt, {:error, state, reason}}
+      end
+    end)
   end
 
   defp send_new_user_actions(state, messages) when is_list(messages) do
@@ -417,10 +409,7 @@ defmodule Handbean.Agent.Provider.Cursor.Session do
 
   defp send_user_actions(state, users) when is_list(users) do
     Enum.reduce_while(users, state, fn msg, state ->
-      text = to_text(msg.content)
-
-      action =
-        Proto.encode_user_action(Proto.encode_user_message(text, msg.id || Ecto.UUID.generate()))
+      action = RequestEncoder.user_action(msg)
 
       case send_proto(state, Proto.encode_client(%{conversation_action: action})) do
         {:ok, state} ->
@@ -788,270 +777,6 @@ defmodule Handbean.Agent.Provider.Cursor.Session do
     end
   end
 
-  defp encode_run(messages, model, config, state) do
-    {history, action_users} = split_action_users(messages)
-
-    {first, extra_users} =
-      case action_users do
-        [head | tail] -> {head, tail}
-        [] -> {%Message{role: :user, content: "", id: Ecto.UUID.generate()}, []}
-      end
-
-    {root_ids, turn_ids, blobs} = history_blobs(history, config[:system_prompt], state.blobs)
-    conversation_state = Proto.encode_conversation_state(root_ids, turn_ids)
-
-    action =
-      Proto.encode_user_action(
-        Proto.encode_user_message(to_text(first.content), first.id || Ecto.UUID.generate())
-      )
-
-    run =
-      Proto.encode_run_request(
-        conversation_state: conversation_state,
-        action: action,
-        conversation_id: state.cursor_conversation_id,
-        requested_model: encode_requested_model(model, config)
-      )
-
-    consumed_messages = history ++ [first]
-    {ids, nils} = consumed_sets(consumed_messages)
-    {Proto.encode_client(%{run_request: run}), blobs, ids, nils, extra_users}
-  end
-
-  defp encode_requested_model(model, config) do
-    routing = get_in(config, [:model_meta, "cursorRequestedModel"]) || %{}
-
-    Proto.encode_requested_model(
-      routing["modelId"] || model,
-      max_mode: routing["maxMode"] == true,
-      parameters: routing["parameters"] || []
-    )
-  end
-
-  defp split_action_users(messages) do
-    {prefix, suffix} =
-      messages
-      |> Enum.reverse()
-      |> Enum.split_while(&(&1.role == :user))
-
-    action_users = Enum.reverse(prefix)
-    history = Enum.reverse(suffix)
-    {history, action_users}
-  end
-
-  defp history_blobs(messages, system_prompt, blobs) do
-    {blobs, root_ids} =
-      Enum.reduce(prompt_json(messages, system_prompt), {blobs, []}, fn json, {blobs, ids} ->
-        {id, blobs} = Blobs.put(blobs, json)
-        {blobs, ids ++ [id]}
-      end)
-
-    {blobs, turn_ids} = encode_turns(messages, blobs)
-    {root_ids, turn_ids, blobs}
-  end
-
-  defp prompt_json(messages, system_prompt) do
-    sys =
-      if is_binary(system_prompt) and system_prompt != "" do
-        [Handbean.JSON.encode!(%{"role" => "system", "content" => system_prompt})]
-      else
-        []
-      end
-
-    rest =
-      Enum.flat_map(messages, fn
-        %Message{role: :user, content: content} ->
-          [
-            Handbean.JSON.encode!(%{
-              "role" => "user",
-              "content" => [%{"type" => "text", "text" => to_text(content)}]
-            })
-          ]
-
-        %Message{role: :assistant, content: content} ->
-          [
-            Handbean.JSON.encode!(%{
-              "role" => "assistant",
-              "content" => assistant_content_json(content)
-            })
-          ]
-
-        %Message{role: :tool_result, content: content} ->
-          Enum.map(List.wrap(content), fn block ->
-            Handbean.JSON.encode!(%{
-              "role" => "tool",
-              "tool_use_id" => Handbean.Utils.SafeMap.get_any(block, :tool_use_id, "tool_use_id"),
-              "content" => tool_result_text(block),
-              "is_error" => Handbean.Utils.SafeMap.get_any(block, :is_error, "is_error") || false
-            })
-          end)
-
-        _ ->
-          []
-      end)
-
-    sys ++ rest
-  end
-
-  defp assistant_content_json(content) when is_binary(content),
-    do: [%{"type" => "text", "text" => content}]
-
-  defp assistant_content_json(blocks) when is_list(blocks) do
-    Enum.map(blocks, fn
-      %{type: "text", text: text} ->
-        %{"type" => "text", "text" => text}
-
-      %{"type" => "text", "text" => text} ->
-        %{"type" => "text", "text" => text}
-
-      %{type: "tool_use"} = block ->
-        %{
-          "type" => "tool_use",
-          "id" => Handbean.Utils.SafeMap.get_any(block, :id, "id"),
-          "name" => Handbean.Utils.SafeMap.get_any(block, :name, "name"),
-          "input" => Handbean.Utils.SafeMap.get_any(block, :input, "input") || %{}
-        }
-
-      %{"type" => "tool_use"} = block ->
-        %{
-          "type" => "tool_use",
-          "id" => block["id"],
-          "name" => block["name"],
-          "input" => block["input"] || %{}
-        }
-
-      block ->
-        %{"type" => "text", "text" => to_text(block)}
-    end)
-  end
-
-  defp assistant_content_json(other), do: [%{"type" => "text", "text" => to_text(other)}]
-
-  defp encode_turns(messages, blobs) do
-    messages
-    |> chunk_turns()
-    |> Enum.reduce({blobs, []}, fn {user_msg, steps}, {blobs, ids} ->
-      {user_id, blobs} =
-        Blobs.put(
-          blobs,
-          Proto.encode_user_message(
-            to_text(user_msg.content),
-            user_msg.id || Ecto.UUID.generate()
-          )
-        )
-
-      {blobs, step_ids} =
-        Enum.reduce(steps, {blobs, []}, fn step, {blobs, acc} ->
-          {id, blobs} = Blobs.put(blobs, encode_turn_step(step))
-          {blobs, acc ++ [id]}
-        end)
-
-      {turn_id, blobs} = Blobs.put(blobs, Proto.encode_turn(user_id, step_ids))
-      {blobs, ids ++ [turn_id]}
-    end)
-  end
-
-  defp encode_turn_step({:assistant, text}), do: Proto.encode_assistant_step(text)
-
-  defp encode_turn_step({:mcp_call, id, name, input, result}) do
-    Proto.encode_tool_call_step(id, name, stringify_tool_input(input), result)
-  end
-
-  defp assistant_steps(%Message{content: content}) when is_list(content) do
-    Enum.flat_map(content, fn
-      %{type: "text", text: text} ->
-        [{:assistant, text}]
-
-      %{"type" => "text", "text" => text} ->
-        [{:assistant, text}]
-
-      %{type: "tool_use"} = block ->
-        [tool_use_step(block)]
-
-      %{"type" => "tool_use"} = block ->
-        [tool_use_step(block)]
-
-      _ ->
-        []
-    end)
-  end
-
-  defp assistant_steps(%Message{content: content}) when is_binary(content),
-    do: [{:assistant, content}]
-
-  defp assistant_steps(_), do: []
-
-  defp tool_use_step(block) do
-    id = Handbean.Utils.SafeMap.get_any(block, :id, "id")
-    name = Handbean.Utils.SafeMap.get_any(block, :name, "name")
-    input = Handbean.Utils.SafeMap.get_any(block, :input, "input") || %{}
-    {:pending_mcp, id, name, input}
-  end
-
-  defp chunk_turns(messages) do
-    messages
-    |> Enum.reduce({[], nil, []}, &chunk_turn_message/2)
-    |> finish_chunk()
-  end
-
-  defp chunk_turn_message(%Message{role: :user} = msg, {acc, nil, steps}) do
-    {acc, msg, steps}
-  end
-
-  defp chunk_turn_message(%Message{role: :user} = msg, {acc, user, steps}) do
-    {acc ++ [{user, Enum.reverse(finalize_mcp_steps(steps))}], msg, []}
-  end
-
-  defp chunk_turn_message(%Message{role: :assistant} = msg, {acc, user, steps})
-       when not is_nil(user) do
-    {acc, user, Enum.reverse(assistant_steps(msg)) ++ steps}
-  end
-
-  defp chunk_turn_message(%Message{role: :tool_result, content: content}, {acc, user, steps})
-       when not is_nil(user) do
-    steps =
-      Enum.reduce(List.wrap(content), steps, fn block, steps ->
-        attach_tool_result(steps, block)
-      end)
-
-    {acc, user, steps}
-  end
-
-  defp chunk_turn_message(_, acc), do: acc
-
-  defp finish_chunk({acc, nil, _}), do: acc
-
-  defp finish_chunk({acc, user, steps}) do
-    acc ++ [{user, Enum.reverse(finalize_mcp_steps(steps))}]
-  end
-
-  defp attach_tool_result(steps, block) do
-    id = Handbean.Utils.SafeMap.get_any(block, :tool_use_id, "tool_use_id")
-    result = mcp_result_from_block(block)
-
-    Enum.map(steps, fn
-      {:pending_mcp, ^id, name, input} -> {:mcp_call, id, name, input, result}
-      other -> other
-    end)
-  end
-
-  defp finalize_mcp_steps(steps) do
-    Enum.map(steps, fn
-      {:pending_mcp, id, name, input} -> {:mcp_call, id, name, input, nil}
-      other -> other
-    end)
-  end
-
-  defp mcp_result_from_block(block) do
-    text = tool_result_text(block)
-    is_error? = Handbean.Utils.SafeMap.get_any(block, :is_error, "is_error") || false
-    {:success, text, is_error?}
-  end
-
-  defp stringify_tool_input(input) when is_map(input) do
-    Handbean.Agent.Provider.stringify_keys(input)
-  end
-
   defp unconsumed_users(messages, state) do
     {users, _} =
       Enum.reduce(messages, {[], 0}, fn
@@ -1088,13 +813,6 @@ defmodule Handbean.Agent.Provider.Cursor.Session do
     %{state | consumed_nil_users: state.consumed_nil_users + 1}
   end
 
-  defp consumed_sets(messages) do
-    users = Enum.filter(messages, &(&1.role == :user))
-    ids = users |> Enum.map(& &1.id) |> Enum.filter(&is_binary/1) |> MapSet.new()
-    nils = Enum.count(users, &is_nil(&1.id))
-    {ids, nils}
-  end
-
   defp same_uncertain_run?(%{uncertain_run_id: nil}, _incoming), do: false
 
   defp same_uncertain_run?(state, incoming) do
@@ -1117,42 +835,6 @@ defmodule Handbean.Agent.Provider.Cursor.Session do
       current.conversation_id != incoming.conversation_id or
       current.auth_generation != incoming.auth_generation
   end
-
-  defp tool_results_from(messages) do
-    messages
-    |> Enum.flat_map(fn
-      %Message{role: :tool_result, content: content} -> List.wrap(content)
-      %Message{content: content} when is_list(content) -> content
-      _ -> []
-    end)
-    |> Enum.filter(fn
-      %{type: "tool_result"} -> true
-      %{"type" => "tool_result"} -> true
-      _ -> false
-    end)
-    |> Map.new(fn block ->
-      id = Handbean.Utils.SafeMap.get_any(block, :tool_use_id, "tool_use_id")
-      content = Handbean.Utils.SafeMap.get_any(block, :content, "content") || ""
-      is_error? = Handbean.Utils.SafeMap.get_any(block, :is_error, "is_error") || false
-      {id, {content, is_error?}}
-    end)
-  end
-
-  defp tool_result_text(content) when is_binary(content), do: content
-
-  defp tool_result_text(blocks) when is_list(blocks) do
-    Enum.map_join(blocks, "\n", &tool_result_text/1)
-  end
-
-  defp tool_result_text(%{content: content}), do: to_text(content)
-  defp tool_result_text(%{"content" => content}), do: to_text(content)
-  defp tool_result_text(other), do: to_text(other)
-
-  defp to_text(content) when is_binary(content), do: content
-  defp to_text(content) when is_list(content), do: Message.text(%Message{content: content})
-  defp to_text(%{text: text}) when is_binary(text), do: text
-  defp to_text(%{content: content}), do: to_text(content)
-  defp to_text(_), do: ""
 
   defp tool_def(def) do
     %{

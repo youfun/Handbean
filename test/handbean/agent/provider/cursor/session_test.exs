@@ -16,6 +16,7 @@ defmodule Handbean.Agent.Provider.Cursor.SessionTest do
            %{
              open?: true,
              sent: [],
+             sent_count: 0,
              window: 65_535,
              pause: :persistent_term.get({__MODULE__, :pause}, nil)
            }}
@@ -25,8 +26,15 @@ defmodule Handbean.Agent.Provider.Cursor.SessionTest do
     def open_run(transport, _token, _opts), do: {:ok, transport}
 
     def send_message(transport, payload, _opts \\ []) do
+      sent_count = transport.sent_count + 1
+      transport = %{transport | sent_count: sent_count}
       notify({:cursor_transport, :sent, self()})
-      {:ok, Map.update(transport, :sent, [payload], &[payload | &1])}
+
+      if :persistent_term.get({__MODULE__, :fail_on_send}, nil) == sent_count do
+        {:error, transport, :injected_send_failure}
+      else
+        {:ok, Map.update(transport, :sent, [payload], &[payload | &1])}
+      end
     end
 
     def handle_mint(transport, {:cursor_frames, frames}) do
@@ -39,7 +47,11 @@ defmodule Handbean.Agent.Provider.Cursor.SessionTest do
       {:ok, transport, []}
     end
 
-    def cancel(transport), do: Map.put(transport, :open?, false)
+    def cancel(transport) do
+      notify({:cursor_transport, :cancelled, self()})
+      Map.put(transport, :open?, false)
+    end
+
     def close(transport), do: Map.put(transport, :open?, false)
 
     defp pause_if_needed(%{pause: pid}) when is_pid(pid) do
@@ -75,6 +87,7 @@ defmodule Handbean.Agent.Provider.Cursor.SessionTest do
     end
 
     :persistent_term.put({FakeTransport, :connect}, :ok)
+    :persistent_term.put({FakeTransport, :fail_on_send}, nil)
     :persistent_term.put({FakeTransport, :pause}, nil)
     :persistent_term.put({FakeTransport, :notify}, self())
     flush_transport_notifies()
@@ -123,6 +136,16 @@ defmodule Handbean.Agent.Provider.Cursor.SessionTest do
       end)
 
     pid = wait_running(id)
+
+    result_ids =
+      pid
+      |> :sys.get_state()
+      |> then(&Enum.reverse(&1.transport.sent))
+      |> Enum.map(&exec_client_id/1)
+      |> Enum.reject(&is_nil/1)
+
+    assert result_ids == [1, 2]
+
     send(pid, {:cursor_frames, [{:message, text_delta("done")}, {:message, turn_ended()}]})
     assert {:ok, final} = Task.await(task2)
     assert final.stop_reason == :end_turn
@@ -140,6 +163,7 @@ defmodule Handbean.Agent.Provider.Cursor.SessionTest do
 
     pid = wait_running(id)
     initial_generation = :sys.get_state(pid).generation
+    initial_ticket = :sys.get_state(pid).timeout_ticket
     send(pid, {:cursor_frames, [{:message, mcp_exec(1, "call-1", "probe_lookup", "a")}]})
     assert {:ok, first} = Task.await(task)
     assert :sys.get_state(pid).timeout_ref == nil
@@ -164,7 +188,7 @@ defmodule Handbean.Agent.Provider.Cursor.SessionTest do
     assert state.generation == initial_generation + 1
     assert is_reference(state.timeout_ref)
 
-    send(pid, {:run_timeout, initial_generation})
+    send(pid, {:run_timeout, initial_ticket})
     send(pid, {:cursor_frames, [{:message, text_delta("done")}, {:message, turn_ended()}]})
 
     assert {:ok, final} = Task.await(task2)
@@ -571,6 +595,92 @@ defmodule Handbean.Agent.Provider.Cursor.SessionTest do
     assert {:ok, _} = Task.await(task2)
   end
 
+  test "missing pending tool result writes nothing to the open stream" do
+    id = Ecto.UUID.generate()
+    config = config()
+    first = start_two_tool_calls(id, config)
+    pid = first.pid
+    sent_before = :sys.get_state(pid).transport.sent
+    flush_transport_notifies()
+
+    assert {:error, message} =
+             Session.complete(
+               id,
+               [
+                 Message.user("lookup both"),
+                 Message.assistant_blocks(hd(first.response.messages).content),
+                 Message.tool_result(%{
+                   type: "tool_result",
+                   tool_use_id: "call-1",
+                   content: "A"
+                 })
+               ],
+               tool_defs(),
+               config,
+               fn _ -> :ok end
+             )
+
+    assert message =~ "missing"
+    assert :sys.get_state(pid).transport.sent == sent_before
+    refute_receive {:cursor_transport, :sent, ^pid}, 0
+  end
+
+  test "tool result send failure stops later writes and marks the run uncertain" do
+    id = Ecto.UUID.generate()
+    config = config(%{run_id: "run-send-failure"})
+    first = start_two_tool_calls(id, config)
+    pid = first.pid
+    :persistent_term.put({FakeTransport, :fail_on_send}, 2)
+    flush_transport_notifies()
+
+    assert {:error, :injected_send_failure} =
+             Session.complete(
+               id,
+               [
+                 Message.user("lookup both"),
+                 Message.assistant_blocks(hd(first.response.messages).content),
+                 Message.tool_result(%{
+                   type: "tool_result",
+                   tool_use_id: "call-1",
+                   content: "A"
+                 }),
+                 Message.tool_result(%{
+                   type: "tool_result",
+                   tool_use_id: "call-2",
+                   content: "B"
+                 })
+               ],
+               tool_defs(),
+               config,
+               fn _ -> :ok end
+             )
+
+    assert_receive {:cursor_transport, :sent, ^pid}, 0
+    refute_receive {:cursor_transport, :sent, ^pid}, 0
+
+    assert %{phase: :idle, uncertain_run_id: "run-send-failure"} =
+             GenServer.call(pid, :status)
+  end
+
+  test "caller exit cancels the original stream without reopening it" do
+    id = Ecto.UUID.generate()
+
+    task =
+      Task.async(fn ->
+        Session.complete(id, [Message.user("wait")], [], config(), fn _ -> :ok end)
+      end)
+
+    pid = wait_running(id)
+    assert nil == Task.shutdown(task, :brutal_kill)
+    assert_receive {:cursor_transport, :cancelled, ^pid}, 1_000
+
+    state = :sys.get_state(pid)
+    assert state.phase == :idle
+    refute state.transport.open?
+    assert state.transport.sent_count == 1
+    refute_receive {:cursor_transport, :sent, ^pid}, 0
+  end
+
   test "provider isolation refuses empty model" do
     assert {:error, message} =
              Cursor.stream([Message.user("hi")], [], %{api_key: "tok", model: ""}, fn _ -> :ok end)
@@ -627,6 +737,40 @@ defmodule Handbean.Agent.Provider.Cursor.SessionTest do
     _pid = wait_running(id)
     assert {:error, message} = Task.await(task, 1_000)
     assert message =~ "timed out"
+  end
+
+  defp start_two_tool_calls(id, config) do
+    task =
+      Task.async(fn ->
+        Session.complete(
+          id,
+          [Message.user("lookup both")],
+          tool_defs(),
+          config,
+          fn _ -> :ok end
+        )
+      end)
+
+    pid = wait_running(id)
+
+    send(
+      pid,
+      {:cursor_frames,
+       [
+         {:message, mcp_exec(1, "call-1", "probe_lookup", "a")},
+         {:message, mcp_exec(2, "call-2", "probe_lookup", "b")}
+       ]}
+    )
+
+    {:ok, response} = Task.await(task)
+    %{pid: pid, response: response}
+  end
+
+  defp exec_client_id(payload) do
+    case IndependentProto.field(IndependentProto.decode_fields(payload), 2) do
+      nil -> nil
+      exec -> exec |> IndependentProto.decode_fields() |> IndependentProto.field(1)
+    end
   end
 
   defp config(overrides \\ %{}) do
