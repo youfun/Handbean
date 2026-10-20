@@ -32,4 +32,61 @@ final class ComputerLeaseTests: XCTestCase {
         let expired = lease.observe(rect: rect, pixels: CGSize(width: 1200, height: 800), now: 100)
         XCTAssertThrowsError(try lease.consume(receipt: expired, rect: rect, now: 130))
     }
+
+    func testPointerAdmissionKeepsProductionClosedAndScopesAcceptanceToFixture() {
+        XCTAssertEqual(
+            ComputerPointerAdmission.resolve(
+                action: "click",
+                verificationOnly: false,
+                receiveProbe: false,
+                controlAcceptance: false
+            ),
+            .unsupported
+        )
+        XCTAssertEqual(
+            ComputerPointerAdmission.resolve(
+                action: "click",
+                verificationOnly: true,
+                receiveProbe: true,
+                controlAcceptance: false
+            ),
+            .receiveProbe
+        )
+        XCTAssertEqual(
+            ComputerPointerAdmission.resolve(
+                action: "scroll",
+                verificationOnly: true,
+                receiveProbe: false,
+                controlAcceptance: true
+            ),
+            .controlAcceptance
+        )
+        XCTAssertEqual(
+            ComputerPointerAdmission.resolve(
+                action: "click",
+                verificationOnly: false,
+                receiveProbe: false,
+                controlAcceptance: true
+            ),
+            .invalid
+        )
+        XCTAssertEqual(
+            ComputerPointerAdmission.resolve(
+                action: "type",
+                verificationOnly: true,
+                receiveProbe: false,
+                controlAcceptance: true
+            ),
+            .invalid
+        )
+        XCTAssertEqual(
+            ComputerPointerAdmission.resolve(
+                action: "click",
+                verificationOnly: true,
+                receiveProbe: true,
+                controlAcceptance: true
+            ),
+            .invalid
+        )
+    }
 }

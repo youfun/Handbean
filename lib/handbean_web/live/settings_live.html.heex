@@ -467,6 +467,231 @@
         </div>
       </div>
 
+      <!-- Computer Control: browser connection and native macOS host. -->
+      <div :if={@active_tab == :computer_use} class="settings-content-wrap">
+        <div class="settings-content-card settings-form-section computer-control-settings">
+          <div class="settings-section-heading">
+            <div class="settings-section-title">{gettext("Computer Control")}</div>
+            <div class="settings-help-text">
+              {gettext(
+                "Manage the browser connection and the native macOS capability available to this Agent."
+              )}
+            </div>
+          </div>
+
+          <div class="computer-control-group-label">{gettext("Browser")}</div>
+          <div id="browser-extension-settings" class="settings-card">
+            <div class="settings-field-row">
+              <div class="settings-field-copy computer-control-product">
+                <div class="computer-control-product-icon" aria-hidden="true">◎</div>
+                <div>
+                  <div class="settings-field-title">
+                    {gettext("Google Chrome")}
+                    <span class="settings-badge-experimental">
+                      {cond do
+                        !@browser_extension_status.supported -> gettext("Unavailable")
+                        @browser_extension_status.extension_connected -> gettext("Connected")
+                        @browser_extension_status.enabled -> gettext("Waiting for extension")
+                        true -> gettext("Off")
+                      end}
+                    </span>
+                  </div>
+                  <div class="settings-field-desc">
+                    {gettext(
+                      "Connect Handbean to ordinary tabs in your current Chrome profile. Tabs are managed automatically while this switch is on; risky actions still use Handbean confirmations."
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div class="settings-field-control">
+                <button
+                  id="browser-extension-toggle"
+                  type="button"
+                  phx-click="toggle_chrome_browser"
+                  disabled={!@browser_extension_status.supported}
+                  class="settings-toggle-button speech-settings-toggle"
+                  role="switch"
+                  aria-checked={to_string(@browser_extension_status.enabled)}
+                  aria-label={gettext("Enable Chrome extension connection")}
+                >
+                  <span class="settings-toggle-track" aria-hidden="true">
+                    <span class="settings-toggle-thumb"></span>
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            <div
+              :if={@browser_extension_status.enabled}
+              class="settings-field-row computer-control-status-row"
+            >
+              <div class="settings-field-copy">
+                <div class="settings-field-title">{gettext("Extension connection")}</div>
+                <div class="computer-control-status-list">
+                  <span>
+                    {gettext("Relay:")}
+                    <strong>
+                      {if @browser_extension_status.relay_available,
+                        do: gettext("Ready"),
+                        else: gettext("Unavailable")}
+                    </strong>
+                  </span>
+                  <span>
+                    {gettext("Extension:")}
+                    <strong>
+                      {if @browser_extension_status.extension_connected,
+                        do: gettext("Connected"),
+                        else: gettext("Not connected")}
+                    </strong>
+                  </span>
+                  <span>
+                    {gettext("Available tabs:")}
+                    <strong>{@browser_extension_status.controlled_tabs}</strong>
+                  </span>
+                  <span>
+                    {gettext("agent-browser:")}
+                    <strong>
+                      <%= cond do %>
+                        <% @browser_extension_status.agent_browser.compatible -> %>
+                          {@browser_extension_status.agent_browser.version}
+                        <% @browser_extension_status.agent_browser.available -> %>
+                          {gettext("%{version} · upgrade required",
+                            version: @browser_extension_status.agent_browser.version
+                          )}
+                        <% true -> %>
+                          {gettext("Not found")}
+                      <% end %>
+                    </strong>
+                  </span>
+                </div>
+                <div class="settings-field-desc computer-control-pairing-help">
+                  {gettext(
+                    "For Phase 0, load the unpacked extension from %{path}, then paste the pairing URL into its popup. Requires agent-browser 0.39.1 or later.",
+                    path: @browser_extension_status.extension_path
+                  )}
+                </div>
+              </div>
+              <div class="settings-field-control computer-control-browser-actions">
+                <button
+                  :if={@browser_extension_status.pairing_url}
+                  id="browser-extension-copy-pairing"
+                  type="button"
+                  class="settings-btn"
+                  phx-hook="CopyText"
+                  data-copy={@browser_extension_status.pairing_url}
+                >
+                  {gettext("Copy pairing URL")}
+                </button>
+                <button
+                  id="browser-extension-refresh"
+                  type="button"
+                  phx-click="refresh_chrome_browser_status"
+                  class="settings-btn"
+                >
+                  {gettext("Refresh")}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="computer-control-group-label">{gettext("Desktop")}</div>
+          <div id="computer-use-settings" class="settings-card">
+            <div class="settings-field-row">
+              <div class="settings-field-copy">
+                <div class="settings-field-title">
+                  {gettext("Enable computer control")}
+                  <span class="settings-badge-experimental">
+                    {if @computer_use_status.supported,
+                      do: gettext("macOS native"),
+                      else: gettext("Unavailable on this platform")}
+                  </span>
+                </div>
+                <div class="settings-field-desc">
+                  {gettext(
+                    "Allows the Agent to observe an approved window and request foreground input. Every input still requires native confirmation."
+                  )}
+                </div>
+              </div>
+              <div class="settings-field-control">
+                <button
+                  id="computer-use-enabled-toggle"
+                  type="button"
+                  phx-click="toggle_computer_use"
+                  disabled={!@computer_use_status.supported}
+                  class="settings-toggle-button speech-settings-toggle"
+                  role="switch"
+                  aria-checked={to_string(@computer_use_status.enabled)}
+                  aria-label={gettext("Enable computer control")}
+                >
+                  <span class="settings-toggle-track" aria-hidden="true">
+                    <span class="settings-toggle-thumb"></span>
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            <div class="settings-field-row computer-control-status-row">
+              <div class="settings-field-copy">
+                <div class="settings-field-title">{gettext("macOS permissions")}</div>
+                <div class="computer-control-status-list">
+                  <span>
+                    {gettext("Screen Recording")}
+                    <strong>{computer_permission_label(
+                      if is_map(@computer_use_status.permissions),
+                        do: @computer_use_status.permissions.screen_recording,
+                        else: :unknown
+                    )}</strong>
+                  </span>
+                  <span>
+                    {gettext("Accessibility")}
+                    <strong>{computer_permission_label(
+                      if is_map(@computer_use_status.permissions),
+                        do: @computer_use_status.permissions.accessibility,
+                        else: :unknown
+                    )}</strong>
+                  </span>
+                  <span>
+                    {gettext("Input control")}
+                    <strong>{computer_permission_label(
+                      if is_map(@computer_use_status.permissions),
+                        do: @computer_use_status.permissions.event_post,
+                        else: :unknown
+                    )}</strong>
+                  </span>
+                </div>
+              </div>
+              <div class="settings-field-control">
+                <button
+                  id="computer-use-refresh"
+                  type="button"
+                  phx-click="refresh_computer_use_status"
+                  disabled={!@computer_use_status.supported}
+                  class="settings-btn"
+                >
+                  {gettext("Refresh")}
+                </button>
+              </div>
+            </div>
+
+            <div class="settings-field-row">
+              <div class="settings-field-copy">
+                <div class="settings-field-title">{gettext("Pointer input")}</div>
+                <div class="settings-field-desc">
+                  {gettext(
+                    "Typing and supported keys are available. Click and scroll stay closed until real-device targeting acceptance passes."
+                  )}
+                </div>
+              </div>
+              <div class="settings-field-control">
+                <span class="settings-badge-experimental">
+                  {computer_action_label(@computer_use_status, "click")}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div :if={@active_tab == :mcp} class="flex-1 overflow-hidden">
         {live_render(@socket, HandbeanWeb.MCPSettingsLive,
           id: "settings-mcp",

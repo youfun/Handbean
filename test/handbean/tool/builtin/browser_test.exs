@@ -15,7 +15,9 @@ defmodule Handbean.Tool.Builtin.BrowserTest do
       %{
         working_directory: File.cwd!(),
         conversation_id: "conv-browser-test",
-        browser_executable: "/usr/bin/agent-browser"
+        browser_executable: "/usr/bin/agent-browser",
+        browser_agent_version: "agent-browser 0.39.1",
+        browser_cdp_url: nil
       },
       overrides
     )
@@ -133,6 +135,45 @@ defmodule Handbean.Tool.Builtin.BrowserTest do
       assert "--screenshot-dir" in argv
       dir = argv |> Enum.drop_while(&(&1 != "--screenshot-dir")) |> Enum.at(1)
       assert dir =~ "browser/conv-shot"
+    end
+
+    test "injects the connected Chrome relay without exposing CDP flags to callers" do
+      runner = fn argv, _opts ->
+        send(self(), {:chrome_argv, argv})
+        {:ok, %{stdout: ~s({"text":"ok"}), stderr: "", exit_code: 0, timed_out: false}}
+      end
+
+      assert {:ok, "ok", _} =
+               Browser.execute(
+                 %{"args" => ["snapshot", "-i"]},
+                 context(%{
+                   browser_runner: runner,
+                   browser_cdp_url: "ws://127.0.0.1:17643/cdp/internal-token"
+                 })
+               )
+
+      assert_received {:chrome_argv, argv}
+
+      assert ["--cdp", "ws://127.0.0.1:17643/cdp/internal-token"] =
+               Enum.slice(argv, Enum.find_index(argv, &(&1 == "--cdp")), 2)
+
+      assert "--pin-tab" in argv
+    end
+
+    test "rejects an incompatible agent-browser before invoking the relay" do
+      runner = fn _argv, _opts -> flunk("incompatible agent-browser must not run") end
+
+      assert {:error, reason} =
+               Browser.execute(
+                 %{"args" => ["snapshot", "-i"]},
+                 context(%{
+                   browser_runner: runner,
+                   browser_agent_version: "agent-browser 0.27.0",
+                   browser_cdp_url: "ws://127.0.0.1:17643/cdp/internal-token"
+                 })
+               )
+
+      assert reason =~ "requires agent-browser 0.39.1 or later"
     end
 
     test "returns a recoverable missing-binary error" do

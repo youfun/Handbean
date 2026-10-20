@@ -66,7 +66,8 @@ config :handbean,
   session_store_enabled?: false,
   recover_transcripts: false,
   extension_hot_reload: false,
-  allow_unbound_test_conversations: true
+  allow_unbound_test_conversations: true,
+  chrome_relay_port: 0
 
 config :handbean, Handbean.Gettext,
   default_locale: "en",

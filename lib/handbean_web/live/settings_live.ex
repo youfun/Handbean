@@ -31,6 +31,7 @@ defmodule HandbeanWeb.SettingsLive do
     %{id: :workspace_memory, label_key: "Workspace Memory"},
     %{id: :available_models, label_key: "Available Models"},
     %{id: :local_webgpu, label_key: "Local WebGPU"},
+    %{id: :computer_use, label_key: "Computer Control"},
     %{id: :mcp, label_key: "MCP"},
     %{id: :git, label_key: "Git"},
     %{id: :ui, label_key: "UI"}
@@ -82,8 +83,13 @@ defmodule HandbeanWeb.SettingsLive do
       |> assign(:speech_supported, Handbean.Speech.supported?())
       |> assign(:speech_status, Handbean.Speech.status())
       |> assign(:speech_model, Handbean.Speech.model_info())
+      |> assign(:computer_use_status, initial_computer_use_status())
+      |> assign(:browser_extension_status, Handbean.Browser.Chrome.status())
       |> subscribe_to_runtime_tasks()
       |> subscribe_to_speech()
+      |> subscribe_to_computer_use()
+      |> subscribe_to_chrome_browser()
+      |> maybe_refresh_computer_use_status()
 
     {:ok, socket}
   end
@@ -115,6 +121,49 @@ defmodule HandbeanWeb.SettingsLive do
      socket
      |> assign(:active_tab, tab)
      |> push_patch(to: ~p"/settings?#{query}")}
+  end
+
+  def handle_event("toggle_computer_use", _params, socket) do
+    enabled = not socket.assigns.computer_use_status.enabled
+
+    case Handbean.ComputerUse.set_enabled(enabled) do
+      :ok ->
+        {:noreply,
+         socket
+         |> update(:computer_use_status, &Map.put(&1, :enabled, enabled))
+         |> refresh_computer_use_status()}
+
+      {:error, :unavailable} ->
+        {:noreply,
+         put_flash(socket, :error, gettext("Computer control is unavailable in this host."))}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, gettext("Could not save computer control setting."))}
+    end
+  end
+
+  def handle_event("refresh_computer_use_status", _params, socket) do
+    {:noreply, refresh_computer_use_status(socket)}
+  end
+
+  def handle_event("toggle_chrome_browser", _params, socket) do
+    enabled = not socket.assigns.browser_extension_status.enabled
+
+    case Handbean.Browser.Chrome.set_enabled(enabled) do
+      :ok ->
+        {:noreply, assign(socket, :browser_extension_status, Handbean.Browser.Chrome.status())}
+
+      {:error, :unavailable} ->
+        {:noreply,
+         put_flash(socket, :error, gettext("Chrome control is unavailable in this host."))}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, gettext("Could not save Chrome control setting."))}
+    end
+  end
+
+  def handle_event("refresh_chrome_browser_status", _params, socket) do
+    {:noreply, assign(socket, :browser_extension_status, Handbean.Browser.Chrome.status())}
   end
 
   def handle_event("toggle_speech", _params, socket) do
@@ -374,6 +423,15 @@ defmodule HandbeanWeb.SettingsLive do
     end
   end
 
+  def handle_async(:computer_use_status, {:ok, status}, socket) when is_map(status) do
+    {:noreply, assign(socket, :computer_use_status, status)}
+  end
+
+  def handle_async(:computer_use_status, {:exit, _reason}, socket) do
+    {:noreply,
+     update(socket, :computer_use_status, &Map.put(&1, :error, :native_host_unavailable))}
+  end
+
   @impl true
   def handle_async(:prepare_speech, {:ok, :ok}, socket) do
     if socket.assigns.speech_enabled,
@@ -407,6 +465,21 @@ defmodule HandbeanWeb.SettingsLive do
 
   def handle_info({:runtime_tasks, snapshot}, socket) do
     {:noreply, assign_runtime_banner(socket, snapshot)}
+  end
+
+  def handle_info({:computer_use_enabled, enabled}, socket) do
+    {:noreply,
+     socket
+     |> update(:computer_use_status, &Map.put(&1, :enabled, enabled))
+     |> refresh_computer_use_status()}
+  end
+
+  def handle_info({:chrome_browser_enabled, _enabled}, socket) do
+    {:noreply, assign(socket, :browser_extension_status, Handbean.Browser.Chrome.status())}
+  end
+
+  def handle_info({:chrome_browser_status, _status}, socket) do
+    {:noreply, assign(socket, :browser_extension_status, Handbean.Browser.Chrome.status())}
   end
 
   def handle_info({:speech_enabled, enabled}, socket) do
@@ -501,6 +574,7 @@ defmodule HandbeanWeb.SettingsLive do
   def tab_label(:workspace_memory), do: gettext("Workspace Memory")
   def tab_label(:available_models), do: gettext("Available Models")
   def tab_label(:local_webgpu), do: gettext("Advanced")
+  def tab_label(:computer_use), do: gettext("Computer Control")
   def tab_label(:mcp), do: gettext("MCP")
   def tab_label(:git), do: gettext("Git")
   def tab_label(:ui), do: gettext("UI")
@@ -516,6 +590,50 @@ defmodule HandbeanWeb.SettingsLive do
   def tab_icon(:sns), do: "📡"
   def tab_icon(:tools), do: "🔒"
   def tab_icon(:security), do: "🛡️"
+
+  def computer_permission_label(true), do: gettext("Allowed")
+  def computer_permission_label(false), do: gettext("Permission required")
+  def computer_permission_label(_unknown), do: gettext("Unknown")
+
+  def computer_action_label(status, action) do
+    case get_in(status, [:actions, action]) do
+      true -> gettext("Ready")
+      false -> gettext("In verification")
+      _ -> gettext("Unavailable")
+    end
+  end
+
+  defp initial_computer_use_status do
+    %{
+      supported: Handbean.ComputerUse.supported?(),
+      enabled: Handbean.ComputerUse.enabled?(),
+      backend: if(Handbean.ComputerUse.supported?(), do: :native_macos, else: :none),
+      permissions: :unknown,
+      actions: %{}
+    }
+  end
+
+  defp maybe_refresh_computer_use_status(socket) do
+    if connected?(socket) and socket.assigns.computer_use_status.supported,
+      do: refresh_computer_use_status(socket),
+      else: socket
+  end
+
+  defp refresh_computer_use_status(socket) do
+    if socket.assigns.computer_use_status.supported,
+      do: start_async(socket, :computer_use_status, &Handbean.ComputerUse.status/0),
+      else: socket
+  end
+
+  defp subscribe_to_computer_use(socket) do
+    if connected?(socket), do: Handbean.ComputerUse.subscribe()
+    socket
+  end
+
+  defp subscribe_to_chrome_browser(socket) do
+    if connected?(socket), do: Handbean.Browser.Chrome.subscribe()
+    socket
+  end
 
   def speech_status_label(_enabled, false, _status), do: gettext("Unavailable on this platform")
   def speech_status_label(false, true, _status), do: gettext("Off")

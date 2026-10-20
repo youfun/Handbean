@@ -28,6 +28,19 @@ final class ComputerController: NSObject {
 
     func perform(id: String, session: String, input: [String: Any], deadline: Double) async -> [String: Any] {
         let action = input["action"] as? String ?? ""
+        if action == "status" {
+            return ["screen_recording": CGPreflightScreenCaptureAccess(),
+                    "accessibility": AXIsProcessTrusted(),
+                    "event_post": CGPreflightPostEventAccess(),
+                    "actions": ["list": true, "select": true, "observe": true,
+                                "type": true, "key": true, "click": false, "scroll": false,
+                                "stop": true],
+                    "side_effect": "not_started"]
+        }
+        if action == "stop_all" {
+            stop()
+            return ["text": "Native control stopped", "side_effect": "not_started"]
+        }
         if action == "stop" {
             stop(session: session)
             return ["text": "Native control stopped", "side_effect": "not_started"]
@@ -65,19 +78,34 @@ final class ComputerController: NSObject {
             if action == "observe" {
                 return try await observe(target, session: session, generation: generation, deadline: deadline, dispatched: false)
             }
-            let pointerProbe = input["pointer_probe"] as? Bool == true
-            if action == "click" || action == "scroll" {
-                // The public factory's foreign-window annotation is not yet
-                // verified across PID delivery. Only inert fixture probes run.
-                guard verificationOnly, pointerProbe else { throw Refusal.unsupportedPointer }
-            } else if pointerProbe { throw Refusal.invalidInput }
+            let pointerAdmission = ComputerPointerAdmission.resolve(
+                action: action,
+                verificationOnly: verificationOnly,
+                receiveProbe: input["pointer_probe"] as? Bool == true,
+                controlAcceptance: input["pointer_acceptance"] as? Bool == true
+            )
+            switch pointerAdmission {
+            case .unsupported:
+                throw Refusal.unsupportedPointer
+            case .invalid:
+                throw Refusal.invalidInput
+            default:
+                break
+            }
             guard let receipt = input["observation_id"] as? String else { throw Refusal.invalidInput }
             let snapshot = try lease.consume(receipt: receipt, rect: target.bounds(), now: ProcessInfo.processInfo.systemUptime)
             let units = try events(input, snapshot: snapshot, target: target)
             // Approval shows the exact input and selected app/window; no heuristic
             // or model can waive this gate for purchases, sends, deletions, etc.
             let encoded = try JSONSerialization.data(withJSONObject: input, options: [.prettyPrinted, .sortedKeys])
-            let operation = pointerProbe ? "Diagnostic only: the dedicated fixture records these pointer events and suppresses them before controls receive them." : "This can submit data or make irreversible changes."
+            let operation = switch pointerAdmission {
+            case .receiveProbe:
+                "Diagnostic only: the dedicated fixture records these pointer events and suppresses them before controls receive them."
+            case .controlAcceptance:
+                "Acceptance only: this action can change the dedicated disposable fixture. Verify its report before enabling pointer input for normal applications."
+            default:
+                "This can submit data or make irreversible changes."
+            }
             let detail = "Bring \(target.appID) window \(target.windowID) to the foreground and perform exactly this action? \(operation)\n\n" + (String(data: encoded, encoding: .utf8) ?? "")
             guard await approve("Confirm foreground input", detail: detail) else { throw Refusal.denied }
             try check(session, generation, deadline)
@@ -99,7 +127,7 @@ final class ComputerController: NSObject {
                 pair.0.timestamp = DispatchTime.now().uptimeNanoseconds
                 pair.0.setIntegerValueField(.eventTargetUnixProcessID, value: Int64(target.pid))
                 // Public diagnostic tags ("HBPROB"/"HBCUA1"), not authorization.
-                let tag: Int64 = pointerProbe ? 0x484250524F42 : 0x484243554131
+                let tag: Int64 = pointerAdmission == .receiveProbe ? 0x484250524F42 : 0x484243554131
                 pair.0.setIntegerValueField(.eventSourceUserData, value: tag)
                 pair.0.postToPid(target.pid)
                 if let up = pair.1 {

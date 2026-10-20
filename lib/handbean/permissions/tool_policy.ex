@@ -216,10 +216,14 @@ defmodule Handbean.Permissions.ToolPolicy do
   defp computer_decision(policy, call) do
     input = Handbean.Utils.SafeMap.get_any(call, :input, "input") || %{}
 
-    case Handbean.Utils.SafeMap.get_any(input, "action", :action) do
-      action when action in ["list", "observe", "stop"] -> :auto
-      _ when policy.default_mode == :deny -> :deny
-      _ -> :prompt
+    action = Handbean.Utils.SafeMap.get_any(input, "action", :action)
+
+    cond do
+      action == "stop" -> :auto
+      not Handbean.ComputerUse.enabled?() -> :deny
+      action in ["list", "observe"] -> :auto
+      policy.default_mode == :deny -> :deny
+      true -> :prompt
     end
   end
 

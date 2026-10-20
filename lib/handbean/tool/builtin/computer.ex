@@ -38,6 +38,19 @@ defmodule Handbean.Tool.Builtin.Computer do
   end
 
   def execute(input, context) do
+    if input["action"] == "stop" or Handbean.ComputerUse.enabled?() do
+      execute_enabled(input, context)
+    else
+      Result.contract(
+        "Computer use is disabled in Settings.",
+        status: :failed,
+        side_effect: :not_started,
+        recovery: :none
+      )
+    end
+  end
+
+  defp execute_enabled(input, context) do
     case request(input, context) do
       {:ok, reply} ->
         result(reply, context)

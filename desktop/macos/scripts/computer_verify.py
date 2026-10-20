@@ -4,6 +4,7 @@
 Usage: computer_verify.py DIR list|select|observe|click|type|key|scroll|stop
   --window ID --receipt ID --x PIXELS --y PIXELS --text TEXT --key KEY
   --deadline-ms 60000 --disconnect-after 1 --session verification-run-1
+  --pointer-probe | --pointer-acceptance
 """
 import argparse
 import base64
@@ -26,14 +27,18 @@ parser.add_argument("--delta-y", type=int)
 parser.add_argument("--deadline-ms", type=int, default=60000)
 parser.add_argument("--disconnect-after", type=float)
 parser.add_argument("--session", default="verification-run-1")
-parser.add_argument("--pointer-probe", action="store_true", help="Fixture-only receive-and-suppress pointer diagnostic; no control action")
+pointer_mode = parser.add_mutually_exclusive_group()
+pointer_mode.add_argument("--pointer-probe", action="store_true", help="Fixture-only receive-and-suppress pointer diagnostic; no control action")
+pointer_mode.add_argument("--pointer-acceptance", action="store_true", help="Fixture-only real control acceptance; changes only the disposable fixture")
 args = parser.parse_args()
-if args.pointer_probe and args.action not in ("click", "scroll"):
-    parser.error("--pointer-probe is only valid with click/scroll")
+if (args.pointer_probe or args.pointer_acceptance) and args.action not in ("click", "scroll"):
+    parser.error("pointer verification flags are only valid with click/scroll")
 credentials = json.loads((args.directory / "bridge.json").read_text())
 input_data = {"action": args.action}
 if args.pointer_probe:
     input_data["pointer_probe"] = True
+if args.pointer_acceptance:
+    input_data["pointer_acceptance"] = True
 if args.action == "select":
     input_data["app_id"] = "com.youfun.computerfixture"
 for key, value in {"window_id": args.window, "observation_id": args.receipt,

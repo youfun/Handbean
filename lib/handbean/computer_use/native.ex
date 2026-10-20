@@ -2,10 +2,31 @@ defmodule Handbean.ComputerUse.Native do
   @moduledoc "Authenticated, correlated, bounded loopback transport to the owning macOS app. No input retry."
   @max_reply 7_100_000
 
+  @spec status() :: {:ok, map()} | {:error, atom()}
+  def status do
+    request(%{"action" => "status"}, %{
+      conversation_id: "settings",
+      run_id: "status",
+      timeout_ms: 2_000
+    })
+  end
+
+  @spec stop_all() :: {:ok, map()} | {:error, atom()}
+  def stop_all do
+    request(%{"action" => "stop_all"}, %{
+      conversation_id: "settings",
+      run_id: "stop",
+      timeout_ms: 1_000
+    })
+  end
+
   def request(input, context) do
     port = Application.get_env(:handbean, :computer_use_port)
     token = Application.get_env(:handbean, :computer_use_token)
-    timeout = if input["action"] == "stop", do: 1_000, else: remaining(context)
+
+    timeout =
+      context[:timeout_ms] || if(input["action"] == "stop", do: 1_000, else: remaining(context))
+
     id = Ecto.UUID.generate()
 
     with true <- is_integer(port) and is_binary(token),

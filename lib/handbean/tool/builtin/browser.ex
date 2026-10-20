@@ -14,7 +14,7 @@ defmodule Handbean.Tool.Builtin.Browser do
 
   @behaviour Handbean.Agent.Tool
 
-  alias Handbean.Browser.{Cli, Policy, Result, Session, WebViewSession, WebViewSupervisor}
+  alias Handbean.Browser.{Chrome, Cli, Policy, Result, Session, WebViewSession, WebViewSupervisor}
   alias Handbean.Settings
 
   @mobile_actions ~w(open snapshot eval click fill back show hide close)
@@ -186,18 +186,20 @@ defmodule Handbean.Tool.Builtin.Browser do
   end
 
   defp run_cli(args, timeout_ms, session_mode, context) do
-    case Cli.run(args, cli_opts(args, timeout_ms, session_mode, context)) do
-      {:ok, raw} ->
-        raw
-        |> Result.parse(artifact_dir: artifact_dir(context))
-        |> wrap_parsed(context)
+    with {:ok, opts} <- cli_opts(args, timeout_ms, session_mode, context) do
+      case Cli.run(args, opts) do
+        {:ok, raw} ->
+          raw
+          |> Result.parse(artifact_dir: artifact_dir(context))
+          |> wrap_parsed(context)
 
-      {:error, :missing_binary, binary} ->
-        parsed = Result.missing_binary(binary)
-        {:error, parsed.content, parsed.details}
+        {:error, :missing_binary, binary} ->
+          parsed = Result.missing_binary(binary)
+          {:error, parsed.content, parsed.details}
 
-      {:error, reason} when is_binary(reason) ->
-        {:error, reason}
+        {:error, reason} when is_binary(reason) ->
+          {:error, reason}
+      end
     end
   end
 
@@ -260,16 +262,29 @@ defmodule Handbean.Tool.Builtin.Browser do
   defp cli_opts(args, timeout_ms, session_mode, context) do
     dir = artifact_dir(context)
 
-    [
-      timeout_ms: timeout_ms,
-      session_name: session_name(args, session_mode, context),
-      screenshot_dir: dir,
-      workspace_path: context[:working_directory]
-    ]
-    |> maybe_put(:runner, context[:browser_runner])
-    |> maybe_put(:executable, context[:browser_executable])
-    |> maybe_put(:find_executable, context[:browser_find_executable])
+    base =
+      [
+        timeout_ms: timeout_ms,
+        session_name: session_name(args, session_mode, context),
+        screenshot_dir: dir,
+        workspace_path: context[:working_directory]
+      ]
+      |> maybe_put(:runner, context[:browser_runner])
+      |> maybe_put(:executable, context[:browser_executable])
+      |> maybe_put(:find_executable, context[:browser_find_executable])
+      |> maybe_put(:agent_browser_version, context[:browser_agent_version])
+
+    with {:ok, chrome_opts} <- chrome_browser_options(context) do
+      {:ok, Keyword.merge(base, chrome_opts)}
+    end
   end
+
+  defp chrome_browser_options(%{browser_cdp_url: url}) when is_binary(url) and url != "" do
+    {:ok, cdp_url: url, pin_tab: true}
+  end
+
+  defp chrome_browser_options(%{browser_cdp_url: nil}), do: {:ok, []}
+  defp chrome_browser_options(_context), do: Chrome.browser_options()
 
   defp session_name(args, session_mode, context) do
     cond do

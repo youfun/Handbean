@@ -66,10 +66,12 @@ final class ComputerFixture: NSObject, NSApplicationDelegate, NSTextFieldDelegat
             let point = content.superview?.convert(event.locationInWindow, from: nil) ?? event.locationInWindow
             hit = content.hitTest(point)
         }
+        let sourceTag = event.cgEvent?.getIntegerValueField(.eventSourceUserData) ?? 0
         var entry: [String: Any] = ["type": event.type.rawValue, "window_number": event.windowNumber,
                                     "resolved_window_number": event.window?.windowNumber ?? 0,
                                     "selected_window": selectedWindow,
                                     "suppressed_probe": suppressed,
+                                    "control_acceptance": sourceTag == 0x484243554131,
                                     "hit_counter_button": hit?.isDescendant(of: button) == true,
                                     "hit_scroll": hit?.isDescendant(of: scroll) == true,
                                     "within_counter_button": selectedWindow && button.bounds.contains(button.convert(event.locationInWindow, from: nil)),

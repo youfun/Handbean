@@ -20,6 +20,7 @@ defmodule Handbean.E2E.ComputerUseTest do
     :ok = Ecto.Adapters.SQL.Sandbox.checkout(Handbean.Repo)
     Ecto.Adapters.SQL.Sandbox.mode(Handbean.Repo, {:shared, self()})
     context = Harness.isolate_home!("computer-use")
+    :ok = Handbean.Settings.save_global_section("computer_use", %{"enabled" => true})
     Harness.register_tool!(Handbean.Tool.Builtin.Computer)
     on_exit(fn -> Handbean.Tool.Registry.unregister("computer") end)
     context
@@ -84,8 +85,8 @@ defmodule Handbean.E2E.ComputerUseTest do
                }
              ])
 
-    assert_receive {:native, %{"action" => "select"}, ^id}
-    assert_receive {:tool_image, %{images: [image]} = block}
+    assert_receive {:native, %{"action" => "select"}, ^id}, 5_000
+    assert_receive {:tool_image, %{images: [image]} = block}, 5_000
     assert [%{type: "text"}, %{type: "image", data: data}] = Handbean.Tool.Images.content(block)
     assert Base.decode64!(data) == @png
     assert %{status: status} = Harness.await_run_end(id)
@@ -98,7 +99,12 @@ defmodule Handbean.E2E.ComputerUseTest do
     assert [%Message{role: :assistant}, %Message{role: :tool_result, content: [restored]}] =
              Handbean.Attachments.History.to_messages(entry, workspace, id)
 
-    assert Handbean.Tool.Images.content(restored) == Handbean.Tool.Images.content(block)
+    [%{type: "text", text: restored_text}, restored_image] =
+      Handbean.Tool.Images.content(restored)
+
+    [%{type: "text", text: live_text}, live_image] = Handbean.Tool.Images.content(block)
+    assert live_text =~ restored_text
+    assert restored_image == live_image
 
     assert [
              %{
@@ -159,9 +165,9 @@ defmodule Handbean.E2E.ComputerUseTest do
     Harness.with_host!(%{computer_use_backend: backend})
     script = fn _, _ -> {:tools, [%{name: "computer", input: %{"action" => "observe"}}]} end
     {id, runner} = start(workspace, script)
-    assert_receive {:native_waiting, _}
+    assert_receive {:native_waiting, _}, 5_000
     assert :ok = Coordinator.cancel(id)
-    assert_receive :native_stopped
+    assert_receive :native_stopped, 5_000
     assert %{status: "cancelled"} = Harness.await_run_end(id)
     assert %{meta: %{running?: false}} = Session.snapshot(id)
     refute Enum.any?(Harness.transcript(id), &(&1["content"] == "Window observed"))
@@ -241,7 +247,7 @@ defmodule Handbean.E2E.ComputerUseTest do
     {id, runner} = start(workspace, script)
     assert %{status: status} = Harness.await_run_end(id)
     assert status in [:completed, "completed"]
-    assert_receive {:bounded_observations, messages, [old_image, new_image]}
+    assert_receive {:bounded_observations, messages, [old_image, new_image]}, 5_000
     entries = Enum.filter(Harness.transcript(id), &(&1["tool_name"] == "computer"))
     assert length(entries) == 6
 

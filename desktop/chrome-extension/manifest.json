@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Handbean Chrome Control",
+  "version": "0.1.0",
+  "description": "Connects your current Chrome profile to the local Handbean browser tool.",
+  "permissions": ["alarms", "debugger", "storage", "tabs"],
+  "host_permissions": ["ws://127.0.0.1/*"],
+  "background": {
+    "service_worker": "service_worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Handbean Chrome Control",
+    "default_popup": "popup.html"
+  }
+}

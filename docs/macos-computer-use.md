@@ -23,12 +23,15 @@ confirmation, including data transmission, purchases, deletion and other sensiti
 actions; there is no prompt-only consequential-action classifier.
 
 **Pointer acceptance is incomplete.** Normal `click`/`scroll` return
-`unsupportedPointer` without dispatch. Only the fixture-only verification host
-accepts `pointer_probe: true`: it sends public AppKit-constructed events tagged
-for receive-and-suppress diagnostics, not control actions. The old CG route
-reached the fixture process but had no AppKit window association. The new public
-factory preserves the window number in construction probes; foreign-window
-coordinates through PID delivery are still unverified. Type/key remain available.
+`unsupportedPointer` without dispatch. The fixture-only verification host has
+two explicit modes. `pointer_probe: true` sends public AppKit-constructed events
+tagged for receive-and-suppress diagnostics. `pointer_acceptance: true` uses the
+same production event path but may change only the disposable fixture after a
+native confirmation. Neither flag is accepted by the production host. The old
+CG route reached the fixture process but had no AppKit window association. The
+new public factory preserves the window number in construction probes; normal
+applications stay disabled until the acceptance mode proves both the target
+control and scroll content actually change. Type/key remain available.
 
 The native host owns one global conversation/run lease. Windows bind bundle ID,
 PID/start time, CG window ID, title and bounds; moved, resized, closed, ambiguous
@@ -143,8 +146,24 @@ descendant views) and `suppressed_probe: true`. Clicks/text/scroll origin must s
 unchanged. A nonzero window number or matching coordinate alone does not pass.
 CG global location can differ in the sending process; do not change it with the
 CG location setter, which breaks AppKit local annotation in construction probes.
-After successful receive diagnostics, an independently approved harmless control
-action is still required before normal pointer input can be enabled.
+After successful receive diagnostics, run an independently approved harmless
+control action before normal pointer input can be enabled.
+
+Request a new observation and run the fixture-only control acceptance. These
+commands still show an exact native confirmation and cannot select another app:
+
+```bash
+python3 desktop/macos/scripts/computer_verify.py "$VERIFY_DIR" click --pointer-acceptance --receipt RECEIPT --x X --y Y
+python3 desktop/macos/scripts/computer_verify.py "$VERIFY_DIR" scroll --pointer-acceptance --receipt NEW_RECEIPT --x X --y Y --delta-y -120
+cat "$VERIFY_DIR/report.json"
+```
+
+Require `control_acceptance: true`, `selected_window: true`, the expected hit
+target, an incremented `clicks` value for click, and a changed `scroll_origin`
+for scroll. Inspect the returned screenshots as an independent visual oracle.
+A received event without the corresponding control/content change does not pass.
+Production `click` and `scroll` remain disabled until this acceptance is recorded
+on a signed verification host with the real macOS permissions.
 
 Record one confirmation panel and one observed fixture screenshot; inspect both,
 never expose credential files.

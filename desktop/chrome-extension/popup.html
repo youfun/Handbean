@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Handbean Chrome Control</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="mark" aria-hidden="true">◎</div>
+        <div>
+          <h1>Handbean</h1>
+          <p id="status" data-state="loading">Checking connection…</p>
+        </div>
+      </header>
+
+      <label for="relay-url">Pairing URL</label>
+      <textarea
+        id="relay-url"
+        rows="3"
+        spellcheck="false"
+        autocomplete="off"
+        placeholder="Copy this from Settings → Computer Control"
+      ></textarea>
+
+      <p class="help">
+        One connection covers ordinary tabs in this Chrome profile. You do not need to approve each tab.
+      </p>
+
+      <div class="actions">
+        <button id="disconnect" type="button" class="secondary">Disconnect</button>
+        <button id="connect" type="button">Save & connect</button>
+      </div>
+    </main>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

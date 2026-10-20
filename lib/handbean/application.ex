@@ -107,7 +107,26 @@ defmodule Handbean.Application do
 
     case Handbean.Host.browser_backend() do
       :cli ->
-        [Handbean.Browser.Registry, Handbean.Browser.Supervisor]
+        relay_children =
+          if Application.get_env(:handbean, :chrome_control, true) do
+            [
+              Handbean.Browser.ChromeRelay.Server,
+              {Bandit,
+               plug: Handbean.Browser.ChromeRelay.Router,
+               scheme: :http,
+               ip: {127, 0, 0, 1},
+               port: Application.get_env(:handbean, :chrome_relay_port, 17_643),
+               startup_log: false,
+               thousand_island_options: [
+                 supervisor_options: [name: Handbean.Browser.ChromeRelay.Listener]
+               ],
+               websocket_options: [max_frame_size: 1_048_576]}
+            ]
+          else
+            []
+          end
+
+        [Handbean.Browser.Registry, Handbean.Browser.Supervisor] ++ relay_children
 
       :webview ->
         [

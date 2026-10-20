@@ -815,6 +815,63 @@ select.settings-input {
   border-top: 1px solid var(--sig-border-subtle);
 }
 
+.computer-control-group-label {
+  margin: 4px 0 -8px 16px;
+  color: var(--sig-text-tertiary);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.computer-control-product {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.computer-control-product-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border: 1px solid var(--sig-border-subtle);
+  border-radius: var(--sig-radius-md);
+  background: var(--sig-bg-surface-hover);
+  color: var(--sig-text-secondary);
+  font-size: 17px;
+}
+
+.computer-control-status-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 7px;
+  color: var(--sig-text-tertiary);
+  font-size: 11px;
+}
+
+.computer-control-status-list span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.computer-control-status-list strong {
+  color: var(--sig-text-secondary);
+  font-weight: 500;
+}
+
+.computer-control-pairing-help {
+  max-width: 640px;
+  word-break: break-word;
+}
+
+.computer-control-browser-actions {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .settings-workspace-heading {
   display: flex;
   align-items: flex-start;

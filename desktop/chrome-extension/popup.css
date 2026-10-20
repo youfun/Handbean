@@ -1,0 +1,114 @@
+:root {
+  color-scheme: light dark;
+  font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body {
+  width: 340px;
+  margin: 0;
+  background: #151515;
+  color: #f5f5f5;
+}
+
+main {
+  padding: 16px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.mark {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid #444;
+  border-radius: 8px;
+  background: #242424;
+  font-size: 18px;
+}
+
+h1,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 14px;
+}
+
+#status {
+  color: #aaa;
+  font-size: 12px;
+}
+
+#status[data-state="connected"] {
+  color: #64d98b;
+}
+
+#status[data-state="error"] {
+  color: #ff8a8a;
+}
+
+label {
+  display: block;
+  margin-bottom: 6px;
+  color: #ccc;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+textarea {
+  box-sizing: border-box;
+  width: 100%;
+  resize: vertical;
+  border: 1px solid #444;
+  border-radius: 8px;
+  outline: none;
+  background: #202020;
+  color: inherit;
+  font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 9px;
+}
+
+textarea:focus {
+  border-color: #7c8cff;
+}
+
+.help {
+  margin-top: 8px;
+  color: #999;
+  font-size: 11px;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+button {
+  min-height: 34px;
+  border: 1px solid #7282ff;
+  border-radius: 8px;
+  background: #6575ee;
+  color: white;
+  cursor: pointer;
+  padding: 6px 12px;
+}
+
+button.secondary {
+  border-color: #444;
+  background: transparent;
+  color: #ddd;
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}

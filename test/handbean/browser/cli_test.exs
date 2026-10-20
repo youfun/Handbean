@@ -41,6 +41,56 @@ defmodule Handbean.Browser.CliTest do
                "screenshot"
              ]
     end
+
+    test "injects the managed Chrome CDP relay and strict tab pinning" do
+      argv =
+        Cli.planned_argv(["snapshot", "-i"],
+          session_name: "handbean-abc",
+          cdp_url: "ws://127.0.0.1:17643/cdp/token",
+          pin_tab: true
+        )
+
+      assert argv == [
+               "--json",
+               "--session",
+               "handbean-abc",
+               "--cdp",
+               "ws://127.0.0.1:17643/cdp/token",
+               "--pin-tab",
+               "snapshot",
+               "-i"
+             ]
+    end
+
+    test "does not inject managed browser flags for inspection" do
+      assert Cli.planned_argv(["--version"],
+               cdp_url: "ws://127.0.0.1:17643/cdp/token",
+               pin_tab: true
+             ) == ["--version"]
+    end
+  end
+
+  describe "chrome_relay_compatibility/1" do
+    test "accepts the verified agent-browser version" do
+      assert %{
+               available: true,
+               compatible: true,
+               version: "0.39.1",
+               minimum_version: "0.39.1"
+             } =
+               Cli.chrome_relay_compatibility(
+                 executable: "/usr/bin/agent-browser",
+                 agent_browser_version: "agent-browser 0.39.1"
+               )
+    end
+
+    test "reports an older version as incompatible" do
+      assert %{available: true, compatible: false, version: "0.27.0"} =
+               Cli.chrome_relay_compatibility(
+                 executable: "/usr/bin/agent-browser",
+                 agent_browser_version: "agent-browser 0.27.0"
+               )
+    end
   end
 
   describe "run/2" do
@@ -71,6 +121,22 @@ defmodule Handbean.Browser.CliTest do
 
       assert {:error, :missing_binary, "agent-browser"} =
                Cli.run(["--version"], find_executable: find)
+    end
+
+    test "fails before spawning when the Chrome relay needs a newer agent-browser" do
+      runner = fn _argv, _opts -> flunk("incompatible agent-browser must not run") end
+
+      assert {:error, reason} =
+               Cli.run(["snapshot", "-i"],
+                 cdp_url: "ws://127.0.0.1:17643/cdp/token",
+                 pin_tab: true,
+                 agent_browser_version: "agent-browser 0.27.0",
+                 runner: runner,
+                 executable: "/usr/bin/agent-browser"
+               )
+
+      assert reason =~ "requires agent-browser 0.39.1 or later"
+      assert reason =~ "found 0.27.0"
     end
 
     test "uses a default timeout when none is supplied" do

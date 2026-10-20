@@ -12,7 +12,8 @@ config :handbean,
   endpoint_adapter: HandbeanWeb.Endpoint,
   generators: [timestamp_type: :utc_datetime],
   session_store: Handbean.SessionStore.SQLite,
-  telemetry_adapter: HandbeanWeb.Telemetry
+  telemetry_adapter: HandbeanWeb.Telemetry,
+  chrome_relay_port: 17_643
 
 config :error_tracker,
   repo: Handbean.Repo,

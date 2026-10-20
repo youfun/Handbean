@@ -285,6 +285,30 @@ defmodule HandbeanWeb.SettingsLiveTest do
       assert html =~ "OpenAI"
     end
 
+    test "Computer Control exposes one global Chrome switch without per-tab approval", %{
+      conn: conn
+    } do
+      {:ok, view, _html} = live(conn, "/settings")
+
+      view
+      |> element(~s|button[phx-value-tab="computer_use"]|)
+      |> render_click()
+
+      assert has_element?(view, "#browser-extension-settings")
+      assert has_element?(view, "#browser-extension-toggle[aria-checked='false']")
+      refute has_element?(view, "#browser-extension-toggle[disabled]")
+      assert has_element?(view, "#computer-use-settings")
+      assert has_element?(view, "#computer-use-enabled-toggle[disabled][aria-checked='false']")
+      assert has_element?(view, "#computer-use-refresh[disabled]")
+
+      view |> element("#browser-extension-toggle") |> render_click()
+
+      assert has_element?(view, "#browser-extension-toggle[aria-checked='true']")
+      assert has_element?(view, "#browser-extension-copy-pairing[data-copy]")
+      assert render(view) =~ "Waiting for extension"
+      refute render(view) =~ "tabs explicitly approved"
+    end
+
     test "Local WebGPU tab exposes the browser-only capability probe", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/settings")
 
