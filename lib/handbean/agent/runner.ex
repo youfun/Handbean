@@ -956,7 +956,13 @@ defmodule Handbean.Agent.Runner do
   end
 
   defp close_scope(state) do
-    Handbean.Tool.Builtin.Computer.stop(state.conversation_id, state.opts[:run_id])
+    case Handbean.Tool.Builtin.Computer.stop(state.conversation_id, state.opts[:run_id]) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Logger.error("[Runner] native computer lease revocation failed: #{inspect(reason)}")
+    end
 
     Registry.update_value(Handbean.AgentRunRegistry, state.conversation_id, fn metadata ->
       Map.put(metadata || %{}, :active?, false)

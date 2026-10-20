@@ -17,7 +17,8 @@ mix esbuild.install --if-missing
 mix assets.deploy
 mix release --overwrite
 
-release_dir="_build/prod/rel/handbean"
+release_dir="${MIX_BUILD_PATH:-_build/prod}/rel/handbean"
+elixir scripts/package_browser_runtime.exs "$target" "$release_dir"
 bash scripts/version.sh verify-web "$release_dir"
 cp scripts/start.sh "$release_dir/start.sh"
 chmod +x "$release_dir/start.sh" "$release_dir/bin/handbean"

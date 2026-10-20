@@ -2,9 +2,11 @@ import CoreGraphics
 import Foundation
 
 /// One native host owns the desktop lane across all BEAM conversations.
+/// Authorization expires after two idle minutes unless the owning session renews it.
 /// Receipts are producer-local, monotonic, one-use and exact-window bound.
 public struct ComputerLease {
-    public enum Refusal: Error { case busy, stale, invalidPoint }
+    public static let authorizationIdleTTL: TimeInterval = 120
+    public enum Refusal: Error { case busy, expired, stale, invalidPoint }
     public struct Observation {
         public let rect: CGRect
         public let pixels: CGSize
@@ -21,20 +23,31 @@ public struct ComputerLease {
     public private(set) var session: String?
     public private(set) var generation: UInt64 = 0
     private var observation: Observation?
+    private var expiresAt: TimeInterval?
     public init() {}
 
-    public mutating func claim(session: String) throws {
+    public mutating func claim(session: String, now: TimeInterval) throws {
+        expireIfNeeded(now: now)
         guard self.session == nil || self.session == session else { throw Refusal.busy }
         if self.session == nil { generation &+= 1; self.session = session }
+        expiresAt = now + Self.authorizationIdleTTL
+    }
+    public mutating func renew(session: String, now: TimeInterval) throws -> UInt64 {
+        expireIfNeeded(now: now)
+        guard self.session == session else { throw Refusal.expired }
+        expiresAt = now + Self.authorizationIdleTTL
+        return generation
     }
     public mutating func stop(session: String? = nil) {
         guard session == nil || self.session == session else { return }
         self.session = nil
         observation = nil
+        expiresAt = nil
         generation &+= 1
     }
-    public func valid(session: String, generation: UInt64) -> Bool {
-        self.session == session && self.generation == generation
+    public mutating func valid(session: String, generation: UInt64, now: TimeInterval) -> Bool {
+        expireIfNeeded(now: now)
+        return self.session == session && self.generation == generation
     }
     public mutating func observe(rect: CGRect, pixels: CGSize, now: TimeInterval) -> String {
         let id = UUID().uuidString
@@ -47,5 +60,10 @@ public struct ComputerLease {
         guard let value, value.id == receipt, value.rect == rect,
               now >= value.createdAt, now - value.createdAt < 30 else { throw Refusal.stale }
         return value
+    }
+
+    private mutating func expireIfNeeded(now: TimeInterval) {
+        guard let expiresAt, now >= expiresAt else { return }
+        stop()
     }
 }

@@ -59,6 +59,37 @@ defmodule Handbean.ComputerUseTest do
   end
 
   @tag :tmp_dir
+  test "run-end stop retries transient delivery failures and reports exhaustion" do
+    counter = :counters.new(1, [])
+    owner = self()
+
+    backend = fn %{"action" => "stop"}, context ->
+      :counters.add(counter, 1, 1)
+      attempt = :counters.get(counter, 1)
+
+      if context.run_id == "retry" and attempt == 3 do
+        send(owner, {:stopped, context})
+        {:ok, %{"text" => "stopped"}}
+      else
+        {:error, :native_outcome_unknown}
+      end
+    end
+
+    Handbean.Host.put!(%{computer_use_backend: backend})
+
+    assert :ok = Handbean.Tool.Builtin.Computer.stop("conversation", "retry")
+    assert_receive {:stopped, %{conversation_id: "conversation", run_id: "retry"}}
+    assert :counters.get(counter, 1) == 3
+
+    :counters.put(counter, 1, 0)
+
+    assert {:error, :native_outcome_unknown} =
+             Handbean.Tool.Builtin.Computer.stop("conversation", "exhausted")
+
+    assert :counters.get(counter, 1) == 3
+  end
+
+  @tag :tmp_dir
   test "persists enablement and projects native status without owning permissions" do
     Handbean.Host.put!(%{computer_use_backend: Backend})
 
@@ -69,8 +100,45 @@ defmodule Handbean.ComputerUseTest do
       Handbean.Permissions.ToolPolicy.from_settings(%{"tools" => %{"default_mode" => "auto"}})
 
     assert Handbean.Permissions.ToolPolicy.decision(policy, computer_call("list")) == :auto
+    assert Handbean.Permissions.ToolPolicy.decision(policy, computer_call("select")) == :auto
     assert Handbean.Permissions.ToolPolicy.decision(policy, computer_call("observe")) == :auto
-    assert Handbean.Permissions.ToolPolicy.decision(policy, computer_call("type")) == :prompt
+    assert Handbean.Permissions.ToolPolicy.decision(policy, computer_call("click")) == :auto
+    assert Handbean.Permissions.ToolPolicy.decision(policy, computer_call("type")) == :auto
+    assert Handbean.Permissions.ToolPolicy.decision(policy, computer_call("key")) == :auto
+    assert Handbean.Permissions.ToolPolicy.decision(policy, computer_call("scroll")) == :auto
+
+    prompt_policy =
+      Handbean.Permissions.ToolPolicy.from_settings(%{
+        "tools" => %{"default_mode" => "auto", "per_tool" => %{"computer" => "prompt"}}
+      })
+
+    assert Handbean.Permissions.ToolPolicy.decision(prompt_policy, computer_call("type")) ==
+             :prompt
+
+    deny_policy =
+      Handbean.Permissions.ToolPolicy.from_settings(%{
+        "tools" => %{"default_mode" => "auto", "per_tool" => %{"computer" => "deny"}}
+      })
+
+    assert Handbean.Permissions.ToolPolicy.decision(deny_policy, computer_call("type")) == :deny
+
+    for per_tool <- ["prompt", "auto"] do
+      global_deny =
+        Handbean.Permissions.ToolPolicy.from_settings(
+          %{
+            "tools" => %{
+              "default_mode" => "deny",
+              "allow" => ["computer"],
+              "per_tool" => %{"computer" => per_tool}
+            }
+          },
+          %{},
+          ["computer"]
+        )
+
+      assert Handbean.Permissions.ToolPolicy.decision(global_deny, computer_call("type")) == :deny
+      assert Handbean.Permissions.ToolPolicy.decision(global_deny, computer_call("stop")) == :auto
+    end
 
     assert %{
              supported: true,

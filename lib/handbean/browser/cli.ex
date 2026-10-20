@@ -8,7 +8,7 @@ defmodule Handbean.Browser.Cli do
   coverage.
   """
 
-  alias Handbean.Browser.Policy
+  alias Handbean.Browser.{Policy, Runtime}
   alias Handbean.Platform.{CommandEnvironment, ProcessManager, WorkspaceEnvironment}
 
   @default_timeout_ms 35_000
@@ -216,12 +216,19 @@ defmodule Handbean.Browser.Cli do
         {:ok, bin}
 
       _ ->
-        case find.(@binary) do
-          {:ok, path} when is_binary(path) -> {:ok, path}
-          {:error, _reason} = error -> error
-          path when is_binary(path) -> {:ok, path}
-          nil -> {:error, :missing_binary, @binary}
+        case Keyword.get_lazy(opts, :bundled_executable, &Runtime.agent_browser_executable/0) do
+          bin when is_binary(bin) and bin != "" -> {:ok, bin}
+          _ -> resolve_path_executable(find)
         end
+    end
+  end
+
+  defp resolve_path_executable(find) do
+    case find.(@binary) do
+      {:ok, path} when is_binary(path) -> {:ok, path}
+      {:error, _reason} = error -> error
+      path when is_binary(path) -> {:ok, path}
+      nil -> {:error, :missing_binary, @binary}
     end
   end
 

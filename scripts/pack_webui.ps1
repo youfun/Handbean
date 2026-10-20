@@ -54,6 +54,7 @@ try {
     Invoke-Native "mix esbuild.install" { mix esbuild.install --if-missing }
     Invoke-Native "mix assets.deploy" { mix assets.deploy }
     Invoke-Native "mix release" { mix release --overwrite --path $release }
+    Invoke-Native "package browser runtime" { elixir scripts/package_browser_runtime.exs $Target $release }
 
 $expectedVersion = (Get-Content (Join-Path $root "version.properties") -Raw | ConvertFrom-StringData).version
 $actualVersion = ((Get-Content (Join-Path $release "releases\start_erl.data") -Raw).Trim() -split '\s+')[1]

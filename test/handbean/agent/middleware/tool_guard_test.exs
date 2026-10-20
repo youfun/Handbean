@@ -280,7 +280,7 @@ defmodule Handbean.Agent.Middleware.ToolGuardTest do
     assert :pending = ToolGuard.auto_resume_decisions(interrupted)
   end
 
-  test "yolo reconciliation keeps explicit prompts and computer control pending" do
+  test "yolo reconciliation keeps explicit prompts pending while computer control auto-resumes" do
     interrupted =
       %{
         "tools" => %{

@@ -3,8 +3,8 @@ import ApplicationServices
 import Dispatch
 import HandbeanCore
 
-/// MainActor serializes lease admission, consent, cancellation and every input
-/// unit. Awaited capture/consent must revalidate the generation before effects.
+/// MainActor serializes lease admission, target consent, cancellation and every
+/// input unit. Awaited capture/consent must revalidate the generation before effects.
 @MainActor
 final class ComputerController: NSObject {
     static let fixtureAppID = "com.youfun.computerfixture"
@@ -59,21 +59,37 @@ final class ComputerController: NSObject {
         do {
             retired = retired.filter { ProcessInfo.processInfo.systemUptime - $0.value < 120 }
             guard retired[session] == nil else { throw Refusal.stopped }
+            let consentRequirement = ComputerConsentPolicy.requirement(for: action)
             if action == "select" {
-                try lease.claim(session: session)
+                guard consentRequirement == .targetSelection else { throw Refusal.invalidInput }
+                try lease.claim(session: session, now: ProcessInfo.processInfo.systemUptime)
                 guard let appID = input["app_id"] as? String,
                       let number = input["window_id"] as? UInt32,
                       !verificationOnly || appID == Self.fixtureAppID else { throw Refusal.invalidInput }
                 let selected = try ComputerTarget.select(appID: appID, windowID: number)
                 let generation = lease.generation
-                guard await approve("Allow Computer Use in \(appID)?", detail: "Window \(number): \(selected.title)\nThis session can capture only this window. Input is foreground-only and asks for confirmation for every action. Terminal, security dialogs and Handbean are forbidden.") else { throw Refusal.denied }
+                let detail = """
+                Window \(number): \(selected.title)
+
+                Until this Agent run ends, you press Stop, or no selected-window request is received for two minutes, Handbean may capture this exact window and send supported foreground keyboard input without asking again. Input can transmit data or change the selected app. Window screenshots may be sent to the selected model provider.
+
+                Terminal, password and security apps, permission dialogs, and Handbean are forbidden. Click and scroll remain unavailable in normal applications until native pointer acceptance is complete.
+                """
+                guard await approve("Allow Computer Use in \(appID) for this task?", detail: detail) else { throw Refusal.denied }
                 try check(session, generation, deadline)
                 target = selected
                 showControl("Controlling \(appID), window \(number)")
                 return try await observe(selected, session: session, generation: generation, deadline: deadline, dispatched: false)
             }
-            guard let target, lease.session == session else { throw Refusal.stopped }
-            let generation = lease.generation
+            guard let target else { throw Refusal.stopped }
+            guard action == "observe" || consentRequirement == .activeLease else { throw Refusal.invalidInput }
+            let generation: UInt64
+            do {
+                generation = try lease.renew(session: session, now: ProcessInfo.processInfo.systemUptime)
+            } catch {
+                revokeAuthorization(session: session)
+                throw error
+            }
             try check(session, generation, deadline)
             if action == "observe" {
                 return try await observe(target, session: session, generation: generation, deadline: deadline, dispatched: false)
@@ -95,19 +111,6 @@ final class ComputerController: NSObject {
             guard let receipt = input["observation_id"] as? String else { throw Refusal.invalidInput }
             let snapshot = try lease.consume(receipt: receipt, rect: target.bounds(), now: ProcessInfo.processInfo.systemUptime)
             let units = try events(input, snapshot: snapshot, target: target)
-            // Approval shows the exact input and selected app/window; no heuristic
-            // or model can waive this gate for purchases, sends, deletions, etc.
-            let encoded = try JSONSerialization.data(withJSONObject: input, options: [.prettyPrinted, .sortedKeys])
-            let operation = switch pointerAdmission {
-            case .receiveProbe:
-                "Diagnostic only: the dedicated fixture records these pointer events and suppresses them before controls receive them."
-            case .controlAcceptance:
-                "Acceptance only: this action can change the dedicated disposable fixture. Verify its report before enabling pointer input for normal applications."
-            default:
-                "This can submit data or make irreversible changes."
-            }
-            let detail = "Bring \(target.appID) window \(target.windowID) to the foreground and perform exactly this action? \(operation)\n\n" + (String(data: encoded, encoding: .utf8) ?? "")
-            guard await approve("Confirm foreground input", detail: detail) else { throw Refusal.denied }
             try check(session, generation, deadline)
             guard ProcessInfo.processInfo.systemUptime - snapshot.createdAt < 30,
                   try target.bounds() == snapshot.rect else { throw Refusal.stale }
@@ -123,7 +126,7 @@ final class ComputerController: NSObject {
                 // PID routing provides a second boundary if foreground changes
                 // between checking focus and posting; never post to the HID tap.
                 dispatched = true
-                // Stamp at dispatch, not before a potentially long consent wait.
+                // Stamp at dispatch, after potentially long focus/activation checks.
                 pair.0.timestamp = DispatchTime.now().uptimeNanoseconds
                 pair.0.setIntegerValueField(.eventTargetUnixProcessID, value: Int64(target.pid))
                 // Public diagnostic tags ("HBPROB"/"HBCUA1"), not authorization.
@@ -140,7 +143,11 @@ final class ComputerController: NSObject {
             }
             return try await observe(target, session: session, generation: generation, deadline: deadline, dispatched: true)
         } catch {
-            if action == "select" { stop(session: session) }
+            if action == "select" {
+                stop(session: session)
+            } else if invalidatesAuthorization(error) {
+                revokeAuthorization(session: session)
+            }
             return failure(error, dispatched: dispatched)
         }
     }
@@ -152,18 +159,43 @@ final class ComputerController: NSObject {
         if let session { retired[session] = ProcessInfo.processInfo.systemUptime }
         else if let owner = lease.session { retired[owner] = ProcessInfo.processInfo.systemUptime }
         guard session == nil || lease.session == session else { return }
-        lease.stop(session: session)
-        target = nil
         if let alert { panel?.endSheet(alert.window, returnCode: .alertSecondButtonReturn) }
+        revokeAuthorization(session: session)
         finishConsent(false)
-        label?.stringValue = "Computer Use stopped"
-        panel?.orderOut(nil)
     }
     @objc private func stopClicked() { stop() }
 
+    private func revokeAuthorization(session: String?) {
+        guard ComputerConsentPolicy.mayClearAuthorization(
+            requestedSession: session,
+            leaseOwner: lease.session
+        ) else { return }
+        lease.stop(session: session)
+        target = nil
+        label?.stringValue = "Computer Use stopped"
+        panel?.orderOut(nil)
+    }
+
+    private func invalidatesAuthorization(_ error: Error) -> Bool {
+        guard let refusal = error as? ComputerTarget.Refusal else { return false }
+        switch refusal {
+        case .forbidden, .unavailable, .ambiguousWindow, .permission:
+            return true
+        case .focus, .dialog, .imageTooLarge:
+            return false
+        }
+    }
+
     private func check(_ session: String, _ generation: UInt64, _ deadline: Double) throws {
         try Task.checkCancellation()
-        guard lease.valid(session: session, generation: generation) else { throw Refusal.stopped }
+        guard lease.valid(
+            session: session,
+            generation: generation,
+            now: ProcessInfo.processInfo.systemUptime
+        ) else {
+            revokeAuthorization(session: session)
+            throw Refusal.stopped
+        }
         guard Date().timeIntervalSince1970 * 1000 < deadline else { throw Refusal.deadline }
     }
 
@@ -277,7 +309,7 @@ final class ComputerController: NSObject {
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = detail
-        alert.addButton(withTitle: "Allow once")
+        alert.addButton(withTitle: "Allow for this task")
         alert.addButton(withTitle: "Cancel")
         self.alert = alert
         NSApp.activate(ignoringOtherApps: true)

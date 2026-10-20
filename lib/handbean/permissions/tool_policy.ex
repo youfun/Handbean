@@ -137,15 +137,19 @@ defmodule Handbean.Permissions.ToolPolicy do
       sensitive_call?(policy, call) ->
         :deny
 
+      # The native host owns target consent and a run-scoped app/window lease.
+      # Computer policy resolves hard denials before an explicit prompt so a
+      # workspace default deny remains final. Stop is the only exception.
+      name == "computer" ->
+        computer_decision(policy, call)
+
       # Explicit per-tool prompts are a workspace boundary, including in YOLO.
       # They may strengthen capability-specific behavior but never weaken a hard deny.
       Map.get(policy.per_tool, name) == :prompt ->
         :prompt
 
-      # Native host independently approves the app and every input. Workspace
-      # rules (including yolo) cannot grant desktop control or remember it.
-      name == "computer" ->
-        computer_decision(policy, call)
+      Map.get(policy.per_tool, name) == :deny ->
+        :deny
 
       name == "schedule" ->
         schedule_decision(policy, call)
@@ -154,9 +158,6 @@ defmodule Handbean.Permissions.ToolPolicy do
       # leaves the OS sandbox. YOLO skips this deny below.
       bash_browser_mode = bash_browser_decision(policy, name, call) ->
         bash_browser_mode
-
-      Map.get(policy.per_tool, name) == :deny ->
-        :deny
 
       # Allow rules and session grants were given for sandboxed execution.
       # Leaving the OS sandbox is a fresh decision, except in yolo.
@@ -253,9 +254,11 @@ defmodule Handbean.Permissions.ToolPolicy do
     cond do
       action == "stop" -> :auto
       not Handbean.ComputerUse.enabled?() -> :deny
-      action in ["list", "observe"] -> :auto
       policy.default_mode == :deny -> :deny
-      true -> :prompt
+      Map.get(policy.per_tool, "computer") == :deny -> :deny
+      Map.get(policy.per_tool, "computer") == :prompt -> :prompt
+      action in ["list", "select", "observe", "click", "type", "key", "scroll"] -> :auto
+      true -> :deny
     end
   end
 

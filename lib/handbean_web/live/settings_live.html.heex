@@ -614,7 +614,7 @@
                 </div>
                 <div class="settings-field-desc computer-control-pairing-help">
                   {gettext(
-                    "For Phase 0, load the unpacked extension from %{path}, then paste the pairing URL into its popup. Requires agent-browser 0.39.1 or later.",
+                    "Load the unpacked extension from %{path}, then paste the pairing URL into its popup. Packaged desktop builds include the browser runtime.",
                     path: @browser_extension_status.extension_path
                   )}
                 </div>
@@ -656,7 +656,7 @@
                 </div>
                 <div class="settings-field-desc">
                   {gettext(
-                    "Allows the Agent to observe an approved window and request foreground input. Every input still requires native confirmation."
+                    "Allows the Agent to observe and control one approved window for the current run. Approve the target once; Stop, run end, or two idle minutes revokes control."
                   )}
                 </div>
               </div>

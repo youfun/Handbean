@@ -136,6 +136,24 @@ defmodule Handbean.Browser.CliTest do
       refute File.exists?(marker)
     end
 
+    test "prefers the bundled runtime over workspace PATH" do
+      runner = fn _argv, opts ->
+        send(self(), {:bundled_executable, opts[:executable]})
+        {:ok, %{stdout: "", stderr: "", exit_code: 0, timed_out: false}}
+      end
+
+      find = fn _name -> flunk("workspace PATH must not replace the bundled runtime") end
+
+      assert {:ok, %{exit_code: 0}} =
+               Cli.run(["--help"],
+                 runner: runner,
+                 bundled_executable: "/app/priv/browser-runtime/agent-browser",
+                 find_executable: find
+               )
+
+      assert_received {:bundled_executable, "/app/priv/browser-runtime/agent-browser"}
+    end
+
     test "returns missing-binary when the executable cannot be found" do
       find = fn _name -> nil end
 

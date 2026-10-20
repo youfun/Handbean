@@ -8,7 +8,7 @@ defmodule Handbean.Browser.Chrome do
   the whole connection with one switch.
   """
 
-  alias Handbean.Browser.{ChromeRelay.Server, Cli}
+  alias Handbean.Browser.{ChromeRelay.Server, Cli, Runtime}
   alias Handbean.Settings
 
   @topic "browser_chrome:status"
@@ -141,9 +141,7 @@ defmodule Handbean.Browser.Chrome do
     end
   end
 
-  defp extension_path do
-    Path.expand("../../../desktop/chrome-extension", __DIR__)
-  end
+  defp extension_path, do: Runtime.chrome_extension_path()
 
   defp ensure_pairing_token(opts) do
     with {:ok, section} <- settings_section(opts) do

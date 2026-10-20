@@ -1,13 +1,13 @@
 defmodule Handbean.E2E.ComputerUseTest do
   @moduledoc """
-  Coordinator → approval → host → tool image → provider → durable transcript.
+  Coordinator → run-scoped native lease → host → tool image → provider → durable transcript.
   Linux uses an injected host, not macOS input. Boundary failures exercised:
   forged/cross-conversation image refs, replaced bytes, stale action receipts,
   cancellation while the native request is outstanding. No TCC is automated.
   """
   use ExUnit.Case, async: false
 
-  alias Handbean.Agent.{Coordinator, Message, Runner}
+  alias Handbean.Agent.{Coordinator, Message}
   alias Handbean.TestSupport.E2EHarness, as: Harness
   alias Handbean.PubSub.Session
 
@@ -26,9 +26,10 @@ defmodule Handbean.E2E.ComputerUseTest do
     context
   end
 
-  test "approval binds the selected app; images reach the provider and replay as tool results", %{
-    workspace: workspace
-  } do
+  test "native target selection runs directly; images reach the provider and replay as tool results",
+       %{
+         workspace: workspace
+       } do
     owner = self()
 
     backend = fn input, context ->
@@ -68,22 +69,6 @@ defmodule Handbean.E2E.ComputerUseTest do
     end
 
     {id, runner} = start(workspace, script)
-    request = approval(runner)
-
-    assert [%{arguments: %{"app_id" => "com.apple.calculator"}, tool_call_id: call_id}] =
-             request.action_requests
-
-    refute_receive {:native, _, _}
-
-    assert :ok =
-             Runner.resume(id, [
-               %{
-                 "tool_call_id" => call_id,
-                 "tool_name" => "computer",
-                 "action" => "approve",
-                 "remember" => "once"
-               }
-             ])
 
     assert_receive {:native, %{"action" => "select"}, ^id}, 5_000
     assert_receive {:tool_image, %{images: [image]} = block}, 5_000
@@ -392,18 +377,6 @@ defmodule Handbean.E2E.ComputerUseTest do
     end
 
     {id, runner} = start(workspace, script)
-    request = approval(runner)
-    [action] = request.action_requests
-
-    assert :ok =
-             Runner.resume(id, [
-               %{
-                 "tool_call_id" => action.tool_call_id,
-                 "tool_name" => "computer",
-                 "action" => "approve",
-                 "remember" => "once"
-               }
-             ])
 
     assert_receive {:native_wire, wire}, 5_000
     assert String.starts_with?(wire["session"], id <> ":")
@@ -455,20 +428,5 @@ defmodule Handbean.E2E.ComputerUseTest do
              )
 
     {id, runner}
-  end
-
-  defp approval(runner) do
-    assert_receive {:agent_event, %{kind: :tool_approval_requested, payload: request}}, 5_000
-
-    case :sys.get_state(runner).task do
-      %Task{pid: pid} ->
-        ref = Process.monitor(pid)
-        assert_receive {:DOWN, ^ref, :process, ^pid, _}, 5_000
-
-      nil ->
-        :ok
-    end
-
-    request
   end
 end
