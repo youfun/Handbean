@@ -186,7 +186,7 @@ install_cmake() {
   download_sha256 \
     "https://github.com/Kitware/CMake/releases/download/v$version/cmake-$version.tar.gz" \
     "$archive" \
-    3cb3dd247b6a1de2d0f4b20c6fd4326c9024e894cebc9dc8699758887e566ca7
+    cf06fadfd6d41fa8e1ade5099e54976d1d844fd1487ab99942341f91b13d3e29
 
   if [[ ! -f "$prefix/.handbean-complete" ]]; then
     rm -rf "$prefix" "$sources/cmake-$version"
