@@ -195,7 +195,7 @@ defmodule Handbean.Agent.Turn.StreamTracker do
     messages
     |> Enum.filter(&match?(%Message{role: :assistant}, &1))
     |> Enum.flat_map(&content_blocks/1)
-    |> Enum.with_index()
+    |> Stream.with_index()
     |> Enum.reduce(%{}, fn
       {%{type: "text", text: text} = block, position}, indexed when is_binary(text) ->
         index = output_index(block, position)
