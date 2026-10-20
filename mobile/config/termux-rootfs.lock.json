@@ -1,8 +1,8 @@
 {
   "abi": "arm64-v8a",
   "index_path": "dists/stable/main/binary-aarch64/Packages",
-  "index_sha256": "31ae954fe788b378a3e579eb3ccc6d07ddd690ad96471fa8cc205974ba35e97e",
-  "inrelease_sha256": "ce3e4be1383f6bf590c4f40fb0ce27423c3c3b5a8e2d04abacfde4cc81ed2f92",
+  "index_sha256": "8cff856f547411f24f9acdf1b4132fdebeed3161d5f0188ed2ed8825cfd71b2d",
+  "inrelease_sha256": "2a36e9ef0aeaf7e0b7fe2eae51b4106122c1074b67a6487798b3105276f78af6",
   "lock_version": 1,
   "packages": [
     {
@@ -622,13 +622,13 @@
       "architecture": "aarch64",
       "depends": "resolv-conf",
       "description": "Library for asynchronous DNS requests (including name resolves)",
-      "download_size": 194924,
-      "filename": "pool/main/c/c-ares/c-ares_1.34.8_aarch64.deb",
+      "download_size": 200208,
+      "filename": "pool/main/c/c-ares/c-ares_1.34.9_aarch64.deb",
       "homepage": "https://c-ares.org/",
-      "installed_size_kib": 1104,
+      "installed_size_kib": 1116,
       "name": "c-ares",
-      "sha256": "7681fc23e822d7988ba8b2adf3468f93ae68f724dda365cff1385096a9fa87e6",
-      "version": "1.34.8"
+      "sha256": "623d84855e176f3f2a415d24c0e1d2f529356f4b5439bb3313e6d7ff0da4585c",
+      "version": "1.34.9"
     },
     {
       "architecture": "aarch64",
