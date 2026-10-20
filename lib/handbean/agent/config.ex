@@ -252,6 +252,7 @@ defmodule Handbean.Agent.Config do
       workspace_path: Keyword.get(opts, :workspace_path),
       checkout_path: Keyword.get(opts, :working_directory),
       conversation_id: Keyword.get(opts, :conversation_id),
+      trigger_entry_id: Keyword.get(opts, :transcript_id),
       created_by_conversation_id: Keyword.get(opts, :created_by_conversation_id),
       run_id: Keyword.get(opts, :run_id),
       source: Keyword.get(opts, :source),

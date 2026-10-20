@@ -11,7 +11,7 @@ defmodule Handbean.Memory.Engram do
 
   import Ecto.Changeset
 
-  alias Handbean.Memory.Synapse
+  alias Handbean.Memory.{EngramEvent, Synapse}
 
   schema "engrams" do
     field :content, :string
@@ -21,7 +21,9 @@ defmodule Handbean.Memory.Engram do
     field :reinforced_count, :integer, default: 0
     field :last_reinforced_at, :utc_datetime
     field :metadata, :map, default: %{}
+    field :revision, :integer, default: 1
 
+    has_many :events, EngramEvent
     has_many :source_synapses, Synapse, foreign_key: :source_id
     has_many :target_synapses, Synapse, foreign_key: :target_id
 
@@ -38,7 +40,8 @@ defmodule Handbean.Memory.Engram do
       :expires_at,
       :reinforced_count,
       :last_reinforced_at,
-      :metadata
+      :metadata,
+      :revision
     ])
     |> validate_required([:content, :kind])
     |> put_expiry(Keyword.get(opts, :ttl_hours, 24))

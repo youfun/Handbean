@@ -12,6 +12,7 @@ defmodule HandbeanProbe.WorkspaceMemory do
   @scopes [:workspace, :both, :global]
 
   defstruct items: [],
+            provenance_by_id: %{},
             summary: %{
               active: 0,
               long_term: 0,
@@ -52,9 +53,24 @@ defmodule HandbeanProbe.WorkspaceMemory do
 
     summary_opts = opts |> Keyword.delete(:workspace_id) |> Keyword.delete(:kind)
 
+    items = MemoryStore.list_engrams(opts)
+
+    provenance_opts = [
+      workspace_id: workspace_id,
+      memory_scope: state.scope,
+      privacy_mode: state.privacy_mode
+    ]
+
+    provenance_by_id =
+      case MemoryStore.provenance_many(Enum.map(items, & &1.id), provenance_opts) do
+        {:ok, projections} -> projections
+        {:error, _reason} -> %{}
+      end
+
     {:ok,
      %{
-       items: MemoryStore.list_engrams(opts),
+       items: items,
+       provenance_by_id: provenance_by_id,
        summary: MemoryStore.count_summary(workspace_id, summary_opts),
        now: DateTime.utc_now()
      }}
@@ -71,6 +87,7 @@ defmodule HandbeanProbe.WorkspaceMemory do
     %{
       state
       | items: result.items,
+        provenance_by_id: Map.get(result, :provenance_by_id, %{}),
         summary: result.summary,
         now: result.now,
         loading?: false,
@@ -341,9 +358,10 @@ defmodule HandbeanProbe.WorkspaceMemory do
     ]
   end
 
-  defp memory_cards(state), do: Enum.map(state.items, &memory_card(&1, state.now))
+  defp memory_cards(state),
+    do: Enum.map(state.items, &memory_card(&1, state.now, state.provenance_by_id))
 
-  defp memory_card(engram, now) do
+  defp memory_card(engram, now, provenance_by_id) do
     expired = expired?(engram, now)
     ink = if(expired, do: color(:hint), else: color(:ink))
 
@@ -365,7 +383,7 @@ defmodule HandbeanProbe.WorkspaceMemory do
           text_color: if(expired, do: color(:danger), else: color(:muted)),
           padding_top: 6
         ),
-        text(memory_projection(engram),
+        text(memory_projection(engram, provenance_by_id),
           text_size: 12,
           text_color: color(:muted),
           padding_top: 4
@@ -532,11 +550,41 @@ defmodule HandbeanProbe.WorkspaceMemory do
     end
   end
 
-  defp memory_projection(engram) do
+  defp memory_projection(engram, provenance_by_id) do
+    source = provenance_summary(Map.get(provenance_by_id, engram.id, []), engram)
+
     gettext("Scope: %{scope} · Source: %{source}",
       scope: projection_scope_label(memory_scope(engram)),
-      source: memory_source(engram)
+      source: source
     )
+  end
+
+  defp provenance_summary([], engram), do: memory_source(engram)
+
+  defp provenance_summary(events, _engram) do
+    event = List.last(events)
+    source = List.first(event.sources)
+
+    actor =
+      case event.actor do
+        :agent_tool -> gettext("Agent")
+        :reflector -> gettext("Reflection")
+        :user_ui -> gettext("User")
+        :legacy -> gettext("Legacy")
+        _ -> gettext("System")
+      end
+
+    status =
+      case source && source.status do
+        :available -> gettext("available; inspect in Web")
+        :changed -> gettext("changed; inspect in Web")
+        :deleted -> gettext("deleted")
+        :inaccessible -> gettext("unavailable")
+        :unresolved_legacy -> gettext("legacy source unresolved")
+        _ -> gettext("no exact source")
+      end
+
+    "#{actor} · #{status}"
   end
 
   defp format_date(%DateTime{} = datetime), do: Calendar.strftime(datetime, "%Y-%m-%d")
@@ -566,7 +614,8 @@ defmodule HandbeanProbe.WorkspaceMemory do
     [
       workspace_id: workspace_id,
       memory_scope: state.scope,
-      privacy_mode: state.privacy_mode
+      privacy_mode: state.privacy_mode,
+      provenance: %{actor: :user_ui}
     ]
   end
 

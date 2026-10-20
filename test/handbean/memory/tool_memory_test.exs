@@ -1,7 +1,7 @@
 defmodule Handbean.Tool.MemoryTest do
   use Handbean.DataCase
 
-  alias Handbean.Memory.{Engram, MemoryStore, Synapse}
+  alias Handbean.Memory.{Engram, EngramEvent, MemoryStore, Synapse}
   alias Handbean.Repo
 
   alias Handbean.Tool.Memory.{
@@ -43,11 +43,62 @@ defmodule Handbean.Tool.MemoryTest do
       engram = Repo.get!(Engram, data.id)
       assert engram.metadata["scope"] == "workspace"
       assert engram.metadata["workspace_id"] == "tool-memory-test"
-      assert engram.metadata["source"] == "agent_tool"
-      assert engram.metadata["conversation_id"] == "conversation-provenance"
-      assert engram.metadata["run_id"] == "run-provenance"
+      refute Map.has_key?(engram.metadata, "source")
+      refute Map.has_key?(engram.metadata, "conversation_id")
+      refute Map.has_key?(engram.metadata, "run_id")
+
+      event = Repo.get_by!(EngramEvent, engram_id: engram.id, kind: :created)
+      assert event.actor == :agent_tool
+      assert event.operation_conversation_id == "conversation-provenance"
+      assert event.operation_run_id == "run-provenance"
       assert_in_delta DateTime.diff(engram.expires_at, DateTime.utc_now()), 24 * 3600, 10
       refute Map.has_key?(MemLearn.input_schema().properties, :ttl_hours)
+    end
+
+    test "free chat trigger context does not block learn, update, or reinforce" do
+      conversation_id = "free-memory-tool-#{Ecto.UUID.generate()}"
+      assert {:ok, _conversation} = Handbean.ConversationStore.create_free(id: conversation_id)
+
+      assert {:ok, trigger} =
+               Handbean.ConversationTranscriptStore.append(conversation_id, %{
+                 "id" => "free-memory-trigger",
+                 "role" => "user",
+                 "content" => "remember this globally"
+               })
+
+      context = %{
+        memory_scope: "global",
+        privacy_mode: "standard",
+        conversation_id: conversation_id,
+        trigger_entry_id: trigger["id"],
+        run_id: "free-memory-run",
+        tool_call_id: "free-memory-learn"
+      }
+
+      assert {:ok, _output, %{id: id}} =
+               MemLearn.execute(
+                 %{"content" => "Free chat global memory", "kind" => "fact"},
+                 context
+               )
+
+      assert {:ok, _output, %{id: ^id}} =
+               MemUpdate.execute(
+                 %{"id" => id, "content" => "Updated free chat global memory"},
+                 %{context | tool_call_id: "free-memory-update"}
+               )
+
+      assert {:ok, _output} =
+               MemReinforce.execute(%{"id" => id}, %{
+                 context
+                 | tool_call_id: "free-memory-reinforce"
+               })
+
+      assert %{content: "Updated free chat global memory", short_term: false} =
+               Repo.get!(Engram, id)
+
+      assert Enum.all?(Repo.all(from e in EngramEvent, where: e.engram_id == ^id), fn event ->
+               Repo.preload(event, :provenances).provenances == []
+             end)
     end
 
     test "can create long-term memory" do

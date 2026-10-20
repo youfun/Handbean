@@ -26,7 +26,13 @@ defmodule Handbean.Tool.Memory.MemLearn do
       properties: %{
         content: %{type: "string", description: "The fact, pattern, or preference to remember"},
         kind: %{type: "string", description: "Type: fact, pattern, preference, rule, or context"},
-        short_term: %{type: "boolean", description: "Store as short-term memory?", default: true}
+        short_term: %{type: "boolean", description: "Store as short-term memory?", default: true},
+        sources: %{
+          type: "array",
+          maxItems: 10,
+          description: "Persisted conversation entry anchors that support this memory",
+          items: Scope.citation_schema()
+        }
       },
       required: ["content", "kind"]
     }
@@ -43,11 +49,8 @@ defmodule Handbean.Tool.Memory.MemLearn do
     with {:ok, kind} <- parse_kind(kind_str),
          {:ok, safe_content} <- Policy.validate_candidate_memory(content) do
       opts =
-        Scope.options(context) ++
-          [
-            short_term: Map.get(input, "short_term", true),
-            metadata: provenance_metadata(context)
-          ]
+        Scope.options(context, citations: Map.get(input, "sources", [])) ++
+          [short_term: Map.get(input, "short_term", true)]
 
       case Handbean.Memory.MemoryStore.learn(safe_content, kind, opts) do
         {:ok, engram} ->
@@ -66,19 +69,6 @@ defmodule Handbean.Tool.Memory.MemLearn do
   end
 
   def execute(_input, _context), do: {:error, "content and kind are required"}
-
-  defp provenance_metadata(context) do
-    %{"source" => "agent_tool"}
-    |> put_context_value("conversation_id", context, :conversation_id)
-    |> put_context_value("run_id", context, :run_id)
-  end
-
-  defp put_context_value(metadata, metadata_key, context, context_key) do
-    case Map.get(context, context_key) || Map.get(context, Atom.to_string(context_key)) do
-      value when is_binary(value) and value != "" -> Map.put(metadata, metadata_key, value)
-      _other -> metadata
-    end
-  end
 
   defp parse_kind(kind_str) when is_binary(kind_str) do
     kind = String.to_existing_atom(kind_str)

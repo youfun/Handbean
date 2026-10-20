@@ -660,7 +660,14 @@ defmodule HandbeanWeb.SettingsLiveTest do
 
       render_click(element(child, "#memory-lifecycle-short_term"))
       assert has_element?(child, "#memory-engram-#{memory.id}")
-      assert has_element?(child, "#memory-engram-#{memory.id} .memory-source", "manual")
+
+      assert has_element?(
+               child,
+               "#memory-engram-#{memory.id} .memory-source",
+               "没有精确来源"
+             )
+
+      refute has_element?(child, "#memory-engram-#{memory.id} .memory-source", "manual")
       assert has_element?(child, "#memory-engram-#{memory.id} .memory-scope", "工作区范围")
 
       render_click(element(child, "#memory-promote-#{memory.id}"))
@@ -790,6 +797,89 @@ defmodule HandbeanWeb.SettingsLiveTest do
                )
 
       assert id == other_memory.id
+    end
+
+    test "renders exact, source-less, and legacy provenance without metadata fallback", %{
+      conn: conn
+    } do
+      {:ok, workspace} = Handbean.WorkspaceStore.ensure_default!()
+      workspace_id = workspace["id"]
+      conversation_id = "memory-ui-source-#{Ecto.UUID.generate()}"
+
+      assert {:ok, _conversation} =
+               Handbean.ConversationStore.create(workspace_id, id: conversation_id)
+
+      assert {:ok, source_entry} =
+               Handbean.ConversationTranscriptStore.append(conversation_id, %{
+                 "id" => "memory-ui-entry",
+                 "role" => "user",
+                 "content" => "exact memory evidence"
+               })
+
+      citation = %{
+        conversation_id: conversation_id,
+        entry_id: source_entry["id"],
+        sequence: source_entry["sequence"],
+        revision: source_entry["revision"]
+      }
+
+      assert {:ok, sourced} =
+               Handbean.Memory.MemoryStore.learn("Sourced UI memory", :fact,
+                 workspace_id: workspace_id,
+                 memory_scope: :workspace,
+                 provenance: %{actor: :agent_tool, citations: [citation]}
+               )
+
+      assert {:ok, source_less} =
+               Handbean.Memory.MemoryStore.learn("Source-less UI memory", :rule,
+                 workspace_id: workspace_id,
+                 memory_scope: :workspace,
+                 metadata: %{"source" => "stale metadata"}
+               )
+
+      assert {:ok, legacy} =
+               Handbean.Repo.insert(%Handbean.Memory.Engram{
+                 content: "Imported legacy UI memory",
+                 kind: :context,
+                 short_term: false,
+                 metadata: %{"scope" => "workspace", "workspace_id" => workspace_id}
+               })
+
+      assert {:ok, _event} =
+               Handbean.Repo.insert(
+                 Handbean.Memory.EngramEvent.changeset(%Handbean.Memory.EngramEvent{}, %{
+                   engram_id: legacy.id,
+                   engram_revision: legacy.revision,
+                   kind: :imported,
+                   actor: :legacy,
+                   metadata: %{}
+                 })
+               )
+
+      {:ok, view, _html} =
+        live(conn, "/settings?tab=workspace_memory&workspace_id=#{workspace_id}&locale=zh_CN")
+
+      child = find_live_child(view, "settings-workspace-memory")
+
+      assert has_element?(
+               child,
+               "#memory-engram-#{sourced.id} .memory-link[href='/w/#{workspace_id}/c/#{conversation_id}#memory-ui-entry']",
+               "Agent 工具 · 证据 · 可查看"
+             )
+
+      assert has_element?(
+               child,
+               "#memory-engram-#{source_less.id} .memory-source",
+               "系统 · 操作记录 · 没有精确来源"
+             )
+
+      refute has_element?(child, "#memory-engram-#{source_less.id} .memory-source", "未知来源")
+
+      assert has_element?(
+               child,
+               "#memory-engram-#{legacy.id} .memory-source",
+               "旧版记录 · 旧版来源 · 旧版来源未精确定位"
+             )
     end
 
     test "Chinese memory browser shows localized kinds and workspace scope", %{conn: conn} do

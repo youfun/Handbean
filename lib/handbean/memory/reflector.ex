@@ -663,10 +663,20 @@ defmodule Handbean.Memory.Reflector do
                      [
                        short_term: true,
                        ttl_hours: @candidate_ttl_hours,
-                       metadata: %{
-                         "source" => "reflector",
-                         "conversation_id" => conversation_id,
-                         "checkpoint_id" => checkpoint["id"]
+                       provenance: %{
+                         actor: :reflector,
+                         operation_conversation_id: conversation_id,
+                         operation_run_id: checkpoint["run_id"],
+                         checkpoint: %{
+                           conversation_id: conversation_id,
+                           entry_id: checkpoint["id"],
+                           sequence: checkpoint["sequence"],
+                           revision: checkpoint["revision"]
+                         },
+                         trusted_checkpoint: true,
+                         idempotency_key:
+                           "reflector:#{workspace_id}:#{checkpoint["id"]}:candidate",
+                         metadata: %{"checkpoint_id" => checkpoint["id"]}
                        }
                      ]
                  ) do

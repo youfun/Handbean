@@ -29,6 +29,12 @@ defmodule Handbean.Tool.Memory.MemUpdate do
         kind: %{
           type: "string",
           description: "Corrected type: fact, pattern, preference, rule, or context"
+        },
+        sources: %{
+          type: "array",
+          maxItems: 10,
+          description: "Persisted conversation entry anchors supporting this correction",
+          items: Scope.citation_schema()
         }
       },
       required: ["id"]
@@ -44,7 +50,12 @@ defmodule Handbean.Tool.Memory.MemUpdate do
   @impl true
   def execute(%{"id" => id} = input, context) do
     with {:ok, attrs} <- update_attrs(input),
-         {:ok, engram} <- MemoryStore.update(id, attrs, Scope.options(context)) do
+         {:ok, engram} <-
+           MemoryStore.update(
+             id,
+             attrs,
+             Scope.options(context, citations: Map.get(input, "sources", []))
+           ) do
       {:ok, "Updated: [#{engram.kind}] #{engram.content}", %{id: engram.id, kind: engram.kind}}
     else
       {:error, :missing_update} ->

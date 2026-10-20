@@ -28,6 +28,12 @@ defmodule Handbean.Tool.Memory.MemReinforce do
         query: %{
           type: "string",
           description: "Alternative: reinforce by content match (use most recent match)"
+        },
+        sources: %{
+          type: "array",
+          maxItems: 10,
+          description: "Persisted conversation entry anchors that confirm this memory",
+          items: Scope.citation_schema()
         }
       },
       required: []
@@ -41,12 +47,12 @@ defmodule Handbean.Tool.Memory.MemReinforce do
   def concurrent?, do: false
 
   @impl true
-  def execute(%{"id" => id}, context) do
-    reinforce(id, Scope.options(context))
+  def execute(%{"id" => id} = input, context) do
+    reinforce(id, Scope.options(context, citations: Map.get(input, "sources", [])))
   end
 
-  def execute(%{"query" => query}, context) do
-    opts = Scope.options(context)
+  def execute(%{"query" => query} = input, context) do
+    opts = Scope.options(context, citations: Map.get(input, "sources", []))
 
     with :ok <- MemoryStore.validate_scope(opts),
          [engram | _] <- MemoryStore.recall(query, [limit: 1] ++ opts) do

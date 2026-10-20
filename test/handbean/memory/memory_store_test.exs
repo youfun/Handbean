@@ -283,7 +283,12 @@ defmodule Handbean.Memory.MemoryStoreTest do
                expired.id
              ]
 
-      summary = MemoryStore.count_summary("lifecycle-workspace", scope: :workspace)
+      {query_count, summary} =
+        count_repo_queries(fn ->
+          MemoryStore.count_summary("lifecycle-workspace", scope: :workspace)
+        end)
+
+      assert query_count == 2
       assert summary.active == 2
       assert summary.long_term == 1
       assert summary.short_term == 1
@@ -512,6 +517,33 @@ defmodule Handbean.Memory.MemoryStoreTest do
 
       assert {:ok, _synapse} =
                MemoryStore.associate(global_a.id, global_b.id, :related, memory_scope: :global)
+    end
+  end
+
+  defp count_repo_queries(fun) do
+    handler_id = "memory-store-query-count-#{System.unique_integer([:positive])}"
+
+    :ok =
+      :telemetry.attach(
+        handler_id,
+        [:handbean, :repo, :query],
+        fn _event, _measurements, _metadata, pid -> send(pid, :repo_query) end,
+        self()
+      )
+
+    try do
+      result = fun.()
+      {drain_query_messages(0), result}
+    after
+      :telemetry.detach(handler_id)
+    end
+  end
+
+  defp drain_query_messages(count) do
+    receive do
+      :repo_query -> drain_query_messages(count + 1)
+    after
+      0 -> count
     end
   end
 

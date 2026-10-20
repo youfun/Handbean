@@ -87,6 +87,68 @@ defmodule HandbeanProbe.WorkspaceMemoryTest do
     assert tap?(tree, {:memory_copy, :content, 42})
   end
 
+  test "renders provenance events instead of stale metadata source labels" do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+    inserted_at = DateTime.to_naive(now)
+
+    sourced = %Engram{
+      id: 43,
+      content: "Native sourced memory",
+      kind: :fact,
+      short_term: false,
+      metadata: %{"scope" => "workspace", "source" => "stale metadata"},
+      source_synapses: [],
+      target_synapses: [],
+      inserted_at: inserted_at,
+      updated_at: inserted_at
+    }
+
+    source_less = %{
+      sourced
+      | id: 44,
+        content: "Native source-less memory",
+        kind: :rule
+    }
+
+    state =
+      WorkspaceMemory.new()
+      |> WorkspaceMemory.loaded({
+        :ok,
+        %{
+          items: [sourced, source_less],
+          provenance_by_id: %{
+            43 => [
+              %{
+                actor: :agent_tool,
+                sources: [%{status: :available, relation: :citation}]
+              }
+            ],
+            44 => [%{actor: :system, sources: []}]
+          },
+          summary: %{
+            active: 2,
+            long_term: 2,
+            short_term: 0,
+            expired: 0,
+            by_kind: %{preference: 0, rule: 1, pattern: 0, fact: 1, context: 0}
+          },
+          now: now
+        }
+      })
+
+    tree =
+      WorkspaceMemory.render(state, %{
+        "id" => "workspace-a",
+        "name" => "Handbean",
+        "path" => "/tmp/handbean"
+      })
+
+    blob = flatten_text(tree)
+    assert blob =~ "Source: Agent · available; inspect in Web"
+    assert blob =~ "Source: System · no exact source"
+    refute blob =~ "stale metadata"
+  end
+
   test "renders Chinese labels from the native catalog" do
     Gettext.put_locale(HandbeanProbe.Gettext, "zh_CN")
 
@@ -246,7 +308,7 @@ defmodule HandbeanProbe.WorkspaceMemoryTest do
     view = socket |> event({:tap, {:page, :memory}}) |> settle()
 
     tree = HomeScreen.render(view.socket.assigns)
-    assert flatten_text(tree) =~ "Scope: Workspace · Source: Agent"
+    assert flatten_text(tree) =~ "Scope: Workspace · Source: System · no exact source"
     assert tap?(tree, {:memory_promote, memory.id})
 
     view = view |> event({:tap, {:memory_promote, other.id}}) |> settle()

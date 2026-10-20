@@ -216,6 +216,43 @@ defmodule HandbeanWeb.WorkspaceMemoryLive do
     if global?(engram), do: gettext("全局范围"), else: gettext("工作区范围")
   end
 
+  def provenance_sources(provenance_by_id, engram_id) do
+    provenance_by_id
+    |> Map.get(engram_id, [])
+    |> Enum.flat_map(fn event ->
+      case event.sources do
+        [] -> [%{event: event, relation: :none, status: :no_exact_source}]
+        sources -> Enum.map(sources, &Map.put(&1, :event, event))
+      end
+    end)
+  end
+
+  def provenance_actor_label(:agent_tool), do: gettext("Agent 工具")
+  def provenance_actor_label(:reflector), do: gettext("记忆反思器")
+  def provenance_actor_label(:user_ui), do: gettext("用户界面")
+  def provenance_actor_label(:legacy), do: gettext("旧版记录")
+  def provenance_actor_label(_actor), do: gettext("系统")
+
+  def provenance_status_label(:available), do: gettext("可查看")
+  def provenance_status_label(:changed), do: gettext("来源已变更")
+  def provenance_status_label(:deleted), do: gettext("来源已删除")
+  def provenance_status_label(:inaccessible), do: gettext("来源不可访问")
+  def provenance_status_label(:unresolved_legacy), do: gettext("旧版来源未精确定位")
+  def provenance_status_label(:no_exact_source), do: gettext("没有精确来源")
+
+  def provenance_relation_label(:trigger), do: gettext("触发上下文")
+  def provenance_relation_label(:citation), do: gettext("证据")
+  def provenance_relation_label(:coverage), do: gettext("检查点覆盖范围")
+  def provenance_relation_label(:legacy), do: gettext("旧版来源")
+  def provenance_relation_label(:none), do: gettext("操作记录")
+
+  def provenance_source_href(workspace_id, %{status: :available} = source)
+      when is_binary(workspace_id) do
+    "/w/#{URI.encode(workspace_id)}/c/#{URI.encode(source.conversation_id)}##{URI.encode(source.start.entry_id)}"
+  end
+
+  def provenance_source_href(_workspace_id, _source), do: nil
+
   def source_label(engram) do
     case SafeMap.get(engram.metadata || %{}, "source") do
       nil -> gettext("未知来源")
@@ -289,8 +326,23 @@ defmodule HandbeanWeb.WorkspaceMemoryLive do
       |> Keyword.delete(:workspace_id)
       |> Keyword.delete(:kind)
 
+    memories = MemoryStore.list_engrams(opts)
+
+    provenance_opts = [
+      workspace_id: socket.assigns.workspace_id,
+      memory_scope: socket.assigns.scope_filter,
+      privacy_mode: :standard
+    ]
+
+    provenance_by_id =
+      case MemoryStore.provenance_many(Enum.map(memories, & &1.id), provenance_opts) do
+        {:ok, projections} -> projections
+        {:error, _reason} -> %{}
+      end
+
     assign(socket,
-      memories: MemoryStore.list_engrams(opts),
+      memories: memories,
+      provenance_by_id: provenance_by_id,
       summary: MemoryStore.count_summary(socket.assigns.workspace_id, summary_opts),
       now: DateTime.utc_now()
     )
@@ -328,7 +380,8 @@ defmodule HandbeanWeb.WorkspaceMemoryLive do
     [
       workspace_id: socket.assigns.workspace_id,
       memory_scope: memory_scope,
-      privacy_mode: :standard
+      privacy_mode: :standard,
+      provenance: %{actor: :user_ui}
     ]
   end
 

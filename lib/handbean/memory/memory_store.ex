@@ -8,13 +8,10 @@ defmodule Handbean.Memory.MemoryStore do
 
   import Ecto.Query, warn: false
 
-  alias Handbean.Memory.{Engram, Synapse}
+  alias Handbean.Memory.{Engram, EngramEvent, Provenance, Synapse}
+  alias Handbean.Memory.MemoryStore.{Fingerprint, Recall}
   alias Handbean.Repo
 
-  # Function words that show up in almost every sentence and should not drive a match.
-  @recall_stop_words MapSet.new(
-                       ~w(handbean the and for with this that from are use not you should what when how why can does have into will but was were been they them their there then than your our who which where all about would could we do to of in on at is it be or as if so an by 这个 那个 什么 怎么 为什么 可以 需要 已经 我们 你们 一下 现在 然后 没有 是否 问题 一个)
-                     )
   @recall_token_limit 16
   @engram_kinds [:preference, :rule, :pattern, :fact, :context]
   @identity_metadata_keys [
@@ -26,9 +23,6 @@ defmodule Handbean.Memory.MemoryStore do
     :privacy_mode
   ]
   @lifecycle_filters [:active, :long_term, :short_term, :expired, :all]
-  # Underscore, hyphen, slash, dot, colon, and other punctuation (including CJK).
-  @recall_separators ~r/[\p{P}]+/u
-  @han_grapheme ~r/^\p{Han}$/u
 
   @doc """
   Recall engrams matching a keyword query.
@@ -64,15 +58,7 @@ defmodule Handbean.Memory.MemoryStore do
     * `:token_window` — `:head` (default) or `:head_tail` for long prompts
   """
   @spec recall(String.t(), keyword()) :: [Engram.t()]
-  def recall(query, opts \\ []) do
-    case recall_tokens(query, opts) do
-      [] ->
-        []
-
-      tokens ->
-        recall_scored(tokens, opts)
-    end
-  end
+  def recall(query, opts \\ []), do: Recall.recall(query, opts)
 
   @doc """
   Return memory recall metrics for a query without loading full associations.
@@ -123,7 +109,28 @@ defmodule Handbean.Memory.MemoryStore do
         |> Map.drop(@identity_metadata_keys)
         |> Map.merge(identity)
 
-      insert_engram(content, kind, metadata, opts)
+      fingerprint =
+        operation_fingerprint({
+          :created,
+          content,
+          kind,
+          Keyword.get(opts, :short_term, true),
+          Keyword.get(opts, :ttl_hours, 24),
+          metadata,
+          fingerprint_provenance(opts)
+        })
+
+      transactional_write(
+        opts,
+        fn event_opts ->
+          with {:ok, engram} <- insert_engram(content, kind, metadata, opts),
+               {:ok, _event} <- Provenance.record(engram, :created, event_opts) do
+            {:ok, engram}
+          end
+        end,
+        :created,
+        fingerprint
+      )
     end
   end
 
@@ -194,13 +201,9 @@ defmodule Handbean.Memory.MemoryStore do
       |> Repo.all()
       |> Map.new()
 
-    %{
-      active: count_lifecycle(base_query, :active, now),
-      long_term: count_lifecycle(base_query, :long_term, now),
-      short_term: count_lifecycle(base_query, :short_term, now),
-      expired: count_lifecycle(base_query, :expired, now),
-      by_kind: Map.new(@engram_kinds, &{&1, Map.get(kind_counts, &1, 0)})
-    }
+    base_query
+    |> lifecycle_counts(now)
+    |> Map.put(:by_kind, Map.new(@engram_kinds, &{&1, Map.get(kind_counts, &1, 0)}))
   end
 
   @doc """
@@ -214,7 +217,18 @@ defmodule Handbean.Memory.MemoryStore do
 
   def reinforce(id, opts) when is_integer(id) do
     with :ok <- validate_mutation_scope(opts) do
-      reinforce_query(active_scoped_id_query(id, opts))
+      transactional_write(
+        opts,
+        fn event_opts ->
+          with {:ok, reinforced} <- reinforce_query(active_scoped_id_query(id, opts)),
+               {:ok, _event} <- Provenance.record(reinforced, :reinforced, event_opts) do
+            {:ok, reinforced}
+          end
+        end,
+        :reinforced,
+        operation_fingerprint({:reinforced, id, fingerprint_provenance(opts)}),
+        id
+      )
     end
   end
 
@@ -305,19 +319,95 @@ defmodule Handbean.Memory.MemoryStore do
   def update(id, attrs, opts \\ [])
 
   def update(id, attrs, opts) when is_integer(id) and is_map(attrs) do
-    with :ok <- validate_mutation_scope(opts),
-         {:ok, engram} <- fetch_active_scoped(id, opts) do
-      attrs = Map.take(attrs, [:content, "content", :kind, "kind"])
+    with :ok <- validate_mutation_scope(opts) do
+      semantic_attrs = Map.take(attrs, [:content, "content", :kind, "kind"])
 
-      engram
-      |> Engram.changeset(attrs)
-      |> require_update_change()
-      |> Repo.update()
+      transactional_write(
+        opts,
+        fn event_opts ->
+          with {:ok, engram} <- fetch_active_scoped(id, opts),
+               {:ok, updated} <- update_semantic_fields(engram, semantic_attrs),
+               {:ok, updated} <- record_update_if_changed(engram, updated, event_opts) do
+            {:ok, updated}
+          end
+        end,
+        :updated,
+        operation_fingerprint({:updated, id, semantic_attrs, fingerprint_provenance(opts)}),
+        id
+      )
     end
   end
 
   def update(_id, _attrs, opts) do
     with :ok <- validate_mutation_scope(opts), do: {:error, :not_found}
+  end
+
+  @doc "Read the authorized provenance projection for a scoped engram."
+  @spec provenance(integer(), keyword()) ::
+          {:ok, [map()]} | {:error, :invalid_scope | :not_found}
+  def provenance(id, opts \\ [])
+
+  def provenance(id, opts) when is_integer(id) do
+    with {:ok, projections} <- provenance_many([id], opts),
+         {:ok, events} <- Map.fetch(projections, id) do
+      {:ok, events}
+    else
+      :error -> {:error, :not_found}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  def provenance(_id, opts) do
+    with :ok <- validate_mutation_scope(opts), do: {:error, :not_found}
+  end
+
+  @doc "Read authorized provenance projections for multiple scoped engrams."
+  @spec provenance_many([integer()], keyword()) ::
+          {:ok, %{integer() => [map()]}} | {:error, :invalid_scope | :not_found}
+  def provenance_many(ids, opts \\ [])
+
+  def provenance_many(ids, opts) when is_list(ids) do
+    with :ok <- validate_mutation_scope(opts),
+         {:ok, ids} <- normalize_engram_ids(ids) do
+      scoped_ids =
+        Engram
+        |> where([engram], engram.id in ^ids)
+        |> apply_scope_filter(opts)
+        |> select([engram], engram.id)
+        |> Repo.all()
+
+      events =
+        EngramEvent
+        |> where([event], event.engram_id in ^scoped_ids)
+        |> order_by([event], asc: event.engram_id, asc: event.id)
+        |> preload([event],
+          provenances: ^from(source in Handbean.Memory.EngramProvenance, order_by: source.id)
+        )
+        |> Repo.all()
+
+      projected = Provenance.project(events, Keyword.get(opts, :workspace_id))
+      initial = Map.new(scoped_ids, &{&1, []})
+
+      projections =
+        events
+        |> Enum.zip(projected)
+        |> Enum.reduce(initial, fn {event, projection}, acc ->
+          Map.update!(acc, event.engram_id, &[projection | &1])
+        end)
+        |> Map.new(fn {id, projections} -> {id, Enum.reverse(projections)} end)
+
+      {:ok, projections}
+    end
+  end
+
+  def provenance_many(_ids, opts) do
+    with :ok <- validate_mutation_scope(opts), do: {:error, :not_found}
+  end
+
+  defp normalize_engram_ids(ids) do
+    if Enum.all?(ids, &(is_integer(&1) and &1 > 0)),
+      do: {:ok, Enum.uniq(ids)},
+      else: {:error, :not_found}
   end
 
   @doc "Delete an engram visible in the explicit mutation scope."
@@ -335,6 +425,130 @@ defmodule Handbean.Memory.MemoryStore do
   def delete(_id, opts) do
     with :ok <- validate_mutation_scope(opts), do: {:error, :not_found}
   end
+
+  defp update_semantic_fields(engram, attrs) do
+    attrs = Map.take(attrs, [:content, "content", :kind, "kind"])
+
+    changeset =
+      engram
+      |> Engram.changeset(attrs)
+      |> require_update_change()
+
+    if changeset.valid? do
+      if map_size(changeset.changes) == 0 do
+        {:ok, engram}
+      else
+        now = DateTime.utc_now() |> DateTime.truncate(:second)
+        revision = engram.revision + 1
+        content = Ecto.Changeset.get_field(changeset, :content)
+        kind = Ecto.Changeset.get_field(changeset, :kind)
+
+        query =
+          Engram
+          |> where([candidate], candidate.id == ^engram.id)
+          |> where([candidate], candidate.revision == ^engram.revision)
+          |> select([candidate], candidate)
+
+        case Repo.update_all(query,
+               set: [content: content, kind: kind, revision: revision, updated_at: now]
+             ) do
+          {1, [updated]} -> {:ok, updated}
+          {0, []} -> {:error, :conflict}
+        end
+      end
+    else
+      {:error, changeset}
+    end
+  end
+
+  defp record_update_if_changed(
+         %Engram{revision: revision},
+         %Engram{revision: revision} = updated,
+         opts
+       ) do
+    case provenance_idempotency_key(opts) do
+      key when is_binary(key) and key != "" ->
+        with {:ok, _event} <- Provenance.record(updated, :observed, opts), do: {:ok, updated}
+
+      _ ->
+        {:ok, updated}
+    end
+  end
+
+  defp record_update_if_changed(_before, updated, opts) do
+    with {:ok, _event} <- Provenance.record(updated, :updated, opts), do: {:ok, updated}
+  end
+
+  defp transactional_write(opts, operation, operation_kind, fingerprint, expected_id \\ nil) do
+    event_opts =
+      opts
+      |> Keyword.put(:provenance_operation, operation_kind)
+      |> Keyword.put(:provenance_request_fingerprint, fingerprint)
+
+    case Repo.transaction(fn ->
+           case idempotent_scoped_engram(event_opts, operation_kind, fingerprint, expected_id) do
+             {:ok, engram} ->
+               engram
+
+             :none ->
+               case operation.(event_opts) do
+                 {:ok, engram} -> engram
+                 {:error, reason} -> Repo.rollback(reason)
+               end
+
+             {:error, reason} ->
+               Repo.rollback(reason)
+           end
+         end) do
+      {:ok, engram} ->
+        {:ok, engram}
+
+      {:error, :idempotency_conflict} ->
+        resolve_idempotency_race(event_opts, operation_kind, fingerprint, expected_id)
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp resolve_idempotency_race(opts, operation, fingerprint, expected_id) do
+    case idempotent_scoped_engram(opts, operation, fingerprint, expected_id) do
+      {:ok, engram} -> {:ok, engram}
+      _other -> {:error, :idempotency_conflict}
+    end
+  end
+
+  defp idempotent_scoped_engram(opts, operation, fingerprint, expected_id) do
+    case Provenance.idempotent_engram(opts, operation, fingerprint) do
+      {:ok, engram} when is_nil(expected_id) or engram.id == expected_id ->
+        case Repo.one(scoped_id_query(engram.id, opts)) do
+          nil -> {:error, :idempotency_conflict}
+          scoped -> {:ok, scoped}
+        end
+
+      {:ok, _engram} ->
+        {:error, :idempotency_conflict}
+
+      {:error, :idempotency_conflict} = error ->
+        error
+
+      :none ->
+        :none
+    end
+  end
+
+  defp provenance_idempotency_key(opts) do
+    provenance = Keyword.get(opts, :provenance, %{})
+    Map.get(provenance, :idempotency_key) || Map.get(provenance, "idempotency_key")
+  end
+
+  defp fingerprint_provenance(opts) do
+    opts
+    |> Keyword.get(:provenance, %{})
+    |> Map.drop([:idempotency_key, "idempotency_key"])
+  end
+
+  defp operation_fingerprint(term), do: Fingerprint.hash(term)
 
   defp insert_engram(content, kind, metadata, opts) do
     %Engram{}
@@ -508,171 +722,41 @@ defmodule Handbean.Memory.MemoryStore do
     {count, nil}
   end
 
-  defp recall_tokens(query, opts) when is_binary(query) do
-    tokens =
-      query
-      |> String.downcase()
-      |> String.replace(@recall_separators, " ")
-      |> String.split(~r/\s+/u, trim: true)
-      |> Enum.flat_map(&expand_recall_token/1)
-      |> Enum.reduce({[], MapSet.new()}, fn token, {tokens, seen} ->
-        if usable_recall_token?(token) and not MapSet.member?(seen, token),
-          do: {[token | tokens], MapSet.put(seen, token)},
-          else: {tokens, seen}
-      end)
-      |> elem(0)
-      |> Enum.reverse()
-
-    select_recall_tokens(tokens, Keyword.get(opts, :token_window, :head))
-  end
-
-  defp recall_tokens(_query, _opts), do: []
-
-  defp select_recall_tokens(tokens, :head_tail) do
-    if length(tokens) <= @recall_token_limit do
-      tokens
-    else
-      half = div(@recall_token_limit, 2)
-      Enum.take(tokens, half) ++ Enum.take(tokens, -half)
-    end
-  end
-
-  defp select_recall_tokens(tokens, _strategy), do: Enum.take(tokens, @recall_token_limit)
-
-  defp expand_recall_token(token) do
-    token
-    |> String.graphemes()
-    |> Enum.chunk_by(&han_grapheme?/1)
-    |> Enum.flat_map(fn graphemes ->
-      cond do
-        han_grapheme?(hd(graphemes)) and length(graphemes) > 4 ->
-          graphemes |> Enum.chunk_every(2, 1, :discard) |> Enum.map(&Enum.join/1)
-
-        true ->
-          [Enum.join(graphemes)]
-      end
-    end)
-  end
-
-  defp han_grapheme?(grapheme), do: String.match?(grapheme, @han_grapheme)
-
-  defp usable_recall_token?(token) do
-    String.length(token) >= 2 and not MapSet.member?(@recall_stop_words, token)
-  end
-
-  defp recall_scored(tokens, opts) do
-    limit = Keyword.get(opts, :limit, 10)
-    long_tokens = Enum.filter(tokens, &(String.length(&1) >= 3))
-    short_tokens = Enum.filter(tokens, &(String.length(&1) == 2))
-    bm25 = fts_bm25(long_tokens)
-    ids = Enum.uniq(Map.keys(bm25) ++ short_token_ids(short_tokens, opts))
-
-    if ids == [] do
-      []
-    else
-      min_matches = required_matches(tokens, opts)
-
-      Engram
-      |> where([e], e.id in ^ids)
-      |> where([e], is_nil(e.expires_at) or e.expires_at > ^DateTime.utc_now())
-      |> apply_scope_filter(opts)
-      |> Repo.all()
-      |> Enum.map(fn engram -> {matched_token_count(engram.content, tokens), engram} end)
-      |> Enum.filter(fn {count, _engram} -> count >= min_matches end)
-      |> Enum.sort_by(fn {count, engram} -> recall_sort_key(count, engram, bm25) end)
-      |> Enum.take(limit)
-      |> Enum.map(fn {_count, engram} -> engram end)
-    end
-  end
-
-  defp fts_bm25([]), do: %{}
-
-  defp fts_bm25(tokens) do
-    %{rows: rows} =
-      Repo.query!(
-        "SELECT rowid, bm25(engrams_fts) FROM engrams_fts WHERE engrams_fts MATCH ?",
-        [fts_match(tokens)]
-      )
-
-    Map.new(rows, fn [rowid, score] -> {rowid, score} end)
-  end
-
-  defp fts_match(tokens) do
-    Enum.map_join(tokens, " OR ", fn token ->
-      ~s|"#{String.replace(token, "\"", "\"\"")}"|
-    end)
-  end
-
-  defp short_token_ids([], _opts), do: []
-
-  defp short_token_ids(tokens, opts) do
-    condition =
-      Enum.reduce(tokens, dynamic(false), fn token, condition ->
-        dynamic([e], ^condition or fragment("instr(lower(?), ?) > 0", e.content, ^token))
-      end)
-
-    Engram
-    |> where(^condition)
-    |> where([e], is_nil(e.expires_at) or e.expires_at > ^DateTime.utc_now())
-    |> apply_scope_filter(opts)
-    |> select([e], e.id)
-    |> Repo.all()
-  end
-
-  defp required_matches(tokens, opts) do
-    count = length(tokens)
-
-    base =
-      case Keyword.get(opts, :min_matches) do
-        n when is_integer(n) and n > 0 -> n
-        _ -> if(count >= 2, do: 2, else: 1)
-      end
-
-    percent =
-      case Keyword.get(opts, :match_percent, 30) do
-        value when is_integer(value) and value in 1..100 -> value
-        _other -> 30
-      end
-
-    proportional = div(count * percent + 99, 100)
-    required = min(count, max(min(base, count), proportional))
-
-    case Keyword.get(opts, :max_required_matches) do
-      value when is_integer(value) and value > 0 -> min(required, value)
-      _other -> required
-    end
-  end
-
-  defp matched_token_count(content, tokens) do
-    lowered = String.downcase(content || "")
-    Enum.count(tokens, &String.contains?(lowered, &1))
-  end
-
-  defp recall_sort_key(count, engram, bm25) do
-    bm25_key =
-      case Map.fetch(bm25, engram.id) do
-        {:ok, score} -> {0, score}
-        :error -> {1, 0.0}
-      end
-
-    {
-      -count,
-      bm25_key,
-      if(engram.short_term, do: 1, else: 0),
-      -(engram.reinforced_count || 0),
-      recall_updated_desc(engram)
-    }
-  end
-
-  defp recall_updated_desc(%{updated_at: %DateTime{} = updated_at}),
-    do: -DateTime.to_unix(updated_at, :microsecond)
-
-  defp recall_updated_desc(_engram), do: 0
-
-  defp count_lifecycle(query, lifecycle, now) do
+  defp lifecycle_counts(query, now) do
     query
-    |> apply_lifecycle_filter(lifecycle, now)
-    |> Repo.aggregate(:count, :id)
+    |> select([engram], %{
+      active:
+        fragment(
+          "COALESCE(SUM(CASE WHEN ? = 0 OR (? = 1 AND ? IS NOT NULL AND ? > ?) THEN 1 ELSE 0 END), 0)",
+          engram.short_term,
+          engram.short_term,
+          engram.expires_at,
+          engram.expires_at,
+          ^now
+        ),
+      long_term:
+        fragment(
+          "COALESCE(SUM(CASE WHEN ? = 0 THEN 1 ELSE 0 END), 0)",
+          engram.short_term
+        ),
+      short_term:
+        fragment(
+          "COALESCE(SUM(CASE WHEN ? = 1 AND ? IS NOT NULL AND ? > ? THEN 1 ELSE 0 END), 0)",
+          engram.short_term,
+          engram.expires_at,
+          engram.expires_at,
+          ^now
+        ),
+      expired:
+        fragment(
+          "COALESCE(SUM(CASE WHEN ? = 1 AND ? IS NOT NULL AND ? <= ? THEN 1 ELSE 0 END), 0)",
+          engram.short_term,
+          engram.expires_at,
+          engram.expires_at,
+          ^now
+        )
+    })
+    |> Repo.one!()
   end
 
   defp apply_list_scope_filter(query, opts) do
@@ -797,7 +881,8 @@ defmodule Handbean.Memory.MemoryStore do
 
   # ── Scope / Privacy Filtering ──
 
-  defp apply_scope_filter(query, opts) do
+  @doc false
+  def apply_scope_filter(query, opts) do
     memory_scope = scope_option(opts)
     privacy_mode = privacy_mode_option(opts)
     workspace_id = Keyword.get(opts, :workspace_id)

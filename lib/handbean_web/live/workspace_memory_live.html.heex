@@ -160,7 +160,11 @@
           <span class={["memory-badge memory-scope", global?(engram) && "memory-global"]}>
             {scope_label(engram)}
           </span>
-          <span class="memory-source" title={source_label(engram)}>
+          <span
+            :if={provenance_sources(@provenance_by_id, engram.id) == []}
+            class="memory-source"
+            title={source_label(engram)}
+          >
             {gettext("来源：%{source}", source: source_label(engram))}
           </span>
           <time
@@ -170,6 +174,32 @@
             {format_date(engram.updated_at || engram.inserted_at)}
           </time>
         </header>
+
+        <div
+          :for={
+            {source, source_index} <-
+              Enum.with_index(provenance_sources(@provenance_by_id, engram.id))
+          }
+          id={"memory-provenance-#{engram.id}-#{source.event.id}-#{source_index}"}
+          class="memory-links"
+        >
+          <div class="memory-source">
+            <a
+              :if={href = provenance_source_href(@workspace_id, source)}
+              class="memory-link"
+              href={href}
+            >
+              {provenance_actor_label(source.event.actor)} · {provenance_relation_label(
+                source.relation
+              )} · {provenance_status_label(source.status)}
+            </a>
+            <span :if={!provenance_source_href(@workspace_id, source)}>
+              {provenance_actor_label(source.event.actor)} · {provenance_relation_label(
+                source.relation
+              )} · {provenance_status_label(source.status)}
+            </span>
+          </div>
+        </div>
 
         <form
           :if={@editing_id == engram.id}

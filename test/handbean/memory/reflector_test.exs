@@ -78,7 +78,7 @@ end
 defmodule Handbean.Memory.ReflectorTest do
   use Handbean.DataCase, async: false
 
-  alias Handbean.Agent.Message
+  alias Handbean.Agent.{CompactionCheckpoint, Message}
   alias Handbean.ConversationTranscriptStore
   alias Handbean.Memory.{MemoryStore, Reflector}
 
@@ -118,9 +118,27 @@ defmodule Handbean.Memory.ReflectorTest do
       assert engram.metadata["scope"] == "workspace"
       assert engram.metadata["workspace_id"] == context.workspace_id
       assert engram.metadata["privacy_mode"] == "local_only"
-      assert engram.metadata["source"] == "reflector"
-      assert engram.metadata["conversation_id"] == context.conversation_id
-      assert engram.metadata["checkpoint_id"] == checkpoint["id"]
+      refute Map.has_key?(engram.metadata, "source")
+      refute Map.has_key?(engram.metadata, "conversation_id")
+      refute Map.has_key?(engram.metadata, "checkpoint_id")
+
+      assert {:ok, [event]} =
+               MemoryStore.provenance(engram.id,
+                 workspace_id: context.workspace_id,
+                 scope: :workspace,
+                 privacy_mode: :local_only
+               )
+
+      assert event.actor == :reflector
+      assert event.kind == :created
+      assert event.metadata["checkpoint_id"] == checkpoint["id"]
+
+      assert [%{relation: :coverage, source_kind: :checkpoint, status: :available} = source] =
+               event.sources
+
+      assert source.conversation_id == context.conversation_id
+      assert source.start.entry_id == checkpoint["first_entry_id"]
+      assert source.end.entry_id == checkpoint["covered_through_id"]
       assert DateTime.diff(engram.expires_at, before, :hour) in 167..168
 
       audit = audit_entry(context.conversation_id, checkpoint)
@@ -647,6 +665,18 @@ defmodule Handbean.Memory.ReflectorTest do
   end
 
   defp put_checkpoint(conversation_id, summary) do
+    source = %{
+      "id" => "checkpoint-source-#{System.unique_integer([:positive])}",
+      "content_type" => "user_msg",
+      "message_type" => "message",
+      "role" => "user",
+      "direction" => "inbound",
+      "content" => "Source material for the checkpoint"
+    }
+
+    assert {:ok, persisted_source} =
+             ConversationTranscriptStore.append(conversation_id, source)
+
     checkpoint = %{
       "id" => "checkpoint-#{System.unique_integer([:positive])}",
       "content_type" => "model_compaction",
@@ -654,7 +684,11 @@ defmodule Handbean.Memory.ReflectorTest do
       "role" => "internal",
       "direction" => "internal",
       "version" => 1,
-      "summary" => summary
+      "summary" => summary,
+      "first_entry_id" => persisted_source["id"],
+      "covered_through_id" => persisted_source["id"],
+      "source_count" => 1,
+      "source_digest" => CompactionCheckpoint.digest([persisted_source])
     }
 
     assert {:ok, persisted} =
