@@ -26,8 +26,11 @@ defmodule Handbean.Agent.Tool.ResultContract do
     :diff_lines,
     :change_id,
     :change_snapshot_ref,
+    :changes,
+    :change_count,
     :change_type,
     :existed_before,
+    :existed_after,
     :before_sha256,
     :after_sha256,
     :reversible,
@@ -159,12 +162,24 @@ defmodule Handbean.Agent.Tool.ResultContract do
   defp small_metadata?(_value), do: false
 
   defp bound_values(details) do
-    Map.new(details, fn
-      {:diff_lines, lines} -> {:diff_lines, bound_diff(lines)}
-      {:job, job} when is_map(job) -> {:job, bound_job(job)}
-      {key, value} when is_binary(value) -> {key, bound_text(value, @max_detail_string)}
-      {key, value} -> {key, value}
-    end)
+    bounded =
+      Map.new(details, fn
+        {:diff_lines, lines} -> {:diff_lines, bound_diff(lines)}
+        {:changes, changes} -> {:changes, bound_changes(changes)}
+        {:job, job} when is_map(job) -> {:job, bound_job(job)}
+        {key, value} when is_binary(value) -> {key, bound_text(value, @max_detail_string)}
+        {key, value} -> {key, value}
+      end)
+
+    case Map.get(details, :changes) do
+      changes when is_list(changes) and length(changes) > 32 ->
+        bounded
+        |> Map.put(:change_count, length(changes))
+        |> Map.put(:partial, true)
+
+      _ ->
+        bounded
+    end
   end
 
   defp bound_diff(lines) when is_list(lines) do
@@ -183,6 +198,42 @@ defmodule Handbean.Agent.Tool.ResultContract do
   end
 
   defp bound_diff(_lines), do: []
+
+  defp bound_changes(changes) when is_list(changes) do
+    changes
+    |> Enum.take(32)
+    |> Enum.map(fn
+      change when is_map(change) ->
+        Map.take(change, [
+          :file_path,
+          :change_snapshot_ref,
+          :change_type,
+          :existed_before,
+          :existed_after,
+          :before_sha256,
+          :after_sha256,
+          :reversible,
+          :revert_status,
+          :revert_reason,
+          "file_path",
+          "change_snapshot_ref",
+          "change_type",
+          "existed_before",
+          "existed_after",
+          "before_sha256",
+          "after_sha256",
+          "reversible",
+          "revert_status",
+          "revert_reason"
+        ])
+
+      _other ->
+        %{}
+    end)
+    |> Enum.reject(&(&1 == %{}))
+  end
+
+  defp bound_changes(_changes), do: []
 
   defp bound_job(job) do
     job
@@ -255,6 +306,8 @@ defmodule Handbean.Agent.Tool.ResultContract do
       Map.take(details, [
         :file_path,
         :change_snapshot_ref,
+        :change_count,
+        :partial,
         :artifact_ref,
         :artifact_unavailable,
         :spill_path,

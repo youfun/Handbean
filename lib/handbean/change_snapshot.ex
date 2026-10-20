@@ -41,6 +41,21 @@ defmodule Handbean.ChangeSnapshot do
     )
   end
 
+  @spec build_delete_snapshot(Path.t(), binary(), keyword()) :: snapshot()
+  def build_delete_snapshot(file_path, before_content, opts \\ [])
+      when is_binary(before_content) do
+    "delete"
+    |> build_snapshot(
+      file_path,
+      true,
+      before_content,
+      nil,
+      diff_lines(before_content, ""),
+      opts
+    )
+    |> Map.put(:existed_after, false)
+  end
+
   @doc """
   Persists a reversible snapshot outside tool events and returns an opaque
   reference suitable for the bounded result contract.
@@ -140,6 +155,7 @@ defmodule Handbean.ChangeSnapshot do
       change_type: change_type,
       file_path: file_path,
       existed_before: existed_before,
+      existed_after: is_binary(after_content),
       before_sha256: sha256(before_content),
       after_sha256: sha256(after_content),
       before_content: if(reversible, do: before_content, else: nil),
@@ -157,6 +173,7 @@ defmodule Handbean.ChangeSnapshot do
       :change_type,
       :file_path,
       :existed_before,
+      :existed_after,
       :before_sha256,
       :after_sha256,
       :reversible,

@@ -156,7 +156,7 @@ defmodule HandbeanWeb.FileChangeCardTest do
       assert change(entry, "after_content") == "one\nok\n"
     end
 
-    test "untouched files and bash edits are absent" do
+    test "untouched files and unrecorded bash claims are absent" do
       changes =
         FileChangeCard.changes([
           %{
@@ -171,6 +171,103 @@ defmodule HandbeanWeb.FileChangeCardTest do
             }
           },
           %{"id" => "msg-1", "content_type" => "text", "content" => "untouched"}
+        ])
+
+      assert changes == []
+    end
+
+    test "recorded multi-file command effects are current-conversation changes" do
+      conversation_id = "bash-changes-#{System.unique_integer([:positive])}"
+
+      changes =
+        [
+          ChangeSnapshot.build_write_snapshot("lib/created.ex", nil, "created\n"),
+          ChangeSnapshot.build_edit_snapshot("lib/updated.ex", "before\n", "after\n")
+        ]
+        |> Enum.map(&ChangeSnapshot.result_details(&1, %{conversation_id: conversation_id}))
+
+      rows =
+        FileChangeCard.changes([
+          %{
+            "id" => "bash-1",
+            "content_type" => "tool",
+            "tool_name" => "bash",
+            "tool_status" => "done",
+            "details" => %{"changes" => changes}
+          }
+        ])
+
+      assert Enum.map(rows, & &1["file_path"]) == ["lib/created.ex", "lib/updated.ex"]
+      assert Enum.map(rows, & &1["change_type"]) == ["write", "edit"]
+      assert Enum.map(rows, &change(&1, "before_content")) == [nil, "before\n"]
+      assert Enum.map(rows, &change(&1, "after_content")) == ["created\n", "after\n"]
+    end
+
+    test "replayed job effects are deduplicated by stable change id" do
+      snapshot =
+        ChangeSnapshot.build_write_snapshot("lib/created.ex", nil, "created\n",
+          change_id: "stable-change"
+        )
+
+      effect = ChangeSnapshot.result_details(snapshot, %{conversation_id: "dedupe-test"})
+
+      entries =
+        for id <- ["bash-result", "later-job-poll"] do
+          %{
+            "id" => id,
+            "content_type" => "tool",
+            "tool_name" => "job_status",
+            "tool_status" => "done",
+            "details" => %{"changes" => [effect]}
+          }
+        end
+
+      assert [row] = FileChangeCard.changes(entries)
+      assert change(row, "after_content") == "created\n"
+    end
+
+    test "an intervening external write resets the conversation net baseline" do
+      path = "lib/shared.ex"
+
+      [row] =
+        FileChangeCard.changes([
+          edit_entry("first", path, "a\n", "b\n"),
+          edit_entry("second", path, "c\n", "d\n")
+        ])
+
+      assert change(row, "before_content") == "c\n"
+      assert change(row, "after_content") == "d\n"
+    end
+
+    test "later effects with a reused legacy change id are not discarded" do
+      path = "lib/transient.ex"
+
+      created =
+        ChangeSnapshot.build_write_snapshot(path, nil, "temporary\n", change_id: "legacy-id")
+
+      deleted =
+        ChangeSnapshot.build_delete_snapshot(path, "temporary\n", change_id: "legacy-id")
+
+      entries =
+        Enum.with_index([created, deleted], fn effect, index ->
+          %{
+            "id" => "batch-#{index}",
+            "sequence" => index,
+            "content_type" => "file_change_batch",
+            "details" => %{"changes" => [effect]}
+          }
+        end)
+
+      assert FileChangeCard.changes(entries) == []
+    end
+
+    test "a file created and later deleted in the conversation disappears" do
+      path = "lib/transient.ex"
+
+      changes =
+        FileChangeCard.changes([
+          write_entry("create", path, nil, "temporary\n"),
+          delete_entry("delete", path, "temporary\n")
         ])
 
       assert changes == []
@@ -326,6 +423,20 @@ defmodule HandbeanWeb.FileChangeCardTest do
       "id" => id,
       "content_type" => "tool",
       "tool_name" => "edit",
+      "tool_status" => "done",
+      "file_path" => path,
+      "change" => change,
+      "diff_lines" => change.diff_lines
+    }
+  end
+
+  defp delete_entry(id, path, before_content) do
+    change = ChangeSnapshot.build_delete_snapshot(path, before_content, change_id: id)
+
+    %{
+      "id" => id,
+      "content_type" => "tool",
+      "tool_name" => "delete",
       "tool_status" => "done",
       "file_path" => path,
       "change" => change,

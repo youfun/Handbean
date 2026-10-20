@@ -127,14 +127,14 @@ defmodule Handbean.Tool.Builtin.Bash do
           {:error, "unsandboxed is not available for job=true"}
 
         unsandboxed? or not managed_context?(context) ->
-          execute_command(command, timeout_sec, cwd, working_directory, unsandboxed?)
+          execute_command(command, timeout_sec, cwd, context, unsandboxed?)
 
         Map.get(input, "job", false) == false and is_integer(timeout_sec) and
             timeout_sec in 1..3_600 ->
           managed_command(command, timeout_sec, cwd, input, context)
 
         Map.get(input, "job", false) == false ->
-          execute_command(command, timeout_sec, cwd, working_directory, unsandboxed?)
+          execute_command(command, timeout_sec, cwd, context, unsandboxed?)
 
         is_integer(timeout_sec) and timeout_sec in 1..3_600 ->
           Handbean.Jobs.start(
@@ -251,7 +251,7 @@ defmodule Handbean.Tool.Builtin.Bash do
       {:error, reason} when is_binary(reason) ->
         if String.contains?(reason, "requires trusted") or String.contains?(reason, "unavailable") or
              String.contains?(reason, "not open") do
-          execute_command(command, timeout_sec, cwd, context[:working_directory], false)
+          execute_command(command, timeout_sec, cwd, context, false)
         else
           {:error, reason}
         end
@@ -261,7 +261,9 @@ defmodule Handbean.Tool.Builtin.Bash do
     end
   end
 
-  defp execute_command(command, timeout_sec, cwd, working_directory, unsandboxed?) do
+  defp execute_command(command, timeout_sec, cwd, context, unsandboxed?) do
+    working_directory = context[:working_directory]
+    capture = Handbean.WorkspaceChangeCapture.start(working_directory)
     timeout_ms = timeout_sec * 1000
     sandboxed? = working_directory != nil and not unsandboxed?
     opts = if sandboxed?, do: [workspace_path: working_directory], else: []
@@ -271,17 +273,27 @@ defmodule Handbean.Tool.Builtin.Bash do
         do: Keyword.put(opts, :owner, Process.get(:tool_owner)),
         else: opts
 
-    case Handbean.Platform.ProcessRunner.run_bash(command, cwd, timeout_ms, opts) do
+    result = Handbean.Platform.ProcessRunner.run_bash(command, cwd, timeout_ms, opts)
+    changes = Handbean.WorkspaceChangeCapture.finish(capture, context)
+    :ok = Handbean.WorkspaceChangeCapture.persist(changes, context)
+
+    case result do
       {:ok, output, %{exit_code: code} = meta} when sandboxed? and code != 0 ->
-        {:ok, output <> sandbox_hint(output), meta}
+        {:ok, output <> sandbox_hint(output), put_changes(meta, changes)}
 
       {:ok, output, meta} ->
-        {:ok, output, meta}
+        {:ok, output, put_changes(meta, changes)}
+
+      {:error, reason} when changes != [] ->
+        {:error, reason, %{changes: changes, side_effect: :unknown}}
 
       {:error, reason} ->
         {:error, reason}
     end
   end
+
+  defp put_changes(meta, []), do: meta
+  defp put_changes(meta, changes), do: Map.put(meta, :changes, changes)
 
   defp sandbox_description do
     if Handbean.Platform.ProcessSandbox.os_enforced?() do

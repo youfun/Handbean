@@ -40,8 +40,9 @@ defmodule Handbean.Jobs do
          {:ok, wait} <- wait_budget(wait_ms, context),
          :ok <- valid_timeout(timeout_ms),
          {:ok, call_id} <- call_id(context) do
+      capture = Handbean.WorkspaceChangeCapture.start(elem(owner, 2))
       deadline = now() + wait
-      call({:start, owner, call_id, command, cwd, timeout_ms, deadline}, wait)
+      call({:start, owner, call_id, command, cwd, timeout_ms, deadline, capture}, wait)
     end
   end
 
@@ -54,7 +55,12 @@ defmodule Handbean.Jobs do
          {:ok, wait} <- wait_budget(wait_ms, context),
          :ok <- valid_timeout(timeout_ms),
          {:ok, call_id} <- call_id(context) do
-      call({:start, owner, call_id, {:beam, kind, fun}, nil, timeout_ms, now() + wait}, wait)
+      capture = Handbean.WorkspaceChangeCapture.start(elem(owner, 2))
+
+      call(
+        {:start, owner, call_id, {:beam, kind, fun}, nil, timeout_ms, now() + wait, capture},
+        wait
+      )
     end
   end
 
@@ -80,13 +86,23 @@ defmodule Handbean.Jobs do
   def cancel(_, _), do: {:error, "job_id is required"}
 
   def format({:ok, result}) do
-    header = Handbean.JSON.encode!(Map.drop(result, [:output, :result]))
+    header = Handbean.JSON.encode!(Map.drop(result, [:output, :result, :changes]))
     text = if result[:output], do: header <> "\n\n" <> result.output, else: header
     text = if result[:result], do: text <> "\n\nresult:\n" <> result.result, else: text
-    {:ok, text, %{job: result}}
+
+    details =
+      %{job: result}
+      |> maybe_put_changes(result[:changes])
+
+    {:ok, text, details}
   end
 
   def format(error), do: error
+
+  defp maybe_put_changes(details, changes) when is_list(changes) and changes != [],
+    do: Map.put(details, :changes, changes)
+
+  defp maybe_put_changes(details, _changes), do: details
 
   def wait_budget(requested, context) when is_integer(requested) and requested >= 0 do
     case context[:tool_timeout] do

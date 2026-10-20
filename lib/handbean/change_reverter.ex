@@ -51,6 +51,7 @@ defmodule Handbean.ChangeReverter do
            file_path: file_path,
            reversible: truthy?(value(change, "reversible")),
            existed_before: truthy?(value(change, "existed_before")),
+           existed_after: existed_after(change),
            before_content: value(change, "before_content"),
            after_sha256: value(change, "after_sha256")
          }}
@@ -61,13 +62,21 @@ defmodule Handbean.ChangeReverter do
   defp validate_reversible(_change), do: {:error, "change is not reversible"}
 
   defp current_file_state(file_path) do
-    if File.exists?(file_path) do
-      case File.read(file_path) do
-        {:ok, content} -> {:ok, {:exists, content, ChangeSnapshot.sha256(content)}}
-        {:error, reason} -> {:error, "failed to read current file: #{inspect(reason)}"}
-      end
-    else
-      {:ok, :missing}
+    case File.lstat(file_path) do
+      {:ok, %File.Stat{type: :regular}} ->
+        case File.read(file_path) do
+          {:ok, content} -> {:ok, {:exists, content, ChangeSnapshot.sha256(content)}}
+          {:error, reason} -> {:error, "failed to read current file: #{inspect(reason)}"}
+        end
+
+      {:ok, %File.Stat{type: type}} ->
+        {:conflict, "path is #{type}; refusing to replace it"}
+
+      {:error, :enoent} ->
+        {:ok, :missing}
+
+      {:error, reason} ->
+        {:error, "failed to inspect current file: #{inspect(reason)}"}
     end
   end
 
@@ -75,6 +84,7 @@ defmodule Handbean.ChangeReverter do
        when is_binary(after_sha256),
        do: :ok
 
+  defp validate_current_state(%{existed_after: false}, :missing), do: :ok
   defp validate_current_state(%{existed_before: false}, :missing), do: :ok
 
   defp validate_current_state(%{existed_before: true}, :missing) do
@@ -98,13 +108,21 @@ defmodule Handbean.ChangeReverter do
   end
 
   defp apply_revert(%{existed_before: false, file_path: file_path}) do
-    if File.exists?(file_path) do
-      case File.rm(file_path) do
-        :ok -> :ok
-        {:error, reason} -> {:error, "failed to delete created file: #{inspect(reason)}"}
-      end
-    else
-      :ok
+    case File.lstat(file_path) do
+      {:ok, %File.Stat{type: :regular}} ->
+        case File.rm(file_path) do
+          :ok -> :ok
+          {:error, reason} -> {:error, "failed to delete created file: #{inspect(reason)}"}
+        end
+
+      {:error, :enoent} ->
+        :ok
+
+      {:ok, %File.Stat{type: type}} ->
+        {:error, "path is #{type}; refusing to delete it"}
+
+      {:error, reason} ->
+        {:error, "failed to inspect created file: #{inspect(reason)}"}
     end
   end
 
@@ -130,6 +148,13 @@ defmodule Handbean.ChangeReverter do
 
   defp value(map, key) when is_map(map) and is_binary(key) do
     Handbean.Utils.SafeMap.get(map, key)
+  end
+
+  defp existed_after(change) do
+    case value(change, "existed_after") do
+      nil -> is_binary(value(change, "after_sha256"))
+      value -> truthy?(value)
+    end
   end
 
   defp truthy?(value), do: value in [true, "true", 1, "1"]

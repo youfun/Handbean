@@ -33,6 +33,27 @@ defmodule Handbean.ChangeReverterTest do
     refute File.exists?(path)
   end
 
+  test "reverts a deleted file by restoring its recorded content", %{dir: dir} do
+    path = Path.join(dir, "deleted.txt")
+    change = ChangeSnapshot.build_delete_snapshot(path, "before\n")
+
+    assert {:ok, result} = ChangeReverter.revert(change, dir)
+    assert result["revert_status"] == "reverted"
+    assert File.read!(path) == "before\n"
+  end
+
+  test "refuses to replace a symlink while reverting a deletion", %{dir: dir} do
+    target = Path.join(dir, "target.txt")
+    path = Path.join(dir, "deleted.txt")
+    File.write!(target, "target\n")
+    File.ln_s!(target, path)
+    change = ChangeSnapshot.build_delete_snapshot(path, "before\n")
+
+    assert {:conflict, result} = ChangeReverter.revert(change, dir)
+    assert result["message"] =~ "symlink"
+    assert File.read!(target) == "target\n"
+  end
+
   test "blocks revert when file changed since diff", %{dir: dir} do
     path = Path.join(dir, "file.txt")
     File.write!(path, "after\n")

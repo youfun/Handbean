@@ -4,6 +4,7 @@ defmodule Handbean.Jobs.Server do
 
   alias Handbean.Jobs.{Beam, Buffer, Cleaner}
   alias Handbean.Platform.{ProcessManager, ProcessRunner}
+  alias Handbean.WorkspaceChangeCapture
 
   @terminal [:completed, :failed, :cancelled, :timed_out]
   @retention_ms 900_000
@@ -51,7 +52,7 @@ defmodule Handbean.Jobs.Server do
     {:reply, :ok, close_scope(state, owner)}
   end
 
-  def handle_call({:start, owner, call_id, command, cwd, timeout, deadline}, from, state) do
+  def handle_call({:start, owner, call_id, command, cwd, timeout, deadline, capture}, from, state) do
     duplicate =
       Enum.find_value(state.jobs, fn {_id, job} ->
         if job.owner == owner and job.call_id == call_id, do: job
@@ -74,7 +75,7 @@ defmodule Handbean.Jobs.Server do
         {:reply, {:error, "Job capacity exhausted"}, state}
 
       true ->
-        launch(state, owner, call_id, command, cwd, timeout, deadline, from)
+        launch(state, owner, call_id, command, cwd, timeout, deadline, capture, from)
     end
   end
 
@@ -160,17 +161,20 @@ defmodule Handbean.Jobs.Server do
 
         result = Handbean.Utils.Truncate.truncate(text, :head, max_bytes: 50_000)
 
+        terminal_state = job.target || status
+
         job =
-          Map.merge(job, %{
-            state: job.target || status,
+          job
+          |> Map.merge(%{
             result: result.content,
             result_truncated: result.truncated,
             result_details: details,
             cleanup_error: nil,
             finished_at: now()
           })
+          |> begin_finalize_changes(terminal_state)
 
-        {:noreply, state |> put_in([:jobs, id], job) |> notify_terminal_waiters(id)}
+        {:noreply, put_in(state.jobs[id], job)}
 
       _ ->
         {:noreply, state}
@@ -228,14 +232,47 @@ defmodule Handbean.Jobs.Server do
             :ok ->
               Process.cancel_timer(job.timer)
               close_port(job.port)
-              %{job | state: job.target, finished_at: now(), cleanup_error: nil}
+
+              begin_finalize_changes(
+                %{job | finished_at: now(), cleanup_error: nil},
+                job.target
+              )
 
             {:error, reason} ->
               %{job | cleanup_error: reason}
           end
 
         state = put_in(state.jobs[id], job)
-        state = if job.state in @terminal, do: notify_terminal_waiters(state, id), else: state
+
+        state =
+          if job.state in @terminal and not job.changes_pending,
+            do: notify_terminal_waiters(state, id),
+            else: state
+
+        {:noreply, state}
+    end
+  end
+
+  def handle_info({:changes_finalized, id, changes}, state) do
+    case state.jobs[id] do
+      %{changes_pending: true} = job ->
+        {conversation_id, run_id, _workspace} = job.owner
+
+        :ok =
+          WorkspaceChangeCapture.persist(
+            changes,
+            %{
+              conversation_id: conversation_id,
+              run_id: run_id,
+              tool_call_id: job.call_id
+            },
+            entry_id: "file-effects-#{job.id}"
+          )
+
+        job = %{job | changes: changes, changes_pending: false}
+        {:noreply, state |> put_in([:jobs, id], job) |> notify_terminal_waiters(id)}
+
+      _ ->
         {:noreply, state}
     end
   end
@@ -322,7 +359,17 @@ defmodule Handbean.Jobs.Server do
     {:noreply, %{state | jobs: jobs}}
   end
 
-  defp launch(state, owner, call_id, {:beam, kind, fun}, _cwd, timeout, deadline, from) do
+  defp launch(
+         state,
+         owner,
+         call_id,
+         {:beam, kind, fun},
+         _cwd,
+         timeout,
+         deadline,
+         capture,
+         from
+       ) do
     id = "job_" <> Base.url_encode64(:crypto.strong_rand_bytes(18), padding: false)
 
     case DynamicSupervisor.start_child(
@@ -341,6 +388,9 @@ defmodule Handbean.Jobs.Server do
           target: nil,
           exit_code: nil,
           cleanup_error: nil,
+          change_capture: capture,
+          changes: nil,
+          changes_pending: false,
           created_at: now(),
           sequence: System.unique_integer([:positive, :monotonic]),
           finished_at: nil,
@@ -364,7 +414,7 @@ defmodule Handbean.Jobs.Server do
     end
   end
 
-  defp launch(state, owner, call_id, command, cwd, timeout, deadline, from) do
+  defp launch(state, owner, call_id, command, cwd, timeout, deadline, capture, from) do
     {_, _, workspace} = owner
 
     case ProcessRunner.open_gated_bash(command, cwd,
@@ -387,6 +437,9 @@ defmodule Handbean.Jobs.Server do
               target: nil,
               exit_code: nil,
               cleanup_error: nil,
+              change_capture: capture,
+              changes: nil,
+              changes_pending: false,
               created_at: now(),
               sequence: System.unique_integer([:positive, :monotonic]),
               finished_at: nil,
@@ -421,8 +474,10 @@ defmodule Handbean.Jobs.Server do
     remaining = deadline - now()
     result = snapshot(job, cursor)
 
-    if remaining <= 1 or job.state in @terminal or map_size(state.waiters) >= 128 or
-         (mode == :activity and result.cursor != cursor) do
+    if remaining <= 1 or
+         (job.state in @terminal and not job.changes_pending) or
+         map_size(state.waiters) >= 128 or
+         (mode == :activity and job.state == :running and result.cursor != cursor) do
       {:reply, {:ok, result}, state}
     else
       ref = make_ref()
@@ -437,7 +492,7 @@ defmodule Handbean.Jobs.Server do
     {ready, pending} =
       Enum.split_with(state.waiters, fn
         {_ref, {_from, ^id, cursor, :activity, _timer}} ->
-          output_available?(state.jobs[id], cursor)
+          state.jobs[id].state == :running and output_available?(state.jobs[id], cursor)
 
         _ ->
           false
@@ -487,7 +542,8 @@ defmodule Handbean.Jobs.Server do
   end
 
   defp cancel_job(state, %{state: status}, _target)
-       when status in @terminal or status == :cancelling, do: state
+       when status in @terminal or status == :cancelling,
+       do: state
 
   defp cancel_job(state, job, target) do
     if job[:beam], do: Beam.cancel(job.beam), else: Cleaner.cancel(job.id)
@@ -529,11 +585,38 @@ defmodule Handbean.Jobs.Server do
     Buffer.read(job.buffer, cursor, job.state in @terminal)
     |> Map.merge(%{job_id: job.id, state: job.state, cleanup_error: job.cleanup_error})
     |> Map.merge(timing)
-    |> Map.merge(Map.take(job, [:result, :result_truncated]))
+    |> Map.merge(Map.take(job, [:result, :result_truncated, :changes]))
     |> Map.merge(Map.get(job, :result_details, %{}))
     |> then(fn result ->
       if is_integer(job.exit_code), do: Map.put(result, :exit_code, job.exit_code), else: result
     end)
+  end
+
+  defp begin_finalize_changes(job, terminal_state) do
+    server = self()
+    capture = job.change_capture
+    {conversation_id, _run_id, _workspace} = job.owner
+
+    spawn(fn ->
+      changes =
+        try do
+          WorkspaceChangeCapture.finish(capture, %{conversation_id: conversation_id})
+        rescue
+          _error -> []
+        catch
+          :exit, _reason -> []
+        end
+
+      send(server, {:changes_finalized, job.id, changes})
+    end)
+
+    %{
+      job
+      | state: terminal_state,
+        target: terminal_state,
+        change_capture: nil,
+        changes_pending: true
+    }
   end
 
   defp active_capacity?(state, owner) do

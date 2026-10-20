@@ -84,6 +84,38 @@ defmodule Handbean.Git.CLI do
     end
   end
 
+  @doc false
+  def read_head_file(repo, path) when is_binary(path), do: read_revision_file(repo, "HEAD", path)
+
+  @doc false
+  def read_revision_file(repo, revision, path)
+      when is_binary(revision) and is_binary(path) do
+    git(
+      ["show", "--no-ext-diff", "--no-textconv", "--end-of-options", "#{revision}:./#{path}"],
+      cwd: cwd(repo)
+    )
+  end
+
+  @doc false
+  def tracked_files(repo) do
+    with {:ok, output} <- git(["ls-files", "-z"], cwd: cwd(repo)) do
+      {:ok, output |> String.split(<<0>>, trim: true) |> MapSet.new()}
+    end
+  end
+
+  @doc false
+  def changed_paths(repo, from, to) when is_binary(from) and is_binary(to) do
+    with {:ok, output} <-
+           git(
+             ["diff", "--name-only", "--no-renames", "-z"] ++
+               @diff_safety ++
+               ["--end-of-options", from, to],
+             cwd: cwd(repo)
+           ) do
+      {:ok, String.split(output, <<0>>, trim: true)}
+    end
+  end
+
   @impl true
   def diff(repo, mode) do
     result = git(diff_args(mode), cwd: cwd(repo))
@@ -278,7 +310,7 @@ defmodule Handbean.Git.CLI do
 
   defp remote_name(opts), do: opts[:remote] || "origin"
 
-  defp head_oid(repo) do
+  def head_oid(repo) do
     result = git(["rev-parse", "HEAD"], cwd: cwd(repo))
 
     case result do
@@ -455,6 +487,10 @@ defmodule Handbean.Git.CLI do
     hooks = Application.app_dir(:handbean, "priv/git-empty-hooks")
 
     base = [
+      "-c",
+      "core.fsmonitor=false",
+      "-c",
+      "core.untrackedCache=false",
       "-c",
       "core.hooksPath=#{hooks}",
       "-c",

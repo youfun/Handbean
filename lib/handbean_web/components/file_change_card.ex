@@ -172,9 +172,10 @@ defmodule HandbeanWeb.FileChangeCard do
     %{added: count(lines, :add), removed: count(lines, :remove)}
   end
 
-  @doc "True when the entry records an edit or write with visible diff lines."
+  @doc "True when the entry records a visible file change."
   def change_entry?(%{} = entry) do
-    TranscriptEntry.tool_name(entry) in ["edit", "write"] and diff_lines(entry) != []
+    (TranscriptEntry.tool_name(entry) in ["edit", "write"] and diff_lines(entry) != []) or
+      recorded_effects(entry) != []
   end
 
   def change_entry?(_), do: false
@@ -182,15 +183,17 @@ defmodule HandbeanWeb.FileChangeCard do
   @doc """
   Session net file changes, one row per path.
 
-  The baseline is the content before the first successful edit or write of
-  that path in this timeline. Later successful writes replace only the
-  current content. Line counts and the diff are computed from those two
-  snapshots, not by summing each call. A path whose current content matches
-  its baseline is omitted. Chat timeline entries are not merged.
+  The baseline is the content before the first recorded file effect in this
+  conversation. Later effects replace only the current content. Effects may
+  come from a single-file edit/write or a multi-file command capture. Line
+  counts and the diff are computed from those snapshots, not by summing each
+  call. A path whose current content matches its baseline is omitted. Chat
+  timeline entries are not merged.
   """
   def changes(entries) when is_list(entries) do
     entries
-    |> Enum.filter(&successful_write?/1)
+    |> Enum.flat_map(&change_effect_entries/1)
+    |> Enum.uniq_by(&effect_identity/1)
     |> Enum.reduce(%{}, &accumulate_net/2)
     |> Map.values()
     |> Enum.reject(&baseline_current?/1)
@@ -199,8 +202,50 @@ defmodule HandbeanWeb.FileChangeCard do
 
   def changes(_), do: []
 
+  defp change_effect_entries(entry) do
+    case recorded_effects(entry) do
+      [] -> if successful_write?(entry), do: [entry], else: []
+      effects -> Enum.with_index(effects, &effect_entry(entry, &1, &2))
+    end
+  end
+
+  defp recorded_effects(entry) do
+    details = Handbean.Utils.SafeMap.get_any(entry, "details", :details) || %{}
+
+    details
+    |> Handbean.Utils.SafeMap.get_any("changes", :changes)
+    |> List.wrap()
+    |> Enum.map(&ChangeHelper.stringify_keys/1)
+    |> Enum.filter(&is_binary(Map.get(&1, "file_path")))
+  end
+
+  defp effect_entry(entry, change, index) do
+    entry
+    |> Map.put("id", "#{Map.get(entry, "id", "change")}-#{index}")
+    |> Map.put("change", change)
+    |> Map.put("file_path", change["file_path"])
+    |> Map.put("change_type", change["change_type"])
+    |> Map.put("tool_name", change["change_type"])
+    |> Map.put("tool_status", "done")
+    |> Map.put("net_order", {Map.get(entry, "sequence", 0), index})
+  end
+
+  defp effect_identity(entry) do
+    change = ChangeHelper.change_from_entry(entry)
+
+    case Map.get(change, "change_snapshot_ref") do
+      ref when is_binary(ref) and ref != "" ->
+        {:snapshot, ref}
+
+      _ ->
+        {:effect, Map.get(change, "change_id"), Map.get(change, "before_sha256"),
+         Map.get(change, "after_sha256"), Map.get(change, "existed_before"),
+         Map.get(change, "existed_after")}
+    end
+  end
+
   defp successful_write?(entry) do
-    TranscriptEntry.tool_name(entry) in ["edit", "write"] and
+    TranscriptEntry.tool_name(entry) in ["edit", "write", "delete"] and
       TranscriptEntry.tool_status(entry) in ["done", :done] and
       is_binary(net_path(entry))
   end
@@ -214,13 +259,50 @@ defmodule HandbeanWeb.FileChangeCard do
         Map.put(nets, path, net_entry(entry, current, current))
 
       existing ->
-        Map.put(nets, path, net_entry(existing, Map.get(existing, "change"), current))
+        baseline = Map.get(existing, "change")
+
+        cond do
+          baseline["existed_before"] == false and current["existed_after"] == false ->
+            Map.delete(nets, path)
+
+          discontinuous?(baseline, current) ->
+            Map.put(nets, path, net_entry(entry, current, current))
+
+          true ->
+            Map.put(nets, path, net_entry(existing, baseline, current))
+        end
+    end
+  end
+
+  defp discontinuous?(previous, current) do
+    previous_existed = Map.get(previous, "existed_after", is_binary(previous["after_content"]))
+    current_existed = Map.get(current, "existed_before", is_binary(current["before_content"]))
+
+    cond do
+      previous_existed != current_existed ->
+        true
+
+      previous_existed == false ->
+        false
+
+      is_binary(previous["after_sha256"]) and is_binary(current["before_sha256"]) ->
+        previous["after_sha256"] != current["before_sha256"]
+
+      is_binary(previous["after_content"]) and is_binary(current["before_content"]) ->
+        previous["after_content"] != current["before_content"]
+
+      true ->
+        false
     end
   end
 
   defp net_entry(source, baseline, current) do
-    if is_binary(current["after_content"]) and
-         (baseline["existed_before"] == false or is_binary(baseline["before_content"])) do
+    complete_baseline? =
+      baseline["existed_before"] == false or is_binary(baseline["before_content"])
+
+    complete_current? = current["existed_after"] == false or is_binary(current["after_content"])
+
+    if complete_baseline? and complete_current? do
       build_net_entry(source, baseline, current)
     else
       change =
@@ -241,25 +323,42 @@ defmodule HandbeanWeb.FileChangeCard do
     before_content = Map.get(baseline, "before_content")
     after_content = Map.get(current, "after_content")
     existed_before = Map.get(baseline, "existed_before") == true
-    change_type = if(existed_before, do: "edit", else: "write")
+    existed_after = Map.get(current, "existed_after", is_binary(after_content)) == true
+
+    change_type =
+      cond do
+        not existed_after -> "delete"
+        existed_before -> "edit"
+        true -> "write"
+      end
+
     change_id = net_id(source)
 
     change =
-      if existed_before and is_binary(before_content) and is_binary(after_content) do
-        Handbean.ChangeSnapshot.build_edit_snapshot(
-          net_path(source),
-          before_content,
-          after_content,
-          nil,
-          change_id: change_id
-        )
-      else
-        Handbean.ChangeSnapshot.build_write_snapshot(
-          net_path(source),
-          if(existed_before, do: before_content),
-          after_content || "",
-          change_id: change_id
-        )
+      cond do
+        not existed_after and is_binary(before_content) ->
+          Handbean.ChangeSnapshot.build_delete_snapshot(
+            net_path(source),
+            before_content,
+            change_id: change_id
+          )
+
+        existed_before and is_binary(before_content) and is_binary(after_content) ->
+          Handbean.ChangeSnapshot.build_edit_snapshot(
+            net_path(source),
+            before_content,
+            after_content,
+            nil,
+            change_id: change_id
+          )
+
+        true ->
+          Handbean.ChangeSnapshot.build_write_snapshot(
+            net_path(source),
+            if(existed_before, do: before_content),
+            after_content || "",
+            change_id: change_id
+          )
       end
 
     change =
@@ -285,8 +384,9 @@ defmodule HandbeanWeb.FileChangeCard do
   defp baseline_current?(entry) do
     change = Map.get(entry, "change") || %{}
 
-    is_binary(Map.get(change, "before_sha256")) and
-      Map.get(change, "before_sha256") == Map.get(change, "after_sha256")
+    (change["existed_before"] == false and change["existed_after"] == false) or
+      (is_binary(Map.get(change, "before_sha256")) and
+         Map.get(change, "before_sha256") == Map.get(change, "after_sha256"))
   end
 
   defp net_order(entry), do: Map.get(entry, "net_order") || Map.get(entry, "id") || ""
@@ -316,13 +416,13 @@ defmodule HandbeanWeb.FileChangeCard do
   end
 
   defp label(entry, lines) do
-    created? =
-      (entry["change_type"] == "write" or TranscriptEntry.tool_name(entry) == "write") and
-        count(lines, :remove) == 0
+    type = entry["change_type"] || Map.get(ChangeHelper.change_from_entry(entry), "change_type")
+    created? = type == "write" and count(lines, :remove) == 0
 
-    if created?,
-      do: "Created",
-      else: "edit"
+    case type do
+      "delete" -> "Deleted"
+      _ -> if(created?, do: "Created", else: "edit")
+    end
   end
 
   defp display_path(change, entry, workspace_root) do

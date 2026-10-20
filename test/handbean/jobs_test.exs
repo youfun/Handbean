@@ -98,6 +98,75 @@ defmodule Handbean.JobsTest do
     assert text =~ "cursor"
   end
 
+  test "managed Bash returns current-conversation file effects", %{
+    context: context,
+    runner: runner
+  } do
+    repo =
+      Path.join([
+        File.cwd!(),
+        "tmp",
+        "handbean_job_changes_#{System.unique_integer([:positive])}"
+      ])
+
+    File.mkdir_p!(repo)
+    git!(repo, ["init"])
+    git!(repo, ["config", "user.email", "test@example.com"])
+    git!(repo, ["config", "user.name", "Handbean Test"])
+    File.write!(Path.join(repo, "tracked.txt"), "before\n")
+    git!(repo, ["add", "."])
+    git!(repo, ["commit", "-m", "fixture"])
+
+    scoped = %{
+      context
+      | working_directory: repo,
+        tool_call_id: "changes",
+        conversation_id: context.conversation_id <> "-changes"
+    }
+
+    assert :ok = Jobs.open_run(scoped, runner)
+
+    on_exit(fn ->
+      Jobs.close_run(scoped, :completed)
+      File.rm_rf!(repo)
+    end)
+
+    assert {:ok, _text, %{changes: changes, job: %{state: :completed}} = details} =
+             Bash.execute(
+               %{"command" => "printf 'after\\n' > tracked.txt; printf 'new\\n' > created.txt"},
+               scoped
+             )
+
+    assert Enum.sort(Enum.map(changes, &Path.basename(&1.file_path))) == [
+             "created.txt",
+             "tracked.txt"
+           ]
+
+    projected = Handbean.Agent.Tool.ResultContract.project_details(details)
+    assert length(projected.changes) == 2
+  end
+
+  test "large change batches retain an explicit count when tool details are bounded" do
+    changes =
+      for index <- 1..33 do
+        %{
+          file_path: "lib/file_#{index}.ex",
+          change_snapshot_ref: "snapshot-#{index}",
+          change_type: "write",
+          existed_before: false,
+          existed_after: true,
+          after_sha256: String.duplicate(Integer.to_string(rem(index, 10)), 64),
+          reversible: true
+        }
+      end
+
+    projected = Handbean.Agent.Tool.ResultContract.project_details(%{changes: changes})
+
+    assert projected.partial == true
+    assert projected.change_count == 33
+    assert length(Map.get(projected, :changes, [])) <= 32
+  end
+
   test "launch wait ignores output while status returns unread output immediately", %{
     context: context
   } do
@@ -391,6 +460,12 @@ defmodule Handbean.JobsTest do
 
     assert :ok = Handbean.Platform.ProcessManager.cleanup_job_group(group)
     assert {:error, _} = Jobs.status(id, 0, 500, context)
+  end
+
+  defp git!(cwd, args) do
+    {output, status} = System.cmd("git", args, cd: cwd, stderr_to_stdout: true)
+    assert status == 0, output
+    output
   end
 
   defp launch(command, context), do: Jobs.start(command, File.cwd!(), 30_000, 500, context)
