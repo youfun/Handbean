@@ -217,7 +217,7 @@ defmodule Handbean.Agent.Auth.CodexTest do
     config =
       Reasoning.apply_provider_options(
         %{api: :openai_codex_responses},
-        %{reasoning: true},
+        %{reasoning: true, reasoning_levels: ["high"]},
         "high"
       )
 
