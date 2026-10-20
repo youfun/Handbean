@@ -105,20 +105,8 @@ defmodule HandbeanProbe.ModelSettings.RenderForms do
           gettext("API Key"),
           f.api_key,
           {:model_field, :api_key},
-          secure: true
-        ),
-        text(Labels.key_status(f.key_status), text_size: 12, text_color: color(:hint)),
-        help_block(
-          state,
-          :api_key,
-          gettext("Saved keys are never shown again."),
-          Labels.key_help(f.key_status)
-        ),
-        field(
-          gettext("Provider max output tokens (override)"),
-          f.provider_max_tokens,
-          {:model_field, :provider_max_tokens},
-          keyboard: "number"
+          secure: true,
+          placeholder: f.key_preview || ""
         )
       ]),
       card([

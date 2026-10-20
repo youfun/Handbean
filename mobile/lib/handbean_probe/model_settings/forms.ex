@@ -65,8 +65,8 @@ defmodule HandbeanProbe.ModelSettings.Forms do
       base_url: "",
       api_key: "",
       api: @default_api,
-      provider_max_tokens: "",
-      key_status: :missing
+      key_status: :missing,
+      key_preview: nil
     }
   end
 
@@ -77,8 +77,8 @@ defmodule HandbeanProbe.ModelSettings.Forms do
       base_url: entry["baseUrl"] || "",
       api_key: "",
       api: entry["api"] || @default_api,
-      provider_max_tokens: optional_int_string(entry["maxTokens"]),
-      key_status: ModelCatalog.key_status(entry)
+      key_status: ModelCatalog.key_status(entry),
+      key_preview: key_preview(entry["apiKey"])
     }
   end
 
@@ -166,6 +166,17 @@ defmodule HandbeanProbe.ModelSettings.Forms do
 
   def optional_int_string(n) when is_integer(n), do: Integer.to_string(n)
   def optional_int_string(_), do: ""
+
+  defp key_preview(""), do: nil
+  defp key_preview("env:" <> _var), do: "••••••••"
+
+  defp key_preview(key) when is_binary(key) do
+    if String.length(key) <= 4,
+      do: "••••••••",
+      else: "••••" <> String.slice(key, -4, 4)
+  end
+
+  defp key_preview(_), do: nil
 
   defp unique_provider_id(base, existing) do
     if MapSet.member?(existing, base) do

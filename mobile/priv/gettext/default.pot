@@ -2665,3 +2665,28 @@ msgstr ""
 #: lib/handbean_probe/home_screen/render.ex:86
 msgid "Child conversation"
 msgstr ""
+
+#: lib/handbean_probe/model_settings/render.ex:146
+#, elixir-autogen, elixir-format
+msgid "Memory Reflection"
+msgstr ""
+
+#: lib/handbean_probe/model_settings/render.ex:149
+#, elixir-autogen, elixir-format
+msgid "Compaction can produce reviewable memory candidates using the settings below."
+msgstr ""
+
+#: lib/handbean_probe/model_settings/render.ex:167
+#, elixir-autogen, elixir-format
+msgid "Enable memory reflection"
+msgstr ""
+
+#: lib/handbean_probe/model_settings/render.ex:172
+#, elixir-autogen, elixir-format
+msgid "When enabled, compaction generates reviewable memory candidates."
+msgstr ""
+
+#: lib/handbean_probe/model_settings/render.ex:217
+#, elixir-autogen, elixir-format
+msgid "Save memory reflection settings"
+msgstr ""

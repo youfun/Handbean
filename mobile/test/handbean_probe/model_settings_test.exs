@@ -82,9 +82,7 @@ defmodule HandbeanProbe.ModelSettingsTest do
     state = ModelSettings.action({:edit_model, "alpha", "one"}, state, ws)
     state = ModelSettings.change(state, :max_tokens, "1111")
     state = ModelSettings.action(:save_model, state, ws)
-    state = ModelSettings.action({:edit_provider, "alpha"}, state, ws)
-    state = ModelSettings.change(state, :provider_max_tokens, "2222")
-    state = ModelSettings.action(:save_provider, state, ws)
+    assert :ok = ModelConfig.update_provider("alpha", %{"maxTokens" => 2222})
     assert state.confirm == nil
     {:ok, resolved} = ModelCatalog.request_max_tokens(ws["path"], "alpha/one")
     assert resolved == 2222
@@ -216,7 +214,12 @@ defmodule HandbeanProbe.ModelSettingsTest do
     tree = ModelSettings.render(state)
     blob = flatten_text(tree)
     assert blob =~ gettext("Memory Reflection")
-    assert blob =~ gettext("Compaction can produce reviewable memory candidates")
+
+    assert blob =~
+             gettext(
+               "Compaction can produce reviewable memory candidates using the settings below."
+             )
+
     refute blob =~ "Observational memory"
     refute blob =~ "Recent context limit"
 
@@ -435,9 +438,9 @@ defmodule HandbeanProbe.ModelSettingsTest do
   test "model save does not rewrite provider url, key, protocol, or max tokens", %{ws_a: ws} do
     state = ensure_provider(ws, "alpha", "https://alpha.example/v1")
     state = ModelSettings.action({:edit_provider, "alpha"}, state, ws)
-    state = ModelSettings.change(state, :provider_max_tokens, "2222")
     state = ModelSettings.action({:api, "anthropic-messages"}, state, ws)
     state = ModelSettings.action(:save_provider, state, ws)
+    assert :ok = ModelConfig.update_provider("alpha", %{"maxTokens" => 2222})
 
     before = read_models()["providers"]["alpha"]
     state = add_model(ws, "alpha", "one", "https://should-not-write.example/v1")
@@ -449,6 +452,22 @@ defmodule HandbeanProbe.ModelSettingsTest do
     assert after_save["maxTokens"] == 2222
     assert hd(after_save["models"])["id"] == "one"
     assert state.confirm == nil
+  end
+
+  test "provider save preserves a concurrent maxTokens update", %{ws_a: ws} do
+    state = ensure_provider(ws, "alpha", "https://alpha.example/v1")
+    assert :ok = ModelConfig.update_provider("alpha", %{"maxTokens" => 2048})
+    state = ModelSettings.action({:edit_provider, "alpha"}, state, ws)
+
+    assert :ok = ModelConfig.update_provider("alpha", %{"maxTokens" => 4096})
+
+    state = ModelSettings.change(state, :name, "Alpha renamed")
+    state = ModelSettings.action(:save_provider, state, ws)
+    provider = read_models()["providers"]["alpha"]
+
+    assert state.notice == gettext("Provider saved")
+    assert provider["name"] == "Alpha renamed"
+    assert provider["maxTokens"] == 4096
   end
 
   test "first model in an empty catalog becomes the catalog default", %{ws_a: ws} do

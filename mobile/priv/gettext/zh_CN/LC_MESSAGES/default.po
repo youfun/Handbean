@@ -2700,3 +2700,28 @@ msgstr "打开对话"
 #: lib/handbean_probe/home_screen/render.ex:86
 msgid "Child conversation"
 msgstr "子对话"
+
+#: lib/handbean_probe/model_settings/render.ex:146
+#, elixir-autogen, elixir-format
+msgid "Memory Reflection"
+msgstr "记忆反思"
+
+#: lib/handbean_probe/model_settings/render.ex:149
+#, elixir-autogen, elixir-format
+msgid "Compaction can produce reviewable memory candidates using the settings below."
+msgstr "压缩后可按以下设置生成可审核的记忆候选。"
+
+#: lib/handbean_probe/model_settings/render.ex:167
+#, elixir-autogen, elixir-format
+msgid "Enable memory reflection"
+msgstr "启用记忆反思"
+
+#: lib/handbean_probe/model_settings/render.ex:172
+#, elixir-autogen, elixir-format
+msgid "When enabled, compaction generates reviewable memory candidates."
+msgstr "启用后，压缩会生成可审核的记忆候选。"
+
+#: lib/handbean_probe/model_settings/render.ex:217
+#, elixir-autogen, elixir-format
+msgid "Save memory reflection settings"
+msgstr "保存记忆反思设置"

@@ -44,6 +44,29 @@ defmodule HandbeanProbe.NativeSettingsVisualTest do
     %{workspace: workspace, dir: dir}
   end
 
+  test "memory reflection card is translated in zh_CN", %{workspace: ws} do
+    previous = Gettext.get_locale(HandbeanProbe.Gettext)
+    on_exit(fn -> Gettext.put_locale(HandbeanProbe.Gettext, previous) end)
+    Gettext.put_locale(HandbeanProbe.Gettext, "zh_CN")
+
+    tree = ModelSettings.render(ModelSettings.load(ws))
+    blob = flatten_text(tree)
+    toggle = find_type(tree, :toggle, "toggle-memory-reflection")
+
+    assert blob =~ "记忆反思"
+    assert blob =~ "压缩后可按以下设置生成可审核的记忆候选。"
+    assert toggle.props.label == "启用记忆反思"
+    assert blob =~ "启用后，压缩会生成可审核的记忆候选。"
+    assert blob =~ "保存记忆反思设置"
+    assert blob =~ "记忆模型"
+    assert blob =~ "记忆范围"
+
+    refute blob =~ "Memory Reflection"
+    refute blob =~ "Compaction can produce reviewable memory candidates"
+    refute toggle.props.label =~ "Enable memory reflection"
+    refute blob =~ "When enabled, compaction generates reviewable memory candidates"
+  end
+
   test "reasoning defaults to medium and preserves explicit off", %{workspace: ws} do
     assert ModelSettings.empty().reasoning == "medium"
 
@@ -70,15 +93,109 @@ defmodule HandbeanProbe.NativeSettingsVisualTest do
     assert hd(tl(custom.children)).props.placeholder == "Acme"
   end
 
-  test "provider editor keeps API key hint outside the input", %{workspace: ws} do
+  test "provider editor only shows masked details for a saved API key", %{workspace: ws} do
     state = ModelSettings.action(:add_provider, ModelSettings.load(ws), ws)
     tree = ModelSettings.render(state)
 
     input = find_type(tree, :text_field, "{:model_field, :api_key}")
     assert input.props.placeholder == ""
+    assert input.props.secure
     refute flatten_text(tree) =~ gettext("API Key (leave blank to keep current)")
     assert flatten_text(tree) =~ gettext("API Key")
-    assert flatten_text(tree) =~ gettext("Saved keys are never shown again.")
+    refute flatten_text(tree) =~ gettext("API key: not configured")
+
+    refute flatten_text(tree) =~
+             gettext("Leave the field blank to keep the current key. A new value replaces it.")
+
+    refute tap?(tree, {:toggle_help, :api_key})
+
+    save_named(ws, "alpha", "one")
+
+    saved =
+      ws
+      |> ModelSettings.load()
+      |> then(&ModelSettings.action({:edit_provider, "alpha"}, &1, ws))
+      |> ModelSettings.render()
+
+    saved_text = flatten_text(saved)
+    saved_input = find_type(saved, :text_field, "{:model_field, :api_key}")
+    assert saved_input.props.value == ""
+    assert saved_input.props.placeholder == "••••real"
+    assert saved_input.props.secure
+    refute saved_text =~ gettext("API key: configured")
+    refute saved_text =~ gettext("API key: not configured")
+
+    refute saved_text =~
+             gettext("Leave the field blank to keep the current key. A new value replaces it.")
+
+    refute saved_text =~ "fixture-key-not-real"
+    refute inspect(saved) =~ "fixture-key-not-real"
+    refute tap?(saved, {:toggle_help, :api_key})
+
+    assert :ok = ModelConfig.update_api_key("alpha", "abcd")
+
+    short =
+      ws
+      |> ModelSettings.load()
+      |> then(&ModelSettings.action({:edit_provider, "alpha"}, &1, ws))
+      |> ModelSettings.render()
+
+    short_input = find_type(short, :text_field, "{:model_field, :api_key}")
+    assert short_input.props.value == ""
+    assert short_input.props.placeholder == "••••••••"
+    refute inspect(short) =~ "abcd"
+
+    assert :ok = ModelConfig.update_api_key("alpha", "密钥测试")
+
+    multibyte =
+      ws
+      |> ModelSettings.load()
+      |> then(&ModelSettings.action({:edit_provider, "alpha"}, &1, ws))
+      |> ModelSettings.render()
+
+    multibyte_input = find_type(multibyte, :text_field, "{:model_field, :api_key}")
+    assert multibyte_input.props.placeholder == "••••••••"
+    refute inspect(multibyte) =~ "密钥测试"
+
+    assert :ok = ModelConfig.update_api_key("alpha", "")
+
+    missing =
+      ws
+      |> ModelSettings.load()
+      |> then(&ModelSettings.action({:edit_provider, "alpha"}, &1, ws))
+      |> ModelSettings.render()
+
+    missing_input = find_type(missing, :text_field, "{:model_field, :api_key}")
+    assert missing_input.props.value == ""
+    assert missing_input.props.placeholder == ""
+
+    assert :ok = ModelConfig.update_api_key("alpha", "env:SECRET_PROVIDER_KEY")
+
+    env =
+      ws
+      |> ModelSettings.load()
+      |> then(&ModelSettings.action({:edit_provider, "alpha"}, &1, ws))
+      |> ModelSettings.render()
+
+    env_input = find_type(env, :text_field, "{:model_field, :api_key}")
+    assert env_input.props.value == ""
+    assert env_input.props.placeholder == "••••••••"
+    refute inspect(env) =~ "SECRET_PROVIDER_KEY"
+  end
+
+  test "provider editor leaves max output tokens on the model form", %{workspace: ws} do
+    provider = ModelSettings.action(:add_provider, ModelSettings.load(ws), ws)
+    provider_tree = ModelSettings.render(provider)
+
+    refute find_type(provider_tree, :text_field, "{:model_field, :provider_max_tokens}")
+    refute flatten_text(provider_tree) =~ gettext("Provider max output tokens (override)")
+
+    save_named(ws, "alpha", "one")
+    model = ModelSettings.action(:add_model, ModelSettings.load(ws), ws)
+    model_tree = ModelSettings.render(model)
+
+    assert find_type(model_tree, :text_field, "{:model_field, :max_tokens}")
+    assert flatten_text(model_tree) =~ gettext("Max output tokens")
   end
 
   test "Mob.Renderer JSON keeps settings_select option children and tap handles" do

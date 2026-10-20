@@ -220,7 +220,6 @@ defmodule HandbeanProbe.ModelSettings.Providers do
 
     with :ok <- require_display_name(name),
          :ok <- require_https(url),
-         {:ok, provider_max} <- SettingsSupport.parse_optional_positive(f.provider_max_tokens),
          {:ok, config} <- Forms.read_config() do
       providers = config["providers"] || %{}
 
@@ -230,7 +229,6 @@ defmodule HandbeanProbe.ModelSettings.Providers do
           "baseUrl" => String.trim(f.base_url),
           "api" => f.api || Forms.default_api()
         }
-        |> Forms.put_optional_int("maxTokens", provider_max)
         |> Forms.maybe_put_key(f.api_key)
 
       case state.editing do
