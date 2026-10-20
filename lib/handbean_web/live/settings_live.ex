@@ -62,6 +62,7 @@ defmodule HandbeanWeb.SettingsLive do
     socket =
       socket
       |> assign(:page_title, gettext("Settings"))
+      |> assign(:app_version, application_version())
       |> assign(:active_tab, active_tab)
       |> assign(:tabs, @tabs)
       |> assign(:workspaces, workspaces)
@@ -600,6 +601,13 @@ defmodule HandbeanWeb.SettingsLive do
       true -> gettext("Ready")
       false -> gettext("In verification")
       _ -> gettext("Unavailable")
+    end
+  end
+
+  defp application_version do
+    case Application.spec(:handbean, :vsn) do
+      nil -> "unknown"
+      version -> to_string(version)
     end
   end
 

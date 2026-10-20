@@ -107,8 +107,8 @@ defmodule HandbeanWeb.SettingsLiveTest do
   # ── Tests ──
 
   describe "GET /settings" do
-    test "renders settings page with left menu", %{conn: conn} do
-      {:ok, _view, html} = live(conn, "/settings")
+    test "renders settings page with left menu and application version", %{conn: conn} do
+      {:ok, view, html} = live(conn, "/settings")
 
       assert html =~ "Settings"
       assert html =~ "Model / AI"
@@ -118,6 +118,9 @@ defmodule HandbeanWeb.SettingsLiveTest do
       assert html =~ "UI"
       refute html =~ "Coming soon"
       refute html =~ "即将推出"
+
+      app_version = :handbean |> Application.spec(:vsn) |> to_string()
+      assert has_element?(view, "#settings-app-version", "Handbean v#{app_version}")
     end
 
     test "has back-to-workspace link", %{conn: conn} do

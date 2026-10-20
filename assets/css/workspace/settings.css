@@ -759,6 +759,18 @@ select.settings-input {
   width: 168px;
 }
 
+.settings-app-version {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 12px;
+  padding: 10px 0 12px;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  line-height: 1.25;
+}
+
 .settings-page-content {
   min-width: 0;
 }
@@ -1153,7 +1165,8 @@ select.settings-input {
     display: none;
   }
 
-  .settings-sidebar > .pt-3 {
+  .settings-sidebar > .pt-3,
+  .settings-app-version {
     display: none;
   }
 
