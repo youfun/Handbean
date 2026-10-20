@@ -19,6 +19,15 @@ defmodule Handbean.StorageNifTest do
     assert :ok = :handbean_storage.close(replacement)
   end
 
+  if match?({:unix, _}, :os.type()) do
+    test "lock reports that opening the sidecar failed", context do
+      {lock_path, _journal_path} = paths(context)
+      File.mkdir_p!(lock_path)
+
+      assert {:error, {:open, :eisdir}} = :handbean_storage.lock(lock_path)
+    end
+  end
+
   test "resource destruction after owner death releases the OS lock", context do
     {lock_path, _journal_path} = paths(context)
     parent = self()

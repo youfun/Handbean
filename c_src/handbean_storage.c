@@ -368,26 +368,37 @@ typedef struct {
 
 static ErlNifResourceType *lock_type;
 
-static ERL_NIF_TERM error_atom(ErlNifEnv *env, int error) {
-    const char *name;
+static const char *error_name(int error) {
     switch (error) {
-    case EACCES: name = "eacces"; break;
-    case EBADF: name = "closed"; break;
-    case EEXIST: name = "eexist"; break;
-    case EINVAL: name = "einval"; break;
-    case EIO: name = "eio"; break;
-    case EISDIR: name = "eisdir"; break;
-    case EMFILE: name = "emfile"; break;
-    case ENAMETOOLONG: name = "enametoolong"; break;
-    case ENFILE: name = "enfile"; break;
-    case ENOENT: name = "enoent"; break;
-    case ENOMEM: name = "enomem"; break;
-    case ENOSPC: name = "enospc"; break;
-    case ENOTDIR: name = "enotdir"; break;
-    case EROFS: name = "erofs"; break;
-    default: name = "unknown"; break;
+    case EACCES: return "eacces";
+    case EBADF: return "closed";
+    case EEXIST: return "eexist";
+    case EINVAL: return "einval";
+    case EIO: return "eio";
+    case EISDIR: return "eisdir";
+    case EMFILE: return "emfile";
+    case ENAMETOOLONG: return "enametoolong";
+    case ENFILE: return "enfile";
+    case ENOENT: return "enoent";
+    case ENOMEM: return "enomem";
+    case ENOSPC: return "enospc";
+    case ENOTDIR: return "enotdir";
+    case EROFS: return "erofs";
+    default: return "unknown";
     }
-    return enif_make_tuple2(env, enif_make_atom(env, "error"), enif_make_atom(env, name));
+}
+
+static ERL_NIF_TERM error_atom(ErlNifEnv *env, int error) {
+    return enif_make_tuple2(env, enif_make_atom(env, "error"),
+        enif_make_atom(env, error_name(error)));
+}
+
+/* POSIX open and lock failures include their operation stage. Allocation
+ * failures and Windows errors retain the existing flat reason atoms. */
+static ERL_NIF_TERM operation_error(ErlNifEnv *env, const char *operation, int error) {
+    return enif_make_tuple2(env, enif_make_atom(env, "error"),
+        enif_make_tuple2(env, enif_make_atom(env, operation),
+            enif_make_atom(env, error_name(error))));
 }
 
 static int path_arg(ErlNifEnv *env, ERL_NIF_TERM term, ErlNifBinary *bin, char **out) {
@@ -465,12 +476,12 @@ static ERL_NIF_TERM nif_lock(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]
     (void)argc;
     if (!path_arg(env, argv[0], &bin, &path)) return enif_make_badarg(env);
     fd = open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0600); saved = errno; enif_free(path);
-    if (fd < 0) return error_atom(env, saved);
+    if (fd < 0) return operation_error(env, "open", saved);
     if (flock(fd, LOCK_EX | LOCK_NB) != 0) {
         saved = errno; close(fd);
         if (saved == EWOULDBLOCK || saved == EAGAIN)
             return enif_make_tuple2(env, enif_make_atom(env, "error"), enif_make_atom(env, "locked"));
-        return error_atom(env, saved);
+        return operation_error(env, "lock", saved);
     }
     lock = enif_alloc_resource(lock_type, sizeof(*lock));
     if (lock == NULL) { close(fd); return error_atom(env, ENOMEM); }
