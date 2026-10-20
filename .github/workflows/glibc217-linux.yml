@@ -1,0 +1,112 @@
+name: Experimental glibc 2.17 Linux
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: glibc217-linux-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  MANYLINUX_IMAGE: quay.io/pypa/manylinux2014_x86_64@sha256:2bd80fa8fca6b775a913b7e42fa410c5f2246fb6f7f8f3280b5d562e5ca5d63f
+
+jobs:
+  assets:
+    name: Static Web assets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Native build tools used only while compiling asset dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential patchelf
+
+      - uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: "0.16.0"
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "29.0"
+          elixir-version: "1.20.2"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            deps
+            _build
+            ~/.mix
+            ~/.hex
+          key: glibc217-assets-${{ hashFiles('mix.lock', 'package-lock.json') }}
+          restore-keys: |
+            glibc217-assets-
+
+      - name: Build static assets
+        run: bash scripts/ci/glibc217/build-assets.sh "$RUNNER_TEMP/glibc217-assets"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: glibc217-static-assets
+          path: ${{ runner.temp }}/glibc217-assets/*
+          if-no-files-found: error
+          retention-days: 2
+
+  release:
+    name: Release and ABI audit
+    needs: assets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: glibc217-static-assets
+          path: .glibc217-input
+
+      - uses: actions/cache@v6
+        with:
+          path: .cache/glibc217
+          key: glibc217-toolchain-v1-${{ hashFiles('.github/workflows/glibc217-linux.yml', 'scripts/ci/glibc217/toolchain.sh') }}
+
+      - name: Build inside the glibc 2.17 baseline
+        run: |
+          set -euo pipefail
+          mkdir -p .cache/glibc217 .glibc217-output
+          docker pull "$MANYLINUX_IMAGE"
+          docker run --rm \
+            --volume "$PWD:/workspace:ro" \
+            --volume "$PWD/.glibc217-input:/input:ro" \
+            --volume "$PWD/.glibc217-output:/output" \
+            --volume "$PWD/.cache/glibc217:/cache" \
+            "$MANYLINUX_IMAGE" \
+            bash /workspace/scripts/ci/glibc217/build-release.sh
+
+      - name: Show compatibility evidence
+        run: |
+          cat .glibc217-output/audit/totals.txt
+          cat .glibc217-output/smoke-test.txt
+          cat .glibc217-output/handbean-web-linux-x86_64-glibc2.17.tar.gz.sha256
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: handbean-web-linux-x86_64-glibc2.17
+          path: |
+            .glibc217-output/handbean-web-linux-x86_64-glibc2.17.tar.gz
+            .glibc217-output/handbean-web-linux-x86_64-glibc2.17.tar.gz.sha256
+            .glibc217-output/smoke-test.txt
+            .glibc217-output/audit
+          if-no-files-found: error
+          retention-days: 14
