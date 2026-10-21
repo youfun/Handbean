@@ -1649,10 +1649,8 @@ defmodule HandbeanProbe.HomeScreenTest do
         "content" => "answer-from-a"
       })
 
-    File.write!(
-      Handbean.WorkspaceSettings.path(workspace_b["path"]),
-      Jason.encode!(%{"tools" => %{"default_mode" => "deny"}})
-    )
+    assert {:ok, _} = Handbean.Permissions.ConversationMode.update(conv_a["id"], :yolo)
+    assert {:ok, _} = Handbean.Permissions.ConversationMode.update(conv_b["id"], :prompt)
 
     view = info(view, {:tap, {:conversation, conv_a["id"]}})
     view = info(view, {:change, :draft, "draft-for-a"})
@@ -1667,7 +1665,7 @@ defmodule HandbeanProbe.HomeScreenTest do
     assert assigns(view).workspace["path"] == Path.expand(path_b)
     assert assigns(view).chat.conversation["id"] == conv_b["id"]
     assert assigns(view).draft == ""
-    assert assigns(view).permission_mode == :deny
+    assert assigns(view).permission_mode == :prompt
     refute text(view) =~ "answer-from-a"
     refute text(view) =~ "draft-for-a"
 
