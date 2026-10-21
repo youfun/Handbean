@@ -81,5 +81,4 @@ defmodule Handbean.Tool.Memory.MemReflect do
 
   defp context_value(context, key),
     do: Map.get(context, key) || Map.get(context, Atom.to_string(key))
-
 end

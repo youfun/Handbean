@@ -14,18 +14,20 @@ defmodule Handbean.Browser.WebViewSession do
   @write_actions ~w(open eval click fill back close)
   @dom_actions ~w(snapshot eval click fill)
 
-  defstruct session_id: nil,
-            conversation_id: nil,
-            generation: 1,
-            visible: false,
-            control: :agent,
-            url: nil,
-            title: nil,
-            pending: nil,
-            nav: :idle,
-            refs_gen: 0,
-            needs_recovery: false,
-            closed?: false
+  defstruct [
+    :session_id,
+    :conversation_id,
+    :url,
+    :title,
+    :pending,
+    generation: 1,
+    visible: false,
+    control: :agent,
+    nav: :idle,
+    refs_gen: 0,
+    needs_recovery: false,
+    closed?: false
+  ]
 
   @type result ::
           {:ok, String.t(), map()}

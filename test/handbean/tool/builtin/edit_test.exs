@@ -465,7 +465,10 @@ defmodule Handbean.Tool.Builtin.EditTest do
 
     test "yolo edits a file outside the workspace" do
       outside =
-        Path.join(System.tmp_dir!(), "handbean-yolo-edit-#{System.unique_integer([:positive])}.txt")
+        Path.join(
+          System.tmp_dir!(),
+          "handbean-yolo-edit-#{System.unique_integer([:positive])}.txt"
+        )
 
       File.write!(outside, "before")
       on_exit(fn -> File.rm(outside) end)

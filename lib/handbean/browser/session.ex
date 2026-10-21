@@ -13,12 +13,14 @@ defmodule Handbean.Browser.Session do
 
   @default_slot "default"
 
-  defstruct conversation_id: nil,
-            workspace_id: nil,
-            slot: @default_slot,
-            managed_name: nil,
-            closer: nil,
-            updated_at: nil
+  defstruct [
+    :conversation_id,
+    :workspace_id,
+    :managed_name,
+    :closer,
+    :updated_at,
+    slot: @default_slot
+  ]
 
   @type checkout :: %{name: String.t(), outcome: :created | :reused | :replaced}
 

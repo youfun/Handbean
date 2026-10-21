@@ -21,23 +21,25 @@ defmodule Handbean.Browser.UserSurface do
   @idle_ms 10 * 60 * 1000
   @max_marks 20
 
-  defstruct conversation_id: nil,
-            session_name: nil,
-            viewer: nil,
-            viewer_ref: nil,
-            idle_timer: nil,
-            stream_pid: nil,
-            stream_ref: nil,
-            url: nil,
-            title: nil,
-            design_mode: false,
-            annotations: [],
-            scroll_x: 0.0,
-            scroll_y: 0.0,
-            viewport: %{width: 1280, height: 720, dpr: 1},
-            error: nil,
-            last_frame_at: 0,
-            reconnect_timer: nil
+  defstruct [
+    :conversation_id,
+    :session_name,
+    :viewer,
+    :viewer_ref,
+    :idle_timer,
+    :stream_pid,
+    :stream_ref,
+    :url,
+    :title,
+    :error,
+    :last_frame_at,
+    :reconnect_timer,
+    design_mode: false,
+    annotations: [],
+    scroll_x: 0.0,
+    scroll_y: 0.0,
+    viewport: %{width: 1280, height: 720, dpr: 1}
+  ]
 
   @spec desktop?() :: boolean()
   def desktop?, do: Handbean.Host.browser_backend() == :cli

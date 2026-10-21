@@ -120,7 +120,7 @@ defmodule Handbean.Tool.Builtin.Skill do
          truncated: false
        }}
     else
-      {:error, "Skill result exceeds the 100000-byte limit; no partial guidance was loaded"}
+      {:error, "Skill result exceeds the 100_000-byte limit; no partial guidance was loaded"}
     end
   end
 end

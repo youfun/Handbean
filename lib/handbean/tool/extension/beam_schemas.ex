@@ -61,12 +61,12 @@ defmodule Handbean.Tool.Extension.Beam.Schemas do
 
     app_modules
     |> Enum.uniq()
-    |> Enum.filter(&is_ecto_schema?/1)
+    |> Enum.filter(&ecto_schema?/1)
     |> Enum.map(fn mod -> {mod, find_source(mod)} end)
     |> Enum.sort_by(fn {mod, _} -> inspect(mod) end)
   end
 
-  defp is_ecto_schema?(mod) do
+  defp ecto_schema?(mod) do
     match?({:module, _}, Code.ensure_compiled(mod)) and function_exported?(mod, :__schema__, 1)
   end
 

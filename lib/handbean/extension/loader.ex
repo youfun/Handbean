@@ -78,7 +78,7 @@ defmodule Handbean.Extension.Loader do
           ]
         }
 
-      is_extension_dir?(path) ->
+      extension_dir?(path) ->
         load_single_extension(path, :explicit)
 
       File.dir?(path) ->
@@ -243,7 +243,7 @@ defmodule Handbean.Extension.Loader do
         |> Enum.map(&Path.join(parent_dir, &1))
         |> Enum.filter(&safe_dir?/1)
         |> Enum.flat_map(fn dir ->
-          if is_extension_dir?(dir) do
+          if extension_dir?(dir) do
             [dir | discover_subdirs(dir, 1)]
           else
             discover_subdirs(dir, 1)
@@ -267,7 +267,7 @@ defmodule Handbean.Extension.Loader do
         |> Enum.map(&Path.join(dir, &1))
         |> Enum.filter(&safe_dir?/1)
         |> Enum.flat_map(fn subdir ->
-          if is_extension_dir?(subdir) do
+          if extension_dir?(subdir) do
             [subdir | discover_subdirs(subdir, depth + 1)]
           else
             discover_subdirs(subdir, depth + 1)
@@ -289,7 +289,7 @@ defmodule Handbean.Extension.Loader do
     end
   end
 
-  defp is_extension_dir?(dir) do
+  defp extension_dir?(dir) do
     File.dir?(dir) and find_manifest(dir) != nil
   end
 

@@ -27,21 +27,23 @@ defmodule Handbean.Terminal.Session do
   @max_snapshot_bytes 50_000
   @max_snapshot_lines 500
 
-  defstruct workspace_id: nil,
-            workspace_path: nil,
-            checkout_key: nil,
-            name: nil,
-            cmd: nil,
-            args: [],
-            cwd: nil,
-            term: nil,
-            pty: nil,
-            status: :starting,
-            exit_status: nil,
-            cols: @default_cols,
-            rows: @default_rows,
-            created_at: nil,
-            updated_at: nil
+  defstruct [
+    :workspace_id,
+    :workspace_path,
+    :checkout_key,
+    :name,
+    :cmd,
+    :cwd,
+    :term,
+    :pty,
+    :exit_status,
+    :created_at,
+    :updated_at,
+    args: [],
+    status: :starting,
+    cols: @default_cols,
+    rows: @default_rows
+  ]
 
   @type t :: %__MODULE__{}
 

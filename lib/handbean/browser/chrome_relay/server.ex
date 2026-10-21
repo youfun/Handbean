@@ -13,13 +13,15 @@ defmodule Handbean.Browser.ChromeRelay.Server do
   @name __MODULE__
   @heartbeat_interval_ms 20_000
 
-  defstruct extension: nil,
-            extension_ref: nil,
-            clients: %{},
-            refs: %{},
-            tabs: 0,
-            extension_version: nil,
-            cdp_token: nil
+  defstruct [
+    :extension,
+    :extension_ref,
+    :extension_version,
+    :cdp_token,
+    clients: %{},
+    refs: %{},
+    tabs: 0
+  ]
 
   @type role :: :extension | :cdp
 
@@ -309,8 +311,7 @@ defmodule Handbean.Browser.ChromeRelay.Server do
     if Map.has_key?(clients, id) do
       send(
         pid,
-        {:relay_text,
-         Handbean.JSON.encode!(%{"type" => "client_disconnected", "clientId" => id})}
+        {:relay_text, Handbean.JSON.encode!(%{"type" => "client_disconnected", "clientId" => id})}
       )
     end
   end

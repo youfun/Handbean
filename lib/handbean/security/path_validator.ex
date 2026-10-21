@@ -39,10 +39,10 @@ defmodule Handbean.Security.PathValidator do
   def validate_writeable(path) do
     cond do
       File.exists?(path) ->
-        if is_writeable?(path), do: :ok, else: {:error, "#{path}: Read-only file (EACCES)"}
+        if writeable?(path), do: :ok, else: {:error, "#{path}: Read-only file (EACCES)"}
 
       ancestor = nearest_existing_ancestor(path) ->
-        if is_writeable?(ancestor) do
+        if writeable?(ancestor) do
           :ok
         else
           {:error, "#{path}: Parent directory not writeable (EACCES)"}
@@ -471,7 +471,7 @@ defmodule Handbean.Security.PathValidator do
     end)
   end
 
-  defp is_writeable?(path) do
+  defp writeable?(path) do
     case File.stat(path) do
       {:ok, %{access: access, type: type}}
       when access in [:write, :read_write] and type in [:directory, :regular] ->
