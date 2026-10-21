@@ -14,8 +14,8 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRenderingTest do
 
       send(view.pid, {:agent_event, agent_event(:run_start, %{model: "custom-oai-model"})})
 
-      rendered = render(view)
-      assert rendered =~ "custom-oai-model"
+      assert has_element?(view, ~s(#status-bar[data-model="custom-oai-model"]))
+      assert has_element?(view, "#status-label", "running")
     end
 
     test "model display persists across new_session", %{conn: conn} do
@@ -99,10 +99,16 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRenderingTest do
 
       html = render(view)
       assert html =~ ~s(id="workspace-sheet")
-      assert has_element?(view, "#workspace-sheet.open[aria-hidden='false']:not([inert])")
+      assert has_element?(view, "#workspace-sheet.left-drawer.open[aria-hidden='false']:not([inert])")
       assert html =~ "sheet-new-conv-btn"
       refute html =~ "sheet-ws-row"
       assert has_element?(view, "#workspace-sheet #mobile-schedule-nav")
+      assert has_element?(view, "#workspace-sheet #mobile-open-files")
+      assert has_element?(view, "#workspace-sheet #mobile-open-settings")
+      refute has_element?(view, ".mobile-header-v2 #mobile-open-files")
+      refute has_element?(view, ".mobile-header-v2 #mobile-open-settings")
+      refute has_element?(view, "#settings-sheet")
+      refute has_element?(view, "button[phx-click='open_sheet'][phx-value-type='settings']")
 
       view |> element("#mobile-schedule-nav") |> render_click()
       assert has_element?(view, "#schedule-center")
@@ -123,7 +129,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRenderingTest do
 
       html = render(view)
       assert html =~ "conversation-row"
-      refute html =~ ~s(id="workspace-sheet" class="bottom-sheet open")
+      refute has_element?(view, "#workspace-sheet.open")
     end
 
     test "archive toggle shows archived conversations in stream", %{conn: conn} do

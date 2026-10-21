@@ -10,9 +10,7 @@
   <.mobile_header
     chat_scope={@chat_scope}
     conversations_by_workspace={@conversations_by_workspace}
-    current_conversation_id={@current_conversation_id}
     current_workspace_id={@current_workspace_id}
-    terminal_available?={@terminal_available?}
     workspace_label={@workspace_label}
     workspaces={@workspaces}
     show_schedules={@show_schedules}
@@ -48,7 +46,9 @@
         request={@schedule_request}
         error={@schedule_error}
         time_zone={@user_time_zone}
+        workspace_id={@current_workspace_id}
         workspace_label={@workspace_label}
+        workspaces={@workspaces}
         conversation_titles={@schedule_conversation_titles}
         filter={@schedule_filter}
         query={@schedule_query}
@@ -146,10 +146,10 @@
       selected_reasoning_level={@selected_reasoning_level}
       show_model_sheet={@show_model_sheet}
       show_reasoning_sheet={@show_reasoning_sheet}
-      show_settings_sheet={@show_settings_sheet}
       show_workspace_sheet={@show_workspace_sheet}
       show_schedules={@show_schedules}
-      schedule_count={length(@schedules)}
+      schedule_count={@schedule_count}
+      terminal_available?={@terminal_available?}
       skills_count={@skills_count}
       status_info={@status_info}
       workspace_label={@workspace_label}

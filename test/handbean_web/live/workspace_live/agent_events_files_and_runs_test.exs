@@ -317,8 +317,9 @@ defmodule HandbeanWeb.WorkspaceLive.AgentEventsFilesAndRunsTest do
       end)
 
       {:ok, view, _html} = live(conn, "/")
-      assert has_element?(view, "#mobile-open-files")
+      assert has_element?(view, "#workspace-sheet #mobile-open-files")
       refute has_element?(view, "#mobile-open-terminal")
+      refute has_element?(view, ".mobile-header-v2 #mobile-open-files")
       refute has_element?(view, "button[phx-value-view='terminal']")
       refute has_element?(view, "#status-bar button[phx-click='toggle_terminal']")
 
@@ -355,11 +356,15 @@ defmodule HandbeanWeb.WorkspaceLive.AgentEventsFilesAndRunsTest do
       refute has_element?(view, "#status-bar button[phx-click='toggle_terminal']")
     end
 
-    test "mobile header can open files and terminal in the workspace panel", %{conn: conn} do
+    test "mobile conversation list can open files and terminal in the workspace panel", %{
+      conn: conn
+    } do
       {:ok, view, _html} = live(conn, "/")
 
-      assert has_element?(view, "#mobile-open-files")
-      assert has_element?(view, "#mobile-open-terminal")
+      assert has_element?(view, "#workspace-sheet #mobile-open-files")
+      assert has_element?(view, "#workspace-sheet #mobile-open-terminal")
+      refute has_element?(view, ".mobile-header-v2 #mobile-open-files")
+      refute has_element?(view, ".mobile-header-v2 #mobile-open-terminal")
       refute has_element?(view, "#workspace-panel.mobile-panel-open")
 
       view |> element("#mobile-open-files") |> render_click()

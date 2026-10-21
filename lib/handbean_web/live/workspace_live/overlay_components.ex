@@ -24,10 +24,10 @@ defmodule HandbeanWeb.WorkspaceLive.OverlayComponents do
   attr :selected_reasoning_level, :any, required: true
   attr :show_model_sheet, :any, required: true
   attr :show_reasoning_sheet, :any, required: true
-  attr :show_settings_sheet, :any, required: true
   attr :show_workspace_sheet, :any, required: true
   attr :show_schedules, :boolean, default: false
   attr :schedule_count, :integer, default: 0
+  attr :terminal_available?, :boolean, default: false
   attr :skills_count, :any, required: true
   attr :status_info, :any, required: true
   attr :workspace_label, :any, required: true
@@ -50,8 +50,7 @@ defmodule HandbeanWeb.WorkspaceLive.OverlayComponents do
           any_sheet_open?(
             @show_workspace_sheet,
             @show_model_sheet,
-            @show_reasoning_sheet,
-            @show_settings_sheet
+            @show_reasoning_sheet
           ),
           do: "open",
           else: ""
@@ -61,51 +60,17 @@ defmodule HandbeanWeb.WorkspaceLive.OverlayComponents do
     >
     </div>
 
-    <!-- Workspace / Conversation Switcher Sheet -->
+    <!-- Workspace / Conversation Switcher: a left drawer on mobile,
+         matching the native client, not a bottom sheet. -->
     <div
       id="workspace-sheet"
       phx-hook="ConversationActivity"
-      class={["bottom-sheet", if(@show_workspace_sheet, do: "open", else: "")]}
+      class={["bottom-sheet", "left-drawer", if(@show_workspace_sheet, do: "open", else: "")]}
       aria-hidden={to_string(not @show_workspace_sheet)}
       inert={!@show_workspace_sheet}
     >
       <div class="sheet-handle"></div>
       <div class="bottom-sheet-inner">
-        <button
-          :if={@chat_scope == :workspace}
-          id="mobile-schedule-nav"
-          type="button"
-          phx-click="toggle_schedules"
-          class={["sheet-primary-row", @show_schedules && "active"]}
-          aria-current={if(@show_schedules, do: "page", else: nil)}
-        >
-          <span class="sheet-primary-icon" aria-hidden="true">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.8"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <circle cx="12" cy="12" r="8.5" />
-              <path d="M12 7.5V12l3 2" />
-            </svg>
-          </span>
-          <span class="flex-1">{gettext("定时任务")}</span>
-          <span :if={@schedule_count > 0} class="sheet-primary-count">{@schedule_count}</span>
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <polyline points="9 18 15 12 9 6" />
-          </svg>
-        </button>
         <div :if={pinned_conversations(@workspaces, @conversations_by_workspace) != []}>
           <div class="sheet-section-title">{gettext("已置顶")}</div>
           <div
@@ -392,6 +357,96 @@ defmodule HandbeanWeb.WorkspaceLive.OverlayComponents do
           </svg>
           添加项目
         </button>
+        <nav class="sheet-drawer-footer" aria-label={gettext("应用入口")}>
+          <button
+            :if={@chat_scope == :workspace}
+            id="mobile-schedule-nav"
+            type="button"
+            phx-click="toggle_schedules"
+            class={["sheet-primary-row", @show_schedules && "active"]}
+            aria-current={if(@show_schedules, do: "page", else: nil)}
+          >
+            <span class="sheet-primary-icon" aria-hidden="true">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <circle cx="12" cy="12" r="8.5" />
+                <path d="M12 7.5V12l3 2" />
+              </svg>
+            </span>
+            <span class="flex-1">{gettext("定时任务")}</span>
+            <span :if={@schedule_count > 0} class="sheet-primary-count">{@schedule_count}</span>
+          </button>
+          <button
+            :if={@chat_scope == :workspace}
+            id="mobile-open-files"
+            type="button"
+            phx-click="select_mobile_right_panel_view"
+            phx-value-view="files"
+            class="sheet-primary-row"
+          >
+            <span class="sheet-primary-icon" aria-hidden="true">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M3 6h6l2 2h10v10H3z" />
+              </svg>
+            </span>
+            <span class="flex-1">{gettext("Files")}</span>
+          </button>
+          <button
+            :if={@terminal_available?}
+            id="mobile-open-terminal"
+            type="button"
+            phx-click="select_mobile_right_panel_view"
+            phx-value-view="terminal"
+            class="sheet-primary-row"
+          >
+            <span class="sheet-primary-icon" aria-hidden="true">›_</span>
+            <span class="flex-1">{gettext("Terminal")}</span>
+          </button>
+          <.link
+            id="mobile-open-settings"
+            navigate={settings_href(@current_workspace_id, @current_conversation_id)}
+            class="sheet-primary-row"
+          >
+            <span class="sheet-primary-icon" aria-hidden="true">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0 1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+            </span>
+            <span class="flex-1">{gettext("Settings")}</span>
+          </.link>
+          <button
+            :if={@current_conversation_id}
+            id="mobile-delete-conversation"
+            type="button"
+            phx-click="open_delete_conversation"
+            phx-value-id={@current_conversation_id}
+            phx-value-ws_id={@current_workspace_id}
+            class="sheet-primary-row mobile-settings-delete"
+          >
+            <span class="flex-1">{gettext("删除当前对话")}</span>
+          </button>
+        </nav>
       </div>
     </div>
 
@@ -468,55 +523,6 @@ defmodule HandbeanWeb.WorkspaceLive.OverlayComponents do
       </div>
     </div>
 
-    <!-- Settings Sheet -->
-    <div
-      id="settings-sheet"
-      class={["bottom-sheet", if(@show_settings_sheet, do: "open", else: "")]}
-      aria-hidden={to_string(not @show_settings_sheet)}
-      inert={!@show_settings_sheet}
-    >
-      <div class="sheet-handle"></div>
-      <div class="bottom-sheet-inner">
-        <div class="sheet-section-title">{gettext("Conversation info")}</div>
-        <div class="mobile-settings-list">
-          <div class="mobile-settings-row">
-            <span>{gettext("Workspace")}</span>
-            <strong class="truncate">{@workspace_label}</strong>
-          </div>
-          <div class="mobile-settings-row">
-            <span>{gettext("Model")}</span>
-            <strong class="truncate">{@status_info.model || gettext("None")}</strong>
-          </div>
-          <div class="mobile-settings-row">
-            <span>{gettext("Status")}</span>
-            <strong>{@status_info.status}</strong>
-          </div>
-          <div class="mobile-settings-row">
-            <span>{gettext("Conversation")}</span>
-            <strong class="truncate font-mono text-[11px]">
-              {if @current_conversation_id,
-                do: String.slice(@current_conversation_id, 0, 8),
-                else: "none"}
-            </strong>
-          </div>
-          <div class="mobile-settings-row">
-            <span>{gettext("MCP / Skills")}</span>
-            <strong>{@mcp_count} / {@skills_count}</strong>
-          </div>
-          <button
-            :if={@current_conversation_id}
-            id="mobile-delete-conversation"
-            type="button"
-            phx-click="open_delete_conversation"
-            phx-value-id={@current_conversation_id}
-            phx-value-ws_id={@current_workspace_id}
-            class="mobile-settings-delete"
-          >
-            <span>{gettext("删除当前对话")}</span>
-          </button>
-        </div>
-      </div>
-    </div>
     """
   end
 
@@ -713,6 +719,7 @@ defmodule HandbeanWeb.WorkspaceLive.OverlayComponents do
     ~H"""
     <div
       id="status-bar"
+      data-model={@status_info.model || ""}
       class="h-8 border-t bg-surface flex items-center justify-between px-4 text-xs text-tertiary flex-shrink-0"
     >
       <div id="status-bar-left" class="flex items-center space-x-4">

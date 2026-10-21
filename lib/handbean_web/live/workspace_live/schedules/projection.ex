@@ -23,6 +23,12 @@ defmodule HandbeanWeb.WorkspaceLive.Schedules.Projection do
 
   def normalize_filter(_filter), do: "all"
 
+  def workspace_entries(schedules, workspace_id) when is_binary(workspace_id) do
+    Enum.filter(schedules, &(&1.workspace_id == workspace_id))
+  end
+
+  def workspace_entries(_schedules, _workspace_id), do: []
+
   # Filter options and counts are derived, never stored: one owner for the list.
   def selected_entry(_visible, nil), do: nil
   def selected_entry(visible, :auto), do: List.first(visible)

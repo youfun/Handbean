@@ -218,7 +218,9 @@ defmodule HandbeanWeb.WorkspaceLive.Schedules do
   attr :request, :string, default: ""
   attr :error, :any, default: nil
   attr :time_zone, :any, default: nil
+  attr :workspace_id, :any, default: nil
   attr :workspace_label, :string, required: true
+  attr :workspaces, :list, default: []
   attr :conversation_titles, :map, default: %{}
   attr :filter, :string, default: "all"
   attr :query, :string, default: ""
@@ -228,13 +230,15 @@ defmodule HandbeanWeb.WorkspaceLive.Schedules do
 
   def center(assigns) do
     now = Handbean.Schedule.now()
-    overdue = overdue_ids(assigns.schedules, now)
-    visible = visible_entries(assigns, overdue)
+    scoped = workspace_entries(assigns.schedules, assigns.workspace_id)
+    overdue = overdue_ids(scoped, now)
+    visible = visible_entries(%{assigns | schedules: scoped}, overdue)
     selected = selected_entry(visible, assigns.selected_id)
-    counts = filter_counts(assigns.schedules, assigns.runs, assigns.views, overdue)
+    counts = filter_counts(scoped, assigns.runs, assigns.views, overdue)
 
     assigns =
       assigns
+      |> assign(:scoped, scoped)
       |> assign(:overdue, overdue)
       |> assign(:visible, visible)
       |> assign(:selected, selected)
@@ -251,7 +255,15 @@ defmodule HandbeanWeb.WorkspaceLive.Schedules do
           </span>
           <div>
             <h1>{gettext("定时任务")}</h1>
-            <p>{gettext("管理定时任务，点对话可以跳转")} · {@workspace_label}</p>
+            <p>
+              {gettext("管理定时任务，点对话可以跳转")}
+              ·
+              <.workspace_picker
+                id="schedule-workspace"
+                workspaces={@workspaces}
+                workspace_id={@workspace_id}
+              />
+            </p>
           </div>
         </div>
         <button
@@ -279,7 +291,7 @@ defmodule HandbeanWeb.WorkspaceLive.Schedules do
           <button type="submit" class="schedule-primary-button">{gettext("交给 Agent")}</button>
         </form>
         <p class="schedule-toolbar-hint">
-          {gettext("任务会在默认工作区的新对话中运行并返回结果")}
+          {gettext("任务会在「%{workspace}」的新对话中运行并返回结果", workspace: @workspace_label)}
         </p>
         <p :if={@error} class="schedule-error" role="alert">{@error}</p>
       </div>
@@ -317,12 +329,12 @@ defmodule HandbeanWeb.WorkspaceLive.Schedules do
           <div :if={@visible == []} id="schedule-empty" class="schedule-empty">
             <span aria-hidden="true"><.clock_icon /></span>
             <h3>
-              {if @schedules == [],
+              {if @scoped == [],
                 do: gettext("还没有定时任务"),
                 else: gettext("没有匹配的任务")}
             </h3>
             <p>
-              {if @schedules == [],
+              {if @scoped == [],
                 do: gettext("在上方描述一个任务，Agent 会确认时间和执行内容。"),
                 else: gettext("换个关键词，或清空筛选条件。")}
             </p>
@@ -642,6 +654,22 @@ defmodule HandbeanWeb.WorkspaceLive.Schedules do
 
   defp revise_prompt(entry) do
     "把「#{entry.name}」改成："
+  end
+
+  attr :id, :string, required: true
+  attr :workspaces, :list, required: true
+  attr :workspace_id, :any, required: true
+
+  def workspace_picker(assigns) do
+    ~H"""
+    <form id={"#{@id}-form"} phx-change="schedule_workspace" class="schedule-workspace-switch">
+      <select id={@id} name="workspace_id" aria-label={gettext("当前工作区")}>
+        <option :for={ws <- @workspaces} value={ws["id"]} selected={ws["id"] == @workspace_id}>
+          {ws["name"]}
+        </option>
+      </select>
+    </form>
+    """
   end
 
   defp clock_icon(assigns) do

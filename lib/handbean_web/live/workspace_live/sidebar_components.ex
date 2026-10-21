@@ -12,9 +12,7 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarComponents do
 
   attr :chat_scope, :any, required: true
   attr :conversations_by_workspace, :any, required: true
-  attr :current_conversation_id, :any, required: true
   attr :current_workspace_id, :any, required: true
-  attr :terminal_available?, :any, required: true
   attr :workspace_label, :any, required: true
   attr :workspaces, :any, required: true
   attr :show_schedules, :boolean, default: false

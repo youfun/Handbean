@@ -637,6 +637,9 @@ defmodule HandbeanWeb.WorkspaceLive do
   def handle_event("schedule_select", params, socket),
     do: ScheduleEvents.handle("schedule_select", params, socket)
 
+  def handle_event("schedule_workspace", params, socket),
+    do: ScheduleEvents.handle("schedule_workspace", params, socket)
+
   def handle_event("schedule_filter", params, socket),
     do: ScheduleEvents.handle("schedule_filter", params, socket)
 
@@ -901,7 +904,7 @@ defmodule HandbeanWeb.WorkspaceLive do
   defdelegate reasoning_label(level), to: ViewComponents
   defdelegate relative_time(conv), to: ViewComponents
 
-  defdelegate any_sheet_open?(show_workspace, show_model, show_reasoning, show_settings),
+  defdelegate any_sheet_open?(show_workspace, show_model, show_reasoning),
     to: ViewComponents
 
   defdelegate settings_href(workspace_id, conversation_id), to: ViewComponents

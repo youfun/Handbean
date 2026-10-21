@@ -635,10 +635,10 @@ defmodule HandbeanWeb.WorkspaceLive.NavigationAndFreeChatTest do
       {:ok, view, _html} = live(conn, "/c/#{conversation["id"]}")
 
       view
-      |> element("button[phx-click='open_sheet'][phx-value-type='settings']")
+      |> element("button[phx-click='open_sheet'][phx-value-type='workspace']")
       |> render_click()
 
-      assert has_element?(view, "#mobile-delete-conversation")
+      assert has_element?(view, "#workspace-sheet #mobile-delete-conversation")
       view |> element("#mobile-delete-conversation") |> render_click()
       assert has_element?(view, "#delete-conversation-dialog")
     end

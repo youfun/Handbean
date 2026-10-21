@@ -207,7 +207,6 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationEvents do
            socket
            |> assign(:conversation_menu_id, nil)
            |> assign(:rename_conversation, nil)
-           |> assign(:show_settings_sheet, false)
            |> assign(:delete_conversation, Map.put(preview, :error, nil))}
         else
           {:noreply, assign(socket, :conversation_menu_id, nil)}

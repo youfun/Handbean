@@ -212,6 +212,54 @@ defmodule HandbeanWeb.WorkspaceLive.ScheduleCenterTest do
     end
   end
 
+  describe "workspace scope" do
+    test "the center follows the workspace you entered and can switch", %{conn: conn} do
+      default_task = create_weekly("默认区任务")
+
+      project_dir =
+        Path.join(System.tmp_dir!(), "sigil_schedule_ws_#{System.unique_integer([:positive])}")
+
+      File.mkdir_p!(project_dir)
+
+      try do
+        {:ok, project} = Handbean.WorkspaceStore.add(project_dir, name: "Schedule Scope")
+        {:ok, conversation} = Handbean.ConversationStore.create(project["id"], title: "项目对话")
+
+        {:ok, project_task} =
+          Store.create(%{
+            workspace_id: project["id"],
+            conversation_id: conversation["id"],
+            name: "项目任务",
+            instruction: "只属于这个工作区",
+            time_zone: @zone,
+            model: "fake/model",
+            rule: %{"kind" => "weekly", "weekdays" => [1], "times" => ["09:00"]}
+          })
+
+        {:ok, view, _html} = live(conn, "/w/#{project["id"]}/c/#{conversation["id"]}")
+        view |> element("#schedule-nav") |> render_click()
+
+        assert has_element?(view, "#schedule-center")
+        assert has_element?(view, "#schedule-workspace")
+        assert has_element?(view, "#schedule-#{project_task.id}")
+        refute has_element?(view, "#schedule-#{default_task.id}")
+        assert render(view) =~ "任务会在「Schedule Scope」的新对话中运行并返回结果"
+
+        view
+        |> form("#schedule-workspace-form", %{"workspace_id" => "default"})
+        |> render_change()
+
+        assert has_element?(view, "#schedule-center")
+        assert has_element?(view, "#schedule-#{default_task.id}")
+        refute has_element?(view, "#schedule-#{project_task.id}")
+        {:ok, default} = Handbean.WorkspaceStore.get("default")
+        assert render(view) =~ "任务会在「#{default["name"]}」的新对话中运行并返回结果"
+      after
+        File.rm_rf!(project_dir)
+      end
+    end
+  end
+
   describe "task center detail" do
     test "selecting a task shows its instruction and run history", %{conn: conn} do
       schedule = create_weekly("检查编译", instruction: "读取 workflow 状态并汇报")

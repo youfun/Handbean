@@ -71,6 +71,22 @@
     background: var(--color-bg-surface-hover);
   }
 
+  .mobile-header-v2 .schedule-workspace-switch {
+    flex: 1 1 auto;
+    max-width: none;
+    min-width: 0;
+  }
+
+  .mobile-header-v2 .schedule-workspace-switch select {
+    height: 44px;
+    min-height: 44px;
+    font-size: 16px;
+    font-weight: 600;
+    border: 0;
+    background: transparent;
+    padding: 0 4px;
+  }
+
   .mobile-header-title {
     min-height: 0;
     display: flex;
@@ -118,7 +134,6 @@
   }
 
   .mobile-header-panel-btn,
-  .mobile-header-info-btn,
   .mobile-header-settings-btn {
     display: inline-flex;
     align-items: center;
@@ -137,7 +152,6 @@
   }
 
   .mobile-header-panel-btn svg,
-  .mobile-header-info-btn svg,
   .mobile-header-settings-btn svg {
     width: 18px;
     height: 18px;
@@ -150,7 +164,6 @@
   }
 
   .mobile-header-panel-btn:hover,
-  .mobile-header-info-btn:hover,
   .mobile-header-settings-btn:hover {
     color: var(--color-text-primary);
     background: color-mix(in srgb, var(--color-bg-main) 70%, transparent);

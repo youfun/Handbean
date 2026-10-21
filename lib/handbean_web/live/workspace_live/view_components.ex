@@ -183,8 +183,8 @@ defmodule HandbeanWeb.WorkspaceLive.ViewComponents do
   defp format_short_age(diff) when diff < 86_400 * 365, do: "#{div(diff, 86_400 * 30)}mo"
   defp format_short_age(diff), do: "#{div(diff, 86_400 * 365)}y"
 
-  def any_sheet_open?(show_workspace, show_model, show_reasoning, show_settings) do
-    show_workspace or show_model or show_reasoning or show_settings
+  def any_sheet_open?(show_workspace, show_model, show_reasoning) do
+    show_workspace or show_model or show_reasoning
   end
 
   def settings_href(workspace_id, conversation_id) do

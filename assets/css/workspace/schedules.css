@@ -166,6 +166,28 @@
   line-height: 1.4;
 }
 
+.schedule-workspace-switch {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 240px;
+  vertical-align: middle;
+}
+
+.schedule-workspace-switch select {
+  width: 100%;
+  min-width: 7rem;
+  max-width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--sig-border-default);
+  border-radius: var(--sig-radius-lg, 10px);
+  background: var(--sig-bg-elevated);
+  color: var(--sig-text-primary);
+  font: inherit;
+  font-size: 12px;
+}
+
 /* create + filters ------------------------------------------------ */
 
 .schedule-toolbar {

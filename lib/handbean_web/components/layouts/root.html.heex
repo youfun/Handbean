@@ -35,6 +35,11 @@
       .bottom-sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 51; background: var(--sig-bg-elevated); border-radius: 20px 20px 0 0; max-height: min(76dvh, calc(100dvh - var(--safe-top) - 12px)); overflow: hidden; transform: translateY(100%); transition: transform 0.32s cubic-bezier(0.22,1,0.36,1); padding-bottom: var(--safe-bottom); box-shadow: 0 -8px 40px rgba(0,0,0,0.12); display: flex; flex-direction: column; }
       .bottom-sheet.open { transform: translateY(0); }
       .bottom-sheet.dragging { transition: none !important; }
+
+      /* ── Left Drawer (conversation list; matches the native client) ── */
+      .bottom-sheet.left-drawer { top: 0; left: 0; right: auto; width: min(84vw, 360px); max-height: none; border-radius: 0 12px 12px 0; transform: translateX(-105%); padding-top: var(--safe-top); box-shadow: 8px 0 40px rgba(0,0,0,0.12); }
+      .bottom-sheet.left-drawer.open { transform: translateX(0); }
+      .bottom-sheet.left-drawer .sheet-handle { display: none; }
       .bottom-sheet-inner { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 0 16px; }
       .sheet-handle { width: 36px; height: 4px; background: var(--sig-border-emphasis); border-radius: 2px; margin: 10px auto 8px; cursor: grab; position: relative; touch-action: none; flex-shrink: 0; }
       .sheet-handle::after { content: ''; position: absolute; top: -16px; left: -24px; right: -24px; bottom: -16px; }
@@ -62,6 +67,11 @@
 
       .sheet-add-row { display: flex; align-items: center; gap: 12px; padding: 14px 20px; font-size: 13px; color: var(--sig-accent); font-weight: 500; border: none; background: transparent; width: 100%; text-align: left; cursor: pointer; outline: none; transition: background 0.12s; min-height: 44px; touch-action: manipulation; border-top: 1px solid var(--sig-border-subtle); margin-top: 8px; }
       .sheet-add-row:active { background: var(--sig-bg-surface-hover); }
+
+      /* Drawer footer: app entries in the conversation list. */
+      .sheet-drawer-footer { border-top: 1px solid var(--sig-border-subtle); margin-top: 8px; padding: 8px 0 16px; }
+      .sheet-drawer-footer .sheet-primary-row { background: transparent; font-weight: 500; margin: 0 8px; width: calc(100% - 16px); }
+      .sheet-drawer-footer .sheet-primary-row.mobile-settings-delete { color: var(--sig-error, #b42318); }
 
       .sheet-select-row { display: flex; align-items: center; gap: 8px; padding: 11px 20px; font-size: 14px; color: var(--sig-text-primary); border: none; background: transparent; width: 100%; text-align: left; cursor: pointer; outline: none; transition: background 0.12s; min-height: 44px; touch-action: manipulation; }
       .sheet-select-row:active, .sheet-select-row:hover { background: var(--sig-bg-surface-hover); }

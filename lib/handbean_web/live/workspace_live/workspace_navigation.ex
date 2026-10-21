@@ -181,6 +181,7 @@ defmodule HandbeanWeb.WorkspaceLive.WorkspaceNavigation do
 
   def show_files_mobile(socket) do
     socket
+    |> close_sheet_panels()
     |> assign(:mobile_right_panel_open, true)
     |> select_panel("files")
   end
@@ -207,7 +208,6 @@ defmodule HandbeanWeb.WorkspaceLive.WorkspaceNavigation do
       "workspace" -> assign(socket, :show_workspace_sheet, true)
       "model" -> assign(socket, :show_model_sheet, true)
       "reasoning" -> assign(socket, :show_reasoning_sheet, true)
-      "settings" -> assign(socket, :show_settings_sheet, true)
       _ -> socket
     end
   end
@@ -217,7 +217,6 @@ defmodule HandbeanWeb.WorkspaceLive.WorkspaceNavigation do
     |> assign(:show_workspace_sheet, false)
     |> assign(:show_model_sheet, false)
     |> assign(:show_reasoning_sheet, false)
-    |> assign(:show_settings_sheet, false)
     |> assign(:show_permission_menu, false)
     |> assign(:show_file_drawer, false)
   end
@@ -398,6 +397,9 @@ defmodule HandbeanWeb.WorkspaceLive.WorkspaceNavigation do
     end
 
     socket
+    |> then(fn socket ->
+      if mobile?, do: close_sheet_panels(socket), else: socket
+    end)
     |> assign(:show_terminal, true)
     |> assign(:right_panel_view, :terminal)
     |> assign(:right_panel_collapsed, false)
@@ -446,7 +448,6 @@ defmodule HandbeanWeb.WorkspaceLive.WorkspaceNavigation do
     |> assign(:show_workspace_sheet, false)
     |> assign(:show_model_sheet, false)
     |> assign(:show_reasoning_sheet, false)
-    |> assign(:show_settings_sheet, false)
     |> assign(:show_permission_menu, false)
     |> assign(:show_file_drawer, false)
     |> assign(:conversation_menu_id, nil)

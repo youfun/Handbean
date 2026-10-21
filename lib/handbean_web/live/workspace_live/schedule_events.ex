@@ -38,6 +38,15 @@ defmodule HandbeanWeb.WorkspaceLive.ScheduleEvents do
     {:noreply, Schedules.select(socket, id)}
   end
 
+  def handle("schedule_workspace", params, socket) do
+    ws_id = Map.get(params, "workspace_id") || Map.get(params, "id")
+
+    case ConversationRouting.switch_schedule_workspace(socket, ws_id) do
+      {:ok, socket} -> {:noreply, socket}
+      {:error, socket} -> {:noreply, socket}
+    end
+  end
+
   def handle("schedule_filter", %{"filter" => filter}, socket) do
     {:noreply, Schedules.set_filter(socket, filter)}
   end

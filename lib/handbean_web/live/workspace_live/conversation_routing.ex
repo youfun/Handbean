@@ -11,6 +11,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRouting do
   alias HandbeanWeb.WorkspaceLive.MessageSubmission
   alias HandbeanWeb.WorkspaceLive.ModelSelection
   alias HandbeanWeb.WorkspaceLive.RuntimeProjection
+  alias HandbeanWeb.WorkspaceLive.Schedules
   alias HandbeanWeb.WorkspaceLive.WorkspaceNavigation
 
   def ask_schedule_in_place(socket, text) do
@@ -34,7 +35,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRouting do
   end
 
   def ask_schedule_in_new_conversation(socket, text) do
-    case open_default_workspace_conversation(socket) do
+    case open_current_workspace_conversation(socket) do
       {:ok, socket, ws_id, conv_id} ->
         {:noreply, socket} =
           socket
@@ -48,18 +49,45 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRouting do
     end
   end
 
-  defp open_default_workspace_conversation(socket) do
-    case default_workspace(socket) do
-      %{"id" => ws_id} = ws ->
+  def switch_schedule_workspace(socket, ws_id) when is_binary(ws_id) do
+    if socket.assigns.current_workspace_id == ws_id do
+      {:ok, socket}
+    else
+      case workspace_by_id(socket, ws_id) do
+        %{"id" => ^ws_id} ->
+          socket = drop_composer_for_switch(socket)
+          socket = WorkspaceNavigation.expand_group(socket, ws_id)
+          {socket, conv_id} = ConversationSwitching.select_workspace(socket, ws_id)
+
+          {:ok,
+           socket
+           |> WorkspaceNavigation.after_switch()
+           |> RuntimeProjection.subscribe_session()
+           |> restore_session()
+           |> WorkspaceNavigation.close_mobile_sheets()
+           |> assign(:show_schedules, true)
+           |> Schedules.reload()
+           |> push_patch(to: "/w/#{ws_id}/c/#{conv_id}")}
+
+        _missing ->
+          {:error, assign(socket, :schedule_error, gettext("找不到工作区"))}
+      end
+    end
+  end
+
+  def switch_schedule_workspace(socket, _ws_id) do
+    {:error, assign(socket, :schedule_error, gettext("找不到工作区"))}
+  end
+
+  defp open_current_workspace_conversation(socket) do
+    ws_id = socket.assigns.current_workspace_id
+
+    case workspace_by_id(socket, ws_id) do
+      %{"id" => ^ws_id} ->
         socket = CliSelection.prepare_switch(socket)
 
         {socket, conv_id} =
-          ConversationSwitching.new_conversation(
-            socket,
-            ws_id,
-            ModelSelection.switching_opts()
-            |> Keyword.put(:checkout_path, ws["default_checkout_path"])
-          )
+          ConversationSwitching.new_conversation(socket, ws_id, ModelSelection.switching_opts())
 
         socket =
           socket
@@ -68,18 +96,16 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRouting do
 
         {:ok, socket, ws_id, conv_id}
 
-      nil ->
-        {:error, assign(socket, :schedule_error, gettext("找不到默认工作区"))}
+      _missing ->
+        {:error, assign(socket, :schedule_error, gettext("找不到工作区"))}
     end
   end
 
-  defp default_workspace(socket) do
-    Enum.find(socket.assigns.workspaces || [], &(&1["default"] == true)) ||
-      case Handbean.WorkspaceStore.ensure_default!() do
-        {:ok, workspace} -> workspace
-        {:error, _reason} -> nil
-      end
+  defp workspace_by_id(socket, ws_id) when is_binary(ws_id) do
+    Enum.find(socket.assigns.workspaces || [], &(&1["id"] == ws_id))
   end
+
+  defp workspace_by_id(_socket, _ws_id), do: nil
 
   def begin_conversation_in_workspace(socket, ws_id, opts) do
     close_sheets? = Keyword.get(opts, :close_sheets?, false)

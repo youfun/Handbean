@@ -7,9 +7,8 @@ defmodule HandbeanWeb.WorkspaceLive.AgentEventsAndSchedulesTest do
 
       send(view.pid, {:agent_event, agent_event(:run_start, %{model: "claude-sonnet"})})
 
-      rendered = render(view)
-      assert rendered =~ "running"
-      assert rendered =~ "claude-sonnet"
+      assert has_element?(view, "#status-label", "running")
+      assert has_element?(view, ~s(#status-bar[data-model="claude-sonnet"]))
     end
 
     test "run_start event via bare struct (no tuple wrapper)", %{conn: conn} do
@@ -17,9 +16,8 @@ defmodule HandbeanWeb.WorkspaceLive.AgentEventsAndSchedulesTest do
 
       send(view.pid, agent_event(:run_start, %{model: "claude-haiku"}))
 
-      rendered = render(view)
-      assert rendered =~ "running"
-      assert rendered =~ "claude-haiku"
+      assert has_element?(view, "#status-label", "running")
+      assert has_element?(view, ~s(#status-bar[data-model="claude-haiku"]))
     end
 
     test "message_delta appends a new assistant message", %{conn: conn} do
@@ -241,7 +239,7 @@ defmodule HandbeanWeb.WorkspaceLive.AgentEventsAndSchedulesTest do
       refute has_element?(view, "#once-schedule-dock")
     end
 
-    test "creating a schedule from the center opens a new default-workspace conversation", %{
+    test "creating a schedule from the center opens a conversation in the current workspace", %{
       conn: conn
     } do
       project_dir =
@@ -263,7 +261,8 @@ defmodule HandbeanWeb.WorkspaceLive.AgentEventsAndSchedulesTest do
 
         view |> element("#schedule-nav") |> render_click()
         assert has_element?(view, "#schedule-center")
-        assert render(view) =~ "任务会在默认工作区的新对话中运行并返回结果"
+        assert has_element?(view, "#schedule-workspace")
+        assert render(view) =~ "任务会在「Schedule Project」的新对话中运行并返回结果"
 
         request = "工作日每天 09:00，把项目摘要发到这个聊天"
 
@@ -278,7 +277,7 @@ defmodule HandbeanWeb.WorkspaceLive.AgentEventsAndSchedulesTest do
         assert new_id != origin_id
         assert new_id != conversation["id"]
         assert {:ok, created} = Handbean.ConversationStore.get(new_id, include_timeline?: false)
-        assert created["workspace_id"] == "default"
+        assert created["workspace_id"] == project["id"]
         assert html =~ request
         refute render(view) =~ ~s(data-session-id="#{conversation["id"]}")
       after
