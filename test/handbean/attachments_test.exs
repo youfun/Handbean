@@ -571,6 +571,195 @@ defmodule Handbean.AttachmentsTest do
     assert edited.content == "edited after first boundary"
   end
 
+  test "history compaction rebuild leads with a user message when the first entry is an assistant message" do
+    {:ok, conv} = Handbean.ConversationStore.create("default")
+    id = conv["id"]
+
+    append = fn entry ->
+      {:ok, persisted} = Handbean.ConversationTranscriptStore.append(id, entry)
+      persisted
+    end
+
+    # Imported or injected histories can start with an assistant entry. The
+    # rebuilt context must still lead with a user message: providers reject an
+    # assistant-first context (the Pi Durable #10904 lesson).
+    assistant_first =
+      append.(%{
+        "id" => "lead-assistant-1",
+        "content_type" => "assistant_msg",
+        "message_type" => "assistant",
+        "role" => "assistant",
+        "content" => "greeting before any user turn",
+        "status" => "completed"
+      })
+
+    user_entry =
+      append.(%{
+        "id" => "lead-user-1",
+        "content_type" => "user_msg",
+        "message_type" => "user",
+        "role" => "user",
+        "content" => "the actual task"
+      })
+
+    recent_entry =
+      append.(%{
+        "id" => "lead-assistant-2",
+        "content_type" => "assistant_msg",
+        "message_type" => "assistant",
+        "role" => "assistant",
+        "content" => "recent answer",
+        "status" => "completed"
+      })
+
+    [first, user_message, _recent] =
+      History.to_messages([assistant_first, user_entry, recent_entry], nil, id)
+
+    assert first.role == :assistant
+
+    assert {:ok, checkpoint} =
+             Handbean.Agent.CompactionCheckpoint.persist(
+               id,
+               %{
+                 first: first,
+                 previous_summary: nil,
+                 messages_to_summarize: [user_message],
+                 summary: "handoff summary",
+                 context_edited: false,
+                 context_generation: 0,
+                 context_window: 272_000,
+                 model: "gpt-5.6-sol",
+                 run_id: "run-1"
+               },
+               []
+             )
+
+    [head | _rest] =
+      id |> Handbean.ConversationStore.load_messages() |> History.to_messages(nil, id)
+
+    assert head.role == :user
+    assert head.id == checkpoint["id"]
+    assert head.content =~ "handoff summary"
+  end
+
+  test "history compaction rebuild keeps a user first entry in front of the summary" do
+    {:ok, conv} = Handbean.ConversationStore.create("default")
+    id = conv["id"]
+
+    append = fn entry ->
+      {:ok, persisted} = Handbean.ConversationTranscriptStore.append(id, entry)
+      persisted
+    end
+
+    first_entry =
+      append.(%{
+        "id" => "userlead-user-1",
+        "content_type" => "user_msg",
+        "message_type" => "user",
+        "role" => "user",
+        "content" => "original task"
+      })
+
+    old_entry =
+      append.(%{
+        "id" => "userlead-assistant-1",
+        "content_type" => "assistant_msg",
+        "message_type" => "assistant",
+        "role" => "assistant",
+        "content" => "old answer",
+        "status" => "completed"
+      })
+
+    [first, old] = History.to_messages([first_entry, old_entry], nil, id)
+
+    assert {:ok, checkpoint} =
+             Handbean.Agent.CompactionCheckpoint.persist(
+               id,
+               %{
+                 first: first,
+                 previous_summary: nil,
+                 messages_to_summarize: [old],
+                 summary: "durable summary",
+                 context_edited: false,
+                 context_generation: 0,
+                 context_window: 272_000,
+                 model: "gpt-5.6-sol",
+                 run_id: "run-1"
+               },
+               []
+             )
+
+    [head, summary] =
+      id |> Handbean.ConversationStore.load_messages() |> History.to_messages(nil, id)
+
+    assert head.role == :user
+    assert head.id == first_entry["id"]
+    assert summary.role == :user
+    assert summary.id == checkpoint["id"]
+  end
+
+  test "history falls back to full replay when the checkpoint digest no longer matches" do
+    {:ok, conv} = Handbean.ConversationStore.create("default")
+    id = conv["id"]
+
+    append = fn entry ->
+      {:ok, persisted} = Handbean.ConversationTranscriptStore.append(id, entry)
+      persisted
+    end
+
+    first_entry =
+      append.(%{
+        "id" => "digest-user-1",
+        "content_type" => "user_msg",
+        "message_type" => "user",
+        "role" => "user",
+        "content" => "original task"
+      })
+
+    old_entry =
+      append.(%{
+        "id" => "digest-assistant-1",
+        "content_type" => "assistant_msg",
+        "message_type" => "assistant",
+        "role" => "assistant",
+        "content" => "old answer",
+        "status" => "completed"
+      })
+
+    [first, old] = History.to_messages([first_entry, old_entry], nil, id)
+
+    assert {:ok, checkpoint} =
+             Handbean.Agent.CompactionCheckpoint.persist(
+               id,
+               %{
+                 first: first,
+                 previous_summary: nil,
+                 messages_to_summarize: [old],
+                 summary: "durable summary",
+                 context_edited: false,
+                 context_generation: 0,
+                 context_window: 272_000,
+                 model: "gpt-5.6-sol",
+                 run_id: "run-1"
+               },
+               []
+             )
+
+    # Editing a covered source entry invalidates the checkpoint digest, so the
+    # projection must reject it and rebuild the full history instead.
+    assert {:ok, _updated} =
+             Handbean.ConversationTranscriptStore.update(id, old_entry["id"], %{
+               "content" => "tampered after checkpoint"
+             })
+
+    messages = id |> Handbean.ConversationStore.load_messages() |> History.to_messages(nil, id)
+
+    assert Enum.all?(messages, &(&1.id != checkpoint["id"]))
+    assert [%{role: :user}, %{role: :assistant}] = messages
+    assert hd(messages).content == "original task"
+    assert Enum.at(messages, 1).content == "tampered after checkpoint"
+  end
+
   test "history restore is what Coordinator uses for later turns", %{dir: dir} do
     workspace = Path.join(dir, "ws")
     File.mkdir_p!(workspace)

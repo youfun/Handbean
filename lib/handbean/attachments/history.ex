@@ -2,6 +2,10 @@ defmodule Handbean.Attachments.History do
   @moduledoc """
   Rebuild provider messages from persisted attachment references.
   Missing or invalid images become explicit text, never silent text-only history.
+
+  A rebuilt context always leads with a user message: after a compaction, a
+  leading assistant entry (imported or injected history) is dropped in favor
+  of the checkpoint summary, which is a user message.
   """
 
   alias Handbean.Agent.{CompactionCheckpoint, Compactor}
@@ -31,7 +35,7 @@ defmodule Handbean.Attachments.History do
           |> Enum.flat_map(&to_messages(&1, workspace_path, conversation_id))
           |> retain_recent_reasoning(@reasoning_replay_recent_tokens)
 
-        first ++ [summary] ++ suffix
+        drop_leading_assistant(first) ++ [summary] ++ suffix
 
       :none ->
         entries
@@ -72,6 +76,15 @@ defmodule Handbean.Attachments.History do
   end
 
   def to_messages(_, _, _), do: []
+
+  # A rebuilt context must lead with a user message: providers reject an
+  # assistant-first context, and a leading assistant entry (imported or
+  # injected history) has no user turn of its own. The checkpoint summary
+  # that follows is a user message, so dropping leading assistant messages
+  # keeps the lead valid without losing the handoff.
+  defp drop_leading_assistant(messages) do
+    Enum.drop_while(messages, &(&1.role == :assistant))
+  end
 
   defp retain_recent_reasoning(messages, token_budget) do
     {kept, _tokens} =
