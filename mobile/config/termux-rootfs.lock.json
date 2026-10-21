@@ -1,8 +1,8 @@
 {
   "abi": "arm64-v8a",
   "index_path": "dists/stable/main/binary-aarch64/Packages",
-  "index_sha256": "8cff856f547411f24f9acdf1b4132fdebeed3161d5f0188ed2ed8825cfd71b2d",
-  "inrelease_sha256": "2a36e9ef0aeaf7e0b7fe2eae51b4106122c1074b67a6487798b3105276f78af6",
+  "index_sha256": "2671d23e607c967d6494a71ca9a5845fc0eb4cf974f5284c5b8bb41ea7790b36",
+  "inrelease_sha256": "29c9d2dbf77f5b179844d19077f3453a91f793446bc9edfa6cae166ba0d520f9",
   "lock_version": 1,
   "packages": [
     {
@@ -122,13 +122,13 @@
     {
       "architecture": "all",
       "description": "Common CA certificates",
-      "download_size": 105404,
-      "filename": "pool/main/c/ca-certificates/ca-certificates_1:2026.09.25_all.deb",
+      "download_size": 110132,
+      "filename": "pool/main/c/ca-certificates/ca-certificates_1:2026.10.20_all.deb",
       "homepage": "https://curl.se/docs/caextract.html",
-      "installed_size_kib": 232,
+      "installed_size_kib": 240,
       "name": "ca-certificates",
-      "sha256": "57fab24bf4561bfdd35afe71bc1929914e51c35458cfd1fca2b15e54bc8df7af",
-      "version": "1:2026.09.25"
+      "sha256": "2186ab9752ae1e705eea6fd69af0c114715b7a1b2a0b4d239ae59371b6001984",
+      "version": "1:2026.10.20"
     },
     {
       "architecture": "aarch64",
@@ -857,3 +857,4 @@
   "target_application_id": "io.hndbean",
   "target_prefix": "/data/data/io.hndbean/files/usr"
 }
+
