@@ -166,65 +166,80 @@ defmodule Handbean.ConversationStore.Deletion do
   @doc false
   def finalize(root_id, conversation_ids, media_ids)
       when is_binary(root_id) and is_list(conversation_ids) and is_list(media_ids) do
-    Repo.transaction(fn ->
-      current_rows = subtree(root_id)
-      current_ids = Enum.map(current_rows, & &1.id)
+    with {:ok, :ok} <-
+           Repo.transaction(fn ->
+             _current_rows = validated_delete_rows!(root_id, conversation_ids, media_ids)
+             :ok
+           end),
+         :ok <- Handbean.ConversationArtifacts.delete_items(conversation_ids) do
+      Repo.transaction(fn ->
+        current_rows = validated_delete_rows!(root_id, conversation_ids, media_ids)
 
-      root_has_pending_parent? =
-        case current_rows do
-          [%{parent_conversation_id: parent_id} | _] when is_binary(parent_id) ->
-            Repo.exists?(
-              from parent in Conversation,
-                where: parent.id == ^parent_id and parent.status == "pending_delete"
-            )
+        Repo.delete_all(from media in ConversationMedia, where: media.id in ^media_ids)
 
-          _ ->
-            false
-        end
-
-      current_media_ids =
-        Repo.all(
-          from media in ConversationMedia,
-            where: media.conversation_id in ^conversation_ids,
-            select: media.id
+        Repo.delete_all(
+          from receipt in OperationReceipt,
+            where: receipt.scope_id in ^conversation_ids
         )
 
-      if root_has_pending_parent? or
-           Enum.any?(current_rows, &(&1.status != "pending_delete")) or
-           MapSet.new(current_ids) != MapSet.new(conversation_ids) or
-           MapSet.new(current_media_ids) != MapSet.new(media_ids) do
-        Repo.rollback(:delete_set_changed)
-      end
+        by_id = Map.new(current_rows, &{&1.id, &1})
 
-      Repo.delete_all(from media in ConversationMedia, where: media.id in ^media_ids)
+        current_rows
+        |> Enum.sort_by(&depth(&1, by_id), :desc)
+        |> Enum.each(fn conversation ->
+          {count, _} =
+            Repo.delete_all(
+              from row in Conversation,
+                where: row.id == ^conversation.id and row.status == "pending_delete"
+            )
 
-      Repo.delete_all(
-        from receipt in OperationReceipt,
-          where: receipt.scope_id in ^conversation_ids
-      )
+          if count != 1, do: Repo.rollback(:delete_set_changed)
+        end)
 
-      by_id = Map.new(current_rows, &{&1.id, &1})
-
-      current_rows
-      |> Enum.sort_by(&depth(&1, by_id), :desc)
-      |> Enum.each(fn conversation ->
-        {count, _} =
-          Repo.delete_all(
-            from row in Conversation,
-              where: row.id == ^conversation.id and row.status == "pending_delete"
-          )
-
-        if count != 1, do: Repo.rollback(:delete_set_changed)
+        :ok
       end)
-
-      :ok
-    end)
-    |> case do
-      {:ok, :ok} -> :ok
+      |> case do
+        {:ok, :ok} -> :ok
+        {:error, reason} -> {:error, reason}
+      end
+    else
       {:error, reason} -> {:error, reason}
     end
   rescue
     error in Ecto.ConstraintError -> {:error, {:constraint, error.constraint}}
+  end
+
+  defp validated_delete_rows!(root_id, conversation_ids, media_ids) do
+    current_rows = subtree(root_id)
+    current_ids = Enum.map(current_rows, & &1.id)
+
+    root_has_pending_parent? =
+      case current_rows do
+        [%{parent_conversation_id: parent_id} | _] when is_binary(parent_id) ->
+          Repo.exists?(
+            from parent in Conversation,
+              where: parent.id == ^parent_id and parent.status == "pending_delete"
+          )
+
+        _ ->
+          false
+      end
+
+    current_media_ids =
+      Repo.all(
+        from media in ConversationMedia,
+          where: media.conversation_id in ^conversation_ids,
+          select: media.id
+      )
+
+    if root_has_pending_parent? or
+         Enum.any?(current_rows, &(&1.status != "pending_delete")) or
+         MapSet.new(current_ids) != MapSet.new(conversation_ids) or
+         MapSet.new(current_media_ids) != MapSet.new(media_ids) do
+      Repo.rollback(:delete_set_changed)
+    end
+
+    current_rows
   end
 
   defp subtree(id) do

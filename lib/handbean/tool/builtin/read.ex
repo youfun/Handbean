@@ -19,7 +19,7 @@ defmodule Handbean.Tool.Builtin.Read do
 
   @impl true
   def description do
-    "Read file contents. Supports pagination with offset/limit. " <>
+    "Read file contents. Supports pagination with offset/limit and conversation artifact references. " <>
       "Detects binary and image files automatically. An external path requires per-call approval unless the run is yolo."
   end
 
@@ -37,7 +37,8 @@ defmodule Handbean.Tool.Builtin.Read do
         file_path: %{
           type: "string",
           description:
-            "Absolute or relative file path. External paths require per-call approval unless the run is yolo."
+            "Absolute or relative file path, or a conversation_artifact: reference returned by a tool. " <>
+              "External paths require per-call approval unless the run is yolo."
         },
         offset: %{
           type: "integer",
@@ -61,15 +62,12 @@ defmodule Handbean.Tool.Builtin.Read do
     offset = Map.get(input, "offset", 0)
     limit = Map.get(input, "limit", @default_limit)
 
-    with {:ok, resolved} <-
-           Handbean.Agent.Tool.resolve_path(Helpers.expand_tilde(file_path), context, :read),
-         :ok <- validate_exists(resolved),
-         :ok <- validate_not_dir(resolved),
-         :ok <- validate_readable(resolved) do
-      if binary_file?(resolved) do
-        read_image(resolved)
-      else
-        read_text(resolved, offset, limit)
+    if Handbean.ConversationArtifacts.tool_result_ref?(file_path) do
+      read_conversation_artifact(file_path, context, offset, limit)
+    else
+      with {:ok, resolved} <-
+             Handbean.Agent.Tool.resolve_path(Helpers.expand_tilde(file_path), context, :read) do
+        read_resolved(resolved, offset, limit)
       end
     end
   end
@@ -79,6 +77,39 @@ defmodule Handbean.Tool.Builtin.Read do
   end
 
   # ── Path handling ──
+
+  defp read_conversation_artifact(ref, context, offset, limit) do
+    result =
+      Handbean.ConversationArtifacts.with_tool_result(ref, context, fn path ->
+        path
+        |> read_resolved(offset, limit)
+        |> present_input_path(ref)
+      end)
+
+    case result do
+      {:ok, _content, _metadata} = success -> success
+      _ -> {:error, "conversation artifact is unavailable"}
+    end
+  rescue
+    File.Error -> {:error, "conversation artifact is unavailable"}
+  end
+
+  defp read_resolved(path, offset, limit) do
+    with :ok <- validate_exists(path),
+         :ok <- validate_not_dir(path),
+         :ok <- validate_readable(path) do
+      if binary_file?(path) do
+        read_image(path)
+      else
+        read_text(path, offset, limit)
+      end
+    end
+  end
+
+  defp present_input_path({:ok, content, metadata}, file_path),
+    do: {:ok, content, Map.put(metadata, :file_path, file_path)}
+
+  defp present_input_path(result, _file_path), do: result
 
   # ── Validation ──
 

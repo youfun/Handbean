@@ -73,6 +73,11 @@ defmodule Handbean.ConversationDeletionTest do
     assert Repo.get!(Conversation, child["id"]).status == "pending_delete"
     assert Repo.get!(ConversationMedia, media.id).status == "pending_delete"
 
+    assert {:error, :invalid_or_inactive_conversation} =
+             Handbean.ConversationArtifacts.persist_tool_result("late output", %{
+               conversation_id: parent["id"]
+             })
+
     assert {:error, :not_found} =
              ConversationTranscriptStore.append(parent["id"], %{
                "id" => "late-entry",
@@ -124,6 +129,18 @@ defmodule Handbean.ConversationDeletionTest do
         filename: "cleaner.png"
       )
 
+    artifact_path =
+      Path.join([
+        Handbean.ConversationArtifacts.root(),
+        "items",
+        conversation["id"],
+        "tool-results",
+        "spill-test.txt"
+      ])
+
+    File.mkdir_p!(Path.dirname(artifact_path))
+    File.write!(artifact_path, "artifact")
+
     assert {:ok, {:send_file, path}} = Media.delivery(%{media | status: "ready"})
     assert File.exists?(path)
     conversation_id = conversation["id"]
@@ -133,6 +150,7 @@ defmodule Handbean.ConversationDeletionTest do
     assert %{failed: 0} = Handbean.Media.Cleaner.run_now()
 
     refute File.exists?(path)
+    refute File.exists?(artifact_path)
     refute Repo.get(ConversationMedia, media.id)
     refute Repo.get(Conversation, conversation["id"])
   end
@@ -179,6 +197,34 @@ defmodule Handbean.ConversationDeletionTest do
            } = Repo.get(ConversationMedia, media.id)
 
     assert storage_key == "#{conversation["id"]}/#{media.id}.png"
+  end
+
+  test "artifact cleanup failure keeps deletion pending and retries", do: artifact_cleanup_retry()
+
+  defp artifact_cleanup_retry do
+    {:ok, conversation} =
+      ConversationStore.create("workspace", id: "delete-artifact-retry", title: "Retry artifacts")
+
+    root = Handbean.ConversationArtifacts.root()
+    items = Path.join(root, "items")
+    outside = Path.join(Path.dirname(root), "outside-artifacts")
+    item = Path.join(items, conversation["id"])
+
+    File.mkdir_p!(items)
+    File.mkdir_p!(outside)
+    File.ln_s!(outside, item)
+
+    assert {:ok, [_]} = ConversationStore.request_delete(conversation["id"])
+    age_pending_delete(conversation["id"])
+
+    assert %{failed: failed} = Handbean.Media.Cleaner.run_now()
+    assert failed > 0
+    assert %Conversation{status: "pending_delete"} = Repo.get(Conversation, conversation["id"])
+
+    File.rm!(item)
+
+    assert %{failed: 0} = Handbean.Media.Cleaner.run_now()
+    refute Repo.get(Conversation, conversation["id"])
   end
 
   defp age_pending_delete(conversation_id) do

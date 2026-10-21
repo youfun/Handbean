@@ -172,6 +172,71 @@ defmodule Handbean.Agent.Tool.ExecutorTest do
       assert block[:content] =~ "outside through executor"
     end
 
+    test "each call executes with its frozen admission mode after the run mode changes" do
+      root =
+        Path.join(
+          System.tmp_dir!(),
+          "handbean-executor-frozen-admission-#{System.unique_integer([:positive])}"
+        )
+
+      workspace = Path.join(root, "workspace")
+      outside = Path.join(root, "outside.txt")
+      File.mkdir_p!(workspace)
+      File.write!(outside, "frozen admission")
+      on_exit(fn -> File.rm_rf!(root) end)
+
+      call = %{id: "frozen-read", name: "read", input: %{"file_path" => outside}}
+
+      narrowed =
+        State.init(
+          %Config{
+            working_directory: workspace,
+            context: %{permission_mode: :prompt, approval_mode: :prompt, permission_revision: 2}
+          },
+          "Read outside"
+        )
+
+      admitted_in_yolo = %{
+        narrowed
+        | tool_guard_admission_contexts: %{
+            call.id => %{
+              permission_mode: :yolo,
+              approval_mode: :yolo,
+              permission_revision: 1
+            }
+          }
+      }
+
+      assert {:ok, result_msg} = Executor.execute_all([call], admitted_in_yolo)
+      assert [allowed] = result_msg.content
+      refute allowed[:is_error]
+      assert allowed[:content] =~ "frozen admission"
+
+      broadened =
+        State.init(
+          %Config{
+            working_directory: workspace,
+            context: %{permission_mode: :yolo, approval_mode: :yolo, permission_revision: 4}
+          },
+          "Read outside"
+        )
+
+      admitted_in_prompt = %{
+        broadened
+        | tool_guard_admission_contexts: %{
+            call.id => %{
+              permission_mode: :prompt,
+              approval_mode: :prompt,
+              permission_revision: 3
+            }
+          }
+      }
+
+      assert {:ok, result_msg} = Executor.execute_all([call], admitted_in_prompt)
+      assert [blocked] = result_msg.content
+      assert blocked[:is_error]
+    end
+
     test "execution grants are consumed before parallel dispatch and cannot be replayed" do
       root =
         Path.join(
@@ -538,8 +603,22 @@ defmodule Handbean.Agent.Tool.ExecutorTest do
       %{tmp_dir: tmp_dir}
     end
 
-    test "oversized success spills to a workspace file with a short preview", %{tmp_dir: tmp_dir} do
-      config = %Config{working_directory: tmp_dir}
+    test "oversized success spills to a conversation artifact with a short preview", %{
+      tmp_dir: tmp_dir
+    } do
+      artifact_root = Path.join(tmp_dir, "artifacts")
+
+      {:ok, _conversation} =
+        Handbean.ConversationStore.create("default", id: "spill-conversation")
+
+      config = %Config{
+        working_directory: tmp_dir,
+        context: %{
+          conversation_id: "spill-conversation",
+          conversation_artifact_root: artifact_root
+        }
+      }
+
       state = State.init(config, "spill")
 
       {:ok, result_msg, ui_blocks} =
@@ -555,20 +634,41 @@ defmodule Handbean.Agent.Tool.ExecutorTest do
       refute Map.has_key?(block, :details)
 
       [ui_block] = ui_blocks
-      relative = ui_block[:details].spill_path
+      ref = ui_block[:details].artifact_ref
       content = String.duplicate("spill-line\n", 40)
 
       hash =
         :crypto.hash(:sha256, content)
         |> Base.encode16(case: :lower)
 
-      assert relative == ".handbean/tool-results/spill-#{hash}.txt"
+      assert ref == "conversation_artifact:tool-results/spill-#{hash}.txt"
 
-      absolute = Path.expand(relative, tmp_dir)
-      assert File.exists?(absolute)
+      absolute =
+        Path.join([
+          artifact_root,
+          "items",
+          "spill-conversation",
+          "tool-results",
+          "spill-#{hash}.txt"
+        ])
+
       assert File.read!(absolute) == content
-      assert String.starts_with?(Path.relative_to(absolute, tmp_dir), ".handbean/")
-      assert Path.dirname(absolute) != System.tmp_dir!()
+      refute File.exists?(Path.join(tmp_dir, ".handbean/tool-results"))
+
+      assert {:ok, read_content, %{file_path: ^ref}} =
+               Handbean.Tool.Builtin.Read.execute(
+                 %{"file_path" => ref, "limit" => 2},
+                 config.context
+               )
+
+      assert read_content =~ "spill-line"
+      assert read_content =~ "more lines"
+
+      assert {:error, "conversation artifact is unavailable"} =
+               Handbean.Tool.Builtin.Read.execute(
+                 %{"file_path" => ref},
+                 %{config.context | conversation_id: "other-conversation"}
+               )
 
       {:ok, _second_result, [second_ui_block]} =
         Executor.execute_all_with_details(
@@ -576,11 +676,16 @@ defmodule Handbean.Agent.Tool.ExecutorTest do
           state
         )
 
-      assert second_ui_block[:details].spill_path == relative
-      assert Path.wildcard(Path.join(tmp_dir, ".handbean/tool-results/spill-*")) == [absolute]
+      assert second_ui_block[:details].artifact_ref == ref
+
+      assert Path.wildcard(Path.join([artifact_root, "items/*/tool-results/spill-*"])) == [
+               absolute
+             ]
     end
 
     test "does not overwrite a mismatched content-addressed spill", %{tmp_dir: tmp_dir} do
+      artifact_root = Path.join(tmp_dir, "artifacts")
+      {:ok, _conversation} = Handbean.ConversationStore.create("default", id: "spill-collision")
       content = String.duplicate("spill-line\n", 40)
 
       hash =
@@ -588,12 +693,25 @@ defmodule Handbean.Agent.Tool.ExecutorTest do
         |> Base.encode16(case: :lower)
 
       absolute =
-        Path.join(tmp_dir, ".handbean/tool-results/spill-#{hash}.txt")
+        Path.join([
+          artifact_root,
+          "items",
+          "spill-collision",
+          "tool-results",
+          "spill-#{hash}.txt"
+        ])
 
       File.mkdir_p!(Path.dirname(absolute))
       File.write!(absolute, "mismatched")
 
-      config = %Config{working_directory: tmp_dir}
+      config = %Config{
+        working_directory: tmp_dir,
+        context: %{
+          conversation_id: "spill-collision",
+          conversation_artifact_root: artifact_root
+        }
+      }
+
       state = State.init(config, "spill collision")
 
       {:ok, result_msg, [ui_block]} =
@@ -606,6 +724,22 @@ defmodule Handbean.Agent.Tool.ExecutorTest do
       assert block[:content] =~ "artifact unavailable"
       assert ui_block[:details].artifact_unavailable
       assert File.read!(absolute) == "mismatched"
+    end
+
+    test "does not persist an oversized result without a conversation", %{tmp_dir: tmp_dir} do
+      config = %Config{working_directory: tmp_dir}
+      state = State.init(config, "spill without conversation")
+
+      {:ok, result_msg, [ui_block]} =
+        Executor.execute_all_with_details(
+          [%{id: "spill-no-conversation", name: "spill_fixture", input: %{}}],
+          state
+        )
+
+      [block] = result_msg.content
+      assert block[:content] =~ "artifact unavailable"
+      assert ui_block[:details].artifact_unavailable
+      refute File.exists?(Path.join(tmp_dir, ".handbean/tool-results"))
     end
   end
 

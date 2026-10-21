@@ -495,7 +495,7 @@ defmodule Handbean.Agent.Tool.Executor do
   defp bound_result(%Result{} = result, max_chars, context) do
     spilled =
       if is_integer(max_chars) and byte_size(to_string(result.content)) > max_chars do
-        spill_body(result, max_chars, context[:working_directory])
+        spill_body(result, max_chars, context)
       else
         result
       end
@@ -503,30 +503,24 @@ defmodule Handbean.Agent.Tool.Executor do
     if context[:truncate_only?], do: spilled, else: project_result(spilled, context)
   end
 
-  defp spill_body(%Result{content: content} = result, max_chars, working_directory) do
+  defp spill_body(%Result{content: content} = result, max_chars, context) do
     head = String.slice(content, 0, min(@spill_head_chars, max_chars))
 
-    case spill_path(working_directory, content) do
-      {:ok, relative, absolute} ->
-        case persist_spill(absolute, content) do
-          :ok ->
-            preview =
-              head <>
-                "\n\n[Full result written to #{relative} (#{byte_size(content)} bytes). " <>
-                "Read it with the read tool using offset and limit. " <>
-                "Do not assume the omitted tail.]\n"
+    case Handbean.ConversationArtifacts.persist_tool_result(content, context) do
+      {:ok, ref} ->
+        preview =
+          head <>
+            "\n\n[Full result written to #{ref} (#{byte_size(content)} bytes). " <>
+            "Read it with the read tool using offset and limit. " <>
+            "Do not assume the omitted tail.]\n"
 
-            %{
-              result
-              | content: preview,
-                details: Map.merge(result.details || %{}, %{spill_path: relative})
-            }
+        %{
+          result
+          | content: preview,
+            details: Map.merge(result.details || %{}, %{artifact_ref: ref})
+        }
 
-          {:error, _reason} ->
-            spill_unavailable(result, max_chars)
-        end
-
-      :error ->
+      {:error, _reason} ->
         spill_unavailable(result, max_chars)
     end
   end
@@ -541,87 +535,6 @@ defmodule Handbean.Agent.Tool.Executor do
             "\n[artifact unavailable; full body was not retained in the result]",
         details: Map.put(result.details || %{}, :artifact_unavailable, true)
     }
-  end
-
-  defp spill_path(working_directory, content)
-       when is_binary(working_directory) and working_directory != "" and is_binary(content) do
-    hash =
-      :crypto.hash(:sha256, content)
-      |> Base.encode16(case: :lower)
-
-    relative =
-      Path.join([
-        ".handbean",
-        "tool-results",
-        "spill-#{hash}.txt"
-      ])
-
-    absolute = Path.expand(relative, working_directory)
-
-    with :ok <- File.mkdir_p(Path.dirname(absolute)),
-         :ok <-
-           Handbean.Security.PathValidator.validate_within_workspace(absolute, working_directory) do
-      {:ok, relative, absolute}
-    else
-      _ -> :error
-    end
-  end
-
-  defp spill_path(_working_directory, _content), do: :error
-
-  defp persist_spill(absolute, content) do
-    case File.read(absolute) do
-      {:ok, ^content} ->
-        :ok
-
-      {:ok, _other} ->
-        {:error, :hash_collision}
-
-      {:error, :enoent} ->
-        publish_spill(absolute, content)
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  defp publish_spill(absolute, content) do
-    nonce =
-      :crypto.strong_rand_bytes(8)
-      |> Base.encode16(case: :lower)
-
-    temporary = absolute <> ".#{nonce}.tmp"
-
-    case File.write(temporary, content, [:exclusive, :sync]) do
-      :ok ->
-        result = link_spill(temporary, absolute, content)
-        _ = File.rm(temporary)
-        result
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  defp link_spill(temporary, absolute, content) do
-    case :file.make_link(String.to_charlist(temporary), String.to_charlist(absolute)) do
-      :ok ->
-        :ok
-
-      {:error, :eexist} ->
-        verify_spill(absolute, content)
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  defp verify_spill(absolute, content) do
-    case File.read(absolute) do
-      {:ok, ^content} -> :ok
-      {:ok, _other} -> {:error, :hash_collision}
-      {:error, reason} -> {:error, reason}
-    end
   end
 
   @doc """
@@ -1013,17 +926,27 @@ defmodule Handbean.Agent.Tool.Executor do
 
   defp take_invocation_context(%State{} = state, call, exec_opts) do
     id = SafeMap.get_any(call, [:id, "id"])
-    {grant, remaining} = Map.pop(state.tool_guard_execution_grants || %{}, id)
-    state = %{state | tool_guard_execution_grants: remaining}
+    {grant, remaining_grants} = Map.pop(state.tool_guard_execution_grants || %{}, id)
+    {admission, remaining_admissions} = Map.pop(state.tool_guard_admission_contexts || %{}, id)
+
+    state = %{
+      state
+      | tool_guard_execution_grants: remaining_grants,
+        tool_guard_admission_contexts: remaining_admissions
+    }
 
     context =
       state
       |> build_context(exec_opts)
+      |> apply_admission_context(admission)
       |> maybe_put_invocation_grant(id, grant)
       |> Boundary.invocation_context(call)
 
     {context, state}
   end
+
+  defp apply_admission_context(context, %{} = admission), do: Map.merge(context, admission)
+  defp apply_admission_context(context, _admission), do: context
 
   defp maybe_put_invocation_grant(context, id, %{} = grant),
     do: Map.put(context, :tool_execution_grants, %{id => grant})
@@ -1095,19 +1018,25 @@ defmodule Handbean.Agent.Tool.Executor do
     do: context[:run_task_supervisor] || Handbean.AgentRunTaskSupervisor
 
   defp effective_approval_mode(config, overrides, session_allow) do
-    delegated =
-      SafeMap.get_any(config.context || %{}, :delegated_approval, "delegated_approval")
+    context = config.context || %{}
+    delegated = SafeMap.get_any(context, :delegated_approval, "delegated_approval")
+    admitted = SafeMap.get_any(context, :approval_mode, "approval_mode")
 
-    if delegated in [:yolo, "yolo"] do
-      :yolo
-    else
-      ToolPolicy.from_workspace(
-        config.workspace_path || config.working_directory,
-        config.working_directory,
-        overrides || %{},
-        session_allow || []
-      )
-      |> Map.fetch!(:default_mode)
+    cond do
+      delegated in [:yolo, "yolo"] ->
+        :yolo
+
+      admitted in [:prompt, :auto, :yolo, "prompt", "auto", "yolo"] ->
+        if is_binary(admitted), do: String.to_existing_atom(admitted), else: admitted
+
+      true ->
+        ToolPolicy.from_workspace(
+          config.workspace_path || config.working_directory,
+          config.working_directory,
+          overrides || %{},
+          session_allow || []
+        )
+        |> Map.fetch!(:default_mode)
     end
   end
 end
