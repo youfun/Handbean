@@ -17,9 +17,30 @@ defmodule Handbean.Agent.StreamBatch do
   @spec new(keyword()) :: t()
   def new(opts \\ []) do
     %__MODULE__{
-      max_bytes: positive_integer(opts[:stream_flush_bytes], @default_max_bytes),
-      max_wait_ms: positive_integer(opts[:stream_flush_ms], @default_max_wait_ms)
+      max_bytes:
+        positive_integer(
+          opts[:stream_flush_bytes],
+          configured_default(:bytes, @default_max_bytes)
+        ),
+      max_wait_ms:
+        positive_integer(opts[:stream_flush_ms], configured_default(:ms, @default_max_wait_ms))
     }
+  end
+
+  # Deployment-level defaults from config/runtime.exs
+  # (HANDBEAN_STREAM_FLUSH_MS / HANDBEAN_STREAM_FLUSH_BYTES). Per-run opts
+  # still win; non-positive config values fall back to the built-in defaults.
+  defp configured_default(key, fallback) do
+    case Application.get_env(:handbean, :stream_flush, []) do
+      config when is_list(config) ->
+        case Keyword.get(config, key) do
+          value when is_integer(value) and value > 0 -> value
+          _ -> fallback
+        end
+
+      _ ->
+        fallback
+    end
   end
 
   @spec empty?(t()) :: boolean()

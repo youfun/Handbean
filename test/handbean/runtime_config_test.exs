@@ -7,7 +7,7 @@ defmodule Handbean.RuntimeConfigTest do
     assert endpoint[:http][:port] == 4002
 
     keys =
-      ~w(PHX_SERVER PORT HANDBEAN_COMPUTER_PORT HANDBEAN_COMPUTER_TOKEN HANDBEAN_NOTIFY_PORT HANDBEAN_NOTIFY_TOKEN)
+      ~w(PHX_SERVER PORT HANDBEAN_COMPUTER_PORT HANDBEAN_COMPUTER_TOKEN HANDBEAN_NOTIFY_PORT HANDBEAN_NOTIFY_TOKEN HANDBEAN_FILE_MANAGER)
 
     originals = Map.new(keys, &{&1, System.get_env(&1)})
 
@@ -17,6 +17,7 @@ defmodule Handbean.RuntimeConfigTest do
     System.put_env("HANDBEAN_COMPUTER_TOKEN", "computer-secret")
     System.put_env("HANDBEAN_NOTIFY_PORT", "60304")
     System.put_env("HANDBEAN_NOTIFY_TOKEN", "notify-secret")
+    System.put_env("HANDBEAN_FILE_MANAGER", "macos")
 
     try do
       config = Config.Reader.read!(Path.expand("../../config/runtime.exs", __DIR__), env: :test)
@@ -27,11 +28,69 @@ defmodule Handbean.RuntimeConfigTest do
       refute Keyword.has_key?(handbean, :computer_use_token)
       refute Keyword.has_key?(handbean, :macos_notify_port)
       refute Keyword.has_key?(handbean, :macos_notify_token)
+      host = Keyword.get(handbean, :host, %{})
+      refute Map.has_key?(host, :computer_use_backend)
+      refute Map.has_key?(host, :file_manager_backend)
     after
       Enum.each(originals, fn
         {key, nil} -> System.delete_env(key)
         {key, value} -> System.put_env(key, value)
       end)
+    end
+  end
+
+  @tag :darwin_process
+  test "desktop host capabilities coexist and preserve the configured data directory" do
+    keys =
+      ~w(HANDBEAN_COMPUTER_PORT HANDBEAN_COMPUTER_TOKEN HANDBEAN_NOTIFY_PORT HANDBEAN_FILE_MANAGER HANDBEAN_DATA_DIR HANDBEAN_PUBLIC_BIND HANDBEAN_ACCESS_MODE DATABASE_PATH SECRET_KEY_BASE)
+
+    originals = Map.new(keys, &{&1, System.get_env(&1)})
+    original_host = Application.fetch_env(:handbean, :host)
+
+    on_exit(fn ->
+      Enum.each(originals, fn
+        {key, nil} -> System.delete_env(key)
+        {key, value} -> System.put_env(key, value)
+      end)
+
+      case original_host do
+        {:ok, host} -> Application.put_env(:handbean, :host, host)
+        :error -> Application.delete_env(:handbean, :host)
+      end
+    end)
+
+    Enum.each(keys, &System.delete_env/1)
+    inherited_host = %{data_dir: "/inherited-data", platform: :desktop}
+    Application.put_env(:handbean, :host, inherited_host)
+
+    System.put_env(%{
+      "HANDBEAN_COMPUTER_TOKEN" => "computer-secret",
+      "HANDBEAN_ACCESS_MODE" => "local",
+      "DATABASE_PATH" => Path.join(System.tmp_dir!(), "unused-runtime-config-test.db"),
+      "SECRET_KEY_BASE" => String.duplicate("runtime-config-fixture", 3)
+    })
+
+    for env <- [:dev, :prod], data_dir <- [nil, "/desktop-data"] do
+      if data_dir,
+        do: System.put_env("HANDBEAN_DATA_DIR", data_dir),
+        else: System.delete_env("HANDBEAN_DATA_DIR")
+
+      System.put_env("HANDBEAN_COMPUTER_PORT", "60303")
+      System.put_env("HANDBEAN_FILE_MANAGER", "macos")
+      config = Config.Reader.read!(Path.expand("../../config/runtime.exs", __DIR__), env: env)
+
+      assert config[:handbean][:host] == %{
+               data_dir: data_dir || inherited_host.data_dir,
+               platform: :desktop,
+               computer_use_backend: Handbean.ComputerUse.Native,
+               file_manager_backend: Handbean.Platform.FileManager.MacOS
+             }
+
+      System.delete_env("HANDBEAN_COMPUTER_PORT")
+      config = Config.Reader.read!(Path.expand("../../config/runtime.exs", __DIR__), env: env)
+
+      assert config[:handbean][:host] ==
+               Map.put(inherited_host, :file_manager_backend, Handbean.Platform.FileManager.MacOS)
     end
   end
 

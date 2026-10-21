@@ -10,29 +10,28 @@ if config_env() != :test and match?({:unix, :darwin}, :os.type()) and
   config :handbean, :runtime_notify_adapter, Handbean.Runtime.MacNotify
 end
 
-if config_env() != :test and match?({:unix, :darwin}, :os.type()) and
-     System.get_env("HANDBEAN_COMPUTER_PORT") do
-  config :handbean,
-         :computer_use_port,
-         String.to_integer(System.fetch_env!("HANDBEAN_COMPUTER_PORT"))
+# Accumulate host capabilities before writing config: config/3 does not update
+# Application env while this file is being evaluated. Keep the existing data_dir.
+host = Application.get_env(:handbean, :host, %{})
 
-  config :handbean, :computer_use_token, System.fetch_env!("HANDBEAN_COMPUTER_TOKEN")
+host =
+  if config_env() != :test and match?({:unix, :darwin}, :os.type()) and
+       System.get_env("HANDBEAN_COMPUTER_PORT") do
+    config :handbean,
+           :computer_use_port,
+           String.to_integer(System.fetch_env!("HANDBEAN_COMPUTER_PORT"))
 
-  # Dev already sets data_dir to ~/.handbean_dev. Replacing :host here would
-  # drop it and fall back to $HOME, which is the packaged app's data root.
-  host =
-    :handbean
-    |> Application.get_env(:host, %{})
-    |> Map.put(:computer_use_backend, Handbean.ComputerUse.Native)
+    config :handbean, :computer_use_token, System.fetch_env!("HANDBEAN_COMPUTER_TOKEN")
 
-  host =
+    host = Map.put(host, :computer_use_backend, Handbean.ComputerUse.Native)
+
     case System.get_env("HANDBEAN_DATA_DIR") do
       dir when is_binary(dir) and dir != "" -> Map.put(host, :data_dir, dir)
       _ -> host
     end
-
-  config :handbean, :host, host
-end
+  else
+    host
+  end
 
 # Desktop launchers declare the file-manager integration explicitly. Do not
 # infer it from :os.type(); Darwin also identifies non-desktop hosts.
@@ -47,14 +46,14 @@ file_manager_backend =
     end
   end
 
-if file_manager_backend do
-  host =
-    :handbean
-    |> Application.get_env(:host, %{})
-    |> Map.put_new(:file_manager_backend, file_manager_backend)
+host =
+  if file_manager_backend do
+    Map.put_new(host, :file_manager_backend, file_manager_backend)
+  else
+    host
+  end
 
-  config :handbean, :host, host
-end
+config :handbean, :host, host
 
 # config/runtime.exs is executed for all environments, including
 # during releases. It is executed after compilation and before the
@@ -126,6 +125,30 @@ config :handbean,
       "true",
       "yes"
     ]
+
+# ── Streaming transcript flush pacing ──
+# Streaming deltas are journaled in batches: at most every
+# HANDBEAN_STREAM_FLUSH_MS milliseconds or HANDBEAN_STREAM_FLUSH_BYTES bytes,
+# plus at event boundaries (phase change, tool, turn/run end). Raise both for
+# remote or power-constrained storage; the built-in defaults live in
+# Handbean.Agent.StreamBatch.
+stream_flush_opts = []
+
+stream_flush_opts =
+  case System.get_env("HANDBEAN_STREAM_FLUSH_MS") do
+    nil -> stream_flush_opts
+    value -> Keyword.put(stream_flush_opts, :ms, String.to_integer(value))
+  end
+
+stream_flush_opts =
+  case System.get_env("HANDBEAN_STREAM_FLUSH_BYTES") do
+    nil -> stream_flush_opts
+    value -> Keyword.put(stream_flush_opts, :bytes, String.to_integer(value))
+  end
+
+if stream_flush_opts != [] do
+  config :handbean, :stream_flush, stream_flush_opts
+end
 
 # ── OpenAI-compatible provider config ──
 openai_base_url =

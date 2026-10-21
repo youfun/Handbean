@@ -925,14 +925,29 @@ defmodule Handbean.Agent.TranscriptPersistence do
   defp record_lifecycle(:run_start, conversation_id, attrs),
     do: Handbean.ConversationStore.record_run_start(conversation_id, attrs)
 
-  defp record_lifecycle(:run_end, conversation_id, attrs),
-    do: Handbean.ConversationStore.record_run_end(conversation_id, attrs)
+  defp record_lifecycle(:run_end, conversation_id, attrs) do
+    with :ok <- Handbean.ConversationStore.record_run_end(conversation_id, attrs) do
+      checkpoint_wal()
+    end
+  end
 
   defp record_lifecycle(:turn_start, conversation_id, attrs),
     do: Handbean.ConversationStore.record_turn_start(conversation_id, attrs)
 
-  defp record_lifecycle(:turn_end, conversation_id, attrs),
-    do: Handbean.ConversationStore.record_turn_end(conversation_id, attrs)
+  defp record_lifecycle(:turn_end, conversation_id, attrs) do
+    with :ok <- Handbean.ConversationStore.record_turn_end(conversation_id, attrs) do
+      checkpoint_wal()
+    end
+  end
+
+  # With synchronous :normal, committed frames stay in the WAL — durable
+  # across process crashes — until a checkpoint copies them into the database
+  # file and syncs it. Checkpointing at turn/run boundaries bounds what a
+  # power loss can lose to the streaming deltas since the last boundary.
+  defp checkpoint_wal do
+    Handbean.Repo.checkpoint_wal()
+    :ok
+  end
 
   defp clear_process_state(conversation_id) do
     Process.delete(StateKey.assistant(conversation_id))
