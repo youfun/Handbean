@@ -2735,3 +2735,28 @@ msgstr "模型列表暂时不可用，已保留现有列表。"
 #, elixir-autogen, elixir-format
 msgid "Provider Base URL is invalid. Edit the provider and try again. The existing list was kept."
 msgstr "提供商 Base URL 无效，请编辑后重试。已保留现有列表。"
+
+#: lib/handbean_probe/model_settings/providers.ex:178
+#, elixir-autogen, elixir-format
+msgid "All models disabled"
+msgstr "已关闭该提供商的全部模型"
+
+#: lib/handbean_probe/model_settings/providers.ex:171
+#, elixir-autogen, elixir-format
+msgid "Default provider changed"
+msgstr "默认提供商已更改"
+
+#: lib/handbean_probe/model_settings/render.ex:406
+#, elixir-autogen, elixir-format
+msgid "Disable all"
+msgstr "全部关闭"
+
+#: lib/handbean_probe/model_settings/render.ex:426
+#, elixir-autogen, elixir-format
+msgid "Set as default provider"
+msgstr "设为默认提供商"
+
+#: lib/handbean_probe/model_settings/render.ex:418
+#, elixir-autogen, elixir-format
+msgid "✓ Default provider"
+msgstr "✓ 默认提供商"

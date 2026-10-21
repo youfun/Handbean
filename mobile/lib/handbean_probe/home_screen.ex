@@ -470,6 +470,10 @@ defmodule HandbeanProbe.HomeScreen do
     do: Settings.handle(msg, socket)
 
   defp dispatch({:dismiss, :cancel_confirm} = msg, socket), do: Settings.handle(msg, socket)
+
+  defp dispatch({:dismiss, :cancel_subscription_login} = msg, socket),
+    do: Settings.handle(msg, socket)
+
   defp dispatch({:models_updated} = msg, socket), do: Settings.handle(msg, socket)
 
   defp dispatch({:tap, _} = msg, %{assigns: %{page: page}} = socket) do

@@ -9,8 +9,10 @@ defmodule HandbeanProbe.ModelSettings.Defaults do
   alias Handbean.Settings.ModelAIOverride
   alias HandbeanProbe.ModelSettings
 
-  def set_scope(state, scope, workspace) when scope in [:global, :workspace] do
-    %{state | scope: scope, defaults: form_for_scope(scope, workspace), notice: nil}
+  def set_scope(state, scope, _workspace) when scope in [:global, :workspace] do
+    state
+    |> ModelSettings.select_scope(scope)
+    |> Map.put(:notice, nil)
   end
 
   def form_for_scope(:global, _workspace), do: Handbean.Settings.global_model_ai()

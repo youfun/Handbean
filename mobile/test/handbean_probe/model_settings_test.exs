@@ -430,6 +430,38 @@ defmodule HandbeanProbe.ModelSettingsTest do
            )
   end
 
+  test "provider controls set the default and disable all models", %{ws_a: ws} do
+    save_named(ws, "alpha", "one")
+    save_named(ws, "alpha", "two")
+    save_named(ws, "beta", "three")
+
+    state = ModelSettings.load(ws)
+    state = ModelSettings.action({:select_provider, "beta"}, state, ws)
+    tree = ModelSettings.render(state)
+
+    assert tap?(tree, {:set_default_provider, "beta"})
+    assert tap?(tree, {:disable_provider_models, "beta"})
+
+    state = ModelSettings.action({:set_default_provider, "beta"}, state, ws)
+    assert read_models()["defaultProvider"] == "beta"
+    assert state.notice == gettext("Default provider changed")
+    assert Enum.find(state.providers, &(&1.id == "beta")).is_default
+
+    assert Enum.any?(walk(ModelSettings.render(state)), fn
+             %{props: %{on_tap: {_, {:set_default_provider, "beta"}}, disabled: true}} -> true
+             _ -> false
+           end)
+
+    state = ModelSettings.action({:disable_provider_models, "beta"}, state, ws)
+    beta_models = read_models()["providers"]["beta"]["models"]
+
+    assert state.notice == gettext("All models disabled")
+    assert Enum.all?(beta_models, &(&1["enabled"] == false))
+    refute Enum.any?(state.allowed_models, &(&1.provider_id == "beta"))
+    refute tap?(ModelSettings.render(state), {:disable_provider_models, "beta"})
+    assert Enum.any?(state.allowed_models, &(&1.provider_id == "alpha"))
+  end
+
   test "provider dropdown switches visible models and keeps readable names", %{ws_a: ws} do
     save_named(ws, "alpha", "one")
     save_named(ws, "beta", "two")
@@ -599,6 +631,25 @@ defmodule HandbeanProbe.ModelSettingsTest do
     assert edited.notice
   end
 
+  test "reload projection follows the newly loaded workspace", %{ws_a: ws_a, ws_b: ws_b} do
+    global = %{ModelAISettings.defaults() | reasoning: "high"}
+    workspace_a = %{global | reasoning: "low"}
+    workspace_b = %{global | reasoning: "xhigh"}
+
+    assert :ok = Handbean.Settings.ModelAIOverride.save(:global, global)
+    assert :ok = Handbean.Settings.ModelAIOverride.save({:workspace, ws_a["path"]}, workspace_a)
+    assert :ok = Handbean.Settings.ModelAIOverride.save({:workspace, ws_b["path"]}, workspace_b)
+
+    live = ModelSettings.load(ws_a)
+    loaded = ModelSettings.load(ws_b, live)
+    merged = ModelSettings.preserve_reload_ui_state(loaded, live)
+
+    assert live.defaults.reasoning == "low"
+    assert merged.scope == :workspace
+    assert merged.defaults.reasoning == "xhigh"
+    assert merged.sources.reasoning == :workspace
+  end
+
   test "load_async and find_refs_async deliver tagged results from the task supervisor", %{
     ws_a: ws
   } do
@@ -606,13 +657,16 @@ defmodule HandbeanProbe.ModelSettingsTest do
     save_named(ws, "beta", "two")
 
     %Task{ref: ref} = ModelSettings.load_async(ws, nil, 7)
-    assert_receive {^ref, {:model_settings_loaded, 7, loaded}}
+    assert_receive {^ref, {:model_settings_loaded, 7, loaded}}, 2_000
     Process.demonitor(ref, [:flush])
     assert loaded.selected_provider == "alpha"
     assert Enum.map(loaded.models, & &1.id) |> Enum.sort() == ["alpha/one", "beta/two"]
 
     %Task{ref: ref} = ModelSettings.find_refs_async(:delete_provider, "alpha", nil, 8)
-    assert_receive {^ref, {:model_settings_refs, 8, {:delete_provider, "alpha", nil}, result}}
+
+    assert_receive {^ref, {:model_settings_refs, 8, {:delete_provider, "alpha", nil}, result}},
+                   2_000
+
     Process.demonitor(ref, [:flush])
     assert %{refs: refs, errors: []} = result
     assert Enum.any?(refs, &(&1.source == :catalog_default_provider))

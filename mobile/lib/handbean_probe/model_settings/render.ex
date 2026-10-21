@@ -360,22 +360,14 @@ defmodule HandbeanProbe.ModelSettings.Render do
 
     card(
       [
-        row(
-          [
-            text(provider.name, text_size: 15, weight: 1)
-            | provider_actions(provider)
-          ],
-          align: "center"
-        ),
+        text(provider.name, text_size: 15),
         text(Labels.key_status(provider.key_status),
           text_size: 12,
           text_color: color(:hint),
           padding_top: 6
         ),
         text(count_line, text_size: 12, text_color: color(:hint), padding_bottom: 8),
-        quiet_button(gettext("Delete provider"), {:ask_delete_provider, provider.id},
-          text_color: color(:danger)
-        )
+        node(:column, [fill_width: true], spaced(provider_actions(provider, models)))
       ] ++ provider_models(models)
     )
   end
@@ -399,15 +391,41 @@ defmodule HandbeanProbe.ModelSettings.Render do
     end)
   end
 
-  defp provider_actions(provider) do
-    fetch =
-      if provider.fetchable do
-        [secondary_button(gettext("Fetch models"), {:fetch_models, provider.id})]
-      else
-        []
-      end
+  defp provider_actions(provider, models) do
+    [
+      if(provider.fetchable,
+        do:
+          secondary_button(gettext("Fetch models"), {:fetch_models, provider.id},
+            fill_width: true
+          )
+      ),
+      secondary_button(gettext("Edit provider"), {:edit_provider, provider.id}, fill_width: true),
+      default_provider_button(provider),
+      if(Enum.any?(models, &Map.get(&1, :enabled, true)),
+        do:
+          quiet_button(gettext("Disable all"), {:disable_provider_models, provider.id},
+            fill_width: true
+          )
+      ),
+      quiet_button(gettext("Delete provider"), {:ask_delete_provider, provider.id},
+        fill_width: true,
+        text_color: color(:danger)
+      )
+    ]
+  end
 
-    fetch ++ [secondary_button(gettext("Edit provider"), {:edit_provider, provider.id})]
+  defp default_provider_button(%{is_default: true} = provider) do
+    secondary_button(gettext("✓ Default provider"), {:set_default_provider, provider.id},
+      fill_width: true,
+      disabled: true,
+      background: color(:bubble)
+    )
+  end
+
+  defp default_provider_button(provider) do
+    secondary_button(gettext("Set as default provider"), {:set_default_provider, provider.id},
+      fill_width: true
+    )
   end
 
   defp model_row(model) do

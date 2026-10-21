@@ -12,29 +12,6 @@ defmodule HandbeanProbe.ModelSettings.SubscriptionRender do
 
   alias HandbeanProbe.ModelSettings.Subscriptions
 
-  def section(%{subscription_login: login} = state) when is_map(login) do
-    [card(waiting(state, login))]
-  end
-
-  def section(%{subscription_picker: true} = state) do
-    [
-      card([
-        text(gettext("Sign in with a subscription"), text_size: 16),
-        text(
-          gettext(
-            "Choose a subscription sign-in. Subscription quota is separate from API balance."
-          ),
-          text_size: 12,
-          text_color: color(:hint),
-          padding_top: 4,
-          padding_bottom: 8
-        )
-        | method_buttons(state) ++
-            [quiet_button(gettext("Cancel"), :close_subscription_login)]
-      ])
-    ]
-  end
-
   def section(_state) do
     [
       row(
@@ -49,8 +26,51 @@ defmodule HandbeanProbe.ModelSettings.SubscriptionRender do
     ]
   end
 
-  defp waiting(state, login) do
+  @doc "Native subscription picker or active device-login sheet."
+  def modal(state, notice \\ nil)
+
+  def modal(%{subscription_login: login} = state, notice) when is_map(login) do
+    modal_frame(waiting(state, login, notice))
+  end
+
+  def modal(%{subscription_picker: true, subscription_busy?: true}, _notice) do
+    modal_frame([
+      text(gettext("Sign in with a subscription"), text_size: 17),
+      text(gettext("Starting sign-in…"),
+        text_size: 13,
+        text_color: color(:hint),
+        padding_top: 8,
+        padding_bottom: 8
+      ),
+      quiet_button(gettext("Cancel"), :cancel_subscription_login, fill_width: true)
+    ])
+  end
+
+  def modal(%{subscription_picker: true} = state, _notice) do
+    modal_frame([
+      text(gettext("Sign in with a subscription"), text_size: 17),
+      text(
+        gettext(
+          "Choose a subscription sign-in. Subscription quota is separate from API balance."
+        ),
+        text_size: 12,
+        text_color: color(:hint),
+        padding_top: 4,
+        padding_bottom: 8
+      ),
+      node(:column, [fill_width: true], spaced(method_buttons(state))),
+      quiet_button(gettext("Cancel"), :close_subscription_login,
+        fill_width: true,
+        padding_top: 12
+      )
+    ])
+  end
+
+  def modal(_state, _notice), do: nil
+
+  defp waiting(state, login, current_notice) do
     [
+      notice(current_notice),
       text(login.login_label || gettext("Subscription sign-in"), text_size: 16),
       text(login.hint || Subscriptions.hint(login.provider_id),
         text_size: 12,
@@ -66,10 +86,10 @@ defmodule HandbeanProbe.ModelSettings.SubscriptionRender do
         padding_bottom: 8
       ),
       row(
-        [
+        spaced([
           quiet_button(gettext("Copy"), {:copy_subscription, :verification_uri}),
           secondary_button(gettext("Open link"), :open_subscription_link)
-        ],
+        ]),
         padding_bottom: 8
       )
     ] ++
@@ -122,5 +142,14 @@ defmodule HandbeanProbe.ModelSettings.SubscriptionRender do
     |> Enum.map(fn method ->
       secondary_button(method.login_label, {:start_subscription, method.id}, fill_width: true)
     end)
+  end
+
+  defp modal_frame(children) do
+    sheet(
+      node(:column, [fill_width: true, padding: 16], children),
+      id: "subscription-login",
+      dismiss: :cancel_subscription_login,
+      detents: [:content]
+    )
   end
 end

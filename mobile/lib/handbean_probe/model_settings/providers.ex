@@ -24,6 +24,8 @@ defmodule HandbeanProbe.ModelSettings.Providers do
   def list do
     case Forms.read_config() do
       {:ok, config} ->
+        default_provider = config["defaultProvider"]
+
         (config["providers"] || %{})
         |> Enum.map(fn {id, entry} ->
           %{
@@ -32,7 +34,8 @@ defmodule HandbeanProbe.ModelSettings.Providers do
             model_count: length(entry["models"] || []),
             key_status: ModelCatalog.key_status(entry),
             max_tokens: entry["maxTokens"],
-            fetchable: Handbean.Agent.Provider.ModelCatalog.fetchable?(entry)
+            fetchable: Handbean.Agent.Provider.ModelCatalog.fetchable?(entry),
+            is_default: id == default_provider
           }
         end)
         |> Enum.sort_by(& &1.name)
@@ -160,6 +163,20 @@ defmodule HandbeanProbe.ModelSettings.Providers do
 
       {:error, reason} ->
         %{state | notice: to_string(reason)}
+    end
+  end
+
+  def set_default(state, provider_id, workspace) do
+    case ModelConfig.set_default_provider(provider_id) do
+      :ok -> ModelSettings.reload(state, workspace, gettext("Default provider changed"))
+      {:error, reason} -> %{state | notice: to_string(reason)}
+    end
+  end
+
+  def disable_models(state, provider_id, workspace) do
+    case ModelConfig.disable_provider_models(provider_id) do
+      :ok -> ModelSettings.reload(state, workspace, gettext("All models disabled"))
+      {:error, reason} -> %{state | notice: to_string(reason)}
     end
   end
 

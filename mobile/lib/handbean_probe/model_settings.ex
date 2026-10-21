@@ -28,6 +28,9 @@ defmodule HandbeanProbe.ModelSettings do
 
   alias HandbeanProbe.ModelSettings.RenderConfirm
 
+  @subscription_fields [:subscription_picker, :subscription_login, :subscription_busy?]
+  @reload_ui_fields @subscription_fields ++ [:scope, :notice]
+
   def empty do
     %{
       models: [],
@@ -42,6 +45,8 @@ defmodule HandbeanProbe.ModelSettings do
       scope: :workspace,
       defaults: ModelAISettings.defaults(),
       sources: %{},
+      defaults_by_scope: %{},
+      sources_by_scope: %{},
       policy: %{mode: :unrestricted, allowed: %{}, default_model: nil, configured?: false},
       confirm: nil,
       chat_blocked: nil,
@@ -60,6 +65,16 @@ defmodule HandbeanProbe.ModelSettings do
     allowed = ModelConfig.available_models_for_workspace(path)
     providers = Providers.list()
     effective_default = settings.default_model || ModelConfig.default_model_for_workspace(path)
+    global_defaults = Defaults.form_for_scope(:global, workspace)
+    workspace_defaults = Defaults.form_for_scope(:workspace, workspace)
+    workspace_sources = ModelAIOverride.sources(path)
+
+    defaults_by_scope = %{global: global_defaults, workspace: workspace_defaults}
+
+    sources_by_scope = %{
+      global: global_sources(),
+      workspace: workspace_sources
+    }
 
     %{
       empty()
@@ -70,8 +85,10 @@ defmodule HandbeanProbe.ModelSettings do
         allowed_models: allowed,
         default: effective_default,
         reasoning: settings.reasoning,
-        defaults: Defaults.form_for_scope(:workspace, workspace),
-        sources: ModelAIOverride.sources(path),
+        defaults: workspace_defaults,
+        sources: workspace_sources,
+        defaults_by_scope: defaults_by_scope,
+        sources_by_scope: sources_by_scope,
         policy: ModelPolicy.form(path),
         chat_blocked: Policy.chat_blocked(path, allowed, effective_default),
         subscription_picker: previous && previous.subscription_picker,
@@ -119,12 +136,10 @@ defmodule HandbeanProbe.ModelSettings do
 
   @doc "Reload from disk keeping the current scope and showing `notice`."
   def reload(state, workspace, notice) do
-    %{
-      load(workspace, state)
-      | scope: state.scope,
-        defaults: Defaults.form_for_scope(state.scope, workspace),
-        notice: notice
-    }
+    workspace
+    |> load(state)
+    |> select_scope(state.scope)
+    |> Map.put(:notice, notice)
   end
 
   def change(state, field, value) do
@@ -180,6 +195,12 @@ defmodule HandbeanProbe.ModelSettings do
 
   def action({:toggle_model_enabled, provider, model, enabled}, state, ws),
     do: Providers.toggle_enabled(state, provider, model, enabled, ws)
+
+  def action({:set_default_provider, provider}, state, ws),
+    do: Providers.set_default(state, provider, ws)
+
+  def action({:disable_provider_models, provider}, state, ws),
+    do: Providers.disable_models(state, provider, ws)
 
   def action({:ask_delete_model, provider, model}, state, _ws),
     do: Providers.ask_delete(state, :delete_model, provider, model)
@@ -267,9 +288,31 @@ defmodule HandbeanProbe.ModelSettings do
 
   def action(_unknown, state, _workspace), do: state
 
+  @doc "Keep live transient UI state while selecting fresh persistence projections by scope."
+  def preserve_reload_ui_state(loaded, live) when is_map(loaded) and is_map(live) do
+    loaded
+    |> select_scope(live.scope)
+    |> Map.merge(Map.take(live, @reload_ui_fields))
+  end
+
+  def select_scope(state, scope) when scope in [:global, :workspace] do
+    defaults = Map.get(state.defaults_by_scope, scope, state.defaults)
+    sources = Map.get(state.sources_by_scope, scope, state.sources)
+    %{state | scope: scope, defaults: defaults, sources: sources}
+  end
+
+  defp global_sources do
+    ModelAISettings.fields()
+    |> Map.new(&{&1, :global})
+    |> Map.put(:advisor, :global)
+  end
+
   # ── render ──
 
   def render(state), do: Render.render(state)
+
+  def subscription_sheet(state, notice \\ nil),
+    do: HandbeanProbe.ModelSettings.SubscriptionRender.modal(state, notice)
 
   def confirm_sheet(state), do: RenderConfirm.confirm_sheet(state)
 end

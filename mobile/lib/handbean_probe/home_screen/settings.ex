@@ -58,6 +58,15 @@ defmodule HandbeanProbe.HomeScreen.Settings do
 
   def handle({:dismiss, :cancel_confirm}, socket), do: action(socket, :cancel_confirm)
 
+  def handle({:dismiss, :cancel_subscription_login}, socket),
+    do: cancel_subscription_login(socket)
+
+  def handle({:tap, :open_subscription_login}, socket) do
+    socket
+    |> Notice.clear()
+    |> action(:open_subscription_login)
+  end
+
   def handle({:tap, {:ask_delete_model, provider, model}}, socket),
     do: find_refs(socket, :delete_model, provider, model)
 
@@ -73,10 +82,8 @@ defmodule HandbeanProbe.HomeScreen.Settings do
       when field in [:verification_uri, :user_code],
       do: copy_subscription(socket, field)
 
-  def handle({:tap, :cancel_subscription_login}, socket) do
-    {_generation, socket} = Requests.bump(socket, @subscription_scope)
-    action(socket, :cancel_subscription_login)
-  end
+  def handle({:tap, :cancel_subscription_login}, socket),
+    do: cancel_subscription_login(socket)
 
   def handle({:tap, {:fetch_models, provider}}, socket) when is_binary(provider) do
     fetch_models(socket, provider)
@@ -115,9 +122,12 @@ defmodule HandbeanProbe.HomeScreen.Settings do
 
   # A form opened while loading owns the state; keep what the user is editing.
   def handle_loaded(socket, models) do
-    if socket.assigns.models.form,
-      do: socket,
-      else: socket |> assign(:models, models) |> HandbeanProbe.NativeModelInputs.check()
+    if socket.assigns.models.form do
+      socket
+    else
+      models = ModelSettings.preserve_reload_ui_state(models, socket.assigns.models)
+      socket |> assign(:models, models) |> HandbeanProbe.NativeModelInputs.check()
+    end
   end
 
   def handle_refs(socket, {kind, provider, model}, result),
@@ -297,6 +307,14 @@ defmodule HandbeanProbe.HomeScreen.Settings do
   end
 
   defp catalog_error_message(message), do: message
+
+  defp cancel_subscription_login(socket) do
+    {_generation, socket} = Requests.bump(socket, @subscription_scope)
+
+    socket
+    |> action(:cancel_subscription_login)
+    |> Notice.clear()
+  end
 
   defp start_subscription(socket, provider_id) do
     {_generation, socket} = Requests.bump(socket, @subscription_scope)

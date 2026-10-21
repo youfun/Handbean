@@ -4,7 +4,7 @@ defmodule HandbeanProbe.SubscriptionLoginTest do
 
   alias Handbean.Agent.Auth.{CodexOAuth, CursorOAuth, Storage, Subscriptions}
   alias HandbeanProbe.HomeScreen
-  alias HandbeanProbe.HomeScreen.Requests
+  alias HandbeanProbe.HomeScreen.{Requests, Settings}
   alias HandbeanProbe.ModelSettings.Subscriptions, as: MobileSubscriptions
   alias HandbeanProbe.PendingRequests
 
@@ -26,7 +26,7 @@ defmodule HandbeanProbe.SubscriptionLoginTest do
     HandbeanProbe.NativePlatform.put!(:android)
     previous = Map.new(vars, fn {key, _} -> {key, System.get_env(key)} end)
     Enum.each(vars, fn {key, value} -> System.put_env(key, value) end)
-    {:ok, _ws} = Handbean.WorkspaceStore.ensure_default!()
+    {:ok, workspace} = Handbean.WorkspaceStore.ensure_default!()
 
     on_exit(fn ->
       if host,
@@ -48,7 +48,7 @@ defmodule HandbeanProbe.SubscriptionLoginTest do
       _ = File.rm_rf(dir)
     end)
 
-    :ok
+    %{workspace: workspace}
   end
 
   defmodule CodexReq do
@@ -56,6 +56,20 @@ defmodule HandbeanProbe.SubscriptionLoginTest do
       send(Process.get(:subscription_test_owner), {:codex_post, url, opts})
       body = Process.get(:subscription_codex_body) || %{}
       {:ok, %{status: 200, body: body}}
+    end
+  end
+
+  defmodule CodexStartReq do
+    def post(_url, _opts) do
+      {:ok,
+       %{
+         status: 200,
+         body: %{
+           "device_auth_id" => "private-device",
+           "user_code" => "DEMO-1234",
+           "interval" => "60"
+         }
+       }}
     end
   end
 
@@ -116,22 +130,148 @@ defmodule HandbeanProbe.SubscriptionLoginTest do
     assert "cursor" in ids
   end
 
+  test "subscription picker is a dismissible native sheet with every login method" do
+    view = mount()
+    refute find(view, :sheet)
+
+    view = press(view, :open_subscription_login)
+    sheet = find(view, :sheet)
+    rendered = inspect(sheet)
+
+    assert sheet.props.id == "subscription-login"
+    assert sheet.props.detents == [%{type: :content}]
+    assert sheet.props.on_dismiss == {self(), :cancel_subscription_login}
+    assert rendered =~ "xAI (Grok/X subscription)"
+    assert rendered =~ "Cursor (account subscription)"
+    assert rendered =~ "ChatGPT (Codex subscription)"
+
+    page_section =
+      screen_assigns(view).models
+      |> HandbeanProbe.ModelSettings.SubscriptionRender.section()
+      |> inspect()
+
+    refute page_section =~ "xAI (Grok/X subscription)"
+    refute page_section =~ "Cursor (account subscription)"
+    refute page_section =~ "ChatGPT (Codex subscription)"
+  end
+
+  test "dismissing the subscription sheet cancels its request scope" do
+    view = mount() |> press(:open_subscription_login)
+    generation = Requests.generation(view.socket, :subscription_login)
+
+    {:noreply, socket} =
+      HomeScreen.handle_info({:dismiss, :cancel_subscription_login}, view.socket)
+
+    view = %{view | socket: socket}
+    refute screen_assigns(view).models.subscription_picker
+    assert screen_assigns(view).models.subscription_login == nil
+    assert Requests.generation(view.socket, :subscription_login) == generation + 1
+  end
+
   test "a stale poll generation is ignored" do
+    Application.put_env(:handbean, :codex_oauth_req_module, CodexStartReq)
+
     view = mount()
     view = press(view, :open_subscription_login)
     view = press(view, {:start_subscription, "openai_codex"})
     assert screen_assigns(view).models.subscription_busy?
 
     generation = Requests.generation(view.socket, :subscription_login)
-    stale = {make_ref(), {:subscription_started, generation, {:ok, fake_session()}}}
+    ref = task_ref(view, :subscription_started)
+    stale = {ref, {:subscription_started, generation, {:ok, fake_session()}}}
     view = press(view, :cancel_subscription_login)
     assert screen_assigns(view).models.subscription_login == nil
 
     {:noreply, socket} = HomeScreen.handle_info(stale, view.socket)
     view = %{view | socket: socket}
     assert screen_assigns(view).models.subscription_login == nil
-    refute Requests.has?(view.socket, :nope)
+    refute Requests.has?(view.socket, ref)
     assert Requests.generation(view.socket, :subscription_login) == generation + 1
+  end
+
+  test "catalog reload keeps the live subscription sheet state" do
+    view = mount()
+    closed_reload = screen_assigns(view).models
+
+    view = press(view, :open_subscription_login)
+    socket = Settings.handle_loaded(view.socket, closed_reload)
+    view = %{view | socket: socket}
+    assert screen_assigns(view).models.subscription_picker
+
+    starting_reload = %{
+      closed_reload
+      | subscription_picker: true,
+        subscription_busy?: true
+    }
+
+    view = deliver_start(view, fake_session())
+    socket = Settings.handle_loaded(view.socket, starting_reload)
+    view = %{view | socket: socket}
+
+    assert screen_assigns(view).models.subscription_login.verification_uri ==
+             "https://auth.openai.com/codex/device"
+
+    active_reload = screen_assigns(view).models
+    view = press(view, :cancel_subscription_login)
+    socket = Settings.handle_loaded(view.socket, active_reload)
+    view = %{view | socket: socket}
+    refute screen_assigns(view).models.subscription_picker
+    assert screen_assigns(view).models.subscription_login == nil
+  end
+
+  test "initial catalog load uses persisted workspace defaults and sources", %{
+    workspace: workspace
+  } do
+    workspace_path = workspace["path"]
+    global = %{Handbean.Settings.ModelAISettings.defaults() | reasoning: "high"}
+    workspace = %{global | reasoning: "low"}
+
+    assert :ok = Handbean.Settings.ModelAIOverride.save(:global, global)
+    assert :ok = Handbean.Settings.ModelAIOverride.save({:workspace, workspace_path}, workspace)
+
+    models = mount() |> screen_assigns() |> Map.fetch!(:models)
+
+    assert models.scope == :workspace
+    assert models.defaults.reasoning == "low"
+    assert models.sources.reasoning == :workspace
+  end
+
+  test "catalog broadcast reload preserves live scope and selects its fresh projection", %{
+    workspace: workspace_record
+  } do
+    assert :ok =
+             Handbean.Agent.ModelConfig.add_provider("alpha", %{
+               "name" => "Alpha",
+               "api" => "openai-chat-completions",
+               "models" => [%{"id" => "one", "name" => "One", "enabled" => true}]
+             })
+
+    workspace_path = workspace_record["path"]
+    global = %{Handbean.Settings.ModelAISettings.defaults() | reasoning: "high"}
+    workspace = %{global | reasoning: "low"}
+
+    assert :ok = Handbean.Settings.ModelAIOverride.save(:global, global)
+    assert :ok = Handbean.Settings.ModelAIOverride.save({:workspace, workspace_path}, workspace)
+
+    view = mount()
+    provider_id = hd(screen_assigns(view).models.providers).id
+
+    view = press(view, {:scope, :global})
+    view = press(view, {:set_default_provider, provider_id})
+
+    assert screen_assigns(view).models.scope == :global
+    assert screen_assigns(view).models.notice == gettext("Default provider changed")
+    assert_receive {:models_updated}
+
+    {:noreply, socket} = HomeScreen.handle_info({:models_updated}, view.socket)
+    view = HandbeanProbe.ScreenSettle.settle(%{view | socket: socket})
+    models = screen_assigns(view).models
+
+    assert models.scope == :global
+    assert models.defaults.reasoning == "high"
+    assert models.sources.default_model == :global
+    assert models.sources.reasoning == :global
+    assert models.notice == gettext("Default provider changed")
   end
 
   test "an accepted start shows the verification URI and schedules a poll without blocking" do
@@ -143,6 +283,7 @@ defmodule HandbeanProbe.SubscriptionLoginTest do
     refute Map.has_key?(login, :device)
     refute inspect(login) =~ "private-device"
     assert [_timer] = pending_kind(view, :subscription_poll_due)
+    assert find(view, :sheet).props.id == "subscription-login"
   end
 
   test "copy puts the verification URI on the clipboard and not credential fields" do
@@ -162,9 +303,11 @@ defmodule HandbeanProbe.SubscriptionLoginTest do
     assert HandbeanProbe.HomeScreen.Notice.text(screen_assigns(view).notice) ==
              gettext("Verification link copied")
 
+    assert inspect(find(view, :sheet)) =~ gettext("Verification link copied")
+
     rendered =
       screen_assigns(view).models
-      |> HandbeanProbe.ModelSettings.SubscriptionRender.section()
+      |> HandbeanProbe.ModelSettings.SubscriptionRender.modal()
       |> inspect()
 
     assert rendered =~ "https://auth.openai.com/codex/device"
@@ -175,6 +318,9 @@ defmodule HandbeanProbe.SubscriptionLoginTest do
     refute rendered =~ "refresh"
     refute rendered =~ "access_token"
     refute rendered =~ "api_key"
+
+    view = view |> press(:cancel_subscription_login) |> press(:open_subscription_login)
+    refute inspect(find(view, :sheet)) =~ gettext("Verification link copied")
   end
 
   test "open link uses Platform.open_url and does not embed a login page" do
@@ -187,6 +333,18 @@ defmodule HandbeanProbe.SubscriptionLoginTest do
     view = press(view, :open_subscription_link)
     assert_received {:opened, "platform_open_url", "https://auth.openai.com/codex/device"}
     assert Requests.has?(view.socket, opened_request_id(view))
+  end
+
+  test "browser launch failure stays visible inside the active subscription sheet" do
+    Application.put_env(:handbean_probe, :platform_fake, fn _req, _opts ->
+      {:error, :unavailable}
+    end)
+
+    view = deliver_start(mount(), fake_session())
+    view = press(view, :open_subscription_link)
+
+    assert inspect(find(view, :sheet)) =~ gettext("Could not open the verification link.")
+    assert screen_assigns(view).models.subscription_login
   end
 
   test "authorized poll persists through the Codex writer and does not render the token" do
@@ -222,7 +380,7 @@ defmodule HandbeanProbe.SubscriptionLoginTest do
     refute inspect(screen_assigns(view).models.subscription_login) =~ "private-refresh"
 
     refute inspect(
-             HandbeanProbe.ModelSettings.SubscriptionRender.section(screen_assigns(view).models)
+             HandbeanProbe.ModelSettings.SubscriptionRender.modal(screen_assigns(view).models)
            ) =~
              access
   end

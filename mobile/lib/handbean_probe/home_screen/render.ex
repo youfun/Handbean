@@ -205,6 +205,9 @@ defmodule HandbeanProbe.HomeScreen.Render do
     node(:column, [weight: 1, fill_width: true], [
       settings_tabs(page),
       settings_body(a),
+      if(page == :models,
+        do: ModelSettings.subscription_sheet(a.models, Map.get(a, :notice))
+      ),
       if(page == :models, do: ModelSettings.confirm_sheet(a.models))
     ])
   end
