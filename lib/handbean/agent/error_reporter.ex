@@ -147,7 +147,12 @@ defmodule Handbean.Agent.ErrorReporter do
     metadata = metadata || %{}
     code = field(metadata, :code)
     permission = field(metadata, :permission)
-    category = reason_category(reason, safe_reason(reason, provider_config))
+
+    category =
+      case Handbean.Browser.Policy.error_category(metadata) do
+        {:ok, category} -> category
+        :error -> reason_category(reason, safe_reason(reason, provider_config))
+      end
 
     disposition =
       cond do
@@ -421,6 +426,10 @@ defmodule Handbean.Agent.ErrorReporter do
   defp put_present(map, _key, ""), do: map
   defp put_present(map, key, value), do: Map.put(map, key, value)
 
+  # Browser policy owns its grouping vocabulary. ErrorReporter accepts only
+  # categories reconstructed by that owner from fixed allowlists; arbitrary
+  # paths, MFA names, free text, selectors, URLs, and hashes fall back to the
+  # ordinary sanitized reason classifier.
   defp reason_category({:error, reason}, safe_reason), do: reason_category(reason, safe_reason)
 
   defp reason_category(reason, _safe_reason) when is_atom(reason), do: Atom.to_string(reason)

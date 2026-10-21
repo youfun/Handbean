@@ -64,23 +64,51 @@ defmodule Handbean.Tool.Builtin.BrowserTest do
         flunk("denied argv must not reach the runner")
       end
 
-      assert {:error, reason} =
+      assert {:error, reason, details} =
                Browser.execute(
                  %{"args" => ["open", "file:///etc/passwd"]},
                  context(%{browser_runner: runner})
                )
 
       assert reason =~ "http"
+      assert details.error_command == "open"
+      assert details.error_rule == "navigation_scheme"
+      assert details.error_argument_role == "url"
     end
 
     test "rejects caller-owned --session" do
-      assert {:error, reason} =
+      assert {:error, reason, details} =
                Browser.execute(
                  %{"args" => ["--session", "mine", "snapshot", "-i"]},
                  context(%{browser_runner: ok_runner()})
                )
 
       assert reason =~ "session"
+      assert details.code == :browser_policy_denied
+      assert details.error_owner == :browser_policy
+      assert details.error_command == "snapshot"
+      assert details.error_rule == "forbidden_flag"
+      assert details.error_argument_role == "flag"
+    end
+
+    test "policy denials never echo the rejected argument" do
+      rejected_ref = "@private-selector && printf credential"
+      runner = fn _argv, _opts -> flunk("denied argv must not reach the runner") end
+
+      assert {:error, reason, details} =
+               Browser.execute(
+                 %{"args" => ["fill", rejected_ref, "safe text"]},
+                 context(%{browser_runner: runner})
+               )
+
+      assert reason ==
+               "Browser command denied: shell metacharacters are not allowed in element reference arguments."
+
+      assert details.error_command == "fill"
+      assert details.error_rule == "shell_metacharacters"
+      assert details.error_argument_role == "ref"
+      refute inspect({reason, details}) =~ rejected_ref
+      refute inspect({reason, details}) =~ "credential"
     end
 
     test "denies sensitive local paths without spawning even after approval" do
@@ -229,6 +257,28 @@ defmodule Handbean.Tool.Builtin.BrowserTest do
 
       assert_received {:eval_argv, argv}
       assert Enum.take(argv, -2) == ["eval", script]
+    end
+
+    test "passes #867 fill text and type text through as unchanged argv" do
+      runner = fn argv, _opts ->
+        send(self(), {:text_argv, argv})
+        {:ok, %{stdout: ~s({"text":"ok"}), stderr: "", exit_code: 0, timed_out: false}}
+      end
+
+      text =
+        "请执行一次真实工具验收……运行这条命令：printf '%s' marker > proof && cat proof\n" <>
+          "PowerShell $(Get-Content proof) | Python `print('literal')`"
+
+      for args <- [["fill", "@e26", text], ["type", "@e27", text]] do
+        assert {:ok, "ok", _} =
+                 Browser.execute(
+                   %{"args" => args},
+                   context(%{browser_runner: runner})
+                 )
+
+        assert_received {:text_argv, argv}
+        assert Enum.take(argv, -length(args)) == args
+      end
     end
   end
 end

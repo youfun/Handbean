@@ -20,7 +20,7 @@ defmodule Handbean.Browser.PolicyTest do
       assert {:auto, %{command: "snapshot"}} = Policy.classify(["snapshot", "-i"])
       assert {:auto, %{command: "click"}} = Policy.classify(["click", "@e2"])
       assert {:auto, %{command: "fill"}} = Policy.classify(["fill", "@e1", "hello"])
-      assert {:auto, %{command: "type"}} = Policy.classify(["type", "hello"])
+      assert {:auto, %{command: "type"}} = Policy.classify(["type", "@e1", "hello"])
       assert {:auto, %{command: "get"}} = Policy.classify(["get", "title"])
       assert {:auto, %{command: "tab"}} = Policy.classify(["tab", "list"])
       assert {:auto, %{command: "wait"}} = Policy.classify(["wait", "1000"])
@@ -93,6 +93,39 @@ defmodule Handbean.Browser.PolicyTest do
       end
     end
 
+    test "treats only verified fill and type text slots as arbitrary text" do
+      text = "printf 'ok' && cat file || python -c x; a | b > out < in\n$(touch nope) `literal`"
+
+      for {args, decision, command} <- [
+            {["fill", "@e1", text], :auto, "fill"},
+            {["type", "@e1", text], :auto, "type"},
+            {["type", "@e1", "--clear", text, "--delay", "25"], :auto, "type"},
+            {["keyboard", "type", text], :prompt, "keyboard"},
+            {["keyboard", "inserttext", text], :prompt, "keyboard"}
+          ] do
+        assert {^decision, %{command: ^command}} = Policy.classify(args)
+      end
+    end
+
+    test "keeps parser-recognized global flags and values outside text slots" do
+      text = "printf 'ok' && cat file\n$(touch nope) `literal`"
+
+      assert {:deny, %{policy_rule: :shell_metacharacters, argument_role: :flag_value}} =
+               Policy.classify(["fill", "--profile", "work && echo x", "@e1", "safe"])
+
+      assert {:deny, %{policy_rule: :shell_metacharacters, argument_role: :flag}} =
+               Policy.classify(["fill", "@e1", "--profile=work&&echo x"])
+
+      assert {:prompt, %{command: "fill", capability: :headed}} =
+               Policy.classify(["fill", "@e1", "--headed", text])
+
+      assert {:auto, %{command: "fill"}} =
+               Policy.classify(["fill", "@e1", "--unknown=$(literal) && text"])
+
+      assert {:auto, %{command: "type"}} =
+               Policy.classify(["type", "@e1", "--delay=25 && literal"])
+    end
+
     test "requires approval for close --all, local URLs, and pdf" do
       assert {:prompt, %{command: "close"}} = Policy.classify(["close", "--all"])
       assert {:prompt, %{command: "open"}} = Policy.classify(["open", "http://127.0.0.1:4000"])
@@ -129,6 +162,24 @@ defmodule Handbean.Browser.PolicyTest do
       assert {:deny, %{failure_category: "validation-error"}} = Policy.classify(["eval", "1\0"])
     end
 
+    test "rejects NUL in every argument role, including text" do
+      for {args, command, role} <- [
+            {["fill\0", "@e1", "text"], "unknown", :command},
+            {["fill", "@e1\0", "text"], "fill", :ref},
+            {["fill", "@e1", "text\0"], "fill", :text},
+            {["fill", "@e1", "text", "tail\0"], "fill", :trailing_arg},
+            {["--profile", "work\0", "fill", "@e1", "text"], "fill", :flag_value}
+          ] do
+        assert {:deny,
+                %{
+                  command: ^command,
+                  policy_rule: :nul,
+                  argument_role: ^role,
+                  failure_category: "validation-error"
+                }} = Policy.classify(args)
+      end
+    end
+
     test "rejects local and non-http navigation even with prompt flags" do
       assert {:deny, %{failure_category: "validation-error"}} =
                Policy.classify(["open", "file:///etc/passwd"])
@@ -147,31 +198,94 @@ defmodule Handbean.Browser.PolicyTest do
     end
 
     test "rejects caller-owned session, json injection, and file access" do
-      assert {:deny, %{failure_category: "validation-error"}} =
-               Policy.classify(["--session", "mine", "snapshot", "-i"])
-
-      assert {:deny, %{failure_category: "validation-error"}} =
-               Policy.classify(["snapshot", "--json"])
-
-      assert {:deny, %{failure_category: "validation-error"}} =
-               Policy.classify(["open", "https://example.com", "--namespace", "other"])
-
-      assert {:deny, %{failure_category: "validation-error"}} =
-               Policy.classify(["open", "https://example.com", "--allow-file-access"])
+      for args <- [
+            ["--session", "mine", "snapshot", "-i"],
+            ["snapshot", "--json"],
+            ["snapshot", "--json=true"],
+            ["open", "https://example.com", "--namespace", "other"],
+            ["open", "https://example.com", "--allow-file-access"],
+            ["fill", "@e1", "--json"],
+            ["fill", "@e1", "--json=false"],
+            ["type", "@e1", "--session=mine"],
+            ["keyboard", "type", "--namespace=other"]
+          ] do
+        assert {:deny,
+                %{
+                  policy_rule: :forbidden_flag,
+                  argument_role: :flag,
+                  failure_category: "validation-error"
+                }} = Policy.classify(args)
+      end
     end
 
-    test "rejects shell command syntax outside the eval script argument" do
-      assert {:deny, %{failure_category: "validation-error"}} =
-               Policy.classify(["open", "https://example.com && rm -rf /"])
+    test "rejects shell command syntax outside verified text slots with stable roles" do
+      for {args, command, role} <- [
+            {["open", "https://example.com && rm -rf /"], "open", :url},
+            {["eval", "document.title", "&& rm -rf /"], "eval", :trailing_arg},
+            {["eval && rm -rf /", "document.title"], "unknown", :command},
+            {["--profile", "work && rm -rf /", "eval", "document.title"], "eval", :flag_value},
+            {["--headed&&echo x", "fill", "@e1", "text"], "fill", :flag},
+            {["fill", "@e1 && echo x", "text"], "fill", :ref},
+            {["fill", "@e1", "text", "&& echo x"], "fill", :trailing_arg},
+            {["type", "@e1 && echo x"], "type", :ref},
+            {["type", "@e1 && echo x", "text"], "type", :ref},
+            {["type", "@e1", "text", "extra && echo x"], "type", :trailing_arg},
+            {["type", "@e1", "text", "--delay", "25 && echo x"], "type", :flag_value},
+            {["keyboard", "type && echo x", "text"], "keyboard", :subcommand},
+            {["keyboard", "type", "text", "extra && echo x"], "keyboard", :trailing_arg},
+            {["upload", "@e1", "notes.txt && echo x"], "upload", :path}
+          ] do
+        assert {:deny,
+                %{
+                  command: ^command,
+                  policy_rule: :shell_metacharacters,
+                  argument_role: ^role,
+                  failure_category: "validation-error"
+                }} = Policy.classify(args)
+      end
+    end
 
-      assert {:deny, %{failure_category: "validation-error"}} =
-               Policy.classify(["eval", "document.title", "&& rm -rf /"])
+    test "global option parsing cannot shift checked arguments into payload slots" do
+      for {args, role} <- [
+            {[
+               "fill",
+               "--executable-path",
+               "/tmp/browser && echo x",
+               "@e1",
+               "safe"
+             ], :flag_value},
+            {[
+               "fill",
+               "@e1",
+               "--state",
+               "/tmp/state && echo x",
+               "safe"
+             ], :flag_value},
+            {["fill", "@e1", "--profile=work", "trailing && echo x"], :trailing_arg},
+            {["type", "@e1", "--profile=work", "trailing && echo x"], :trailing_arg},
+            {[
+               "keyboard",
+               "type",
+               "--profile=work",
+               "trailing && echo x"
+             ], :trailing_arg}
+          ] do
+        assert {:deny,
+                %{
+                  command: command,
+                  policy_rule: :shell_metacharacters,
+                  argument_role: ^role
+                }} = Policy.classify(args)
 
-      assert {:deny, %{failure_category: "validation-error"}} =
-               Policy.classify(["eval && rm -rf /", "document.title"])
+        assert command in ["fill", "type", "keyboard"]
+      end
 
-      assert {:deny, %{failure_category: "validation-error"}} =
-               Policy.classify(["--profile", "work && rm -rf /", "eval", "document.title"])
+      assert {:deny,
+              %{
+                command: "fill",
+                policy_rule: :shell_metacharacters,
+                argument_role: :ref
+              }} = Policy.classify(["--headed", "false", "fill", "bad && ref", "text"])
     end
 
     test "eval keeps forbidden flags and independent argv subject to validation" do
@@ -197,6 +311,27 @@ defmodule Handbean.Browser.PolicyTest do
     test "leaves JavaScript syntax validation to the backend" do
       assert {:prompt, %{command: "eval"}} = Policy.classify(["eval", "document.title; 1"])
       assert {:prompt, %{command: "eval"}} = Policy.classify(["eval", "1; cat /etc/passwd"])
+    end
+
+    test "denial details contain only fixed policy vocabulary" do
+      details =
+        Policy.denial_details(%{
+          command: "private command && token",
+          policy_rule: "private rule",
+          argument_role: "Module.function/3"
+        })
+
+      assert details == %{
+               code: :browser_policy_denied,
+               side_effect: :not_started,
+               error_owner: :browser_policy,
+               error_command: "unknown",
+               error_rule: "invalid_arguments",
+               error_argument_role: "unknown"
+             }
+
+      refute inspect(details) =~ "private"
+      refute inspect(details) =~ "Module"
     end
   end
 

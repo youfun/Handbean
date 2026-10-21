@@ -3,9 +3,10 @@ defmodule Handbean.Browser.Policy do
   Classifies `browser` argv before any subprocess is spawned.
 
   Safe page interaction can follow the workspace default mode. Sensitive
-  families require approval. Local files, caller-owned sessions, and
-  shell command syntax outside the eval script argument is denied. Eval source
-  is passed as a single argv value, never through a shell.
+  families require approval. Local files, caller-owned sessions, and shell
+  command syntax in control, reference, flag, and path arguments are denied.
+  Eval source and verified text payloads are passed as single argv values,
+  never through a shell.
   """
 
   alias Handbean.Agent.Tool.Helpers
@@ -27,11 +28,37 @@ defmodule Handbean.Browser.Policy do
           | :cdp
           | :unknown
 
+  @type policy_rule ::
+          :forbidden_flag
+          | :invalid_arguments
+          | :navigation_scheme
+          | :nul
+          | :shell_metacharacters
+          | :unsupported_action
+
+  @type argument_role ::
+          :action
+          | :argument
+          | :args
+          | :command
+          | :flag
+          | :flag_value
+          | :path
+          | :ref
+          | :script
+          | :subcommand
+          | :text
+          | :trailing_arg
+          | :url
+          | :unknown
+
   @type meta :: %{
           optional(:command) => String.t(),
           optional(:capability) => capability(),
           optional(:reason) => String.t(),
-          optional(:failure_category) => String.t()
+          optional(:failure_category) => String.t(),
+          optional(:policy_rule) => policy_rule(),
+          optional(:argument_role) => argument_role()
         }
 
   @type decision :: {:auto, meta()} | {:prompt, meta()} | {:deny, meta()}
@@ -83,39 +110,158 @@ defmodule Handbean.Browser.Policy do
   @inspection_flags ["--help", "-h", "--version", "-V"]
   @leading_value_flags ["--profile", "--cdp"]
   @leading_switch_flags ["--headed"]
+  # agent-browser 0.39.1 flags.rs `clean_args/1` removes these exact global
+  # options before command parsing. Inline spellings remain positional except
+  # for the backend's special --restore= form.
+  @global_value_flags ~w(
+    --session --restore-save --restore-check-url --restore-check-text
+    --restore-check-fn --namespace --headers --executable-path --cdp
+    --extension --init-script --enable --profile --state --proxy
+    --proxy-bypass --args --user-agent -p --provider --device
+    --session-name --color-scheme --download-path --max-output
+    --allowed-domains --action-policy --confirm-actions --config --engine
+    --input-mode --screenshot-dir --screenshot-quality --screenshot-format
+    --idle-timeout --ca-cert --model
+  )
+  @global_switch_flags ~w(
+    --json --headed --webgpu --no-webmcp --debug --ignore-https-errors
+    --allow-file-access --hide-scrollbars --auto-connect --pin-tab
+    --no-pin-tab --no-ca-cert --use-system-ca --annotate
+    --content-boundaries --confirm-interactive --no-auto-dialog
+    -v --verbose -q --quiet --offline --quick --fix
+  )
   @navigation_commands MapSet.new(["open", "goto", "navigate"])
   @native_actions MapSet.new(~w(open snapshot eval click fill back show hide close))
+  @known_commands MapSet.new(
+                    MapSet.to_list(@auto_commands) ++
+                      Map.keys(@prompt_commands) ++
+                      MapSet.to_list(@native_actions) ++
+                      ["close", "quit", "unknown"] ++
+                      @inspection_flags
+                  )
+  @backend_commands MapSet.new(~w(
+                      open goto navigate back forward reload read click dblclick fill type hover
+                      focus check uncheck select drag upload download press key keydown keyup keyboard
+                      scroll scrollintoview scrollinto wait screenshot pdf snapshot eval close quit exit
+                      inspect auth confirm deny connect stream get is find mouse set network storage cookies
+                      tab window frame dialog trace profiler record console errors highlight clipboard state
+                      tap swipe device diff batch react vitals web-vitals a11y pushstate removeinitscript
+                      session mcp doctor install upgrade profiles skills dashboard plugin plugins chat webmcp
+                    ))
+  @policy_rules MapSet.new(
+                  ~w(forbidden_flag invalid_arguments navigation_scheme nul shell_metacharacters unsupported_action)
+                )
+  @argument_roles MapSet.new(
+                    ~w(action argument args command flag flag_value path ref script subcommand text trailing_arg url unknown)
+                  )
 
   @doc """
   Classify caller args into `:auto`, `:prompt`, or `:deny`.
   """
   @spec classify(term()) :: decision()
   def classify(args) when not is_list(args) do
-    deny("args must be a list of strings")
+    deny("Browser command denied: args must be a list of strings.",
+      command: "unknown",
+      policy_rule: :invalid_arguments,
+      argument_role: :args
+    )
   end
 
   def classify([]) do
-    deny("args must be a non-empty list of strings")
+    deny("Browser command denied: args must be a non-empty list of strings.",
+      command: "unknown",
+      policy_rule: :invalid_arguments,
+      argument_role: :args
+    )
   end
 
   def classify(args) do
+    if Enum.all?(args, &is_binary/1) do
+      classify_string_args(args)
+    else
+      deny("Browser command denied: args must be a list of strings.",
+        command: "unknown",
+        policy_rule: :invalid_arguments,
+        argument_role: :args
+      )
+    end
+  end
+
+  defp classify_string_args(args) do
+    annotated = annotate_args(args)
+
+    nul_arg =
+      Enum.find(annotated, fn {arg, _role, _shell_checked?} ->
+        String.contains?(arg, <<0>>)
+      end)
+
+    shell_arg =
+      Enum.find(annotated, fn {arg, _role, shell_checked?} ->
+        shell_checked? and shell_injection?(arg)
+      end)
+
     cond do
-      not Enum.all?(args, &is_binary/1) ->
-        deny("args must be a list of strings")
+      Enum.any?(args, &forbidden_token?/1) ->
+        policy_deny(
+          args,
+          "Browser command denied: caller-provided --json, --session, --namespace, and --allow-file-access flags are not allowed.",
+          :forbidden_flag,
+          :flag
+        )
 
-      forbidden_token = Enum.find(args, &forbidden_token?/1) ->
-        deny("blocked token: #{forbidden_token}")
+      not is_nil(nul_arg) ->
+        role = annotation_role(nul_arg)
 
-      Enum.any?(args, &String.contains?(&1, <<0>>)) ->
-        deny("args must not contain NUL bytes")
+        policy_deny(
+          args,
+          "Browser command denied: NUL bytes are not allowed in #{role_label(role)} arguments.",
+          :nul,
+          role
+        )
 
-      shell_arg = Enum.find(shell_checked_args(args), &shell_injection?/1) ->
-        deny("shell metacharacters are not allowed: #{inspect(shell_arg)}")
+      not is_nil(shell_arg) ->
+        role = annotation_role(shell_arg)
+
+        policy_deny(
+          args,
+          "Browser command denied: shell metacharacters are not allowed in #{role_label(role)} arguments.",
+          :shell_metacharacters,
+          role
+        )
 
       true ->
         classify_command(args)
     end
   end
+
+  @doc false
+  @spec denial_details(meta()) :: map()
+  def denial_details(meta) when is_map(meta) do
+    %{
+      code: :browser_policy_denied,
+      side_effect: :not_started,
+      error_owner: :browser_policy,
+      error_command: fixed_value(meta[:command], @known_commands, "unknown"),
+      error_rule: fixed_value(meta[:policy_rule], @policy_rules, "invalid_arguments"),
+      error_argument_role: fixed_value(meta[:argument_role], @argument_roles, "unknown")
+    }
+  end
+
+  @doc false
+  @spec error_category(term()) :: {:ok, String.t()} | :error
+  def error_category(metadata) when is_map(metadata) do
+    with owner when owner in [:browser_policy, "browser_policy"] <-
+           metadata_field(metadata, :error_owner),
+         {:ok, command} <- fixed_metadata_value(metadata, :error_command, @known_commands),
+         {:ok, rule} <- fixed_metadata_value(metadata, :error_rule, @policy_rules),
+         {:ok, role} <- fixed_metadata_value(metadata, :error_argument_role, @argument_roles) do
+      {:ok, Enum.join(["browser_policy", command, rule, role], "_")}
+    else
+      _ -> :error
+    end
+  end
+
+  def error_category(_metadata), do: :error
 
   @doc "True when the call is a stateless inspection command."
   @spec inspection?([String.t()]) :: boolean()
@@ -143,7 +289,11 @@ defmodule Handbean.Browser.Policy do
   """
   @spec classify_native(term()) :: decision()
   def classify_native(input) when not is_map(input) do
-    deny("native browser input must be a map")
+    deny("Browser command denied: native browser input must be a map.",
+      command: "unknown",
+      policy_rule: :invalid_arguments,
+      argument_role: :args
+    )
   end
 
   def classify_native(input) do
@@ -178,7 +328,9 @@ defmodule Handbean.Browser.Policy do
   @doc "First command token after leading global flags, including an inspection flag."
   @spec command([String.t()]) :: String.t() | nil
   def command(args) when is_list(args) do
-    case command_args(args) do
+    {positional_args, _global_args} = extract_global_args(args)
+
+    case command_args(positional_args) do
       [command | _] -> command
       [] -> nil
     end
@@ -212,21 +364,185 @@ defmodule Handbean.Browser.Policy do
     end
   end
 
-  # Only the inline eval source is JavaScript. Keep checking leading options,
-  # their values, and trailing argv; forbidden flags are checked on all args.
-  # JavaScript syntax and execution errors belong to the browser backend.
-  defp shell_checked_args(args) do
-    case command_args(args) do
-      ["eval", script | rest] ->
-        if String.starts_with?(script, "-") do
-          args
-        else
-          Enum.take(args, length(args) - length(rest) - 1) ++ rest
-        end
+  # agent-browser 0.39.1 removes recognized global flags before parsing command
+  # positionals. Mirror that ordering so a flag or its value can never shift
+  # into a text exemption. Only verified text positions (and eval source) skip
+  # shell heuristics; every original argv still gets a role and the global NUL
+  # and forbidden-flag checks above.
+  defp annotate_args(args) do
+    {positional_args, global_args} = extract_global_args(args)
+    command_args = command_args(positional_args)
+    command_index = length(positional_args) - length(command_args)
+    {leading, command_args} = Enum.split(positional_args, command_index)
 
-      _ ->
-        args
+    annotated = annotate_options(leading, :argument)
+
+    command_args =
+      case command_args do
+        [command | rest] ->
+          [{command, :command, true} | command_arg_roles(command, rest)]
+
+        [] ->
+          []
+      end
+
+    global_args ++ annotated ++ command_args
+  end
+
+  defp extract_global_args(args), do: extract_global_args(args, [], [], false)
+
+  defp extract_global_args([], positional, annotated, _seen_command?) do
+    {Enum.reverse(positional), Enum.reverse(annotated)}
+  end
+
+  defp extract_global_args([flag, value | rest], positional, annotated, seen_command?)
+       when flag in @global_value_flags do
+    extract_global_args(
+      rest,
+      positional,
+      [{value, :flag_value, true}, {flag, :flag, true} | annotated],
+      seen_command?
+    )
+  end
+
+  defp extract_global_args([flag], positional, annotated, _seen_command?)
+       when flag in @global_value_flags do
+    {Enum.reverse(positional), Enum.reverse([{flag, :flag, true} | annotated])}
+  end
+
+  defp extract_global_args([flag, value | rest], positional, annotated, seen_command?)
+       when flag in @global_switch_flags and value in ["true", "false"] do
+    extract_global_args(
+      rest,
+      positional,
+      [{value, :flag_value, true}, {flag, :flag, true} | annotated],
+      seen_command?
+    )
+  end
+
+  defp extract_global_args([flag | rest], positional, annotated, seen_command?)
+       when flag in @global_switch_flags do
+    extract_global_args(
+      rest,
+      positional,
+      [{flag, :flag, true} | annotated],
+      seen_command?
+    )
+  end
+
+  defp extract_global_args(["--restore=" <> _ = flag | rest], positional, annotated, seen?) do
+    extract_global_args(rest, positional, [{flag, :flag, true} | annotated], seen?)
+  end
+
+  defp extract_global_args(["--restore", value | rest], positional, annotated, false)
+       when is_binary(value) do
+    if value in @backend_commands or String.starts_with?(value, "-") do
+      extract_global_args(
+        [value | rest],
+        positional,
+        [{"--restore", :flag, true} | annotated],
+        false
+      )
+    else
+      extract_global_args(
+        rest,
+        positional,
+        [{value, :flag_value, true}, {"--restore", :flag, true} | annotated],
+        false
+      )
     end
+  end
+
+  defp extract_global_args(["--restore" | rest], positional, annotated, seen?) do
+    extract_global_args(rest, positional, [{"--restore", :flag, true} | annotated], seen?)
+  end
+
+  defp extract_global_args([arg | rest], positional, annotated, seen_command?) do
+    annotated =
+      if is_binary(arg) and leading_inline_flag?(arg) do
+        [{arg, :flag, true} | annotated]
+      else
+        annotated
+      end
+
+    seen_command? = seen_command? or (is_binary(arg) and MapSet.member?(@backend_commands, arg))
+    extract_global_args(rest, [arg | positional], annotated, seen_command?)
+  end
+
+  defp command_arg_roles("eval", [script | rest]) do
+    script_checked? = String.starts_with?(script, "-")
+    [{script, :script, script_checked?} | annotate_options(rest, :trailing_arg)]
+  end
+
+  defp command_arg_roles("fill", [ref, text | rest]) do
+    [{ref, :ref, true}, {text, :text, false} | annotate_options(rest, :trailing_arg)]
+  end
+
+  defp command_arg_roles("fill", [ref]), do: [{ref, :ref, true}]
+
+  defp command_arg_roles("type", [ref | rest]) do
+    [{ref, :ref, true} | annotate_type_args(rest, false)]
+  end
+
+  defp command_arg_roles("keyboard", [subcommand, text | rest])
+       when subcommand in ["type", "inserttext", "insertText"] do
+    [
+      {subcommand, :subcommand, true},
+      {text, :text, false}
+      | annotate_options(rest, :trailing_arg)
+    ]
+  end
+
+  defp command_arg_roles("keyboard", args), do: annotate_options(args, :subcommand)
+
+  defp command_arg_roles(command, [url | rest]) when command in ["open", "goto", "navigate"] do
+    [{url, :url, true} | annotate_options(rest, :trailing_arg)]
+  end
+
+  defp command_arg_roles("upload", [ref | paths]) do
+    [{ref, :ref, true} | annotate_options(paths, :path)]
+  end
+
+  defp command_arg_roles("download", [ref | paths]) do
+    [{ref, :ref, true} | annotate_options(paths, :path)]
+  end
+
+  defp command_arg_roles(command, args) when command in ["screenshot", "pdf"] do
+    annotate_options(args, :path)
+  end
+
+  defp command_arg_roles(_command, args), do: annotate_options(args, :argument)
+
+  defp annotate_type_args([], _text_seen?), do: []
+
+  defp annotate_type_args(["--clear" | rest], text_seen?) do
+    [{"--clear", :flag, true} | annotate_type_args(rest, text_seen?)]
+  end
+
+  defp annotate_type_args(["--delay", value | rest], text_seen?) do
+    [
+      {"--delay", :flag, true},
+      {value, :flag_value, true}
+      | annotate_type_args(rest, text_seen?)
+    ]
+  end
+
+  defp annotate_type_args(["--delay"], _text_seen?), do: [{"--delay", :flag, true}]
+
+  defp annotate_type_args([text | rest], false) do
+    [{text, :text, false} | annotate_type_args(rest, true)]
+  end
+
+  defp annotate_type_args([arg | rest], true) do
+    role = if String.starts_with?(arg, "-"), do: :flag, else: :trailing_arg
+    [{arg, role, true} | annotate_type_args(rest, true)]
+  end
+
+  defp annotate_options([], _default_role), do: []
+
+  defp annotate_options([arg | rest], default_role) do
+    role = if String.starts_with?(arg, "-"), do: :flag, else: default_role
+    [{arg, role, true} | annotate_options(rest, default_role)]
   end
 
   defp leading_inline_flag?(arg) when is_binary(arg) do
@@ -242,7 +558,11 @@ defmodule Handbean.Browser.Policy do
 
     cond do
       is_nil(cmd) ->
-        deny("missing browser command")
+        deny("Browser command denied: missing browser command.",
+          command: "unknown",
+          policy_rule: :invalid_arguments,
+          argument_role: :command
+        )
 
       cmd in @inspection_flags ->
         {:auto, %{command: cmd, capability: :inspect}}
@@ -289,8 +609,19 @@ defmodule Handbean.Browser.Policy do
           {:auto, %{command: cmd, capability: :navigation}}
         end
 
-      {:error, reason} ->
-        deny(reason)
+      {:error, :missing_url} ->
+        deny("Browser command denied: navigation requires an http(s) URL.",
+          command: cmd,
+          policy_rule: :invalid_arguments,
+          argument_role: :url
+        )
+
+      {:error, :navigation_scheme} ->
+        deny("Browser command denied: only http(s) URLs are allowed.",
+          command: cmd,
+          policy_rule: :navigation_scheme,
+          argument_role: :url
+        )
     end
   end
 
@@ -306,13 +637,13 @@ defmodule Handbean.Browser.Policy do
   defp navigation_url(args) do
     case Enum.find(args, &http_or_other_url?/1) do
       nil ->
-        {:error, "navigation requires an http(s) URL"}
+        {:error, :missing_url}
 
       url ->
         if http_url?(url) do
           {:ok, url}
         else
-          {:error, "only http(s) URLs are allowed: #{url}"}
+          {:error, :navigation_scheme}
         end
     end
   end
@@ -328,10 +659,18 @@ defmodule Handbean.Browser.Policy do
 
     cond do
       not is_binary(action) or action == "" ->
-        deny("action is required")
+        deny("Browser command denied: action is required.",
+          command: "unknown",
+          policy_rule: :invalid_arguments,
+          argument_role: :action
+        )
 
       action not in @native_actions ->
-        deny("unsupported browser action: #{action}")
+        deny("Browser command denied: unsupported browser action.",
+          command: "unknown",
+          policy_rule: :unsupported_action,
+          argument_role: :action
+        )
 
       action == "open" ->
         classify_native_open(input)
@@ -357,11 +696,19 @@ defmodule Handbean.Browser.Policy do
             {:auto, %{command: "open", capability: :navigation}}
           end
         else
-          deny("only http(s) URLs are allowed: #{url}")
+          deny("Browser command denied: only http(s) URLs are allowed.",
+            command: "open",
+            policy_rule: :navigation_scheme,
+            argument_role: :url
+          )
         end
 
       _ ->
-        deny("navigation requires an http(s) URL")
+        deny("Browser command denied: navigation requires an http(s) URL.",
+          command: "open",
+          policy_rule: :invalid_arguments,
+          argument_role: :url
+        )
     end
   end
 
@@ -499,6 +846,7 @@ defmodule Handbean.Browser.Policy do
   end
 
   defp forbidden_token?("--json"), do: true
+  defp forbidden_token?("--json=" <> _), do: true
   defp forbidden_token?("--session"), do: true
   defp forbidden_token?("--namespace"), do: true
   defp forbidden_token?("--allow-file-access"), do: true
@@ -532,7 +880,58 @@ defmodule Handbean.Browser.Policy do
     String.match?(arg, ~r/(?:^|[\s;|&])(?:rm|cat|curl|wget|bash|sh|zsh|python|perl|nc)\b/)
   end
 
-  defp deny(reason) do
-    {:deny, %{failure_category: "validation-error", reason: reason}}
+  defp policy_deny(args, reason, rule, role) do
+    deny(reason,
+      command: safe_command(args),
+      policy_rule: rule,
+      argument_role: role
+    )
+  end
+
+  defp safe_command(args) do
+    args
+    |> command()
+    |> case do
+      command when is_binary(command) ->
+        if MapSet.member?(@known_commands, command), do: command, else: "unknown"
+
+      _ ->
+        "unknown"
+    end
+  end
+
+  defp fixed_metadata_value(metadata, key, allowed) do
+    value = fixed_value(metadata_field(metadata, key), allowed, nil)
+    if is_binary(value), do: {:ok, value}, else: :error
+  end
+
+  defp fixed_value(value, allowed, fallback) do
+    value = if is_atom(value), do: Atom.to_string(value), else: value
+    if is_binary(value) and MapSet.member?(allowed, value), do: value, else: fallback
+  end
+
+  defp metadata_field(metadata, key) do
+    Map.get(metadata, key, Map.get(metadata, Atom.to_string(key)))
+  end
+
+  defp annotation_role({_arg, role, _shell_checked?}), do: role
+
+  defp role_label(role) when role in [:text, :script], do: "text payload"
+  defp role_label(:ref), do: "element reference"
+  defp role_label(:flag_value), do: "flag value"
+  defp role_label(:trailing_arg), do: "trailing"
+  defp role_label(:subcommand), do: "subcommand"
+  defp role_label(:url), do: "URL"
+  defp role_label(:path), do: "file path"
+  defp role_label(role) when role in [:command, :flag, :argument, :args], do: Atom.to_string(role)
+  defp role_label(_role), do: "unknown"
+
+  defp deny(reason, metadata) do
+    meta =
+      metadata
+      |> Map.new()
+      |> Map.merge(%{failure_category: "validation-error", reason: reason})
+
+    {:deny, meta}
   end
 end

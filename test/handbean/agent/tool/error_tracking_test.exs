@@ -1,7 +1,7 @@
 defmodule Handbean.Agent.Tool.ErrorTrackingTest do
   use Handbean.DataCase, async: false
 
-  alias ErrorTracker.Occurrence
+  alias ErrorTracker.{Error, Occurrence}
   alias Handbean.Agent.{Config, State}
   alias Handbean.Agent.Tool.Executor
 
@@ -73,6 +73,7 @@ defmodule Handbean.Agent.Tool.ErrorTrackingTest do
     Handbean.Tool.Registry.register(UnknownFailureTool)
     Handbean.Tool.Registry.register(CrashingTool)
     Handbean.Tool.Registry.register(CapturedFailureTool)
+    Handbean.Tool.Registry.register(Handbean.Tool.Builtin.Browser)
     Handbean.Tool.Registry.register(Handbean.Tool.Builtin.Edit)
     Handbean.Tool.Registry.register(Handbean.Tool.Builtin.Read)
 
@@ -257,6 +258,63 @@ defmodule Handbean.Agent.Tool.ErrorTrackingTest do
     refute inspect(payload) =~ "captured_tool.ex"
     refute inspect(details) =~ "diagnostic"
     refute inspect(details) =~ "captured_tool.ex"
+  end
+
+  test "Browser policy groups by fixed command, rule, and argument role without payloads" do
+    state = state_for("browser")
+
+    private_values = [
+      "@private-selector-a && printf credential-a",
+      "@private-selector-b && printf credential-b",
+      "private trailing && printf credential-c"
+    ]
+
+    calls = [
+      %{
+        id: "browser-fill-a",
+        name: "browser",
+        input: %{"args" => ["fill", Enum.at(private_values, 0), "safe text"]}
+      },
+      %{
+        id: "browser-fill-b",
+        name: "browser",
+        input: %{"args" => ["fill", Enum.at(private_values, 1), "different safe text"]}
+      },
+      %{
+        id: "browser-type-trailing",
+        name: "browser",
+        input: %{"args" => ["type", "@e1", "safe text", Enum.at(private_values, 2)]}
+      }
+    ]
+
+    assert {:ok, result, blocks} = Executor.execute_all_with_details(calls, state)
+    assert Enum.all?(result.content, & &1.is_error)
+
+    occurrences = Repo.all(from(occurrence in Occurrence, order_by: occurrence.id))
+    errors = Repo.all(from(error in Error, order_by: error.source_line))
+
+    assert Enum.map(occurrences, & &1.context["reason_category"]) == [
+             "browser_policy_fill_shell_metacharacters_ref",
+             "browser_policy_fill_shell_metacharacters_ref",
+             "browser_policy_type_shell_metacharacters_trailing_arg"
+           ]
+
+    assert Enum.map(errors, & &1.source_line) == [
+             "agent://gateway.test/browser/browser_policy_fill_shell_metacharacters_ref:0",
+             "agent://gateway.test/browser/browser_policy_type_shell_metacharacters_trailing_arg:0"
+           ]
+
+    assert Enum.all?(occurrences, &(&1.context["tool_error_code"] == "browser_policy_denied"))
+
+    recorded = inspect({result, blocks, occurrences, errors})
+
+    for private <- private_values do
+      refute recorded =~ private
+    end
+
+    refute recorded =~ "credential-a"
+    refute recorded =~ "credential-b"
+    refute recorded =~ "credential-c"
   end
 
   defp state_for(tool) do

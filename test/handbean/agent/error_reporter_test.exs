@@ -142,6 +142,47 @@ defmodule Handbean.Agent.ErrorReporterTest do
              ErrorReporter.tool_failure_disposition("unknown failure", %{code: :new_unknown_code})
   end
 
+  test "uses only allowlisted Browser policy metadata for stable categories" do
+    base = %{
+      code: :browser_policy_denied,
+      error_owner: :browser_policy,
+      error_rule: :shell_metacharacters
+    }
+
+    assert {:report, "browser_policy_eval_shell_metacharacters_script"} =
+             ErrorReporter.tool_failure_disposition(
+               "fixed message",
+               Map.merge(base, %{error_command: :eval, error_argument_role: :script})
+             )
+
+    assert {:report, "browser_policy_fill_shell_metacharacters_ref"} =
+             ErrorReporter.tool_failure_disposition(
+               "first private selector",
+               Map.merge(base, %{error_command: :fill, error_argument_role: :ref})
+             )
+
+    assert {:report, "browser_policy_type_shell_metacharacters_text"} =
+             ErrorReporter.tool_failure_disposition(
+               "first private text",
+               Map.merge(base, %{error_command: :type, error_argument_role: :text})
+             )
+
+    assert {:report, "browser_policy_type_shell_metacharacters_text"} =
+             ErrorReporter.tool_failure_disposition(
+               "different private text",
+               Map.merge(base, %{error_command: "type", error_argument_role: "text"})
+             )
+
+    assert {:report, "fixed_message"} =
+             ErrorReporter.tool_failure_disposition(
+               "fixed message",
+               Map.merge(base, %{
+                 error_command: "../../private/source",
+                 error_argument_role: "Module.function/3"
+               })
+             )
+  end
+
   test "IDs and stack line numbers do not classify internal exceptions as provider errors" do
     for digits <- ["4298", "401", "403"] do
       reason =

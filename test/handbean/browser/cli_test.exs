@@ -136,6 +136,35 @@ defmodule Handbean.Browser.CliTest do
       refute File.exists?(marker)
     end
 
+    @tag :tmp_dir
+    @tag skip: match?({:win32, _}, :os.type())
+    test "direct subprocess preserves fill and type text as one argv without shell expansion", %{
+      tmp_dir: dir
+    } do
+      executable = Path.join(dir, "argv-echo")
+      marker = Path.join(dir, "must-not-exist")
+      File.write!(executable, "#!/bin/sh\nprintf '%s\\000' \"$@\"\n")
+      File.chmod!(executable, 0o700)
+
+      text = "$(touch #{marker}) && `touch #{marker}`\nprintf 'literal' | cat"
+
+      for args <- [
+            ["fill", "@e26", text],
+            ["type", "@e27", text],
+            ["keyboard", "type", text],
+            ["keyboard", "inserttext", text]
+          ] do
+        assert {decision, _meta} = Handbean.Browser.Policy.classify(args)
+        assert decision in [:auto, :prompt]
+
+        assert {:ok, %{exit_code: 0, stdout: output}} =
+                 Cli.run(args, executable: executable)
+
+        assert String.split(output, <<0>>, trim: true) == ["--json" | args]
+        refute File.exists?(marker)
+      end
+    end
+
     test "prefers the bundled runtime over workspace PATH" do
       runner = fn _argv, opts ->
         send(self(), {:bundled_executable, opts[:executable]})

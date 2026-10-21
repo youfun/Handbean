@@ -34,8 +34,9 @@ defmodule Handbean.Tool.Builtin.Browser do
       _ ->
         "Drive a real browser for web research, reading live docs, clicking, " <>
           "filling forms, taking screenshots, and extracting page content. " <>
-          "Pass CLI args after agent-browser (for example open, snapshot -i, click @eN). " <>
-          "Do not include --json or the binary name."
+          "Pass CLI args after agent-browser (for example open, snapshot -i, click @eN, " <>
+          "fill @eN text, type @eN text, or keyboard type text). Keep each text payload " <>
+          "in one array item. Do not include --json or the binary name."
     end
   end
 
@@ -242,8 +243,11 @@ defmodule Handbean.Tool.Builtin.Browser do
 
   defp reject_denied(args) do
     case Policy.classify(args) do
-      {:deny, meta} -> {:error, meta[:reason] || "Browser command denied"}
-      _ -> :ok
+      {:deny, meta} ->
+        {:error, meta[:reason] || "Browser command denied", Policy.denial_details(meta)}
+
+      _ ->
+        :ok
     end
   end
 
@@ -356,7 +360,7 @@ defmodule Handbean.Tool.Builtin.Browser do
           type: "array",
           items: %{type: "string"},
           description:
-            "Arguments passed after agent-browser. Do not include --json or the binary name."
+            "Arguments passed after agent-browser. For fill/type use separate selector and text items; focused keyboard type uses keyboard, type, text. Keep each text payload in one item. Do not include --json or the binary name."
         },
         timeout_ms: %{
           type: "integer",
