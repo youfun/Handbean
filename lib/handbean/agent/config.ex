@@ -261,6 +261,11 @@ defmodule Handbean.Agent.Config do
       handoff_id: get_in(Keyword.get(opts, :origin) || %{}, ["handoff_id"]),
       delegated_read_only: Keyword.get(opts, :delegated_read_only, false),
       delegated_approval: Keyword.get(opts, :delegated_approval),
+      permission_mode: Keyword.get(opts, :permission_mode),
+      permission_revision: Keyword.get(opts, :permission_revision),
+      approval_mode: Keyword.get(opts, :approval_mode),
+      approvals_reviewer: Keyword.get(opts, :approvals_reviewer),
+      permission_source: Keyword.get(opts, :permission_source),
       browser_runner: Keyword.get(opts, :browser_runner),
       memory_scope: effective_memory_scope(opts, om),
       privacy_mode: om_value(om, :privacy_mode)

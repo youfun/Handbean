@@ -754,6 +754,7 @@ defmodule Handbean.Agent.Coordinator do
             |> Keyword.put_new(:workspace_id, meta["workspace_id"])
             |> put_created_by(meta)
             |> put_checkout_path(meta)
+            |> put_permission_mode(meta)
 
           if get_in(meta, ["collaboration", "read_only"]) == true,
             do: Keyword.put(opts, :delegated_read_only, true),
@@ -773,6 +774,20 @@ defmodule Handbean.Agent.Coordinator do
     |> put_builtin_memory()
     |> put_skills()
     |> put_advisor_pin()
+  end
+
+  defp put_permission_mode(opts, meta) do
+    resolved =
+      meta
+      |> Handbean.Permissions.ConversationMode.get()
+      |> Handbean.Permissions.ConversationMode.resolve(Keyword.get(opts, :delegated_approval))
+
+    opts
+    |> Keyword.put(:permission_mode, resolved.permission_mode)
+    |> Keyword.put(:permission_revision, meta["permission_revision"] || 0)
+    |> Keyword.put(:approval_mode, resolved.approval_mode)
+    |> Keyword.put(:approvals_reviewer, resolved.reviewer)
+    |> Keyword.put(:permission_source, :conversation)
   end
 
   defp put_checkout_path(opts, meta) do

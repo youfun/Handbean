@@ -97,6 +97,266 @@ defmodule Handbean.Agent.Middleware.ToolGuardTest do
     assert %{provenance: :yolo} = guarded.tool_guard_execution_grants[call.id]
   end
 
+  test "conversation yolo remains constrained by workspace denies and sensitive paths" do
+    workspace = tmp_workspace(%{"tools" => %{"deny" => ["bash"]}})
+
+    config = %Config{
+      working_directory: workspace,
+      model: "fake",
+      middleware: [],
+      context: %{
+        permission_mode: :yolo,
+        approval_mode: :yolo,
+        approvals_reviewer: :user
+      }
+    }
+
+    calls = [
+      %{type: "tool_use", id: "denied", name: "bash", input: %{"command" => "pwd"}},
+      %{type: "tool_use", id: "sensitive", name: "read", input: %{"file_path" => ".env"}}
+    ]
+
+    assert {:tool_guard_denied, guarded} =
+             %State{State.init(config, "hi") | tool_guard_overrides: %{}}
+             |> State.append_messages([Message.tool_use(calls)])
+             |> then(&ToolGuard.call(:after_tool_request, &1))
+
+    assert Enum.map(guarded.tool_guard_denied_calls, & &1.id) == ["denied", "sensitive"]
+    assert guarded.tool_guard_execution_grants == %{}
+  end
+
+  test "mixed batches freeze already admitted calls while later approvals use the new revision" do
+    workspace =
+      tmp_workspace(%{
+        "tools" => %{"default_mode" => "auto", "per_tool" => %{"bash" => "prompt"}}
+      })
+
+    config = %Config{
+      working_directory: workspace,
+      model: "fake",
+      middleware: [],
+      context: %{
+        permission_mode: :yolo,
+        permission_revision: 7,
+        approval_mode: :yolo,
+        approvals_reviewer: :user
+      }
+    }
+
+    calls = [
+      %{
+        type: "tool_use",
+        id: "already-admitted",
+        name: "read",
+        input: %{"file_path" => "README.md"}
+      },
+      %{type: "tool_use", id: "pending", name: "bash", input: %{"command" => "git status"}}
+    ]
+
+    state = State.init(config, "hi") |> State.append_messages([Message.tool_use(calls)])
+
+    assert {:interrupt, interrupted, _data} = ToolGuard.call(:after_tool_request, state)
+
+    assert %{approval_mode: :yolo, permission_revision: 7} =
+             interrupted.tool_guard_admission_contexts["already-admitted"]
+
+    refute Map.has_key?(interrupted.tool_guard_admission_contexts, "pending")
+
+    changed = %{
+      interrupted
+      | config: %{
+          interrupted.config
+          | context: %{
+              permission_mode: :prompt,
+              permission_revision: 8,
+              approval_mode: :prompt,
+              approvals_reviewer: :user
+            }
+        }
+    }
+
+    resolved =
+      ToolGuard.resolve_approval(changed, [
+        %{
+          "tool_call_id" => "pending",
+          "tool_name" => "bash",
+          "action" => "approve",
+          "remember" => false
+        }
+      ])
+
+    assert %{approval_mode: :yolo, permission_revision: 7} =
+             resolved.state.tool_guard_admission_contexts["already-admitted"]
+
+    assert %{approval_mode: :prompt, permission_revision: 8} =
+             resolved.state.tool_guard_admission_contexts["pending"]
+  end
+
+  test "pending prompt switches to the AI reviewer once for the new revision" do
+    interrupted =
+      %{"tools" => %{"per_tool" => %{"bash" => "prompt"}}}
+      |> state([
+        %{type: "tool_use", id: "b1", name: "bash", input: %{"command" => "git status"}}
+      ])
+      |> then(&ToolGuard.call(:after_tool_request, &1))
+      |> then(fn {:interrupt, interrupted, _data} -> interrupted end)
+
+    interrupted = %{
+      interrupted
+      | config: %{
+          interrupted.config
+          | context: %{
+              permission_mode: :auto_review,
+              permission_revision: 1,
+              approval_mode: :auto,
+              approvals_reviewer: :auto_review
+            }
+        }
+    }
+
+    test_pid = self()
+
+    Process.put(Handbean.Permissions.AutoReview.transport_key(), fn _request ->
+      send(test_pid, :reviewed_pending_batch)
+
+      {:ok,
+       Handbean.JSON.encode!(%{
+         "decisions" => [
+           %{"tool_call_id" => "b1", "decision" => "approve", "rationale" => "ok"}
+         ]
+       })}
+    end)
+
+    on_exit(fn -> Process.delete(Handbean.Permissions.AutoReview.transport_key()) end)
+
+    assert :auto_review = ToolGuard.pending_reconciliation(interrupted)
+    assert {:ok, resolution} = ToolGuard.resolve_auto_review(interrupted)
+    assert_receive :reviewed_pending_batch
+    assert Enum.map(resolution.executable_calls, & &1.id) == ["b1"]
+
+    assert %{approval_mode: :auto, permission_revision: 1} =
+             resolution.state.tool_guard_admission_contexts["b1"]
+  end
+
+  test "conversation smart tightens a workspace YOLO default and invokes the reviewer" do
+    test_pid = self()
+
+    Process.put(Handbean.Permissions.AutoReview.transport_key(), fn request ->
+      send(test_pid, {:reviewed_ids, Enum.map(request.action_requests, & &1.tool_call_id)})
+
+      {:ok,
+       Handbean.JSON.encode!(%{
+         "decisions" => [
+           %{"tool_call_id" => "read-1", "decision" => "approve", "rationale" => "ok"}
+         ]
+       })}
+    end)
+
+    on_exit(fn -> Process.delete(Handbean.Permissions.AutoReview.transport_key()) end)
+
+    state =
+      %{"tools" => %{"default_mode" => "yolo"}}
+      |> state([
+        %{type: "tool_use", id: "read-1", name: "read", input: %{"file_path" => "README.md"}}
+      ])
+      |> then(fn state ->
+        context = %{
+          permission_mode: :auto_review,
+          permission_revision: 1,
+          approval_mode: :auto,
+          approvals_reviewer: :auto_review,
+          permission_source: :conversation
+        }
+
+        %{state | config: %{state.config | context: context}}
+      end)
+
+    assert %State{status: :running} = ToolGuard.call(:after_tool_request, state)
+    assert_receive {:reviewed_ids, ["read-1"]}
+  end
+
+  test "pending reconciliation keeps new policy denies out of AI and human approvals" do
+    workspace =
+      tmp_workspace(%{
+        "tools" => %{"per_tool" => %{"bash" => "prompt", "read" => "prompt"}}
+      })
+
+    config = %Config{
+      working_directory: workspace,
+      model: "fake",
+      middleware: [],
+      context: %{permission_mode: :prompt, approval_mode: :prompt, approvals_reviewer: :user}
+    }
+
+    calls = [
+      %{type: "tool_use", id: "denied", name: "bash", input: %{"command" => "pwd"}},
+      %{type: "tool_use", id: "reviewed", name: "read", input: %{"file_path" => "README.md"}}
+    ]
+
+    initial =
+      %State{State.init(config, "hi") | tool_guard_overrides: %{}}
+      |> State.append_messages([Message.tool_use(calls)])
+
+    assert {:interrupt, interrupted, _data} = ToolGuard.call(:after_tool_request, initial)
+
+    File.write!(
+      Handbean.WorkspaceSettings.path(workspace),
+      Handbean.JSON.encode!(%{
+        "tools" => %{
+          "default_mode" => "yolo",
+          "deny" => ["bash"],
+          "per_tool" => %{"read" => "prompt"}
+        }
+      })
+    )
+
+    changed = %{
+      interrupted
+      | config: %{
+          interrupted.config
+          | context: %{
+              permission_mode: :auto_review,
+              permission_revision: 2,
+              approval_mode: :auto,
+              approvals_reviewer: :auto_review,
+              permission_source: :conversation
+            }
+        }
+    }
+
+    test_pid = self()
+
+    Process.put(Handbean.Permissions.AutoReview.transport_key(), fn request ->
+      ids = Enum.map(request.action_requests, & &1.tool_call_id)
+      send(test_pid, {:reviewed_ids, ids})
+
+      {:ok,
+       Handbean.JSON.encode!(%{
+         "decisions" =>
+           Enum.map(ids, fn id ->
+             %{"tool_call_id" => id, "decision" => "approve", "rationale" => "ok"}
+           end)
+       })}
+    end)
+
+    on_exit(fn -> Process.delete(Handbean.Permissions.AutoReview.transport_key()) end)
+
+    assert :auto_review = ToolGuard.pending_reconciliation(changed)
+    assert {:ok, resolution} = ToolGuard.resolve_auto_review(changed)
+    assert_receive {:reviewed_ids, ["reviewed"]}
+    assert Enum.map(resolution.executable_calls, & &1.id) == ["reviewed"]
+    assert Enum.map(resolution.denied_blocks, & &1.tool_use_id) == ["denied"]
+
+    human =
+      ToolGuard.resolve_approval(changed, [
+        %{"tool_call_id" => "denied", "action" => "approve"},
+        %{"tool_call_id" => "reviewed", "action" => "approve"}
+      ])
+
+    assert Enum.map(human.executable_calls, & &1.id) == ["reviewed"]
+    assert Enum.map(human.denied_blocks, & &1.tool_use_id) == ["denied"]
+  end
+
   test "duplicate tool call ids are denied before grants can collide" do
     settings = %{"tools" => %{"default_mode" => "yolo"}}
 
@@ -248,7 +508,7 @@ defmodule Handbean.Agent.Middleware.ToolGuardTest do
     assert Enum.all?(decisions, &(&1["action"] == "approve" and &1["remember"] == false))
   end
 
-  test "policy reconciliation rechecks calls that were auto-approved before the wait" do
+  test "policy reconciliation preserves calls that were admitted before the wait" do
     interrupted =
       %{
         "tools" => %{
@@ -277,7 +537,8 @@ defmodule Handbean.Agent.Middleware.ToolGuardTest do
       })
     )
 
-    assert :pending = ToolGuard.auto_resume_decisions(interrupted)
+    assert {:ok, decisions} = ToolGuard.auto_resume_decisions(interrupted)
+    assert Enum.map(decisions, & &1["tool_call_id"]) == ["r1"]
   end
 
   test "yolo reconciliation keeps explicit prompts pending while computer control auto-resumes" do

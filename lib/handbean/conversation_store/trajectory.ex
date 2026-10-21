@@ -4,7 +4,14 @@ defmodule Handbean.ConversationStore.Trajectory do
   import Ecto.Query
 
   alias Handbean.Repo
-  alias Handbean.Storage.{Conversation, ConversationEntry, ConversationRun, ConversationTurn}
+
+  alias Handbean.Storage.{
+    Conversation,
+    ConversationEntry,
+    ConversationPermissionChange,
+    ConversationRun,
+    ConversationTurn
+  }
 
   @capture_version 1
   @max_runs 100
@@ -91,32 +98,59 @@ defmodule Handbean.ConversationStore.Trajectory do
   def record_run_start(conversation_id, attrs)
       when is_binary(conversation_id) and is_map(attrs) do
     with {:ok, run_id} <- required_string(value(attrs, :run_id)) do
-      timestamp = now()
+      result =
+        Repo.transaction(
+          fn ->
+            timestamp = now()
+            delegated_approval = value(attrs, :delegated_approval)
 
-      row = %{
-        conversation_id: conversation_id,
-        run_id: run_id,
-        status: "running",
-        stop_reason: nil,
-        loop_owner: optional_string(value(attrs, :loop_owner) || "handbean"),
-        backend: optional_string(value(attrs, :backend)),
-        model: optional_string(value(attrs, :model)),
-        error: nil,
-        turn_count: 0,
-        duration_ms: nil,
-        capture_version: @capture_version,
-        started_at: timestamp,
-        completed_at: nil,
-        created_at: timestamp,
-        updated_at: timestamp
-      }
+            permission =
+              Handbean.Permissions.ConversationMode.runtime(conversation_id, delegated_approval)
 
-      conflict =
-        row
-        |> Map.take([:loop_owner, :backend, :model, :capture_version, :updated_at])
-        |> Map.to_list()
+            row = %{
+              conversation_id: conversation_id,
+              run_id: run_id,
+              status: "running",
+              stop_reason: nil,
+              loop_owner: optional_string(value(attrs, :loop_owner) || "handbean"),
+              backend: optional_string(value(attrs, :backend)),
+              model: optional_string(value(attrs, :model)),
+              initial_permission_mode: to_string(permission.permission_mode),
+              initial_permission_revision: permission.permission_revision,
+              initial_approval_mode: to_string(permission.approval_mode),
+              initial_approvals_reviewer: to_string(permission.reviewer),
+              permission_source: optional_string(value(attrs, :permission_source)),
+              delegated_approval: optional_string(delegated_approval),
+              current_permission_mode: to_string(permission.permission_mode),
+              current_permission_revision: permission.permission_revision,
+              permission_changed_at: nil,
+              error: nil,
+              turn_count: 0,
+              duration_ms: nil,
+              capture_version: @capture_version,
+              started_at: timestamp,
+              completed_at: nil,
+              created_at: timestamp,
+              updated_at: timestamp
+            }
 
-      insert(ConversationRun, row, conflict, [:conversation_id, :run_id])
+            conflict =
+              row
+              |> Map.take([:loop_owner, :backend, :model, :capture_version, :updated_at])
+              |> Map.to_list()
+
+            case insert(ConversationRun, row, conflict, [:conversation_id, :run_id]) do
+              :ok -> :ok
+              {:error, reason} -> Repo.rollback(reason)
+            end
+          end,
+          mode: :immediate
+        )
+
+      with {:ok, :ok} <- result,
+           :ok <- Handbean.Permissions.ConversationMode.observe_run(conversation_id, run_id) do
+        :ok
+      end
     end
   end
 
@@ -168,19 +202,28 @@ defmodule Handbean.ConversationStore.Trajectory do
         ])
         |> Enum.reject(fn {_key, value} -> is_nil(value) end)
 
-      Repo.transaction(fn ->
-        with :ok <- insert(ConversationRun, row, conflict, [:conversation_id, :run_id]),
-             :ok <- settle_open_turns(conversation_id, run_id, status, timestamp) do
-          Repo.update_all(
-            from(conversation in Conversation, where: conversation.id == ^conversation_id),
-            set: [last_run_result: status]
-          )
+      Repo.transaction(
+        fn ->
+          with :ok <-
+                 Handbean.Permissions.ConversationMode.settle_run_end(
+                   conversation_id,
+                   run_id,
+                   value(attrs, :orphan_recovery?) == true
+                 ),
+               :ok <- insert(ConversationRun, row, conflict, [:conversation_id, :run_id]),
+               :ok <- settle_open_turns(conversation_id, run_id, status, timestamp) do
+            Repo.update_all(
+              from(conversation in Conversation, where: conversation.id == ^conversation_id),
+              set: [last_run_result: status]
+            )
 
-          :ok
-        else
-          {:error, reason} -> Repo.rollback(reason)
-        end
-      end)
+            :ok
+          else
+            {:error, reason} -> Repo.rollback(reason)
+          end
+        end,
+        mode: :immediate
+      )
       |> case do
         {:ok, :ok} -> :ok
         {:error, reason} -> {:error, reason}
@@ -433,7 +476,16 @@ defmodule Handbean.ConversationStore.Trajectory do
 
     query = if scope.run_id, do: where(query, [run], run.run_id == ^scope.run_id), else: query
     rows = Repo.all(query)
-    captured = Map.new(rows, &{&1.run_id, run_map(&1)})
+
+    changes_by_run =
+      Repo.all(
+        from change in ConversationPermissionChange,
+          where: change.conversation_id == ^conversation_id and not is_nil(change.run_id),
+          order_by: [asc: change.revision, asc: change.id]
+      )
+      |> Enum.group_by(& &1.run_id)
+
+    captured = Map.new(rows, &{&1.run_id, run_map(&1, changes_by_run)})
 
     legacy =
       conversation_id
@@ -486,6 +538,16 @@ defmodule Handbean.ConversationStore.Trajectory do
         started_at: iso8601(started_at),
         completed_at: if((running || 0) > 0, do: nil, else: iso8601(updated_at)),
         capture_version: nil,
+        initial_permission_mode: nil,
+        initial_permission_revision: nil,
+        initial_approval_mode: nil,
+        initial_approvals_reviewer: nil,
+        permission_source: nil,
+        delegated_approval: nil,
+        current_permission_mode: nil,
+        current_permission_revision: nil,
+        permission_changed_at: nil,
+        permission_changes: [],
         fidelity: "partial"
       }
     end)
@@ -591,6 +653,13 @@ defmodule Handbean.ConversationStore.Trajectory do
           select: {count(turn.id), max(turn.updated_at)}
       )
 
+    permission_changes =
+      Repo.one(
+        from change in ConversationPermissionChange,
+          where: change.conversation_id == ^conversation_id,
+          select: {count(change.id), max(change.changed_at)}
+      )
+
     conversation_version =
       {
         conversation.title,
@@ -601,7 +670,7 @@ defmodule Handbean.ConversationStore.Trajectory do
       }
 
     {normalize_version(entries), normalize_version(runs), normalize_version(turns),
-     conversation_version}
+     normalize_version(permission_changes), conversation_version}
   end
 
   defp apply_scope(query, %{run_id: run_id, turn_number: turn_number}) do
@@ -678,7 +747,7 @@ defmodule Handbean.ConversationStore.Trajectory do
     }
   end
 
-  defp run_map(run) do
+  defp run_map(run, changes_by_run) do
     %{
       id: run.run_id,
       status: run.status,
@@ -686,12 +755,35 @@ defmodule Handbean.ConversationStore.Trajectory do
       loop_owner: run.loop_owner,
       backend: run.backend,
       model: run.model,
+      initial_permission_mode: run.initial_permission_mode,
+      initial_permission_revision: run.initial_permission_revision,
+      initial_approval_mode: run.initial_approval_mode,
+      initial_approvals_reviewer: run.initial_approvals_reviewer,
+      permission_source: run.permission_source,
+      delegated_approval: run.delegated_approval,
+      current_permission_mode: run.current_permission_mode,
+      current_permission_revision: run.current_permission_revision,
+      permission_changed_at: iso8601(run.permission_changed_at),
+      permission_changes:
+        changes_by_run
+        |> Map.get(run.run_id, [])
+        |> Enum.map(&permission_change_map/1),
       error: Handbean.Log.Redactor.redact(run.error),
       turn_count: run.turn_count,
       duration_ms: run.duration_ms,
       started_at: iso8601(run.started_at),
       completed_at: iso8601(run.completed_at),
       capture_version: run.capture_version
+    }
+  end
+
+  defp permission_change_map(change) do
+    %{
+      from: change.from_mode,
+      to: change.to_mode,
+      source: change.source,
+      revision: change.revision,
+      changed_at: iso8601(change.changed_at)
     }
   end
 

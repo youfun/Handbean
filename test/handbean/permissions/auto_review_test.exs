@@ -174,6 +174,74 @@ defmodule Handbean.Permissions.AutoReviewTest do
     refute_received :reviewed
   end
 
+  test "pending reviewer fallback republishes the approval request" do
+    call = %{type: "tool_use", id: "b1", name: "bash", input: %{"command" => "mix test"}}
+
+    interrupted =
+      %{"tools" => %{"per_tool" => %{"bash" => "prompt"}}}
+      |> guard_state([call])
+      |> then(&ToolGuard.call(:after_tool_request, &1))
+      |> then(fn {:interrupt, interrupted, _data} -> interrupted end)
+
+    changed =
+      put_in(interrupted.config.context, %{
+        permission_mode: :auto_review,
+        permission_revision: 1,
+        approval_mode: :auto,
+        approvals_reviewer: :auto_review
+      })
+
+    Process.put(AutoReview.transport_key(), fn _request -> {:error, :reviewer_unavailable} end)
+    owner = self()
+
+    assert %State{status: :interrupted} =
+             Turn.resume_after_auto_review(changed, on_event: &send(owner, &1))
+
+    assert_receive {:tool_approval_requested,
+                    %{hitl_tool_call_ids: ["b1"], approval_batch_id: batch_id}}
+
+    assert is_binary(batch_id)
+    refute_receive {:run_end, _payload}
+  end
+
+  test "a halt during pending review emits the terminal lifecycle" do
+    call = %{type: "tool_use", id: "b1", name: "bash", input: %{"command" => "mix test"}}
+
+    interrupted =
+      %{"tools" => %{"per_tool" => %{"bash" => "prompt"}}}
+      |> guard_state([call])
+      |> then(&ToolGuard.call(:after_tool_request, &1))
+      |> then(fn {:interrupt, interrupted, _data} -> interrupted end)
+
+    changed = %{
+      put_in(interrupted.config.context, %{
+        permission_mode: :auto_review,
+        permission_revision: 1,
+        approval_mode: :auto,
+        approvals_reviewer: :auto_review
+      })
+      | auto_review: %{recent: [:deny, :deny], consecutive_denies: 2, stop: false}
+    }
+
+    Process.put(AutoReview.transport_key(), fn _request ->
+      {:ok,
+       Handbean.JSON.encode!(%{
+         "decisions" => [
+           %{"tool_call_id" => "b1", "decision" => "deny", "rationale" => "unsafe"}
+         ]
+       })}
+    end)
+
+    owner = self()
+
+    assert %State{status: :halted} =
+             Turn.resume_after_auto_review(changed, on_event: &send(owner, &1))
+
+    assert_receive {:run_end, %{status: :halted}}
+    assert_receive {:agent_end, %{status: :halted}}
+    refute_receive {:run_end, _payload}
+  end
+
   test "approve executes the tool once and does not write allow or a session override" do
     dir =
       workspace(%{

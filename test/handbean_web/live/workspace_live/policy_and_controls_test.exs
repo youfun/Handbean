@@ -343,7 +343,7 @@ defmodule HandbeanWeb.WorkspaceLive.PolicyAndControlsTest do
       assert capture_log(fn ->
                html = render_click(view, "select_permission_mode", %{"mode" => "yolo"})
                assert html =~ "Failed to update permission mode"
-             end) =~ "invalid_path"
+             end) =~ "not_found"
 
       assert File.read!(settings_path) == original
       render_click(view, "select_permission_mode", %{})
@@ -352,11 +352,10 @@ defmodule HandbeanWeb.WorkspaceLive.PolicyAndControlsTest do
     end
 
     test "toggles permission menu and selects new permission mode", %{conn: conn} do
-      {:ok, default_ws} = Handbean.WorkspaceStore.ensure_default!()
-      workspace_root = default_ws["path"]
+      {:ok, _default_ws} = Handbean.WorkspaceStore.ensure_default!()
 
       {:ok, view, _html} = live(conn, "/")
-      create_default_conversation(view)
+      conversation_id = create_default_conversation(view)
 
       html = render(view)
 
@@ -379,23 +378,22 @@ defmodule HandbeanWeb.WorkspaceLive.PolicyAndControlsTest do
       refute render(view) =~ "permission-dropdown-menu"
       assert render(view) =~ "智能审批"
 
-      assert {:ok, settings} = Handbean.WorkspaceSettings.load(workspace_root)
-      assert get_in(settings, ["tools", "default_mode"]) == "auto"
-      assert get_in(settings, ["tools", "approvals_reviewer"]) == "auto_review"
+      assert {:ok, metadata} = Handbean.ConversationStore.get_metadata(conversation_id)
+      assert metadata["permission_mode"] == "auto_review"
     end
 
-    test "permission mode changes propagate to other live sessions", %{conn: conn} do
-      {:ok, default_ws} = Handbean.WorkspaceStore.ensure_default!()
-      workspace_root = default_ws["path"]
-      :ok = Handbean.WorkspaceSettings.update_permission_mode(workspace_root, :auto_review)
+    test "permission mode changes propagate only to the same conversation", %{conn: conn} do
+      {:ok, _default_ws} = Handbean.WorkspaceStore.ensure_default!()
 
       {:ok, first_view, _html} = live(conn, "/")
-      create_default_conversation(first_view)
-      {:ok, second_view, _html} = live(conn, "/")
-      create_default_conversation(second_view)
+      first_id = create_default_conversation(first_view)
+      {:ok, same_view, _html} = live(conn, "/w/default/c/#{first_id}")
+      {:ok, other_view, _html} = live(conn, "/")
+      other_id = create_default_conversation(other_view)
 
       assert render(first_view) =~ "智能审批"
-      assert render(second_view) =~ "智能审批"
+      assert render(same_view) =~ "智能审批"
+      assert render(other_view) =~ "智能审批"
 
       first_view |> element("button[phx-click='toggle_permission_menu']") |> render_click()
 
@@ -404,11 +402,25 @@ defmodule HandbeanWeb.WorkspaceLive.PolicyAndControlsTest do
       |> render_click()
 
       assert render(first_view) =~ "yolo"
-      assert render(second_view) =~ "yolo"
-      refute render(second_view) =~ "智能审批"
+      assert render(same_view) =~ "yolo"
+      assert render(other_view) =~ "智能审批"
+      refute render(other_view) =~ "yolo"
+
+      assert {:ok, first} = Handbean.ConversationStore.get_metadata(first_id)
+      assert {:ok, other} = Handbean.ConversationStore.get_metadata(other_id)
+      assert first["permission_mode"] == "yolo"
+      assert other["permission_mode"] == "auto_review"
+
+      send(
+        same_view.pid,
+        {:conversation_permission_mode_changed, first_id, :prompt, nil, 0}
+      )
+
+      assert render(same_view) =~ "yolo"
+      refute render(same_view) =~ "Safe Mode"
     end
 
-    test "smart approval replaces yolo policy and safe mode restores human review", %{conn: conn} do
+    test "chat mode changes leave workspace policy constraints untouched", %{conn: conn} do
       {:ok, default_ws} = Handbean.WorkspaceStore.ensure_default!()
       workspace_root = default_ws["path"]
       settings_path = Handbean.WorkspaceSettings.path(workspace_root)
@@ -431,7 +443,8 @@ defmodule HandbeanWeb.WorkspaceLive.PolicyAndControlsTest do
       """)
 
       {:ok, view, _html} = live(conn, "/")
-      create_default_conversation(view)
+      conversation_id = create_default_conversation(view)
+      original_content = File.read!(settings_path)
 
       view |> element("button[phx-click='toggle_permission_menu']") |> render_click()
 
@@ -444,15 +457,9 @@ defmodule HandbeanWeb.WorkspaceLive.PolicyAndControlsTest do
       assert html =~ "只自动复审本来要问的操作，不扩大权限。"
       refute html =~ "permission-dropdown-menu"
 
-      content = File.read!(settings_path)
-      assert content =~ "// keep me"
-      assert content =~ "\"default_mode\": \"auto\""
-      assert content =~ "\"allow\": [\"read\"]"
-      assert content =~ "\"approvals_reviewer\": \"auto_review\""
-
-      {:ok, settings} = Handbean.WorkspaceSettings.load(workspace_root)
-      assert get_in(settings, ["tools", "default_mode"]) == "auto"
-      assert get_in(settings, ["tools", "approvals_reviewer"]) == "auto_review"
+      assert File.read!(settings_path) == original_content
+      assert {:ok, metadata} = Handbean.ConversationStore.get_metadata(conversation_id)
+      assert metadata["permission_mode"] == "auto_review"
 
       view |> element("button[phx-click='toggle_permission_menu']") |> render_click()
 
@@ -464,13 +471,9 @@ defmodule HandbeanWeb.WorkspaceLive.PolicyAndControlsTest do
       assert html =~ "安全模式" or html =~ "Safe Mode"
       refute html =~ "智能审批"
 
-      content = File.read!(settings_path)
-      assert content =~ "// keep me"
-      assert content =~ "\"default_mode\": \"prompt\""
-      {:ok, settings} = Handbean.WorkspaceSettings.load(workspace_root)
-      assert get_in(settings, ["tools", "default_mode"]) == "prompt"
-      assert get_in(settings, ["tools", "approvals_reviewer"]) == "user"
-      assert get_in(settings, ["tools", "allow"]) == ["read"]
+      assert File.read!(settings_path) == original_content
+      assert {:ok, metadata} = Handbean.ConversationStore.get_metadata(conversation_id)
+      assert metadata["permission_mode"] == "prompt"
     end
 
     for action <- ["approve_all_tools", "deny_all_tools"] do

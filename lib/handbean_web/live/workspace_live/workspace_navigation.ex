@@ -560,16 +560,14 @@ defmodule HandbeanWeb.WorkspaceLive.WorkspaceNavigation do
 
   def load_permission_mode_into_socket(socket) do
     permission_mode =
-      if ConversationState.free_chat?(socket) do
-        :deny
-      else
-        load_permission_mode(ConversationState.current_workspace_path(socket))
-      end
+      socket.assigns.current_conversation_id
+      |> Handbean.Permissions.ConversationMode.get()
+      |> then(fn mode -> if ConversationState.free_chat?(socket), do: :deny, else: mode end)
 
     assign(socket, :permission_mode, permission_mode)
   end
 
-  def load_permission_mode(workspace_root) do
-    Handbean.WorkspaceSettings.permission_mode(workspace_root)
+  def load_permission_mode(conversation) do
+    Handbean.Permissions.ConversationMode.get(conversation)
   end
 end

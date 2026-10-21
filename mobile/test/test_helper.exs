@@ -99,8 +99,13 @@ data_dir =
   Path.join(System.tmp_dir!(), "handbean_probe_test_#{System.unique_integer([:positive])}")
 
 File.mkdir_p!(data_dir)
+File.mkdir_p!(Path.join(data_dir, ".handbean"))
 System.put_env("MOB_DATA_DIR", data_dir)
 System.put_env("HOME", data_dir)
+System.put_env("HANDBEAN_WORKSPACES_FILE", Path.join(data_dir, ".handbean/workspaces.json"))
+System.put_env("HANDBEAN_MODELS_FILE", Path.join(data_dir, ".handbean/models.json"))
+Application.put_env(:handbean, :workspaces_file, Path.join(data_dir, ".handbean/workspaces.json"))
+Application.put_env(:handbean, :models_file, Path.join(data_dir, ".handbean/models.json"))
 Handbean.Host.put!(%{data_dir: data_dir, shell: false, mcp: false})
 
 Application.put_env(:handbean, Handbean.Repo,

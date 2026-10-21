@@ -28,14 +28,22 @@ defmodule HandbeanWeb.WorkspaceLive.InfoEvents do
     {:noreply, WorkspaceNavigation.import_workspace(socket, item)}
   end
 
-  def handle({:workspace_permission_policy_changed, settings_path}, socket) do
-    with workspace_path when is_binary(workspace_path) <-
-           ConversationState.current_workspace_path(socket),
-         {:ok, ^settings_path} <- Handbean.WorkspaceSettings.resolve_path(workspace_path) do
-      {:noreply, WorkspaceNavigation.load_permission_mode_into_socket(socket)}
-    else
-      _not_current_workspace -> {:noreply, socket}
-    end
+  def handle(
+        {:conversation_permission_mode_changed, conversation_id, _mode, _run_id, _revision},
+        socket
+      ) do
+    reload_permission_mode(socket, conversation_id)
+  end
+
+  def handle(
+        {:conversation_permission_mode_changed, conversation_id, _mode, _run_id},
+        socket
+      ) do
+    reload_permission_mode(socket, conversation_id)
+  end
+
+  def handle({:workspace_permission_policy_changed, _settings_path}, socket) do
+    {:noreply, socket}
   end
 
   def handle({:speech_enabled, false}, socket) do
@@ -381,6 +389,19 @@ defmodule HandbeanWeb.WorkspaceLive.InfoEvents do
 
   defp apply_sidebar_title(socket, conv_id, title, source \\ "auto"),
     do: ConversationSwitching.apply_sidebar_title(socket, conv_id, title, source)
+
+  defp reload_permission_mode(socket, conversation_id) do
+    if socket.assigns.current_conversation_id == conversation_id do
+      {:noreply,
+       assign(
+         socket,
+         :permission_mode,
+         Handbean.Permissions.ConversationMode.get(conversation_id)
+       )}
+    else
+      {:noreply, socket}
+    end
+  end
 
   defp in_app_ended_flash(task, reason) do
     %{

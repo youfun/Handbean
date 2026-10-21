@@ -19,8 +19,8 @@ defmodule HandbeanProbe.NativeApproval do
 
   def mode(nil), do: :prompt
 
-  def mode(workspace),
-    do: Handbean.WorkspaceSettings.permission_mode(workspace["path"])
+  def mode(conversation),
+    do: Handbean.Permissions.ConversationMode.get(conversation)
 
   def mode_label(:auto_review), do: gettext("Smart approval")
   def mode_label(:prompt), do: gettext("Safe mode")
@@ -32,7 +32,7 @@ defmodule HandbeanProbe.NativeApproval do
       text(gettext("Tool permissions"), text_size: 18, padding_bottom: 12),
       text(
         gettext(
-          "Saves to the current workspace and does not auto-approve a pending operation. More specific tool rules still take precedence."
+          "Saves to the current conversation and applies to subsequent tool calls. More specific tool rules still take precedence."
         ),
         text_size: 12,
         padding_bottom: 12

@@ -6,17 +6,20 @@ defmodule Handbean.Agent.Middleware.ToolGuard do
   @behaviour Handbean.Agent.Middleware
 
   alias Handbean.Agent.{Message, State}
-  alias Handbean.Permissions.{AutoReview, Boundary, InterruptData, ToolPolicy}
+  alias Handbean.Permissions.{AutoReview, Boundary, ConversationMode, InterruptData, ToolPolicy}
   alias Handbean.Utils.SafeMap
 
   @impl true
   def call(:after_tool_request, %State{} = state) do
+    state = refresh_permission(state)
+
     state = %{
       state
       | tool_guard_denied_calls: [],
         tool_guard_result_blocks: [],
         tool_guard_pending_grants: %{},
         tool_guard_execution_grants: %{},
+        tool_guard_admission_contexts: %{},
         messages:
           Handbean.Tool.Builtin.Schedule.freeze_messages(
             state.messages,
@@ -45,11 +48,13 @@ defmodule Handbean.Agent.Middleware.ToolGuard do
 
     pending_grants = grants(pending_pairs, context, :pending)
     execution_grants = grants(auto_pairs, context, :yolo)
+    admission_contexts = admission_contexts(auto_pairs, state)
 
     state = %{
       put_denied(state, denied, policy)
       | tool_guard_pending_grants: pending_grants,
-        tool_guard_execution_grants: execution_grants
+        tool_guard_execution_grants: execution_grants,
+        tool_guard_admission_contexts: admission_contexts
     }
 
     cond do
@@ -67,61 +72,257 @@ defmodule Handbean.Agent.Middleware.ToolGuard do
   def call(_hook, %State{} = state), do: state
 
   @doc false
-  @spec auto_resume_decisions(State.t()) :: {:ok, [map()]} | :pending
-  def auto_resume_decisions(%State{status: :interrupted} = state) do
+  @spec pending_reconciliation(State.t()) :: {:ok, [map()]} | :auto_review | :pending
+  def pending_reconciliation(%State{status: :interrupted} = state) do
     interrupt_data = state.interrupt_data || %{}
     type = SafeMap.get_any(interrupt_data, :type, "type")
     hitl_ids = SafeMap.get_any(interrupt_data, :hitl_tool_call_ids, "hitl_tool_call_ids") || []
-
-    auto_ids =
-      SafeMap.get_any(
-        interrupt_data,
-        :auto_approved_tool_call_ids,
-        "auto_approved_tool_call_ids"
-      ) || []
-
     calls_by_id = Map.new(last_tool_calls(state), &{&1.id, &1})
-    executable_ids = Enum.uniq(hitl_ids ++ auto_ids)
-    executable_calls = Enum.map(executable_ids, &Map.get(calls_by_id, &1))
-    policy = policy(state)
+    pending_calls = Enum.map(hitl_ids, &Map.get(calls_by_id, &1))
 
     cond do
       type not in [:tool_approval, "tool_approval"] ->
         :pending
 
-      executable_ids == [] or Enum.any?(executable_calls, &is_nil/1) ->
+      hitl_ids == [] or Enum.any?(pending_calls, &is_nil/1) ->
         :pending
-
-      Enum.all?(executable_calls, fn call ->
-        ToolPolicy.assess(policy, call, boundary_context(state)).decision == :auto
-      end) ->
-        {:ok,
-         Enum.map(hitl_ids, fn id ->
-           call = Map.fetch!(calls_by_id, id)
-
-           %{
-             "tool_call_id" => call.id,
-             "tool_name" => call.name,
-             "action" => "approve",
-             "remember" => false
-           }
-         end)}
 
       true ->
-        :pending
+        assessments =
+          Map.new(
+            pending_calls,
+            &{&1.id, ToolPolicy.assess(policy(state), &1, boundary_context(state))}
+          )
+
+        if Enum.any?(pending_calls, &(assessments[&1.id].decision == :prompt)) do
+          if auto_review?(state) and not Enum.any?(pending_calls, &(&1.name == "computer")) and
+               not auto_review_attempted?(state) do
+            :auto_review
+          else
+            :pending
+          end
+        else
+          {:ok,
+           Enum.map(pending_calls, fn call ->
+             %{
+               "tool_call_id" => call.id,
+               "tool_name" => call.name,
+               "action" =>
+                 if(assessments[call.id].decision == :auto, do: "approve", else: "deny"),
+               "remember" => false
+             }
+           end)}
+        end
     end
   end
 
-  def auto_resume_decisions(%State{}), do: :pending
+  def pending_reconciliation(%State{}), do: :pending
+
+  @doc false
+  @spec auto_resume_decisions(State.t()) :: {:ok, [map()]} | :pending
+  def auto_resume_decisions(%State{} = state) do
+    case pending_reconciliation(state) do
+      {:ok, decisions} -> {:ok, decisions}
+      _pending_or_review -> :pending
+    end
+  end
+
+  @doc false
+  def resolve_auto_review(%State{status: :interrupted} = state) do
+    interrupt_data = state.interrupt_data || %{}
+    hitl_ids = SafeMap.get_any(interrupt_data, :hitl_tool_call_ids, "hitl_tool_call_ids") || []
+
+    auto_ids =
+      SafeMap.get_any(interrupt_data, :auto_approved_tool_call_ids, "auto_approved_tool_call_ids") ||
+        []
+
+    tool_calls = last_tool_calls(state)
+    calls_by_id = Map.new(tool_calls, &{&1.id, &1})
+    pending = Enum.map(hitl_ids, &Map.get(calls_by_id, &1))
+
+    if pending == [] or Enum.any?(pending, &is_nil/1) do
+      {:pending, state}
+    else
+      policy = policy(state)
+      context = boundary_context(state)
+
+      {denied, remaining} =
+        Enum.split_with(pending, &(ToolPolicy.assess(policy, &1, context).decision == :deny))
+
+      {prompt, auto} =
+        Enum.split_with(remaining, &(ToolPolicy.assess(policy, &1, context).decision == :prompt))
+
+      reconciled =
+        state
+        |> merge_policy_denials(denied, policy)
+        |> grant_reconciled_auto(auto)
+
+      permitted_auto_ids =
+        auto_ids
+        |> MapSet.new()
+        |> MapSet.union(MapSet.new(auto, & &1.id))
+
+      resolve_reconciled_auto_review(reconciled, tool_calls, prompt, permitted_auto_ids)
+    end
+  end
+
+  def resolve_auto_review(%State{} = state), do: {:pending, state}
+
+  defp resolve_reconciled_auto_review(state, tool_calls, [], permitted_auto_ids) do
+    denied_blocks =
+      total_denied_blocks(tool_calls, permitted_auto_ids, state.tool_guard_result_blocks || [])
+
+    executable_calls = Enum.filter(tool_calls, &MapSet.member?(permitted_auto_ids, &1.id))
+
+    {:ok,
+     %{
+       state:
+         apply_approval_resume_state(
+           state,
+           denied_blocks,
+           %{},
+           MapSet.new(),
+           :auto_review
+         ),
+       tool_calls: tool_calls,
+       executable_calls: executable_calls,
+       denied_blocks: denied_blocks
+     }}
+  end
+
+  defp resolve_reconciled_auto_review(state, tool_calls, prompt, permitted_auto_ids) do
+    case AutoReview.review(state, prompt) do
+      {:fallback, reviewed, _reason} ->
+        reviewed = merge_prior_denials(reviewed, state)
+        auto = Enum.filter(tool_calls, &MapSet.member?(permitted_auto_ids, &1.id))
+        {:interrupt, pending, _data} = interrupt(reviewed, prompt, auto)
+        {:pending, mark_auto_review_attempted(pending)}
+
+      {:ok, %State{status: :halted} = halted} ->
+        {:halted, merge_prior_denials(halted, state)}
+
+      {:ok, %State{} = reviewed} ->
+        reviewed = merge_prior_denials(reviewed, state)
+        denied_ids = MapSet.new(reviewed.tool_guard_denied_calls || [], & &1.id)
+
+        approved_ids =
+          prompt
+          |> Enum.map(& &1.id)
+          |> Enum.reject(&MapSet.member?(denied_ids, &1))
+          |> MapSet.new()
+
+        permitted_ids = MapSet.union(permitted_auto_ids, approved_ids)
+
+        denied_blocks =
+          total_denied_blocks(tool_calls, permitted_ids, reviewed.tool_guard_result_blocks || [])
+
+        executable_calls = Enum.filter(tool_calls, &MapSet.member?(permitted_ids, &1.id))
+
+        next_state =
+          apply_approval_resume_state(
+            reviewed,
+            denied_blocks,
+            %{},
+            approved_ids,
+            :auto_review
+          )
+
+        {:ok,
+         %{
+           state: next_state,
+           tool_calls: tool_calls,
+           executable_calls: executable_calls,
+           denied_blocks: denied_blocks
+         }}
+    end
+  end
 
   defp policy(%State{} = state) do
-    ToolPolicy.from_workspace(
-      policy_workspace(state),
-      state.config.working_directory,
-      state.tool_guard_overrides || %{},
-      state.tool_guard_session_allow || []
-    )
-    |> delegated_policy(state)
+    policy =
+      ToolPolicy.from_workspace(
+        policy_workspace(state),
+        state.config.working_directory,
+        state.tool_guard_overrides || %{},
+        state.tool_guard_session_allow || []
+      )
+
+    default_mode =
+      case SafeMap.get_any(state.config.context || %{}, :permission_mode, "permission_mode") do
+        mode when mode in [:prompt, "prompt"] ->
+          :prompt
+
+        mode when mode in [:yolo, "yolo"] ->
+          :yolo
+
+        mode when mode in [:auto_review, "auto_review"] ->
+          if SafeMap.get_any(state.config.context || %{}, :permission_source, "permission_source") in [
+               :conversation,
+               "conversation"
+             ],
+             do: :prompt,
+             else: policy.default_mode
+
+        _legacy ->
+          SafeMap.get_any(state.config.context || %{}, :approval_mode, "approval_mode") ||
+            policy.default_mode
+      end
+
+    %{policy | default_mode: default_mode}
+  end
+
+  @doc false
+  @spec refresh_permission(State.t()) :: State.t()
+  def refresh_permission(%State{} = state) do
+    context = state.config.context || %{}
+    conversation_id = boundary_context(state)[:conversation_id]
+    delegated = SafeMap.get_any(context, :delegated_approval, "delegated_approval")
+
+    resolved =
+      cond do
+        is_binary(conversation_id) and conversation_id != "" and
+          SafeMap.get_any(context, :permission_source, "permission_source") in [
+            :conversation,
+            "conversation"
+          ] and
+            Handbean.ConversationStore.active?(conversation_id) ->
+          ConversationMode.runtime(conversation_id, delegated)
+
+        delegated in [:auto_review, :yolo, "auto_review", "yolo"] ->
+          ConversationMode.resolve(nil, delegated)
+
+        SafeMap.get_any(context, :permission_mode, "permission_mode") in [
+          :prompt,
+          :auto_review,
+          :yolo,
+          "prompt",
+          "auto_review",
+          "yolo"
+        ] ->
+          context
+          |> SafeMap.get_any(:permission_mode, "permission_mode")
+          |> ConversationMode.resolve(delegated)
+
+        true ->
+          nil
+      end
+
+    if resolved do
+      _ = ConversationMode.observe_run(conversation_id, state.config.run_id, delegated)
+
+      next_context =
+        Map.merge(context, %{
+          permission_mode: resolved.permission_mode,
+          permission_revision:
+            Map.get(resolved, :permission_revision) ||
+              SafeMap.get_any(context, :permission_revision, "permission_revision") || 0,
+          approval_mode: resolved.approval_mode,
+          approvals_reviewer: resolved.reviewer
+        })
+
+      %{state | config: %{state.config | context: next_context}}
+    else
+      state
+    end
   end
 
   @doc false
@@ -141,10 +342,22 @@ defmodule Handbean.Agent.Middleware.ToolGuard do
       |> MapSet.new()
 
     tool_calls = last_tool_calls(state)
+    policy = policy(state)
+    context = boundary_context(state)
+
+    latest_denied_calls =
+      hitl_ids
+      |> Enum.map(fn id -> Enum.find(tool_calls, &(&1.id == id)) end)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.filter(&(ToolPolicy.assess(policy, &1, context).decision == :deny))
+
+    latest_denied_ids = MapSet.new(latest_denied_calls, & &1.id)
+    approvable_hitl_ids = Enum.reject(hitl_ids, &MapSet.member?(latest_denied_ids, &1))
+    state = merge_policy_denials(state, latest_denied_calls, policy)
     decision_by_id = decisions |> Enum.map(&normalize_decision/1) |> decision_lookup()
 
     {decision_blocks, remembered_overrides, approved_hitl_ids} =
-      partition_hitl_decisions(hitl_ids, tool_calls, decision_by_id)
+      partition_hitl_decisions(approvable_hitl_ids, tool_calls, decision_by_id)
 
     classified_denied_blocks = (state.tool_guard_result_blocks || []) ++ decision_blocks
 
@@ -165,7 +378,8 @@ defmodule Handbean.Agent.Middleware.ToolGuard do
         state,
         denied_blocks,
         remembered_overrides,
-        approved_hitl_ids
+        approved_hitl_ids,
+        :human
       )
 
     %{
@@ -230,7 +444,8 @@ defmodule Handbean.Agent.Middleware.ToolGuard do
          state,
          denied_blocks,
          remembered_overrides,
-         approved_hitl_ids
+         approved_hitl_ids,
+         provenance
        ) do
     {remembered_overrides, session_allow} = split_session_grants(remembered_overrides)
     merged_overrides = Map.merge(state.tool_guard_overrides || %{}, remembered_overrides)
@@ -240,9 +455,15 @@ defmodule Handbean.Agent.Middleware.ToolGuard do
       approved_hitl_ids
       |> Enum.reduce(state.tool_guard_execution_grants || %{}, fn id, grants ->
         case Map.get(state.tool_guard_pending_grants || %{}, id) do
-          %{} = grant -> Map.put(grants, id, %{grant | provenance: :human})
+          %{} = grant -> Map.put(grants, id, %{grant | provenance: provenance})
           _ -> grants
         end
+      end)
+
+    approved_admissions =
+      Enum.reduce(approved_hitl_ids, state.tool_guard_admission_contexts || %{}, fn id,
+                                                                                    contexts ->
+        put_admission_context(contexts, id, state)
       end)
 
     state
@@ -253,6 +474,7 @@ defmodule Handbean.Agent.Middleware.ToolGuard do
     |> Map.put(:tool_guard_session_allow, session_allow)
     |> Map.put(:tool_guard_pending_grants, %{})
     |> Map.put(:tool_guard_execution_grants, approved_grants)
+    |> Map.put(:tool_guard_admission_contexts, approved_admissions)
   end
 
   # "This session" remembers the suggested pattern rather than granting every
@@ -327,11 +549,80 @@ defmodule Handbean.Agent.Middleware.ToolGuard do
           {:tool_guard_denied, grant_auto_reviewed(reviewed, pending)}
 
         {:fallback, %State{} = reviewed, _reason} ->
-          interrupt(reviewed, pending, auto_approved)
+          reviewed
+          |> mark_auto_review_attempted()
+          |> interrupt(pending, auto_approved)
       end
     else
       interrupt(state, pending, auto_approved)
     end
+  end
+
+  defp auto_review_attempted?(%State{} = state) do
+    attempted =
+      state.interrupt_data
+      |> Kernel.||(%{})
+      |> SafeMap.get_any(:auto_review_attempted_revision, "auto_review_attempted_revision")
+
+    attempted == permission_revision(state)
+  end
+
+  defp mark_auto_review_attempted(%State{} = state) do
+    data =
+      Map.put(
+        state.interrupt_data || %{},
+        :auto_review_attempted_revision,
+        permission_revision(state)
+      )
+
+    %{state | interrupt_data: data}
+  end
+
+  defp permission_revision(%State{} = state) do
+    state.config.context
+    |> Kernel.||(%{})
+    |> SafeMap.get_any(:permission_revision, "permission_revision")
+    |> case do
+      revision when is_integer(revision) -> revision
+      _ -> 0
+    end
+  end
+
+  defp merge_policy_denials(state, [], _policy), do: state
+
+  defp merge_policy_denials(state, denied, policy) do
+    denied_ids = Enum.map(denied, & &1.id)
+
+    state
+    |> put_denied(denied, policy)
+    |> merge_prior_denials(state)
+    |> Map.update!(:tool_guard_pending_grants, &Map.drop(&1 || %{}, denied_ids))
+  end
+
+  defp grant_reconciled_auto(state, []), do: state
+
+  defp grant_reconciled_auto(state, calls) do
+    ids = Enum.map(calls, & &1.id)
+
+    execution_grants =
+      Enum.reduce(calls, state.tool_guard_execution_grants || %{}, fn call, grants ->
+        case Map.get(state.tool_guard_pending_grants || %{}, call.id) do
+          %{} = grant -> Map.put(grants, call.id, %{grant | provenance: :yolo})
+          _missing -> grants
+        end
+      end)
+
+    admission_contexts =
+      Enum.reduce(calls, state.tool_guard_admission_contexts || %{}, fn call, contexts ->
+        put_admission_context(contexts, call.id, state)
+      end)
+
+    %{
+      state
+      | tool_guard_pending_grants: Map.drop(state.tool_guard_pending_grants || %{}, ids),
+        tool_guard_execution_grants: execution_grants,
+        tool_guard_admission_contexts: admission_contexts
+    }
   end
 
   defp merge_prior_denials(reviewed, prior) do
@@ -360,15 +651,12 @@ defmodule Handbean.Agent.Middleware.ToolGuard do
     }
   end
 
-  defp delegated_policy(policy, %State{} = state) do
-    if state.config.context[:delegated_approval] == :yolo,
-      do: %{policy | default_mode: :yolo},
-      else: policy
-  end
-
   defp auto_review?(%State{} = state) do
-    AutoReview.enabled?(policy_workspace(state)) or
-      state.config.context[:delegated_approval] == :auto_review
+    case state.config.context[:approvals_reviewer] do
+      :auto_review -> true
+      :user -> false
+      _missing -> AutoReview.enabled?(policy_workspace(state))
+    end
   end
 
   defp policy_workspace(%State{config: config}) do
@@ -391,6 +679,19 @@ defmodule Handbean.Agent.Middleware.ToolGuard do
 
   defp interrupt(state, pending, auto_approved) do
     data = InterruptData.build(pending, auto_approved, state.config.working_directory)
+
+    data =
+      case SafeMap.get_any(
+             state.interrupt_data || %{},
+             :auto_review_attempted_revision,
+             "auto_review_attempted_revision"
+           ) do
+        revision when is_integer(revision) ->
+          Map.put(data, :auto_review_attempted_revision, revision)
+
+        _missing ->
+          data
+      end
 
     data =
       Map.update!(data, :action_requests, fn requests ->
@@ -439,11 +740,44 @@ defmodule Handbean.Agent.Middleware.ToolGuard do
         end
       end)
 
+    admission_contexts =
+      Enum.reduce(pending, state.tool_guard_admission_contexts || %{}, fn call, contexts ->
+        if MapSet.member?(denied_ids, call.id),
+          do: contexts,
+          else: put_admission_context(contexts, call.id, state)
+      end)
+
     %{
       state
       | tool_guard_pending_grants: %{},
-        tool_guard_execution_grants: execution_grants
+        tool_guard_execution_grants: execution_grants,
+        tool_guard_admission_contexts: admission_contexts
     }
+  end
+
+  defp admission_contexts(pairs, state) do
+    Enum.reduce(pairs, %{}, fn {call, _assessment}, contexts ->
+      put_admission_context(contexts, call.id, state)
+    end)
+  end
+
+  defp put_admission_context(contexts, id, state) do
+    case admission_context(state) do
+      facts when map_size(facts) == 0 -> contexts
+      facts -> Map.put(contexts, id, facts)
+    end
+  end
+
+  defp admission_context(%State{} = state) do
+    context = state.config.context || %{}
+
+    Map.take(context, [
+      :permission_mode,
+      :permission_revision,
+      :approval_mode,
+      :approvals_reviewer,
+      :permission_source
+    ])
   end
 
   defp boundary_context(%State{} = state) do

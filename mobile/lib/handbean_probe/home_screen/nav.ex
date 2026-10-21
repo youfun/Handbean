@@ -414,7 +414,7 @@ defmodule HandbeanProbe.HomeScreen.Nav do
     |> assign(
       [
         chat: NativeChat.load(conversation),
-        permission_mode: NativeApproval.mode(a.workspace),
+        permission_mode: NativeApproval.mode(conversation),
         draft: draft,
         drafts: drafts,
         file_viewer: NativeFileViewer.new()
@@ -462,6 +462,7 @@ defmodule HandbeanProbe.HomeScreen.Nav do
       nil ->
         assign(socket,
           chat: nil,
+          permission_mode: :prompt,
           draft: NativeWorkspaces.get_draft(drafts, selected.workspace, nil)
         )
 
@@ -470,6 +471,7 @@ defmodule HandbeanProbe.HomeScreen.Nav do
 
         assign(socket,
           chat: NativeChat.load(conversation),
+          permission_mode: NativeApproval.mode(conversation),
           draft: NativeWorkspaces.get_draft(drafts, selected.workspace, conversation)
         )
     end

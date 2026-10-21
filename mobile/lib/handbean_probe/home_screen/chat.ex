@@ -159,10 +159,14 @@ defmodule HandbeanProbe.HomeScreen.Chat do
 
   def handle({:tap, {:permission_mode, mode}}, socket)
       when mode in [:prompt, :auto_review, :yolo] do
-    case Handbean.WorkspaceSettings.update_permission_mode(socket.assigns.workspace["path"], mode) do
-      :ok ->
+    conversation_id = socket.assigns.chat && socket.assigns.chat.conversation["id"]
+
+    case Handbean.Permissions.ConversationMode.update(conversation_id, mode, source: :mobile) do
+      {:ok, _metadata} ->
+        current = Handbean.Permissions.ConversationMode.get(conversation_id)
+
         socket
-        |> assign(permission_mode: mode, page: :chat, composer_select: nil)
+        |> assign(permission_mode: current, page: :chat, composer_select: nil)
         |> Notice.clear()
 
       {:error, _} ->
@@ -181,6 +185,20 @@ defmodule HandbeanProbe.HomeScreen.Chat do
     else
       socket
     end
+  end
+
+  def handle(
+        {:conversation_permission_mode_changed, conversation_id, _mode, _run_id, _revision},
+        socket
+      ) do
+    reload_permission_mode(socket, conversation_id)
+  end
+
+  def handle(
+        {:conversation_permission_mode_changed, conversation_id, _mode, _run_id},
+        socket
+      ) do
+    reload_permission_mode(socket, conversation_id)
   end
 
   def handle({:agent_event, event}, %{assigns: %{chat: chat}} = socket) when not is_nil(chat) do
@@ -629,6 +647,14 @@ defmodule HandbeanProbe.HomeScreen.Chat do
   end
 
   # ── helpers ──
+
+  defp reload_permission_mode(socket, conversation_id) do
+    if current?(socket, conversation_id) do
+      assign(socket, :permission_mode, Handbean.Permissions.ConversationMode.get(conversation_id))
+    else
+      socket
+    end
+  end
 
   defp approval_workspace(assigns) do
     if Nav.free_chat?(assigns), do: nil, else: assigns.workspace

@@ -105,7 +105,10 @@ defmodule Handbean.Agent.RunnerPermissionIdentityTest do
   test "permission mode changes reconcile an already pending approval inside Runner" do
     sid = "runner-policy-reconcile-#{System.unique_integer([:positive])}"
     workspace = default_prompt_workspace()
-    {:ok, _} = Handbean.ConversationStore.create("default", id: sid)
+
+    {:ok, _} =
+      Handbean.ConversationStore.create("default", id: sid, permission_mode: "prompt")
+
     :ok = Session.subscribe(sid)
 
     script = fn messages, _tools ->
@@ -140,7 +143,9 @@ defmodule Handbean.Agent.RunnerPermissionIdentityTest do
       assert {:ok, %{status: :awaiting_approval}} = Coordinator.status(sid)
     end)
 
-    assert :ok = Handbean.WorkspaceSettings.update_permission_mode(workspace, :yolo)
+    assert {:ok, _metadata} =
+             Handbean.Permissions.ConversationMode.update(sid, :yolo, source: :test)
+
     assert_receive {:agent_event, %{kind: :run_resumed}}, 1_000
 
     assert_receive {:agent_event, %{kind: :run_end, payload: %{status: status}}}
@@ -172,7 +177,9 @@ defmodule Handbean.Agent.RunnerPermissionIdentityTest do
       assert {:ok, %{status: :awaiting_approval}} = Coordinator.status(sid)
     end)
 
-    assert :ok = Handbean.WorkspaceSettings.update_permission_mode(workspace, :yolo)
+    assert {:ok, _metadata} =
+             Handbean.Permissions.ConversationMode.update(sid, :yolo, source: :test)
+
     refute_receive {:agent_event, %{kind: :run_resumed}}, 100
     assert {:ok, %{status: :awaiting_approval}} = Coordinator.status(sid)
     assert :ok = Coordinator.cancel(sid)

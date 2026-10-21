@@ -15,6 +15,8 @@ defmodule Handbean.ConversationStore.Codec do
       "title_source" => row.title_source,
       "selected_model" => row.selected_model,
       "selected_reasoning_level" => row.selected_reasoning_level,
+      "permission_mode" => row.permission_mode,
+      "permission_revision" => row.permission_revision,
       "collaboration" => row.collaboration,
       "last_run_result" => row.last_run_result,
       "status" => row.status,

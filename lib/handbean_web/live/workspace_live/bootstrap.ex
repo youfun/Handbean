@@ -377,6 +377,7 @@ defmodule HandbeanWeb.WorkspaceLive.Bootstrap do
   defp subscribe_to_conversation_updates(socket) do
     if connected?(socket) do
       Phoenix.PubSub.subscribe(Handbean.PubSub, "conversation:updated")
+      Handbean.Permissions.ConversationMode.subscribe()
     end
 
     socket

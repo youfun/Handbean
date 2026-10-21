@@ -178,7 +178,7 @@ defmodule HandbeanProbe.NativeWorkspaces do
       workspace: workspace,
       conversation: conversation,
       conversations: ConversationStore.list_for_workspace(workspace["id"]),
-      permission_mode: NativeApproval.mode(workspace)
+      permission_mode: NativeApproval.mode(conversation)
     }
   end
 

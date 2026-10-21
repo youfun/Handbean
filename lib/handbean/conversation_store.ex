@@ -25,6 +25,8 @@ defmodule Handbean.ConversationStore do
     :title_source,
     :selected_model,
     :selected_reasoning_level,
+    :permission_mode,
+    :permission_revision,
     :collaboration,
     :last_run_result,
     :loaded_tools,
@@ -39,6 +41,8 @@ defmodule Handbean.ConversationStore do
                       :scope,
                       :workspace_id,
                       :checkout_path,
+                      :permission_mode,
+                      :permission_revision,
                       :next_entry_sequence,
                       :created_at,
                       :updated_at
@@ -300,7 +304,8 @@ defmodule Handbean.ConversationStore do
     existing = Repo.get(Conversation, id)
 
     with false <- match?(%Conversation{status: "pending_delete"}, existing),
-         :ok <- validate_upsert_checkout(existing, conversation) do
+         :ok <- validate_upsert_checkout(existing, conversation),
+         :ok <- validate_upsert_permission(existing, conversation) do
       normalized = normalize_conversation(conversation, id, existing)
 
       Repo.transaction(fn ->
@@ -409,7 +414,8 @@ defmodule Handbean.ConversationStore do
   def update_meta(id, updates) when is_binary(id) and is_list(updates) do
     {touch?, updates} = Keyword.pop(updates, :touch, true)
 
-    with {:ok, row} <- fetch_row(id) do
+    with false <- Enum.any?(updates, fn {key, _value} -> to_string(key) == "permission_mode" end),
+         {:ok, row} <- fetch_row(id) do
       attrs =
         updates
         |> Enum.reject(fn {key, _value} -> to_string(key) in @usage_meta_keys end)
@@ -425,6 +431,9 @@ defmodule Handbean.ConversationStore do
         {:ok, updated} -> {:ok, metadata_map(updated)}
         {:error, reason} -> {:error, reason}
       end
+    else
+      true -> {:error, :permission_mode_owned}
+      {:error, reason} -> {:error, reason}
     end
   rescue
     ArgumentError -> {:error, :invalid_field}
@@ -445,7 +454,8 @@ defmodule Handbean.ConversationStore do
   def delegated_usage(conversation_id), do: Usage.delegated_usage(conversation_id)
 
   defp create_conversation(scope, workspace_id, opts) do
-    with {:ok, checkout_path} <- checkout_path_for_create(scope, workspace_id, opts) do
+    with {:ok, checkout_path} <- checkout_path_for_create(scope, workspace_id, opts),
+         {:ok, permission_mode} <- permission_mode_for_create(scope, opts) do
       id = Keyword.get(opts, :id, Ecto.UUID.generate())
       timestamp = now()
 
@@ -462,6 +472,7 @@ defmodule Handbean.ConversationStore do
         title_source: Keyword.get(opts, :title_source, "manual"),
         selected_model: Keyword.get(opts, :selected_model),
         selected_reasoning_level: Keyword.get(opts, :selected_reasoning_level),
+        permission_mode: permission_mode,
         collaboration: Keyword.get(opts, :collaboration),
         last_run_result: Keyword.get(opts, :last_run_result),
         loaded_tools: encode_json!(Keyword.get(opts, :loaded_tools, [])),
@@ -513,6 +524,20 @@ defmodule Handbean.ConversationStore do
     error in Ecto.ConstraintError -> {:error, constraint_reason(error)}
     error in Ecto.InvalidChangesetError -> {:error, error.changeset}
     _error in Exqlite.Error -> {:error, :constraint}
+  end
+
+  defp permission_mode_for_create(scope, opts) do
+    default = if scope == "free", do: :prompt, else: :auto_review
+
+    with {:ok, mode} <-
+           Handbean.Permissions.ConversationMode.normalize(
+             Keyword.get(opts, :permission_mode, default)
+           ),
+         true <- scope != "free" or mode == :prompt do
+      {:ok, to_string(mode)}
+    else
+      _ -> {:error, :invalid_mode}
+    end
   end
 
   defp checkout_path_for_create("free", _workspace_id, _opts), do: {:ok, nil}
@@ -646,6 +671,9 @@ defmodule Handbean.ConversationStore do
       title_source: string_value(conversation, "title_source") || "manual",
       selected_model: string_value(conversation, "selected_model"),
       selected_reasoning_level: string_value(conversation, "selected_reasoning_level"),
+      permission_mode:
+        string_value(conversation, "permission_mode") ||
+          if(scope == "free", do: "prompt", else: "auto_review"),
       collaboration: map_value(conversation, "collaboration"),
       last_run_result: string_value(conversation, "last_run_result"),
       loaded_tools: encode_json!(map_value(conversation, "loaded_tools") || []),
@@ -659,6 +687,31 @@ defmodule Handbean.ConversationStore do
         ),
       updated_at: timestamp
     }
+  end
+
+  defp validate_upsert_permission(%Conversation{} = existing, conversation) do
+    case map_value(conversation, "permission_mode") do
+      nil -> :ok
+      mode when mode == existing.permission_mode -> :ok
+      _other -> {:error, :permission_mode_owned}
+    end
+  end
+
+  defp validate_upsert_permission(nil, conversation) do
+    scope =
+      string_value(conversation, "scope") ||
+        if(string_value(conversation, "workspace_id"), do: "workspace", else: "free")
+
+    requested =
+      string_value(conversation, "permission_mode") ||
+        if(scope == "free", do: "prompt", else: "auto_review")
+
+    with {:ok, mode} <- Handbean.Permissions.ConversationMode.normalize(requested),
+         true <- scope != "free" or mode == :prompt do
+      :ok
+    else
+      _ -> {:error, :invalid_mode}
+    end
   end
 
   defp validate_upsert_checkout(%Conversation{}, _conversation), do: :ok

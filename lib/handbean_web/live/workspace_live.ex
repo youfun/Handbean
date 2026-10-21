@@ -679,6 +679,12 @@ defmodule HandbeanWeb.WorkspaceLive do
   def handle_info({:workspace_imported, _} = message, socket),
     do: InfoEvents.handle(message, socket)
 
+  def handle_info({:conversation_permission_mode_changed, _, _, _, _} = message, socket),
+    do: InfoEvents.handle(message, socket)
+
+  def handle_info({:conversation_permission_mode_changed, _, _, _} = message, socket),
+    do: InfoEvents.handle(message, socket)
+
   def handle_info({:workspace_permission_policy_changed, _} = message, socket),
     do: InfoEvents.handle(message, socket)
 

@@ -2,7 +2,9 @@ defmodule Handbean.Agent.TranscriptRecoveryTest do
   use Handbean.DataCase, async: false
 
   alias Handbean.Agent.{TranscriptPersistence, TranscriptRecovery}
-  alias Handbean.{ConversationStore, ConversationTranscriptStore}
+  alias Handbean.Permissions.ConversationMode
+  alias Handbean.Storage.{ConversationPermissionChange, ConversationRun}
+  alias Handbean.{ConversationStore, ConversationTranscriptStore, Repo}
 
   setup do
     {:ok, conversation} = ConversationStore.create("default", timeline: [])
@@ -70,6 +72,37 @@ defmodule Handbean.Agent.TranscriptRecoveryTest do
     assert assistant.status == "error"
     assert error.entry_id == "msg-run-error-orphan"
     assert {:error, :not_found} = ConversationTranscriptStore.list(id)
+  end
+
+  test "startup orphan cleanup does not claim a post-restart permission change", %{id: id} do
+    assert :ok =
+             ConversationStore.record_run_start(id, %{
+               run_id: "stale-permission-run",
+               permission_source: :conversation
+             })
+
+    assert {:ok, _} =
+             ConversationTranscriptStore.append(id, %{
+               "id" => "stale-permission-reply",
+               "run_id" => "stale-permission-run",
+               "role" => "assistant",
+               "status" => "streaming"
+             })
+
+    assert {:ok, _metadata} = ConversationMode.update(id, :yolo, source: :test)
+    assert :ok = TranscriptRecovery.recover(id)
+
+    assert [%ConversationPermissionChange{run_id: nil}] = Repo.all(ConversationPermissionChange)
+
+    run =
+      Repo.get_by!(ConversationRun,
+        conversation_id: id,
+        run_id: "stale-permission-run"
+      )
+
+    assert run.status == "error"
+    assert run.current_permission_mode == "auto_review"
+    assert run.current_permission_revision == 0
   end
 
   test "terminal closure affects only the selected run and unfinished entries", %{id: id} do

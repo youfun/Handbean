@@ -67,6 +67,31 @@ defmodule Handbean.Agent.Turn do
     state
   end
 
+  @doc false
+  def resume_after_auto_review(%State{status: :interrupted} = state, opts) do
+    case ToolGuard.resolve_auto_review(state) do
+      {:ok, resolution} ->
+        resolution.state
+        |> continue_after_approval(
+          resolution.executable_calls,
+          resolution.tool_calls,
+          resolution.denied_blocks,
+          opts
+        )
+        |> run_continuation()
+        |> finish_run(opts)
+
+      {:pending, pending} ->
+        Events.emit(opts, :tool_approval_requested, pending.interrupt_data)
+        pending
+
+      {:halted, halted} ->
+        finish_run(halted, opts)
+    end
+  end
+
+  def resume_after_auto_review(%State{} = state, _opts), do: state
+
   # ── Approval execution ──
 
   defp continue_after_approval(state, [], _batch_calls, denied_blocks, opts) do

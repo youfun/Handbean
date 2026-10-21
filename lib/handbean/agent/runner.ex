@@ -108,6 +108,7 @@ defmodule Handbean.Agent.Runner do
     content = Keyword.fetch!(opts, :content)
     run_opts = Keyword.fetch!(opts, :run_opts)
     :ok = Handbean.WorkspaceSettings.subscribe_permission_policy()
+    :ok = Handbean.Permissions.ConversationMode.subscribe()
 
     # Delegated tasks stay linked so killing their Runner also kills the task.
     # Trap task exits so the monitor's DOWN can durably close a crashed child run.
@@ -402,6 +403,8 @@ defmodule Handbean.Agent.Runner do
         _from,
         %{status: :awaiting_approval} = state
       ) do
+    state = refresh_interrupted_permission(state)
+
     with :ok <- validate_run_identity(state, expected_run_id),
          :ok <- validate_batch_identity(state, expected_batch_id) do
       {:reply, :ok, resume_with_decisions(state, decisions)}
@@ -589,6 +592,34 @@ defmodule Handbean.Agent.Runner do
     abort_unreplayable(state, {:run_tree_exit, reason})
   end
 
+  def handle_info(
+        {:conversation_permission_mode_changed, conversation_id, _mode, _run_id, _revision},
+        %{conversation_id: conversation_id} = state
+      ) do
+    state = observe_permission_change(state)
+    {:noreply, reconcile_permission_policy(state)}
+  end
+
+  def handle_info(
+        {:conversation_permission_mode_changed, conversation_id, _mode, _run_id},
+        %{conversation_id: conversation_id} = state
+      ) do
+    state = observe_permission_change(state)
+    {:noreply, reconcile_permission_policy(state)}
+  end
+
+  def handle_info(
+        {:conversation_permission_mode_changed, _conversation_id, _mode, _run_id, _revision},
+        state
+      ),
+      do: {:noreply, state}
+
+  def handle_info(
+        {:conversation_permission_mode_changed, _conversation_id, _mode, _run_id},
+        state
+      ),
+      do: {:noreply, state}
+
   def handle_info({:workspace_permission_policy_changed, settings_path}, state) do
     if permission_settings_path(state) == {:ok, settings_path} do
       {:noreply, reconcile_permission_policy(state)}
@@ -750,13 +781,59 @@ defmodule Handbean.Agent.Runner do
   end
 
   defp reconcile_permission_policy(%{status: :awaiting_approval} = state) do
-    case ToolGuard.auto_resume_decisions(state.interrupted_state) do
+    state = refresh_interrupted_permission(state)
+
+    case ToolGuard.pending_reconciliation(state.interrupted_state) do
       {:ok, decisions} -> resume_with_decisions(state, decisions)
+      :auto_review -> resume_with_auto_review(state)
       :pending -> state
     end
   end
 
   defp reconcile_permission_policy(state), do: state
+
+  defp refresh_interrupted_permission(%{interrupted_state: interrupted_state} = state) do
+    %{state | interrupted_state: ToolGuard.refresh_permission(interrupted_state)}
+  end
+
+  defp observe_permission_change(state) do
+    _ =
+      Handbean.Permissions.ConversationMode.observe_run(
+        state.conversation_id,
+        state.opts[:run_id],
+        state.opts[:delegated_approval]
+      )
+
+    state
+  end
+
+  defp resume_with_auto_review(state) do
+    {deadline, timer} = resume_timeout(state)
+
+    run_opts =
+      state.opts
+      |> Keyword.put(:candidate_queue, state.queue_pid)
+      |> maybe_put_run_deadline(state, deadline)
+      |> put_compaction_callback(self())
+      |> put_persistence_callback(state.conversation_id)
+
+    Session.broadcast_event(state.conversation_id, :run_resumed, %{run_id: state.opts[:run_id]})
+
+    task =
+      Task.Supervisor.async_nolink(Keyword.fetch!(run_opts, :run_task_supervisor), fn ->
+        Handbean.Agent.resume_after_auto_review(state.interrupted_state, run_opts)
+      end)
+
+    %{
+      state
+      | status: :running,
+        task: task,
+        interrupted_state: nil,
+        deadline: deadline,
+        deadline_timer: timer,
+        stream_started?: false
+    }
+  end
 
   defp permission_settings_path(state) do
     case state.opts[:workspace_path] || state.opts[:working_directory] do

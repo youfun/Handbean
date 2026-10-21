@@ -17,6 +17,8 @@ defmodule Handbean.Storage.Conversation do
     field :title_source, :string, default: "manual"
     field :selected_model, :string
     field :selected_reasoning_level, :string
+    field :permission_mode, :string, default: "auto_review"
+    field :permission_revision, :integer, default: 0
     field :collaboration, :map
     field :last_run_result, :string
     field :loaded_tools, :string

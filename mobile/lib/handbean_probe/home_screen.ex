@@ -93,13 +93,14 @@ defmodule HandbeanProbe.HomeScreen do
     case WorkspaceStore.ensure_default!() do
       {:ok, default} ->
         Phoenix.PubSub.subscribe(Handbean.PubSub, "models:updated")
+        Handbean.Permissions.ConversationMode.subscribe()
         {workspace, conversation} = NativeWorkspaces.restore(default)
 
         socket =
           socket
           |> put_state(
             workspace: workspace,
-            permission_mode: NativeApproval.mode(workspace),
+            permission_mode: NativeApproval.mode(conversation),
             conversations: Nav.conversations(workspace),
             workspaces: NativeWorkspaces.load(workspace)
           )
@@ -273,6 +274,13 @@ defmodule HandbeanProbe.HomeScreen do
   defp dispatch({:tap, {:tool_action, _, _, _}} = msg, socket), do: Chat.handle(msg, socket)
   defp dispatch({:tool_action_result, _, _} = msg, socket), do: Chat.handle(msg, socket)
   defp dispatch({:tap, {:composer_select, _}} = msg, socket), do: Chat.handle(msg, socket)
+
+  defp dispatch({:conversation_permission_mode_changed, _, _, _, _} = msg, socket),
+    do: Chat.handle(msg, socket)
+
+  defp dispatch({:conversation_permission_mode_changed, _, _, _} = msg, socket),
+    do: Chat.handle(msg, socket)
+
   defp dispatch({:tap, {:permission_mode, _}} = msg, socket), do: Chat.handle(msg, socket)
   defp dispatch({:tap, {:approval, _, _, _, _}} = msg, socket), do: Chat.handle(msg, socket)
   defp dispatch({:agent_event, _} = msg, socket), do: Chat.handle(msg, socket)

@@ -1195,7 +1195,9 @@ defmodule HandbeanProbe.HomeScreenTest do
       {:ok, :async}
     end)
 
-    {:ok, conversation} = Handbean.ConversationStore.create("default")
+    {:ok, conversation} =
+      Handbean.ConversationStore.create("default", permission_mode: "prompt")
+
     view = info(view, {:tap, {:conversation, conversation["id"]}})
 
     {:ok, %{run_pid: runner}} =
@@ -1280,7 +1282,9 @@ defmodule HandbeanProbe.HomeScreenTest do
         Jason.encode!(%{"tools" => %{"default_mode" => "prompt"}})
       )
 
-      {:ok, c} = Handbean.ConversationStore.create("default")
+      {:ok, c} =
+        Handbean.ConversationStore.create("default", permission_mode: "prompt")
+
       view = info(view, {:tap, {:conversation, c["id"]}})
 
       {:ok, %{run_pid: runner}} =
@@ -1366,7 +1370,7 @@ defmodule HandbeanProbe.HomeScreenTest do
     end
   end
 
-  test "always-allow resume succeeds even when workspace rules cannot be saved", %{view: view} do
+  test "always-allow resume fails closed when workspace rules become unreadable", %{view: view} do
     workspace = assigns(view).workspace
     path = workspace["path"]
     File.mkdir_p!(Path.join(path, ".handbean"))
@@ -1374,7 +1378,7 @@ defmodule HandbeanProbe.HomeScreenTest do
     original = Jason.encode!(%{"tools" => %{"default_mode" => "prompt"}})
     File.write!(settings_path, original)
 
-    {:ok, c} = Handbean.ConversationStore.create("default")
+    {:ok, c} = Handbean.ConversationStore.create("default", permission_mode: "prompt")
     view = info(view, {:tap, {:conversation, c["id"]}})
 
     {:ok, %{run_pid: runner}} =
@@ -1404,7 +1408,7 @@ defmodule HandbeanProbe.HomeScreenTest do
              gettext("Approval submitted, but the rule could not be saved to the workspace.")
 
     assert_receive {:agent_event, %{kind: :tool_end}}, 5_000
-    assert File.exists?(Path.join(path, "approval.txt"))
+    refute File.exists?(Path.join(path, "approval.txt"))
     File.write!(settings_path, original)
   end
 
@@ -1460,7 +1464,22 @@ defmodule HandbeanProbe.HomeScreenTest do
     assert assigns(view).draft == "keep this draft"
   end
 
-  test "permission selector persists workspace policy and reloads on mount", %{view: view} do
+  test "permission selector persists the current conversation and reloads on mount", %{view: view} do
+    view =
+      case assigns(view).chat do
+        %{conversation: %{"id" => _id}} ->
+          view
+
+        _no_conversation ->
+          workspace_id = assigns(view).workspace["id"]
+          {:ok, conversation} = Handbean.ConversationStore.create(workspace_id)
+          info(view, {:tap, {:conversation, conversation["id"]}})
+      end
+
+    conversation_id = assigns(view).chat.conversation["id"]
+    workspace_path = assigns(view).workspace["path"]
+    {:ok, original_settings} = Handbean.WorkspaceSettings.load(workspace_path)
+
     view = info(view, {:tap, {:page, :permissions}})
     assert text(view) =~ gettext("Tool permissions")
     assert text(view) =~ gettext("Smart approval")
@@ -1470,8 +1489,9 @@ defmodule HandbeanProbe.HomeScreenTest do
     assert assigns(view).permission_mode == :prompt
     assert assigns(mount_screen(HomeScreen)).permission_mode == :prompt
 
-    assert Handbean.Permissions.ToolPolicy.from_workspace(assigns(view).workspace["path"]).default_mode ==
-             :prompt
+    assert {:ok, metadata} = Handbean.ConversationStore.get_metadata(conversation_id)
+    assert metadata["permission_mode"] == "prompt"
+    assert {:ok, ^original_settings} = Handbean.WorkspaceSettings.load(workspace_path)
 
     view = info(view, {:tap, {:permission_mode, :yolo}})
     assert assigns(view).permission_mode == :yolo
@@ -1479,9 +1499,17 @@ defmodule HandbeanProbe.HomeScreenTest do
     view = info(view, {:tap, {:permission_mode, :auto_review}})
     assert assigns(view).permission_mode == :auto_review
     assert assigns(mount_screen(HomeScreen)).permission_mode == :auto_review
-    path = assigns(view).workspace["path"]
-    assert Handbean.Permissions.ToolPolicy.from_workspace(path).default_mode == :auto
-    assert Handbean.WorkspaceSettings.approvals_reviewer(path) == :auto_review
+    assert {:ok, metadata} = Handbean.ConversationStore.get_metadata(conversation_id)
+    assert metadata["permission_mode"] == "auto_review"
+    assert {:ok, ^original_settings} = Handbean.WorkspaceSettings.load(workspace_path)
+
+    view =
+      info(
+        view,
+        {:conversation_permission_mode_changed, conversation_id, :prompt, nil, 0}
+      )
+
+    assert assigns(view).permission_mode == :auto_review
   end
 
   test "approval projection ignores foreign and stale requests and clears cancelled review", %{
@@ -1528,7 +1556,9 @@ defmodule HandbeanProbe.HomeScreenTest do
       {:ok, :async}
     end)
 
-    {:ok, conversation} = Handbean.ConversationStore.create("default")
+    {:ok, conversation} =
+      Handbean.ConversationStore.create("default", permission_mode: "prompt")
+
     view = info(view, {:tap, {:conversation, conversation["id"]}})
 
     payload = %{

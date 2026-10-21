@@ -1,7 +1,8 @@
 defmodule HandbeanWeb.Feature.PermissionModeFeatureTest do
   @moduledoc """
-  Switching the permission pill writes workspace settings, and the next run
-  honors that mode: safe mode asks before a write, yolo runs it.
+  Switching the permission pill writes conversation metadata, and the next run
+  honors that mode: safe mode asks before a write, yolo runs it without changing
+  another conversation in the same workspace.
 
   Run: mix test --include e2e test/feature/permission_mode_feature_test.exs
   """
@@ -11,7 +12,6 @@ defmodule HandbeanWeb.Feature.PermissionModeFeatureTest do
   alias Handbean.ConversationStore
   alias Handbean.PubSub.Session
   alias Handbean.TestSupport.E2EHarness
-  alias Handbean.WorkspaceSettings
 
   @moduletag :e2e
 
@@ -68,8 +68,8 @@ defmodule HandbeanWeb.Feature.PermissionModeFeatureTest do
       |> click_button("button[phx-click='toggle_permission_menu']", "智能审批")
       |> click_button("button[phx-value-mode='prompt']", "Safe Mode")
 
-    assert {:ok, settings} = WorkspaceSettings.load(workspace)
-    assert get_in(settings, ["tools", "default_mode"]) == "prompt"
+    assert {:ok, first_meta} = ConversationStore.get_metadata(first["id"])
+    assert first_meta["permission_mode"] == "prompt"
 
     page =
       page
@@ -86,11 +86,13 @@ defmodule HandbeanWeb.Feature.PermissionModeFeatureTest do
 
     page
     |> visit("/w/#{ws["id"]}/c/#{second["id"]}")
-    |> click_button("button[phx-click='toggle_permission_menu']", "安全模式")
+    |> click_button("button[phx-click='toggle_permission_menu']", "智能审批")
     |> click_button("button[phx-value-mode='yolo']", "yolo")
 
-    assert {:ok, settings} = WorkspaceSettings.load(workspace)
-    assert get_in(settings, ["tools", "default_mode"]) == "yolo"
+    assert {:ok, first_meta} = ConversationStore.get_metadata(first["id"])
+    assert {:ok, second_meta} = ConversationStore.get_metadata(second["id"])
+    assert first_meta["permission_mode"] == "prompt"
+    assert second_meta["permission_mode"] == "yolo"
 
     conn
     |> visit("/w/#{ws["id"]}/c/#{second["id"]}")

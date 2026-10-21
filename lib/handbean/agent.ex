@@ -30,7 +30,17 @@ defmodule Handbean.Agent do
   @spec resume_after_tool_approval(State.t(), [map()], keyword()) ::
           {:ok, State.t()} | {:error, term()}
   def resume_after_tool_approval(%State{} = interrupted_state, decisions, opts) do
-    # Register tools (same as run)
+    {interrupted_state, wrapped_opts} = prepare_resume(interrupted_state, opts)
+    {:ok, Turn.resume_after_tool_approval(interrupted_state, decisions, wrapped_opts)}
+  end
+
+  @doc false
+  def resume_after_auto_review(%State{} = interrupted_state, opts) do
+    {interrupted_state, wrapped_opts} = prepare_resume(interrupted_state, opts)
+    {:ok, Turn.resume_after_auto_review(interrupted_state, wrapped_opts)}
+  end
+
+  defp prepare_resume(interrupted_state, opts) do
     working_dir = Keyword.get(opts, :working_directory)
     tools = tools_for_run(opts, working_dir)
     Enum.each(tools, &Handbean.Tool.Registry.register/1)
@@ -44,7 +54,6 @@ defmodule Handbean.Agent do
     interrupted_state =
       put_in(interrupted_state.config.context[:mcp_scope], opts[:context][:mcp_scope])
 
-    # Re-wrap on_event with session broadcast (same pattern as run/2 but for resume)
     wrapped_opts =
       case Keyword.get(opts, :session_id) do
         nil ->
@@ -58,8 +67,7 @@ defmodule Handbean.Agent do
           )
       end
 
-    result = Turn.resume_after_tool_approval(interrupted_state, decisions, wrapped_opts)
-    {:ok, result}
+    {interrupted_state, wrapped_opts}
   end
 
   @doc "Continue a run paused by the progress guard."

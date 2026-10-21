@@ -96,7 +96,8 @@ defmodule Handbean.Agent.TranscriptRecovery do
             conversation_id,
             {:run_end, %{status: "error", error: "Host stopped before the run completed"}},
             run_id: run_id,
-            source: :recovery
+            source: :recovery,
+            orphan_recovery?: true
           )
 
         case result do

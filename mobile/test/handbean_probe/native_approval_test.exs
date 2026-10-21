@@ -66,7 +66,9 @@ defmodule HandbeanProbe.NativeApprovalTest do
       Jason.encode!(%{"tools" => %{"default_mode" => "prompt"}})
     )
 
-    {:ok, conversation} = Handbean.ConversationStore.create(workspace["id"])
+    {:ok, conversation} =
+      Handbean.ConversationStore.create(workspace["id"], permission_mode: "prompt")
+
     id = conversation["id"]
     :ok = Session.subscribe(id)
 
@@ -311,7 +313,9 @@ defmodule HandbeanProbe.NativeApprovalTest do
         Jason.encode!(%{"tools" => %{"default_mode" => "auto"}})
       )
 
-      {:ok, conversation} = Handbean.ConversationStore.create(workspace["id"])
+      {:ok, conversation} =
+        Handbean.ConversationStore.create(workspace["id"], permission_mode: "prompt")
+
       id = conversation["id"]
       :ok = Session.subscribe(id)
 

@@ -609,13 +609,19 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationEvents do
   def handle("select_permission_mode", %{"mode" => mode_str}, socket)
       when mode_str in ["prompt", "auto_review", "yolo"] do
     mode = String.to_existing_atom(mode_str)
-    workspace_root = ConversationState.current_workspace_path(socket)
 
-    case Handbean.WorkspaceSettings.update_permission_mode(workspace_root, mode) do
-      :ok ->
+    case Handbean.Permissions.ConversationMode.update(
+           socket.assigns.current_conversation_id,
+           mode,
+           source: :web
+         ) do
+      {:ok, _metadata} ->
+        current =
+          Handbean.Permissions.ConversationMode.get(socket.assigns.current_conversation_id)
+
         {:noreply,
          socket
-         |> assign(:permission_mode, mode)
+         |> assign(:permission_mode, current)
          |> assign(:show_permission_menu, false)}
 
       {:error, reason} ->

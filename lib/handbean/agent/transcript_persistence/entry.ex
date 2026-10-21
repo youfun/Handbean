@@ -252,6 +252,13 @@ defmodule Handbean.Agent.TranscriptPersistence.Entry do
       loop_owner: payload_value(payload, :loop_owner) || :handbean,
       backend: payload_value(payload, :backend),
       model: payload_value(payload, :model) || Keyword.get(opts, :model),
+      permission_mode: Keyword.get(opts, :permission_mode),
+      permission_revision: Keyword.get(opts, :permission_revision),
+      approval_mode: Keyword.get(opts, :approval_mode),
+      approvals_reviewer: Keyword.get(opts, :approvals_reviewer),
+      permission_source: Keyword.get(opts, :permission_source),
+      delegated_approval: Keyword.get(opts, :delegated_approval),
+      orphan_recovery?: Keyword.get(opts, :orphan_recovery?, false),
       error: payload_value(payload, :error),
       turns: payload_value(payload, :turns),
       duration_ms: payload_value(payload, :duration_ms)
