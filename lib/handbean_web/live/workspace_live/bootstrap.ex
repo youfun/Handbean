@@ -187,7 +187,7 @@ defmodule HandbeanWeb.WorkspaceLive.Bootstrap do
       |> assign(:expanded_tool_groups, MapSet.new())
       |> assign(:show_archive, false)
       |> assign(:collapsed_workspace_ids, SessionMemory.collapsed_groups())
-      |> assign(:collapsed_thread_ids, MapSet.new())
+      |> assign(:collapsed_thread_ids, SessionMemory.collapsed_threads())
       |> assign(:sidebar_visible_limits, %{})
       |> assign(:remove_workspace, nil)
       |> assign(:rename_workspace, nil)

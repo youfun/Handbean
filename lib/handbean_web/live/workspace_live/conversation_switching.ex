@@ -550,13 +550,15 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
   defdelegate new_conversation_projects(workspaces), to: CheckoutMetadata
 
   def toggle_thread(socket, conversation_id) when is_binary(conversation_id) do
-    update(socket, :collapsed_thread_ids, fn collapsed ->
+    socket
+    |> update(:collapsed_thread_ids, fn collapsed ->
       collapsed = collapsed || MapSet.new()
 
       if MapSet.member?(collapsed, conversation_id),
         do: MapSet.delete(collapsed, conversation_id),
         else: MapSet.put(collapsed, conversation_id)
     end)
+    |> SessionMemory.persist_collapsed_thread(conversation_id)
   end
 
   def show_more_conversations(socket, bucket) when is_binary(bucket) do

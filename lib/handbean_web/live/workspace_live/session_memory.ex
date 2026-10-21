@@ -5,6 +5,7 @@ defmodule HandbeanWeb.WorkspaceLive.SessionMemory do
   alias Handbean.Settings.UI
 
   def collapsed_groups, do: UI.collapsed_groups()
+  def collapsed_threads, do: UI.collapsed_threads()
 
   def restore(workspaces) when is_list(workspaces) do
     case UI.last_location() do
@@ -30,6 +31,12 @@ defmodule HandbeanWeb.WorkspaceLive.SessionMemory do
 
   def persist_collapsed(socket) do
     _ = UI.save_collapsed_groups(socket.assigns[:collapsed_workspace_ids] || MapSet.new())
+    socket
+  end
+
+  def persist_collapsed_thread(socket, conversation_id) do
+    collapsed = socket.assigns[:collapsed_thread_ids] || MapSet.new()
+    _ = UI.set_thread_collapsed(conversation_id, MapSet.member?(collapsed, conversation_id))
     socket
   end
 

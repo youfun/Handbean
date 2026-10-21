@@ -239,7 +239,9 @@ defmodule HandbeanWeb.WorkspaceLive.WorkspaceConversationsTest do
       end
     end
 
-    test "parent thread toggle collapses descendants without selecting the parent", %{conn: conn} do
+    test "parent thread toggle persists across remounts without selecting the parent", %{
+      conn: conn
+    } do
       {:ok, workspace} = Handbean.WorkspaceStore.ensure_default!()
 
       {:ok, parent} =
@@ -255,8 +257,24 @@ defmodule HandbeanWeb.WorkspaceLive.WorkspaceConversationsTest do
           parent_conversation_id: parent["id"]
         )
 
+      {:ok, other_parent} =
+        Handbean.ConversationStore.create(workspace["id"],
+          id: "thread-collapse-other-parent",
+          title: "Other collapsible parent"
+        )
+
+      {:ok, other_child} =
+        Handbean.ConversationStore.create(workspace["id"],
+          id: "thread-collapse-other-child",
+          title: "Other nested child",
+          parent_conversation_id: other_parent["id"]
+        )
+
       {:ok, view, _html} = live(conn, "/")
       render_async(view, 5_000)
+
+      {:ok, stale_view, _html} = live(conn, "/")
+      render_async(stale_view, 5_000)
 
       assert has_element?(view, "#conversation-#{child["id"]}")
       assert has_element?(view, "#thread-toggle-#{parent["id"]}[aria-expanded='true']")
@@ -268,10 +286,45 @@ defmodule HandbeanWeb.WorkspaceLive.WorkspaceConversationsTest do
       assert has_element?(view, "#thread-toggle-#{parent["id"]}[aria-expanded='false']")
       assert view |> render() |> session_id_from_html() == selected_before
 
-      view |> element("#thread-toggle-#{parent["id"]}") |> render_click()
+      stale_view |> element("#thread-toggle-#{other_parent["id"]}") |> render_click()
 
-      assert has_element?(view, "#conversation-#{child["id"]}")
-      assert has_element?(view, "#thread-toggle-#{parent["id"]}[aria-expanded='true']")
+      {:ok, restored, _html} = live(conn, "/")
+      render_async(restored, 5_000)
+
+      refute has_element?(restored, "#conversation-#{child["id"]}")
+      refute has_element?(restored, "#conversation-#{other_child["id"]}")
+
+      assert has_element?(
+               restored,
+               "#thread-toggle-#{parent["id"]}[aria-expanded='false']"
+             )
+
+      assert has_element?(
+               restored,
+               "#thread-toggle-#{other_parent["id"]}[aria-expanded='false']"
+             )
+
+      restored |> element("#thread-toggle-#{parent["id"]}") |> render_click()
+
+      assert has_element?(restored, "#conversation-#{child["id"]}")
+      refute has_element?(restored, "#conversation-#{other_child["id"]}")
+
+      assert has_element?(
+               restored,
+               "#thread-toggle-#{parent["id"]}[aria-expanded='true']"
+             )
+
+      {:ok, reopened, _html} = live(conn, "/")
+      render_async(reopened, 5_000)
+
+      assert has_element?(reopened, "#conversation-#{child["id"]}")
+      refute has_element?(reopened, "#conversation-#{other_child["id"]}")
+      assert has_element?(reopened, "#thread-toggle-#{parent["id"]}[aria-expanded='true']")
+
+      assert has_element?(
+               reopened,
+               "#thread-toggle-#{other_parent["id"]}[aria-expanded='false']"
+             )
     end
 
     test "workspace group shows conversation count and collapses", %{conn: conn} do

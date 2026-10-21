@@ -5,6 +5,7 @@ defmodule Handbean.Settings.UI do
   import Ecto.Changeset
 
   alias Handbean.Repo
+  alias Handbean.Storage.WriteTransaction
 
   @primary_key {:key, :string, autogenerate: false}
   schema "ui_settings" do
@@ -63,7 +64,8 @@ defmodule Handbean.Settings.UI do
 
   @location_key "ui.last_location"
   @collapsed_key "ui.collapsed_groups"
-  @max_groups 200
+  @collapsed_threads_key "ui.collapsed_threads"
+  @max_collapsed_ids 200
   @id_pattern ~r/\A[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\z/
 
   @doc """
@@ -88,24 +90,52 @@ defmodule Handbean.Settings.UI do
   end
 
   @doc "Workspace, free, and pinned groups the sidebar left collapsed."
-  def collapsed_groups do
-    case Repo.get(__MODULE__, @collapsed_key) do
-      %__MODULE__{value: value} -> MapSet.new(decode_groups(value))
-      nil -> MapSet.new()
+  def collapsed_groups, do: collapsed_ids(@collapsed_key)
+
+  @doc "Replace the collapsed sidebar groups. Unknown ids are dropped."
+  def save_collapsed_groups(groups), do: save_collapsed_ids(@collapsed_key, groups)
+
+  @doc "Conversation threads the sidebar left collapsed."
+  def collapsed_threads, do: collapsed_ids(@collapsed_threads_key)
+
+  @doc "Persist one conversation thread's collapsed state without replacing other views' choices."
+  def set_thread_collapsed(thread_id, collapsed?)
+      when is_binary(thread_id) and is_boolean(collapsed?) do
+    if valid_id?(thread_id) do
+      fn ->
+        ids = persisted_ids(@collapsed_threads_key)
+
+        ids =
+          if collapsed? do
+            ids
+            |> Enum.reject(&(&1 == thread_id))
+            |> Kernel.++([thread_id])
+          else
+            Enum.reject(ids, &(&1 == thread_id))
+          end
+
+        case save_ids(@collapsed_threads_key, ids) do
+          :ok -> :ok
+          {:error, reason} -> Repo.rollback(reason)
+        end
+      end
+      |> WriteTransaction.run()
+      |> transaction_result()
+    else
+      {:error, :invalid}
     end
   end
 
-  @doc "Replace the collapsed sidebar groups. Unknown ids are dropped."
-  def save_collapsed_groups(groups) do
-    ids =
-      groups
-      |> Enum.map(&to_string/1)
-      |> Enum.filter(&valid_id?/1)
-      |> Enum.uniq()
-      |> Enum.take(@max_groups)
+  def set_thread_collapsed(_thread_id, _collapsed?), do: {:error, :invalid}
 
-    case Jason.encode(ids) do
-      {:ok, value} -> put(@collapsed_key, value)
+  defp save_collapsed_ids(key, ids) do
+    ids = ids |> Enum.map(&to_string/1) |> normalize_ids()
+    save_ids(key, ids)
+  end
+
+  defp save_ids(key, ids) do
+    case Handbean.JSON.encode(normalize_ids(ids)) do
+      {:ok, value} -> put(key, value)
       {:error, _} -> {:error, :invalid}
     end
   end
@@ -123,7 +153,7 @@ defmodule Handbean.Settings.UI do
 
   defp encode_location(%{scope: :free, conversation_id: id}) do
     if valid_id?(id) do
-      Jason.encode(%{scope: "free", conversation_id: id})
+      Handbean.JSON.encode(%{scope: "free", conversation_id: id})
     else
       :error
     end
@@ -131,7 +161,7 @@ defmodule Handbean.Settings.UI do
 
   defp encode_location(%{scope: :workspace, workspace_id: workspace_id, conversation_id: id}) do
     if valid_id?(workspace_id) and valid_id?(id) do
-      Jason.encode(%{scope: "workspace", workspace_id: workspace_id, conversation_id: id})
+      Handbean.JSON.encode(%{scope: "workspace", workspace_id: workspace_id, conversation_id: id})
     else
       :error
     end
@@ -140,7 +170,7 @@ defmodule Handbean.Settings.UI do
   defp encode_location(_), do: :error
 
   defp decode_location(value) when is_binary(value) do
-    case Jason.decode(value) do
+    case Handbean.JSON.decode(value) do
       {:ok, %{"scope" => "free", "conversation_id" => id}} ->
         if valid_id?(id), do: %{scope: :free, conversation_id: id}
 
@@ -156,14 +186,35 @@ defmodule Handbean.Settings.UI do
 
   defp decode_location(_), do: nil
 
-  defp decode_groups(value) when is_binary(value) do
-    case Jason.decode(value) do
-      {:ok, ids} when is_list(ids) -> Enum.filter(ids, &valid_id?/1)
+  defp collapsed_ids(key), do: key |> persisted_ids() |> MapSet.new()
+
+  defp persisted_ids(key) do
+    case Repo.get(__MODULE__, key) do
+      %__MODULE__{value: value} -> decode_ids(value)
+      nil -> []
+    end
+  end
+
+  defp decode_ids(value) when is_binary(value) do
+    case Handbean.JSON.decode(value) do
+      {:ok, ids} when is_list(ids) -> normalize_ids(ids)
       _ -> []
     end
   end
 
-  defp decode_groups(_), do: []
+  defp decode_ids(_), do: []
+
+  defp normalize_ids(ids) do
+    ids
+    |> Enum.filter(&valid_id?/1)
+    |> Enum.reverse()
+    |> Enum.uniq()
+    |> Enum.take(@max_collapsed_ids)
+    |> Enum.reverse()
+  end
+
+  defp transaction_result({:ok, :ok}), do: :ok
+  defp transaction_result({:error, reason}), do: {:error, reason}
 
   defp valid_id?(id) when is_binary(id), do: Regex.match?(@id_pattern, id)
   defp valid_id?(_), do: false
