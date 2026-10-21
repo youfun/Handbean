@@ -28,6 +28,7 @@ defmodule HandbeanProbe.HomeScreen.Nav do
     NativeApproval,
     NativeArtifactDelivery,
     NativeChat,
+    NativeClipboard,
     NativeFileViewer,
     NativeWorkspaces,
     NativeWorkspaceTree,
@@ -147,6 +148,14 @@ defmodule HandbeanProbe.HomeScreen.Nav do
       {:ok, _} -> reload_history(socket)
       _ -> Notice.put_error(socket, gettext("Conversation not found"))
     end
+  end
+
+  def handle({:tap, {:copy_conversation_id, id}}, socket) when is_binary(id) do
+    socket = assign(socket, :conversation_menu_id, nil)
+
+    socket
+    |> NativeClipboard.put(id)
+    |> Notice.put_info(gettext("Conversation ID copied"))
   end
 
   def handle({:tap, {:confirm_rename_conversation, title}}, socket) when is_binary(title) do

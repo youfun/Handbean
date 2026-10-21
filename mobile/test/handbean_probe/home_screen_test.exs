@@ -592,6 +592,61 @@ defmodule HandbeanProbe.HomeScreenTest do
     refute text(view) =~ gettext("Conversation not found")
   end
 
+  test "conversation menu copies the conversation ID and closes the menu", %{view: view} do
+    on_exit(fn -> Application.delete_env(:handbean_probe, :clipboard_put) end)
+    {:ok, c} = Handbean.ConversationStore.create("default", title: "Copy fixture")
+
+    parent = self()
+
+    Application.put_env(:handbean_probe, :clipboard_put, fn text ->
+      send(parent, {:copied, text})
+    end)
+
+    view = info(view, {:tap, {:page, :history}})
+    view = info(view, {:tap, {:toggle_conversation_menu, c["id"]}})
+    assert assigns(view).conversation_menu_id == c["id"]
+
+    view = info(view, {:tap, {:copy_conversation_id, c["id"]}})
+    assert_receive {:copied, copied}
+    assert copied == c["id"]
+    assert assigns(view).conversation_menu_id == nil
+    assert notice_text(view) =~ gettext("Conversation ID copied")
+  end
+
+  test "app entries live in the pinned footer of the history drawer", %{view: view} do
+    refute find(view, :icon, id: "{:page, :settings}")
+    refute text(view) =~ gettext("Scheduled tasks")
+    refute text(view) =~ gettext("Settings")
+
+    view = info(view, {:tap, {:page, :history}})
+    settings = find(view, :row, id: "history-settings")
+    assert settings.props.on_tap
+    assert text(view) =~ gettext("Settings")
+
+    files = find(view, :row, id: "history-files")
+    assert files.props.on_tap
+    assert text(view) =~ gettext("Files")
+
+    tasks = find(view, :row, id: "history-tasks")
+    assert tasks.props.on_tap
+    assert text(view) =~ gettext("Scheduled tasks")
+
+    about = find(view, :row, id: "history-about")
+    assert about.props.on_tap
+    assert text(view) =~ gettext("About")
+
+    # The footer is pinned below the scroll area, so it stays reachable no
+    # matter how long the conversation list grows.
+    scroll = find(view, :scroll)
+    assert scroll
+    footer_ids = ["history-files", "history-tasks", "history-settings", "history-about"]
+    refute Enum.any?(flatten(scroll), &(&1.props[:id] in footer_ids))
+
+    view = info(view, {:tap, {:page, :history}})
+    view = info(view, {:tap, {:page, :settings}})
+    assert text(view) =~ gettext("Default model")
+  end
+
   test "a free-chat notification opens without inventing a workspace", %{view: view} do
     {:ok, conversation} = Handbean.ConversationStore.create_free(title: "Notify free")
     workspace_id = assigns(view).workspace["id"]

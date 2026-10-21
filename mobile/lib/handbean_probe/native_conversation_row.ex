@@ -149,6 +149,11 @@ defmodule HandbeanProbe.NativeConversationRow do
                 "conversation-action-rename-#{id}"
               ),
               menu_item(
+                gettext("Copy ID"),
+                {:copy_conversation_id, id},
+                "conversation-action-copy-id-#{id}"
+              ),
+              menu_item(
                 gettext("Archive"),
                 {:archive_conversation, id},
                 "conversation-action-archive-#{id}"

@@ -51,6 +51,12 @@ msgstr ""
 msgid "API protocol"
 msgstr ""
 
+#: lib/handbean_probe/home_screen/render.ex:213
+#: lib/handbean_probe/home_screen/render.ex:361
+#, elixir-autogen, elixir-format
+msgid "About"
+msgstr ""
+
 #: lib/handbean_probe/native_chat.ex:146
 #, elixir-autogen, elixir-format
 msgid "Add a model in Settings first"
@@ -123,6 +129,11 @@ msgstr ""
 #: lib/handbean_probe/model_settings/subscription_render.ex:78
 #, elixir-autogen, elixir-format
 msgid "Cancel"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/nav.ex:158
+#, elixir-autogen, elixir-format
+msgid "Conversation ID copied"
 msgstr ""
 
 #: lib/handbean_probe/home_screen/nav.ex:50
@@ -330,6 +341,12 @@ msgstr ""
 #: lib/handbean_probe/native_approval.ex:33
 #, elixir-autogen, elixir-format
 msgid "Saves to the current workspace and does not auto-approve a pending operation. More specific tool rules still take precedence."
+msgstr ""
+
+#: lib/handbean_probe/home_screen/render.ex:208
+#: lib/handbean_probe/home_screen/render.ex:360
+#, elixir-autogen, elixir-format
+msgid "Scheduled tasks"
 msgstr ""
 
 #: lib/handbean_probe/home_screen/render.ex:375
@@ -1832,6 +1849,11 @@ msgstr ""
 #: lib/handbean_probe/model_settings/subscription_render.ex:86
 #, elixir-autogen, elixir-format
 msgid "Copy"
+msgstr ""
+
+#: lib/handbean_probe/native_conversation_row.ex:152
+#, elixir-autogen, elixir-format
+msgid "Copy ID"
 msgstr ""
 
 #: lib/handbean_probe/home_screen/settings.ex:254

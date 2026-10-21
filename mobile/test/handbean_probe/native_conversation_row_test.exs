@@ -24,9 +24,11 @@ defmodule HandbeanProbe.NativeConversationRowTest do
 
     assert text?(menu, gettext("Pin"))
     assert text?(menu, gettext("Rename"))
+    assert text?(menu, gettext("Copy ID"))
     assert text?(menu, gettext("Archive"))
     assert tap?(menu, {:toggle_pin_conversation, "conv-1"})
     assert tap?(menu, {:rename_conversation, "conv-1"})
+    assert tap?(menu, {:copy_conversation_id, "conv-1"})
     assert tap?(menu, {:archive_conversation, "conv-1"})
 
     assert text?(pinned, gettext("Unpin"))
@@ -62,7 +64,13 @@ defmodule HandbeanProbe.NativeConversationRowTest do
 
   defp menu_action?(nodes) do
     Enum.any?(
-      [gettext("Pin"), gettext("Unpin"), gettext("Rename"), gettext("Archive")],
+      [
+        gettext("Pin"),
+        gettext("Unpin"),
+        gettext("Rename"),
+        gettext("Copy ID"),
+        gettext("Archive")
+      ],
       &text?(nodes, &1)
     )
   end

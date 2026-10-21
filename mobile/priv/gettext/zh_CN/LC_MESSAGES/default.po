@@ -41,6 +41,12 @@ msgstr "API Key"
 msgid "API protocol"
 msgstr "API 协议"
 
+#: lib/handbean_probe/home_screen/render.ex:213
+#: lib/handbean_probe/home_screen/render.ex:361
+#, elixir-autogen, elixir-format
+msgid "About"
+msgstr "关于"
+
 #: lib/handbean_probe/native_chat.ex:146
 #, elixir-autogen, elixir-format
 msgid "Add a model in Settings first"
@@ -114,6 +120,11 @@ msgstr "Base URL（HTTPS）"
 #, elixir-autogen, elixir-format
 msgid "Cancel"
 msgstr "取消"
+
+#: lib/handbean_probe/home_screen/nav.ex:158
+#, elixir-autogen, elixir-format
+msgid "Conversation ID copied"
+msgstr "已复制对话 ID"
 
 #: lib/handbean_probe/home_screen/nav.ex:50
 #: lib/handbean_probe/home_screen/nav.ex:127
@@ -327,6 +338,12 @@ msgstr "已保存，下次发送生效"
 #, elixir-autogen, elixir-format
 msgid "Saves to the current workspace and does not auto-approve a pending operation. More specific tool rules still take precedence."
 msgstr "保存到当前工作区，不会自动批准正在等待的操作。更具体的工具规则仍优先生效。"
+
+#: lib/handbean_probe/home_screen/render.ex:208
+#: lib/handbean_probe/home_screen/render.ex:360
+#, elixir-autogen, elixir-format
+msgid "Scheduled tasks"
+msgstr "定时任务"
 
 #: lib/handbean_probe/home_screen/render.ex:375
 #, elixir-autogen, elixir-format
@@ -1839,6 +1856,11 @@ msgstr "已连接 xAI / Grok 订阅"
 #, elixir-autogen, elixir-format
 msgid "Copy"
 msgstr "复制"
+
+#: lib/handbean_probe/native_conversation_row.ex:152
+#, elixir-autogen, elixir-format
+msgid "Copy ID"
+msgstr "复制 ID"
 
 #: lib/handbean_probe/home_screen/settings.ex:254
 #: lib/handbean_probe/home_screen/settings.ex:282

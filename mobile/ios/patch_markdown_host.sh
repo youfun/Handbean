@@ -212,6 +212,15 @@ def split_node_view_body(text):
     return text[:struct_end] + helper_block + text[struct_end:]
 
 root = load("MobRootView.swift")
+root = ensure(
+    root,
+    '    case "history":       return "clock.arrow.circlepath"\n'
+    '    case "list":          return "list.bullet"\n',
+    '    case "history":       return "clock.arrow.circlepath"\n'
+    '    case "folder":        return "folder"\n'
+    '    case "list":          return "list.bullet"\n',
+    "MobRootView.swift icons",
+)
 root = split_node_view_body(root)
 # macOS CI images often ship an SDK older than iOS 26. `#available` still
 # type-checks `glassEffect`, so hide it from compilers that do not have it.

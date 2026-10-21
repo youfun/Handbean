@@ -299,6 +299,7 @@ defmodule HandbeanProbe.HomeScreen do
   defp dispatch({:tap, {:toggle_pin_conversation, _}} = msg, socket), do: Nav.handle(msg, socket)
   defp dispatch({:tap, {:rename_conversation, _}} = msg, socket), do: Nav.handle(msg, socket)
   defp dispatch({:tap, {:archive_conversation, _}} = msg, socket), do: Nav.handle(msg, socket)
+  defp dispatch({:tap, {:copy_conversation_id, _}} = msg, socket), do: Nav.handle(msg, socket)
   defp dispatch({:tap, {:toggle_history_group, _}} = msg, socket), do: Nav.handle(msg, socket)
 
   defp dispatch({:tap, {:new_workspace_conversation, _}} = msg, socket),

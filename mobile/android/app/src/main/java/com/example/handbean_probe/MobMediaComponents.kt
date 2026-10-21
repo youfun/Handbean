@@ -31,6 +31,8 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -220,6 +222,8 @@ private fun materialIconFor(logical: String): androidx.compose.ui.graphics.vecto
         "star_filled"     -> Icons.Filled.Star
         "user"            -> Icons.Filled.Person
         "home"            -> Icons.Filled.Home
+        "folder"          -> Icons.Filled.Folder
+        "history"         -> Icons.Filled.History
         "expand_more"     -> Icons.Filled.ExpandMore
         "expand_less"     -> Icons.Filled.ExpandLess
         else              -> Icons.Filled.QuestionMark

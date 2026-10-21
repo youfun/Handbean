@@ -33,6 +33,8 @@ defmodule HandbeanProbe.IosMarkdownHostTest do
     assert nif =~ "node.markdownStreaming = [markdownStreaming boolValue];"
 
     root = File.read!(Path.join(out, "MobRootView.swift"))
+    assert root =~ ~s(case "folder":        return "folder")
+    assert root =~ ~s(case "history":       return "clock.arrow.circlepath")
     assert root =~ "HandbeanMarkdownText("
     assert root =~ "streaming: node.markdownStreaming"
     assert root =~ "Text(node.text ?? \"\")"

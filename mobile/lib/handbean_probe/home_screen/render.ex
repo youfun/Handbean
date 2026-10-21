@@ -101,8 +101,7 @@ defmodule HandbeanProbe.HomeScreen.Render do
       if(not Nav.free_chat?(a),
         do: button(gettext("Files"), {:page, :files}, text_size: 11, background: color(:surface))
       ),
-      icon("info", {:page, :about}),
-      icon("settings", {:page, :settings})
+      icon("info", {:page, :about})
     ])
   end
 
@@ -180,16 +179,21 @@ defmodule HandbeanProbe.HomeScreen.Render do
         _ -> nil
       end
 
-    scroll(
-      HandbeanProbe.NativeHistory.render(a.history, %{
-        selected_id: selected_id,
-        collapsed: Map.get(a, :collapsed_history_groups, MapSet.new()),
-        activities: Map.get(a, :conversation_activity, %{}),
-        bean_frame: Map.get(a, :bean_frame, 0),
-        menu_id: Map.get(a, :conversation_menu_id),
-        rename: Map.get(a, :rename_conversation)
-      })
-    )
+    history_list =
+      scroll(
+        HandbeanProbe.NativeHistory.render(a.history, %{
+          selected_id: selected_id,
+          collapsed: Map.get(a, :collapsed_history_groups, MapSet.new()),
+          activities: Map.get(a, :conversation_activity, %{}),
+          bean_frame: Map.get(a, :bean_frame, 0),
+          menu_id: Map.get(a, :conversation_menu_id),
+          rename: Map.get(a, :rename_conversation)
+        })
+      )
+
+    # The drawer footer is pinned below the scroll area, so the app entries
+    # stay reachable no matter how long the conversation list grows.
+    node(:column, [weight: 1, fill_width: true], [history_list] ++ history_drawer_footer(a))
   end
 
   defp content(%{page: :files} = a),
@@ -221,6 +225,46 @@ defmodule HandbeanProbe.HomeScreen.Render do
         ),
         button(gettext("Back to chat"), {:page, :chat})
       ])
+
+  # Drawer footer: app entries live here, not in the chat header.
+  defp history_drawer_footer(a) do
+    [
+      node(:box, fill_width: true, height: 1, background: color(:separator), margin_top: 8),
+      if(not Nav.free_chat?(a),
+        do: drawer_footer_row("folder", gettext("Files"), {:page, :files}, "history-files")
+      ),
+      drawer_footer_row(
+        "history",
+        gettext("Scheduled tasks"),
+        {:page, :schedules},
+        "history-tasks"
+      ),
+      drawer_footer_row("settings", gettext("Settings"), {:page, :settings}, "history-settings"),
+      drawer_footer_row("info", gettext("About"), {:page, :about}, "history-about")
+    ]
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp drawer_footer_row(icon_name, label, tag, id) do
+    row(
+      [
+        node(:icon,
+          name: icon_name,
+          text: "",
+          text_size: 18,
+          padding: 6,
+          text_color: color(:muted)
+        ),
+        text(label, text_size: 13, text_color: color(:ink))
+      ],
+      id: id,
+      on_tap: {self(), tag},
+      padding_top: 8,
+      padding_bottom: 12,
+      padding_left: 4,
+      background: color(:surface)
+    )
+  end
 
   defp empty_chat do
     node(:box, [weight: 1, align: "center"], [
@@ -313,6 +357,8 @@ defmodule HandbeanProbe.HomeScreen.Render do
 
   defp page_title(:history), do: gettext("Conversations")
   defp page_title(:attachments), do: gettext("Attachments")
+  defp page_title(:schedules), do: gettext("Scheduled tasks")
+  defp page_title(:about), do: gettext("About")
   defp page_title(_), do: gettext("Settings")
 
   defp composer_controls(a) do
