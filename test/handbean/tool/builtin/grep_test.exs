@@ -85,6 +85,74 @@ defmodule Handbean.Tool.Builtin.GrepTest do
     end
   end
 
+  test "ripgrep safely replaces invalid text and rejects invalid paths" do
+    File.write!(Path.join(@work_dir, "before.txt"), "before_marker\n")
+    File.write!(Path.join(@work_dir, "invalid-text.txt"), <<"bad_", 0xFF, "_text\n">>)
+    File.write!(Path.join(@work_dir, "truncated.txt"), <<"cut_", 0xE2, 0x82, "\n">>)
+    File.write!(Path.join(@work_dir, "expanded.txt"), :binary.copy(<<0xFF>>, 1_000) <> "\n")
+    File.write!(Path.join(@work_dir, "after.txt"), "after_marker\n")
+    File.write!(Path.join(@work_dir, "forged�.txt"), "path_marker\n")
+    File.mkdir_p!(Path.join(@work_dir, "windows"))
+    File.write!(Path.join(@work_dir, "windows/sample.txt"), "windows_marker\n")
+    File.write!(Path.join(@work_dir, "colon:name.txt"), "colon_marker\n")
+
+    bin = Path.join(@work_dir, "bin")
+    File.mkdir_p!(bin)
+    rg = Path.join(bin, "rg")
+
+    File.write!(
+      rg,
+      "#!/bin/sh\n" <>
+        "printf 'before.txt:1:before_marker\\n'\n" <>
+        "printf 'invalid-text.txt:1:bad_\\377_text\\n'\n" <>
+        "printf 'truncated.txt:1:cut_\\342\\202\\n'\n" <>
+        "printf 'expanded.txt:1:'; i=0; while [ \"$i\" -lt 1000 ]; do printf '\\377'; i=$((i + 1)); done; printf '\\n'\n" <>
+        "printf 'malformed_\\377_line\\n'\n" <>
+        "printf 'forged\\377.txt:1:path_marker\\n'\n" <>
+        "printf 'before.txt:1000000:out_of_file_line_marker\\n'\n" <>
+        "printf 'before.txt:99999999:oversized_line_marker\\n'\n" <>
+        "printf 'windows\\\\sample.txt:1:windows_marker\\n'\n" <>
+        "printf 'colon:name.txt:1:colon_marker\\n'\n" <>
+        "printf 'after.txt:1:after_marker\\n'\n"
+    )
+
+    File.chmod!(rg, 0o755)
+    original_path = System.get_env("PATH")
+
+    try do
+      System.put_env("PATH", bin)
+
+      assert {:ok, output} =
+               grep(%{"pattern" => "marker", "path" => "."}, %{
+                 working_directory: @work_dir
+               })
+
+      assert String.valid?(output)
+      assert output =~ "before.txt:1:before_marker"
+      assert output =~ "invalid-text.txt:1:bad_�_text"
+      assert output =~ "truncated.txt:1:cut_�"
+
+      expanded_line =
+        output
+        |> String.split("\n")
+        |> Enum.find(&String.starts_with?(&1, "expanded.txt:1:"))
+
+      assert String.valid?(expanded_line)
+      assert byte_size(expanded_line) <= byte_size("expanded.txt:1:") + 2_000
+      assert output =~ "windows/sample.txt:1:windows_marker"
+      assert output =~ "colon:name.txt:1:colon_marker"
+      assert output =~ "after.txt:1:after_marker"
+      assert byte_size(output) < 10_000
+      refute output =~ "path_marker"
+      refute output =~ "before.txt:1000000:"
+      refute output =~ "out_of_file_line_marker"
+      refute output =~ "oversized_line_marker"
+      refute output =~ "malformed"
+    after
+      if original_path, do: System.put_env("PATH", original_path)
+    end
+  end
+
   test "accepts Claude-style -A and -n arguments" do
     File.write!(Path.join(@work_dir, "sample.ex"), "one\ntwo\nthree\nfour\n")
 

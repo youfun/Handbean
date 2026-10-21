@@ -13,6 +13,8 @@ defmodule Handbean.Tool.Builtin.Grep do
   @inventory_page 10_000
   @max_result_chars 20_000
   @max_file_bytes 5_000_000
+  @max_line_number @max_file_bytes + 1
+  @max_line_number_digits byte_size(Integer.to_string(@max_line_number))
   @max_page_bytes 48_000
   @max_line_bytes 2_000
   @max_context 3
@@ -428,9 +430,11 @@ defmodule Handbean.Tool.Builtin.Grep do
     end
   end
 
-  defp line_text(line) when is_binary(line), do: String.slice(line, 0, @max_line_bytes)
-  defp line_text(line) when is_list(line), do: line |> IO.iodata_to_binary() |> line_text()
-  defp line_text(line), do: line |> to_string() |> line_text()
+  defp line_text(line) when is_binary(line) do
+    binary_part(line, 0, min(byte_size(line), @max_line_bytes))
+  end
+
+  defp line_text(_line), do: ""
 
   defp close_rg(port) do
     if Port.info(port), do: Port.close(port)
@@ -487,11 +491,50 @@ defmodule Handbean.Tool.Builtin.Grep do
   end
 
   defp parse_rg_line(line) when is_binary(line) do
-    case Regex.run(~r/^(.+?):(\d+):(.*)$/u, line) do
-      [_, path, number, text] -> %{path: path, line: String.to_integer(number), text: text}
-      _ -> nil
+    case rg_fields(line, :binary.matches(line, ":")) do
+      {:ok, path, number, text} ->
+        with true <- String.valid?(path),
+             {:ok, line_number} <- rg_line_number(number) do
+          %{path: path, line: line_number, text: safe_text(text)}
+        else
+          _ -> nil
+        end
+
+      :error ->
+        nil
     end
   end
+
+  defp rg_fields(line, [{path_end, 1}, {number_end, 1} | rest]) do
+    number_start = path_end + 1
+    number = binary_part(line, number_start, number_end - number_start)
+
+    if path_end > 0 and decimal?(number) do
+      text_start = number_end + 1
+      text = binary_part(line, text_start, byte_size(line) - text_start)
+      {:ok, binary_part(line, 0, path_end), number, text}
+    else
+      rg_fields(line, [{number_end, 1} | rest])
+    end
+  end
+
+  defp rg_fields(_line, _colons), do: :error
+
+  defp decimal?(<<digit, rest::binary>>) when digit in ?0..?9, do: decimal_tail?(rest)
+  defp decimal?(_value), do: false
+
+  defp decimal_tail?(<<digit, rest::binary>>) when digit in ?0..?9, do: decimal_tail?(rest)
+  defp decimal_tail?(<<>>), do: true
+  defp decimal_tail?(_value), do: false
+
+  defp rg_line_number(number) when byte_size(number) <= @max_line_number_digits do
+    case String.to_integer(number) do
+      line_number when line_number in 1..@max_line_number -> {:ok, line_number}
+      _line_number -> :error
+    end
+  end
+
+  defp rg_line_number(_number), do: :error
 
   defp normalize_rg_hit(hit) do
     %{hit | path: hit.path |> String.replace("\\", "/") |> String.trim_leading("./")}
@@ -529,8 +572,13 @@ defmodule Handbean.Tool.Builtin.Grep do
 
   defp read_lines(workspace, relative) do
     case read_search_file(workspace, relative) do
-      {:ok, content} when is_binary(content) -> String.split(content, "\n")
-      _ -> []
+      {:ok, content} when is_binary(content) ->
+        content
+        |> String.replace_invalid("�")
+        |> String.split("\n")
+
+      _ ->
+        []
     end
   end
 
@@ -627,12 +675,19 @@ defmodule Handbean.Tool.Builtin.Grep do
   end
 
   defp format_hit(path, lines, index, before_n, after_n) do
-    start_i = max(1, index - before_n)
-    end_i = min(length(lines), index + after_n)
+    line_count = length(lines)
 
-    for i <- start_i..end_i do
-      separator = if i == index, do: ":", else: "-"
-      "#{path}#{separator}#{i}#{separator}#{Enum.at(lines, i - 1) || ""}"
+    if index <= line_count do
+      start_i = max(1, index - before_n)
+      end_i = min(line_count, index + after_n)
+
+      for i <- start_i..end_i do
+        separator = if i == index, do: ":", else: "-"
+        text = lines |> Enum.at(i - 1) |> then(&safe_text(&1 || ""))
+        "#{path}#{separator}#{i}#{separator}#{text}"
+      end
+    else
+      []
     end
   end
 
@@ -695,7 +750,25 @@ defmodule Handbean.Tool.Builtin.Grep do
 
   defp workspace_key(workspace), do: Path.expand(workspace || "")
 
-  defp bound_hit(hit), do: %{hit | text: String.slice(hit.text || "", 0, @max_line_bytes)}
+  defp bound_hit(hit), do: %{hit | text: safe_text(hit.text || "")}
+
+  defp safe_text(text) do
+    text
+    |> String.replace_invalid("�")
+    |> take_utf8_bytes(@max_line_bytes)
+  end
+
+  defp take_utf8_bytes(text, max_bytes) when byte_size(text) <= max_bytes, do: text
+
+  defp take_utf8_bytes(text, max_bytes) do
+    prefix = binary_part(text, 0, max_bytes)
+
+    case :unicode.characters_to_binary(prefix, :utf8, :utf8) do
+      valid when is_binary(valid) -> valid
+      {:incomplete, valid, _rest} -> IO.iodata_to_binary(valid)
+      {:error, valid, _rest} -> IO.iodata_to_binary(valid)
+    end
+  end
 
   defp fit_page_bytes(hits) do
     {kept, _bytes} =
