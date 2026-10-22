@@ -245,7 +245,7 @@ defmodule Handbean.Tool.Builtin.GrepTest do
       {seen, final_cursor} =
         Enum.reduce(1..5, {MapSet.new(), nil}, fn _page, {seen, cursor} ->
           input =
-            %{"pattern" => "bulk_page_marker", "path" => ".", "limit" => 1_000}
+            %{"pattern" => "bulk_page_marker", "path" => "bulk.txt", "limit" => 1_000}
             |> then(fn input -> if cursor, do: Map.put(input, "cursor", cursor), else: input end)
 
           assert {:ok, output} = grep(input, %{working_directory: @work_dir})
@@ -270,6 +270,42 @@ defmodule Handbean.Tool.Builtin.GrepTest do
       assert MapSet.size(seen) == 5_000
       assert final_cursor == nil
     end)
+  end
+
+  test "caps one noisy file so other files reach the first page" do
+    File.write!(
+      Path.join(@work_dir, "a_noise.txt"),
+      Enum.map_join(1..30, "\n", &"TODO noise #{&1}")
+    )
+
+    File.write!(Path.join(@work_dir, "b_real.txt"), "TODO real\n")
+    context = %{working_directory: @work_dir}
+
+    for mode <- [:ripgrep, :elixir] do
+      run = fn fun -> if mode == :elixir, do: without_rg(fun), else: fun.() end
+
+      run.(fn ->
+        assert {:ok, first} = grep(%{"pattern" => "TODO", "limit" => 12}, context)
+        assert first =~ "b_real.txt:1:TODO real"
+        assert first =~ "a_noise.txt:10:TODO noise 10"
+        refute first =~ "a_noise.txt:11:"
+        assert first =~ "[+20 more in this file; pass path: a_noise.txt to see all]"
+
+        assert {:ok, scoped} = grep(%{"pattern" => "TODO", "path" => "a_noise.txt"}, context)
+        assert scoped =~ "a_noise.txt:30:TODO noise 30"
+        refute scoped =~ "more in this file"
+
+        # The cursor resumes after a summarised file instead of re-listing it.
+        assert {:ok, page} = grep(%{"pattern" => "TODO", "limit" => 10}, context)
+        [_, cursor] = Regex.run(~r/next_cursor: (\S+)/, page)
+
+        assert {:ok, next} =
+                 grep(%{"pattern" => "TODO", "limit" => 10, "cursor" => cursor}, context)
+
+        assert next =~ "b_real.txt:1:TODO real"
+        refute next =~ "a_noise.txt"
+      end)
+    end
   end
 
   test "rejects paths outside workspace" do
