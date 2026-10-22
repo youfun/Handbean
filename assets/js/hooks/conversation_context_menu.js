@@ -9,7 +9,7 @@ export const ConversationContextMenu = {
   mounted() {
     this._point = null;
     this.onContextMenu = (event) => {
-      const row = event.target.closest("[data-conversation-id]");
+      const row = event.target.closest("[data-conversation-menu-row][data-conversation-id]");
       if (!row || !this.el.contains(row)) return;
       if (event.target.closest(".conversation-menu-panel")) return;
 
