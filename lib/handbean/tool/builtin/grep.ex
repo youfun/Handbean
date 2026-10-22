@@ -7,6 +7,8 @@ defmodule Handbean.Tool.Builtin.Grep do
   Other hosts read that inventory directly with an Elixir matcher.
   """
 
+  alias Handbean.Tool.Builtin.Grep.{ByteBudget, Collector, Cursor, Formatter}
+
   @behaviour Handbean.Agent.Tool
 
   @default_limit 50
@@ -18,9 +20,6 @@ defmodule Handbean.Tool.Builtin.Grep do
   @max_file_bytes 5_000_000
   @max_line_number @max_file_bytes + 1
   @max_line_number_digits byte_size(Integer.to_string(@max_line_number))
-  @max_page_bytes 48_000
-  @max_line_bytes 2_000
-  @max_context 3
   @scan_budget_ms 2_000
   @external_index_wait_ms 3_000
   @search_budget_ms 6_000
@@ -208,7 +207,7 @@ defmodule Handbean.Tool.Builtin.Grep do
     started_at = System.monotonic_time(:millisecond)
 
     cursor =
-      decode_cursor(
+      Cursor.decode(
         Handbean.Utils.SafeMap.get_any(input, "cursor", :cursor),
         input,
         workspace
@@ -224,7 +223,7 @@ defmodule Handbean.Tool.Builtin.Grep do
     end
 
     files = Enum.sort(inventory.paths)
-    collector = new_collector(wanted, per_file_cap(workspace, inventory.prefix))
+    collector = Collector.new(wanted, per_file_cap(workspace, inventory.prefix))
 
     {matcher, collector, partial?} =
       case System.find_executable("rg") do
@@ -252,9 +251,9 @@ defmodule Handbean.Tool.Builtin.Grep do
           end
       end
 
-    safe_hits = take_safe_hits(Enum.reverse(collector.hits), workspace, wanted)
-    page = safe_hits |> Enum.take(limit(input)) |> fit_page_bytes()
-    capped = capped_files(page, collector)
+    safe_hits = take_safe_hits(Collector.ordered_hits(collector), workspace, wanted)
+    page = safe_hits |> Enum.take(limit(input)) |> ByteBudget.fit_page()
+    capped = Collector.capped_files(page, collector)
 
     next_cursor =
       if page != [] and (length(safe_hits) > length(page) or partial?) do
@@ -263,7 +262,7 @@ defmodule Handbean.Tool.Builtin.Grep do
         last =
           if Map.has_key?(capped, last.path), do: %{last | line: @max_line_number + 1}, else: last
 
-        encode_cursor(last, input, workspace)
+        Cursor.encode(last, input, workspace)
       end
 
     emit_telemetry(started_at, length(files), length(page), matcher, inventory.status)
@@ -272,54 +271,26 @@ defmodule Handbean.Tool.Builtin.Grep do
       {:error, "grep scan timed out before completion; narrow path or glob and retry",
        %{code: :scan_timeout, status: :failed, side_effect: :not_started}}
     else
+      lines_by_path = load_result_lines(page, workspace)
+
       {:ok,
-       format_results(
+       Formatter.format_search(
          page,
          next_cursor,
          Map.put(inventory, :partial, partial?),
-         workspace,
-         input,
-         absolute_paths?,
-         capped
+         lines_by_path,
+         %{
+           workspace: workspace,
+           input: input,
+           absolute_paths?: absolute_paths?,
+           capped: capped
+         }
        )}
     end
   end
 
   defp per_file_cap(workspace, prefix) do
     if File.regular?(Path.join(workspace, prefix || ".")), do: nil, else: @max_hits_per_file
-  end
-
-  defp new_collector(wanted, cap),
-    do: %{hits: [], kept: 0, shown: %{}, more: %{}, wanted: wanted, cap: cap}
-
-  defp collector_full?(collector), do: collector.kept >= collector.wanted
-
-  # rg output and the fallback scan are both path-sorted, so hits beyond a
-  # file's cap are counted completely before the next file is reached.
-  defp collect_hit(%{cap: cap} = collector, hit) do
-    case Map.get(collector.shown, hit.path, 0) do
-      shown when is_integer(cap) and shown >= cap ->
-        %{collector | more: Map.update(collector.more, hit.path, 1, &(&1 + 1))}
-
-      shown ->
-        %{
-          collector
-          | hits: [hit | collector.hits],
-            kept: collector.kept + 1,
-            shown: Map.put(collector.shown, hit.path, shown + 1)
-        }
-    end
-  end
-
-  # Only files whose full capped share is on the page are summarised. A file cut
-  # short by the page limit continues through next_cursor instead.
-  defp capped_files(page, %{cap: cap, more: more}) do
-    page
-    |> Enum.frequencies_by(& &1.path)
-    |> Enum.flat_map(fn {path, count} ->
-      if count == cap and Map.has_key?(more, path), do: [{path, more[path]}], else: []
-    end)
-    |> Map.new()
   end
 
   defp elixir_hits(files, workspace, regex, cursor, collector) do
@@ -337,12 +308,12 @@ defmodule Handbean.Tool.Builtin.Grep do
 
           collector =
             Enum.reduce_while(hits, collector, fn hit, collector ->
-              if collector_full?(collector),
+              if Collector.full?(collector),
                 do: {:halt, collector},
-                else: {:cont, collect_hit(collector, hit)}
+                else: {:cont, Collector.add(collector, hit)}
             end)
 
-          if collector_full?(collector),
+          if Collector.full?(collector),
             do: {:halt, {collector, validation, false}},
             else: {:cont, {collector, validation, false}}
         end
@@ -359,10 +330,10 @@ defmodule Handbean.Tool.Builtin.Grep do
         |> String.split("\n")
         |> Enum.with_index(1)
         |> Enum.flat_map(fn {line, number} ->
-          hit = bound_hit(%{path: relative, line: number, text: line})
+          hit = ByteBudget.bound_hit(%{path: relative, line: number, text: line})
 
-          if byte_size(line) <= @max_line_bytes and Regex.match?(regex, line) and
-               after_cursor?(hit, cursor),
+          if byte_size(line) <= ByteBudget.max_line_bytes() and Regex.match?(regex, line) and
+               Cursor.after?(hit, cursor),
              do: [hit],
              else: []
         end)
@@ -392,7 +363,7 @@ defmodule Handbean.Tool.Builtin.Grep do
           :stderr_to_stdout,
           {:cd, workspace},
           {:args, args},
-          {:line, @max_line_bytes}
+          {:line, ByteBudget.max_line_bytes()}
         ]
       )
 
@@ -410,21 +381,21 @@ defmodule Handbean.Tool.Builtin.Grep do
     overtime? = System.monotonic_time(:millisecond) > deadline
 
     cond do
-      collector_full?(collector) or overtime? ->
+      Collector.full?(collector) or overtime? ->
         close_rg(port)
         {:ok, collector, true}
 
       true ->
         receive do
           {^port, {:data, {:eol, line}}} ->
-            collector = maybe_add_rg_hit(collector, line_text(line), inventory, cursor)
+            collector = maybe_add_rg_hit(collector, ByteBudget.line_text(line), inventory, cursor)
             collect_rg(port, inventory, cursor, collector, deadline, partial?)
 
           {^port, {:data, {:noeol, _line}}} ->
             collect_rg(port, inventory, cursor, collector, deadline, true)
 
           {^port, {:data, data}} when is_binary(data) ->
-            collector = maybe_add_rg_hit(collector, line_text(data), inventory, cursor)
+            collector = maybe_add_rg_hit(collector, ByteBudget.line_text(data), inventory, cursor)
             collect_rg(port, inventory, cursor, collector, deadline, true)
 
           {^port, {:exit_status, code}} when code in [0, 1] ->
@@ -450,19 +421,13 @@ defmodule Handbean.Tool.Builtin.Grep do
         collector
 
       hit ->
-        hit = hit |> normalize_rg_hit() |> bound_hit()
+        hit = hit |> normalize_rg_hit() |> ByteBudget.bound_hit()
 
-        if MapSet.member?(inventory, hit.path) and after_cursor?(hit, cursor),
-          do: collect_hit(collector, hit),
+        if MapSet.member?(inventory, hit.path) and Cursor.after?(hit, cursor),
+          do: Collector.add(collector, hit),
           else: collector
     end
   end
-
-  defp line_text(line) when is_binary(line) do
-    binary_part(line, 0, min(byte_size(line), @max_line_bytes))
-  end
-
-  defp line_text(_line), do: ""
 
   defp close_rg(port) do
     if Port.info(port), do: Port.close(port)
@@ -523,7 +488,7 @@ defmodule Handbean.Tool.Builtin.Grep do
       {:ok, path, number, text} ->
         with true <- String.valid?(path),
              {:ok, line_number} <- rg_line_number(number) do
-          %{path: path, line: line_number, text: safe_text(text)}
+          %{path: path, line: line_number, text: ByteBudget.safe_text(text)}
         else
           _ -> nil
         end
@@ -568,41 +533,11 @@ defmodule Handbean.Tool.Builtin.Grep do
     %{hit | path: hit.path |> String.replace("\\", "/") |> String.trim_leading("./")}
   end
 
-  defp format_results([], _cursor, inventory, _workspace, _input, _absolute_paths?, _capped) do
-    "No matches found" <> indexing_suffix(inventory)
-  end
-
-  defp format_results(hits, next_cursor, inventory, workspace, input, absolute_paths?, capped) do
-    before_n = context_before(input)
-    after_n = context_after(input)
-
-    body =
-      hits
-      |> Enum.group_by(& &1.path)
-      |> Enum.sort_by(&elem(&1, 0))
-      |> Enum.map_join("\n", fn {path, file_hits} ->
-        lines = read_lines(workspace, path)
-        shown_path = if absolute_paths?, do: Path.join(workspace, path), else: path
-
-        rendered =
-          file_hits
-          |> Enum.sort_by(& &1.line)
-          |> Enum.flat_map(&format_hit(shown_path, lines, &1.line, before_n, after_n))
-          |> Enum.uniq()
-          |> Enum.join("\n")
-
-        "== #{shown_path} ==\n" <> rendered <> capped_note(capped, path, shown_path)
-      end)
-
-    continuation = if next_cursor, do: "next_cursor: #{next_cursor}\n", else: ""
-    continuation <> body <> indexing_suffix(inventory)
-  end
-
-  defp capped_note(capped, path, shown_path) do
-    case capped do
-      %{^path => more} -> "\n[+#{more} more in this file; pass path: #{shown_path} to see all]"
-      _ -> ""
-    end
+  defp load_result_lines(hits, workspace) do
+    hits
+    |> Enum.map(& &1.path)
+    |> Enum.uniq()
+    |> Map.new(&{&1, read_lines(workspace, &1)})
   end
 
   defp read_lines(workspace, relative) do
@@ -709,117 +644,6 @@ defmodule Handbean.Tool.Builtin.Grep do
       regular_file?(path)
   end
 
-  defp format_hit(path, lines, index, before_n, after_n) do
-    line_count = length(lines)
-
-    if index <= line_count do
-      start_i = max(1, index - before_n)
-      end_i = min(line_count, index + after_n)
-
-      for i <- start_i..end_i do
-        separator = if i == index, do: ":", else: "-"
-        text = lines |> Enum.at(i - 1) |> then(&safe_text(&1 || ""))
-        "#{path}#{separator}#{i}#{separator}#{text}"
-      end
-    else
-      []
-    end
-  end
-
-  defp indexing_suffix(%{status: :indexing, indexed_count: count}) do
-    "\n[indexing: #{count} files scanned so far]"
-  end
-
-  defp indexing_suffix(%{partial: true}) do
-    "\n[partial: scan budget reached; continue with next_cursor or narrow path/glob]"
-  end
-
-  defp indexing_suffix(_inventory), do: ""
-
-  defp after_cursor?(_hit, nil), do: true
-
-  defp after_cursor?(hit, {path, line, _query, _workspace}),
-    do: {hit.path, hit.line} > {path, line}
-
-  defp after_cursor?(_hit, :invalid), do: false
-
-  defp encode_cursor(%{path: path, line: line}, input, workspace) do
-    payload = {1, path, line, query_key(input), workspace_key(workspace)}
-    Base.url_encode64(:erlang.term_to_binary(payload), padding: false)
-  end
-
-  defp decode_cursor(cursor, _input, _workspace) when cursor in [nil, ""], do: nil
-
-  defp decode_cursor(cursor, input, workspace) when is_binary(cursor) do
-    with {:ok, binary} <- Base.url_decode64(cursor, padding: false),
-         {:ok, {1, path, line, query, workspace_key}} <- cursor_term(binary),
-         true <- is_binary(path) and is_integer(line) and query == query_key(input),
-         true <- workspace_key == workspace_key(workspace) do
-      {path, line, query, workspace_key}
-    else
-      _ -> :invalid
-    end
-  end
-
-  defp decode_cursor(_cursor, _input, _workspace), do: :invalid
-
-  defp cursor_term(binary) do
-    {:ok, :erlang.binary_to_term(binary, [:safe])}
-  rescue
-    ArgumentError -> :error
-  end
-
-  defp query_key(input) do
-    :crypto.hash(
-      :sha256,
-      :erlang.term_to_binary({
-        Handbean.Utils.SafeMap.get_any(input, ["pattern", :pattern]),
-        Handbean.Utils.SafeMap.get_any(input, "path", :path),
-        Handbean.Utils.SafeMap.get_any(input, "glob", :glob),
-        Handbean.Utils.SafeMap.get_any(input, "literal", :literal),
-        Handbean.Utils.SafeMap.get_any(input, "ignore_case", :ignore_case)
-      })
-    )
-    |> Base.encode16(case: :lower)
-  end
-
-  defp workspace_key(workspace), do: Path.expand(workspace || "")
-
-  defp bound_hit(hit), do: %{hit | text: safe_text(hit.text || "")}
-
-  defp safe_text(text) do
-    text
-    |> String.replace_invalid("�")
-    |> take_utf8_bytes(@max_line_bytes)
-  end
-
-  defp take_utf8_bytes(text, max_bytes) when byte_size(text) <= max_bytes, do: text
-
-  defp take_utf8_bytes(text, max_bytes) do
-    prefix = binary_part(text, 0, max_bytes)
-
-    case :unicode.characters_to_binary(prefix, :utf8, :utf8) do
-      valid when is_binary(valid) -> valid
-      {:incomplete, valid, _rest} -> IO.iodata_to_binary(valid)
-      {:error, valid, _rest} -> IO.iodata_to_binary(valid)
-    end
-  end
-
-  defp fit_page_bytes(hits) do
-    {kept, _bytes} =
-      Enum.reduce_while(hits, {[], 0}, fn hit, {acc, bytes} ->
-        next = bytes + byte_size(hit.text || "") + byte_size(hit.path || "") + 16
-
-        if acc != [] and next > @max_page_bytes do
-          {:halt, {acc, bytes}}
-        else
-          {:cont, {[hit | acc], next}}
-        end
-      end)
-
-    Enum.reverse(kept)
-  end
-
   defp compile_pattern(pattern, input) do
     source =
       if truthy?(Handbean.Utils.SafeMap.get_any(input, ["literal", :literal])),
@@ -856,20 +680,9 @@ defmodule Handbean.Tool.Builtin.Grep do
         |> Enum.sort()
         |> Enum.take(limit(input))
 
-      body =
-        case files do
-          [] ->
-            "No matches found"
+      body = Formatter.format_files(files, inventory, workspace, absolute_paths?)
 
-          paths ->
-            paths
-            |> Enum.map(fn path ->
-              if absolute_paths?, do: Path.join(workspace, path), else: path
-            end)
-            |> Enum.join("\n")
-        end
-
-      {:ok, body <> indexing_suffix(inventory)}
+      {:ok, body}
       |> with_note(note)
     end
   end
@@ -1061,18 +874,6 @@ defmodule Handbean.Tool.Builtin.Grep do
       nil ->
         [pattern]
     end
-  end
-
-  defp context_before(input) do
-    context = int_value(input, ["context", :context, "-C"])
-    before = int_value(input, ["before_context", :before_context, "-B"])
-    min(if(context > 0, do: context, else: before), @max_context)
-  end
-
-  defp context_after(input) do
-    context = int_value(input, ["context", :context, "-C"])
-    after_context = int_value(input, ["after_context", :after_context, "-A"])
-    min(if(context > 0, do: context, else: after_context), @max_context)
   end
 
   defp limit(input) do
