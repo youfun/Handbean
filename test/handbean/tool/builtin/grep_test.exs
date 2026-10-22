@@ -308,6 +308,29 @@ defmodule Handbean.Tool.Builtin.GrepTest do
     end
   end
 
+  test "clamps a multi-file limit to the default page but not a single-file scope" do
+    for index <- 1..60 do
+      name = "f#{String.pad_leading(Integer.to_string(index), 2, "0")}.txt"
+      File.write!(Path.join(@work_dir, name), "clamp_marker\n")
+    end
+
+    File.write!(Path.join(@work_dir, "single.txt"), Enum.map_join(1..80, "\n", &"one_file #{&1}"))
+    context = %{working_directory: @work_dir}
+
+    assert {:ok, wide} = grep(%{"pattern" => "clamp_marker", "limit" => 100}, context)
+    assert length(Regex.scan(~r/:1:clamp_marker/, wide)) == 50
+    assert wide =~ "f50.txt:1:"
+    refute wide =~ "f51.txt:1:"
+    assert wide =~ "next_cursor:"
+    assert wide =~ "limit clamped to 50"
+
+    assert {:ok, scoped} =
+             grep(%{"pattern" => "one_file", "path" => "single.txt", "limit" => 100}, context)
+
+    assert scoped =~ "single.txt:80:one_file 80"
+    refute scoped =~ "limit clamped"
+  end
+
   test "rejects paths outside workspace" do
     assert {:error, reason} =
              grep(%{"pattern" => "root", "path" => "/etc"}, %{

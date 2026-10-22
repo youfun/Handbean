@@ -15,6 +15,7 @@ defmodule Handbean.Tool.Builtin.Grep do
   # One noisy file must not fill the page. The rest of a capped file is
   # summarised and skipped by the cursor; scoping path to that file lifts the cap.
   @max_hits_per_file 10
+  @clamped_note "limit clamped to #{@default_limit} for a multi-file search; narrow path or glob, or pass one file as path for more"
   @inventory_page 10_000
   @max_result_chars 20_000
   @max_file_bytes 5_000_000
@@ -77,7 +78,12 @@ defmodule Handbean.Tool.Builtin.Grep do
         context: %{type: "integer", default: 0},
         before_context: %{type: "integer", default: 0},
         after_context: %{type: "integer", default: 0},
-        limit: %{type: "integer", description: "Maximum matching lines", default: @default_limit}
+        limit: %{
+          type: "integer",
+          description:
+            "Maximum matching lines; at most #{@default_limit} unless path is a single file",
+          default: @default_limit
+        }
       },
       required: []
     }
@@ -213,7 +219,9 @@ defmodule Handbean.Tool.Builtin.Grep do
         workspace
       )
 
-    wanted = limit(input) + 1
+    per_file_cap = per_file_cap(workspace, inventory.prefix)
+    {page_limit, clamped?} = page_limit(input, per_file_cap)
+    wanted = page_limit + 1
 
     if cursor == :invalid do
       throw(
@@ -223,7 +231,7 @@ defmodule Handbean.Tool.Builtin.Grep do
     end
 
     files = Enum.sort(inventory.paths)
-    collector = Collector.new(wanted, per_file_cap(workspace, inventory.prefix))
+    collector = Collector.new(wanted, per_file_cap)
 
     {matcher, collector, partial?} =
       case System.find_executable("rg") do
@@ -252,7 +260,7 @@ defmodule Handbean.Tool.Builtin.Grep do
       end
 
     safe_hits = take_safe_hits(Collector.ordered_hits(collector), workspace, wanted)
-    page = safe_hits |> Enum.take(limit(input)) |> ByteBudget.fit_page()
+    page = safe_hits |> Enum.take(page_limit) |> ByteBudget.fit_page()
     capped = Collector.capped_files(page, collector)
 
     next_cursor =
@@ -286,7 +294,18 @@ defmodule Handbean.Tool.Builtin.Grep do
            capped: capped
          }
        )}
+      |> with_note(if clamped? and page != [], do: @clamped_note)
     end
+  end
+
+  # A multi-file search pages at most @default_limit lines whatever limit the
+  # model asks for; large pages were the main source of oversized results.
+  # Scoping path to one file keeps the full limit.
+  defp page_limit(input, nil), do: {limit(input), false}
+
+  defp page_limit(input, _per_file_cap) do
+    requested = limit(input)
+    {min(requested, @default_limit), requested > @default_limit}
   end
 
   defp per_file_cap(workspace, prefix) do
