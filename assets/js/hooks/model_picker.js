@@ -4,7 +4,7 @@ function normalize(value) {
   return String(value || "").trim().toLocaleLowerCase();
 }
 
-export function applyServerValue(select) {
+function applyServerValue(select) {
   const serverValue = select.getAttribute("value");
   if (serverValue == null) return;
   if (select.value === serverValue) return;

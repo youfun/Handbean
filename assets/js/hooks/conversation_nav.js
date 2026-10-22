@@ -174,5 +174,3 @@ export const ConversationNav = {
     }
   },
 };
-
-export default ConversationNav;

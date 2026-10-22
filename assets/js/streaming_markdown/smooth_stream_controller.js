@@ -201,7 +201,7 @@ export function createSmoothMarkdownStream(options = {}, notify) {
     for (const listener of [...listeners]) listener();
   }
 
-  return { getSnapshot, subscribe, enqueue, finish, flush, reset, pause, resume, destroy, dispose: destroy };
+  return { getSnapshot, subscribe, enqueue, finish, flush, reset, pause, resume, destroy };
 }
 
 function normalizeOptions(options) {

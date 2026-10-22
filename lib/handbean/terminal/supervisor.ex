@@ -11,11 +11,6 @@ defmodule Handbean.Terminal.Supervisor do
   @impl true
   def init(_opts), do: DynamicSupervisor.init(strategy: :one_for_one)
 
-  def start_terminal(workspace_id, name, opts \\ []) when is_binary(name) do
-    checkout_path = Keyword.get(opts, :checkout_path) || Keyword.get(opts, :workspace_path)
-    start_terminal(workspace_id, checkout_path, name, opts)
-  end
-
   def start_terminal(workspace_id, checkout_path, name, opts)
       when is_binary(workspace_id) and is_binary(checkout_path) and is_binary(name) do
     with {:ok, checkout} <- CheckoutScope.resolve(checkout_path) do
@@ -40,13 +35,6 @@ defmodule Handbean.Terminal.Supervisor do
   def start_terminal(_workspace_id, _checkout_path, _name, _opts),
     do: {:error, :checkout_unavailable}
 
-  def stop_terminal(workspace_id, name) do
-    case legacy_lookup(workspace_id, name) do
-      {:ok, pid} -> Session.close(pid)
-      error -> error
-    end
-  end
-
   def stop_terminal(workspace_id, checkout_path, name) do
     with {:ok, checkout} <- CheckoutScope.resolve(checkout_path),
          {:ok, pid} <- Registry.lookup(workspace_id, checkout.key, name) do
@@ -62,11 +50,6 @@ defmodule Handbean.Terminal.Supervisor do
     :ok
   end
 
-  def list_terminals(workspace_id) do
-    Registry.list(workspace_id)
-    |> Enum.map(&terminal_info/1)
-  end
-
   def list_terminals(workspace_id, checkout_path) do
     with {:ok, checkout} <- CheckoutScope.resolve(checkout_path) do
       Registry.list(workspace_id, checkout.key)
@@ -76,18 +59,9 @@ defmodule Handbean.Terminal.Supervisor do
     end
   end
 
-  def lookup(workspace_id, name), do: legacy_lookup(workspace_id, name)
-
   def lookup(workspace_id, checkout_path, name) do
     with {:ok, checkout} <- CheckoutScope.resolve(checkout_path) do
       Registry.lookup(workspace_id, checkout.key, name)
-    end
-  end
-
-  defp legacy_lookup(workspace_id, name) do
-    case Enum.filter(Registry.list(workspace_id), &(&1.name == name)) do
-      [%{pid: pid}] -> {:ok, pid}
-      _ -> {:error, :not_found}
     end
   end
 

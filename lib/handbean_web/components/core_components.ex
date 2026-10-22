@@ -486,18 +486,5 @@ defmodule HandbeanWeb.CoreComponents do
     else
       Gettext.dgettext(Handbean.Gettext, "errors", msg, opts)
     end
-
-    # Apply interpolation for %{key} placeholders
-    # (Gettext handles plural interpolation, but we also handle plain string interpolation)
-    # Enum.reduce(opts, msg, fn {key, value}, acc ->
-    #   String.replace(acc, "%{#{key}}", fn _ -> to_string(value) end)
-    # end)
-  end
-
-  @doc """
-  Translates the errors for a field from a keyword list of errors.
-  """
-  def translate_errors(errors, field) when is_list(errors) do
-    for {^field, {msg, opts}} <- errors, do: translate_error({msg, opts})
   end
 end

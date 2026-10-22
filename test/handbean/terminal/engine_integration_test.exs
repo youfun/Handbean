@@ -1,7 +1,7 @@
 defmodule Handbean.Terminal.EngineIntegrationTest do
   use ExUnit.Case, async: false
 
-  alias Handbean.Terminal.Session
+  alias Handbean.Terminal.{Session, Supervisor}
 
   @moduletag :unix_jobs
   @moduletag :tmp_dir
@@ -51,6 +51,38 @@ defmodule Handbean.Terminal.EngineIntegrationTest do
     assert :ok = stop_supervised(Session)
     assert_receive {:DOWN, ^terminal_monitor, :process, ^terminal, _}, 5_000
     assert_receive {:DOWN, ^pty_monitor, :process, ^pty, _}, 5_000
+  end
+
+  test "supervisor scopes creation, lookup and closing to a checkout", %{tmp_dir: workspace} do
+    workspace_id = "terminal-scope-#{System.unique_integer([:positive])}"
+    first_checkout = Path.join(workspace, "first")
+    second_checkout = Path.join(workspace, "second")
+    File.mkdir_p!(first_checkout)
+    File.mkdir_p!(second_checkout)
+
+    opts = [cmd: "/bin/sh", args: ["-c", "read -r value"]]
+
+    on_exit(fn -> Supervisor.stop_all_for_workspace(workspace_id) end)
+
+    assert {:ok, first} = Supervisor.start_terminal(workspace_id, first_checkout, "shell", opts)
+    assert {:ok, second} = Supervisor.start_terminal(workspace_id, second_checkout, "shell", opts)
+    assert first != second
+
+    assert {:error, :already_exists} =
+             Supervisor.start_terminal(workspace_id, first_checkout, "shell", opts)
+
+    assert {:ok, ^first} = Supervisor.lookup(workspace_id, first_checkout, "shell")
+    assert {:ok, ^second} = Supervisor.lookup(workspace_id, second_checkout, "shell")
+    assert [%{name: "shell"}] = Supervisor.list_terminals(workspace_id, first_checkout)
+    assert [%{name: "shell"}] = Supervisor.list_terminals(workspace_id, second_checkout)
+
+    monitor = Process.monitor(first)
+    assert :ok = Supervisor.stop_terminal(workspace_id, first_checkout, "shell")
+    assert_receive {:DOWN, ^monitor, :process, ^first, :shutdown}
+    assert {:error, :not_found} = Supervisor.lookup(workspace_id, first_checkout, "shell")
+    assert [] = Supervisor.list_terminals(workspace_id, first_checkout)
+    assert {:ok, ^second} = Supervisor.lookup(workspace_id, second_checkout, "shell")
+    assert Process.alive?(second)
   end
 
   test "Unicode output survives terminal reflow" do

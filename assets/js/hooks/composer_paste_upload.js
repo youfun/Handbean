@@ -176,5 +176,3 @@ export const ComposerPasteUpload = {
     this.syncCommandIntent = null;
   },
 };
-
-export default ComposerPasteUpload;

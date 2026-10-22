@@ -89,7 +89,6 @@ defmodule Handbean.Tool.Extension.Beam.SessionSnapshot do
   defp format_event(event) do
     kind = get_kind(event)
     payload = get_payload(event)
-    _seq = get_seq(event)
 
     format_event(kind, payload)
   end
@@ -199,10 +198,6 @@ defmodule Handbean.Tool.Extension.Beam.SessionSnapshot do
   defp get_payload(%{payload: p}), do: p
   defp get_payload(%{"payload" => p}), do: p
   defp get_payload(_), do: %{}
-
-  defp get_seq(%{seq: s}), do: s
-  defp get_seq(%{"seq" => s}), do: s
-  defp get_seq(_), do: 0
 
   defp safe_get_in(map, keys) when is_map(map) do
     Enum.reduce(keys, map, fn
