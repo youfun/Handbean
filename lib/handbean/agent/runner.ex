@@ -44,6 +44,9 @@ defmodule Handbean.Agent.Runner do
     :deadline,
     :deadline_timer,
     :stream_batch,
+    :active_model,
+    :pending_model_switch,
+    model_switch_revision: 0,
     stream_started?: false,
     os_processes: []
   ]
@@ -101,6 +104,27 @@ defmodule Handbean.Agent.Runner do
     call_runner(conversation_id, {:enqueue, content, opts})
   end
 
+  @doc "Schedule a validated model configuration for the next provider request."
+  def request_model_switch(conversation_id, expected_run_id, selection)
+      when is_binary(conversation_id) and is_map(selection) do
+    call_runner(conversation_id, {:request_model_switch, expected_run_id, selection})
+  end
+
+  @doc false
+  def checkout_model_switch(runner_pid, run_id, task_pid) do
+    GenServer.call(runner_pid, {:checkout_model_switch, run_id, task_pid})
+  end
+
+  @doc false
+  def commit_model_switch(runner_pid, run_id, task_pid, revision, public) do
+    GenServer.call(runner_pid, {:commit_model_switch, run_id, task_pid, revision, public})
+  end
+
+  @doc false
+  def fail_model_switch(runner_pid, run_id, task_pid, revision, reason) do
+    GenServer.call(runner_pid, {:fail_model_switch, run_id, task_pid, revision, reason})
+  end
+
   @impl true
   def init(opts) do
     conversation_id = Keyword.fetch!(opts, :conversation_id)
@@ -120,6 +144,7 @@ defmodule Handbean.Agent.Runner do
       opts: Keyword.put(run_opts, :runner_pid, self()),
       queue_pid: queue_pid,
       stream_batch: StreamBatch.new(run_opts),
+      active_model: model_snapshot(run_opts),
       status: :idle
     }
 
@@ -230,7 +255,14 @@ defmodule Handbean.Agent.Runner do
     prewarm_search(state)
 
     Registry.update_value(Handbean.AgentRunRegistry, state.conversation_id, fn _ ->
-      %{run_id: state.opts[:run_id], active?: true}
+      %{
+        run_id: state.opts[:run_id],
+        active?: true,
+        model: state.active_model,
+        pending_model: public_pending_switch(state.pending_model_switch),
+        model_switch_revision: state.model_switch_revision,
+        model_switch_status: nil
+      }
     end)
 
     if job_context_present?(state) do
@@ -245,7 +277,7 @@ defmodule Handbean.Agent.Runner do
         run_id: Keyword.get(state.opts, :run_id),
         run_supervisor: state.opts[:run_supervisor],
         workspace_path: Keyword.get(state.opts, :workspace_path),
-        model: Keyword.get(state.opts, :model)
+        model: state.active_model
       )
 
     started_at = System.monotonic_time(:millisecond)
@@ -303,16 +335,153 @@ defmodule Handbean.Agent.Runner do
         error: state.error,
         interrupt_type: interrupt_type(state),
         interrupt_data: interrupt_data(state),
-        approval_batch_id: approval_batch_id(state)
+        approval_batch_id: approval_batch_id(state),
+        active_model: state.active_model,
+        pending_model_switch: public_pending_switch(state.pending_model_switch),
+        model_switch_revision: state.model_switch_revision
       }}, state}
   end
 
   def handle_call({:owns_run_task?, reader_pid, run_id}, _from, state) do
-    owned? =
-      state.status == :running and state.opts[:run_id] == run_id and
-        match?(%Task{pid: ^reader_pid}, state.task)
+    owned? = owns_task?(state, reader_pid, run_id)
 
     {:reply, owned?, state}
+  end
+
+  def handle_call({:request_model_switch, expected_run_id, selection}, _from, state)
+      when state.status in [:running, :awaiting_approval] do
+    with :ok <- validate_model_switch_identity(state, expected_run_id),
+         {:ok, normalized} <- normalize_model_selection(selection) do
+      if same_model?(state.active_model, normalized) do
+        revision = state.model_switch_revision + 1
+
+        next_state = %{
+          state
+          | pending_model_switch: nil,
+            model_switch_revision: revision
+        }
+
+        update_model_registry(next_state, :cancelled)
+
+        project_model_switch(
+          state.conversation_id,
+          state.opts[:run_id],
+          :cancelled,
+          public_pending_switch(Map.put(normalized, :revision, revision))
+        )
+
+        {:reply, {:ok, %{revision: revision, status: :cancelled}}, next_state}
+      else
+        revision = state.model_switch_revision + 1
+
+        config_opts =
+          state.opts
+          |> Keyword.drop([
+            :provider,
+            :provider_config,
+            :model,
+            :selected_model,
+            :reasoning_level,
+            :max_tokens
+          ])
+          |> Keyword.merge(normalized.run_opts)
+
+        pending =
+          normalized
+          |> Map.put(:revision, revision)
+          |> Map.put(:config_opts, config_opts)
+
+        next_state = %{
+          state
+          | pending_model_switch: pending,
+            model_switch_revision: revision
+        }
+
+        update_model_registry(next_state, :accepted)
+
+        project_model_switch(
+          state.conversation_id,
+          state.opts[:run_id],
+          :accepted,
+          public_pending_switch(pending)
+        )
+
+        {:reply, {:ok, %{revision: revision, status: :accepted}}, next_state}
+      end
+    else
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  def handle_call({:request_model_switch, _expected_run_id, _selection}, _from, state) do
+    {:reply, {:error, :not_running}, state}
+  end
+
+  def handle_call({:checkout_model_switch, run_id, task_pid}, {caller, _tag}, state) do
+    cond do
+      caller != task_pid -> {:reply, {:error, :not_run_task}, state}
+      not owns_task?(state, task_pid, run_id) -> {:reply, {:error, :not_run_task}, state}
+      is_nil(state.pending_model_switch) -> {:reply, :unchanged, state}
+      true -> {:reply, {:apply, state.pending_model_switch}, state}
+    end
+  end
+
+  def handle_call(
+        {:commit_model_switch, run_id, task_pid, revision, public},
+        {caller, _tag},
+        state
+      ) do
+    cond do
+      caller != task_pid ->
+        {:reply, {:error, :not_run_task}, state}
+
+      not owns_task?(state, task_pid, run_id) ->
+        {:reply, {:error, :not_run_task}, state}
+
+      not match?(%{revision: ^revision}, state.pending_model_switch) ->
+        {:reply, {:error, :stale_revision}, state}
+
+      true ->
+        opts =
+          Keyword.merge(state.pending_model_switch.config_opts,
+            selected_model: public.model_ref,
+            model: public.model,
+            reasoning_level: public.reasoning_level
+          )
+
+        next_state = %{
+          state
+          | active_model: public,
+            pending_model_switch: nil,
+            opts: opts
+        }
+
+        update_model_registry(next_state, :applied)
+        project_model_switch(state.conversation_id, run_id, :applied, public)
+
+        {:reply, :ok, next_state}
+    end
+  end
+
+  def handle_call(
+        {:fail_model_switch, run_id, task_pid, revision, reason},
+        {caller, _tag},
+        state
+      ) do
+    if caller == task_pid and owns_task?(state, task_pid, run_id) and
+         match?(%{revision: ^revision}, state.pending_model_switch) do
+      public =
+        state.pending_model_switch
+        |> public_pending_switch()
+        |> Map.put(:error, inspect(reason))
+
+      next_state = %{state | pending_model_switch: nil}
+      update_model_registry(next_state, :failed)
+      project_model_switch(state.conversation_id, run_id, :failed, public)
+      {:reply, :ok, next_state}
+    else
+      {:reply, {:error, :stale_revision}, state}
+    end
   end
 
   def handle_call({:persist_compaction, event}, _from, state) when is_map(event) do
@@ -746,6 +915,13 @@ defmodule Handbean.Agent.Runner do
         nil
     end
   end
+
+  defp validate_model_switch_identity(_state, expected_run_id)
+       when not is_binary(expected_run_id),
+       do: {:error, :run_id_required}
+
+  defp validate_model_switch_identity(state, expected_run_id),
+    do: validate_run_identity(state, expected_run_id)
 
   defp validate_run_identity(_state, nil), do: :ok
 
@@ -1424,6 +1600,75 @@ defmodule Handbean.Agent.Runner do
       [{pid, _}] -> pid
       [] -> raise "candidate queue not started for #{inspect(key)}"
     end
+  end
+
+  defp owns_task?(state, task_pid, run_id) do
+    state.status == :running and state.opts[:run_id] == run_id and
+      match?(%Task{pid: ^task_pid}, state.task)
+  end
+
+  defp normalize_model_selection(%{model_ref: model_ref, run_opts: run_opts} = selection)
+       when is_binary(model_ref) and is_list(run_opts) do
+    model = Keyword.get(run_opts, :model)
+
+    reasoning_level =
+      Map.get(selection, :reasoning_level) || Keyword.get(run_opts, :reasoning_level)
+
+    if is_binary(model) do
+      {:ok,
+       %{
+         model_ref: model_ref,
+         model: model,
+         reasoning_level: reasoning_level,
+         run_opts: run_opts
+       }}
+    else
+      {:error, :invalid_model_selection}
+    end
+  end
+
+  defp normalize_model_selection(_selection), do: {:error, :invalid_model_selection}
+
+  defp model_snapshot(opts) do
+    provider_config = Keyword.get(opts, :provider_config, %{})
+
+    %{
+      revision: 0,
+      model_ref: Keyword.get(opts, :selected_model) || Keyword.get(opts, :model),
+      model: Keyword.get(opts, :model),
+      reasoning_level: Keyword.get(opts, :reasoning_level),
+      provider:
+        provider_config[:provider] || provider_config["provider"] ||
+          inspect(Keyword.get(opts, :provider))
+    }
+  end
+
+  defp same_model?(active, pending) when is_map(active) do
+    active.model_ref == pending.model_ref and
+      active.reasoning_level == pending.reasoning_level
+  end
+
+  defp same_model?(_active, _pending), do: false
+
+  defp public_pending_switch(nil), do: nil
+
+  defp public_pending_switch(pending) do
+    Map.take(pending, [:revision, :model_ref, :model, :reasoning_level, :provider, :error])
+  end
+
+  defp update_model_registry(state, status) do
+    Registry.update_value(Handbean.AgentRunRegistry, state.conversation_id, fn meta ->
+      Map.merge(meta, %{
+        model: state.active_model,
+        pending_model: public_pending_switch(state.pending_model_switch),
+        model_switch_revision: state.model_switch_revision,
+        model_switch_status: status
+      })
+    end)
+  end
+
+  defp project_model_switch(conversation_id, run_id, status, payload) do
+    Session.project_model_switch(conversation_id, run_id, status, payload)
   end
 
   defp call_runner(conversation_id, message) do

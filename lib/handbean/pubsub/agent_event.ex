@@ -25,6 +25,12 @@ defmodule Handbean.PubSub.AgentEvent do
           | :agent_end
           | :turn_start
           | :turn_end
+          | :provider_request_started
+          | :model_switch_accepted
+          | :model_switch_applied
+          | :model_switch_cancelled
+          | :model_switch_failed
+          | :model_switch_expired
           | :candidate_message_injected
           | :stall_check_requested
           | :subagent_start

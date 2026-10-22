@@ -25,6 +25,7 @@ defmodule Handbean.Agent.RunOpts do
        [
          provider_config: provider_config,
          model: model_id,
+         selected_model: composite_id,
          reasoning_level: reasoning_level,
          workspace_path: blank_to_nil(workspace_path),
          builtin_memory_enabled: builtin_memory_enabled,

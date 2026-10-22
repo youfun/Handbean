@@ -99,6 +99,8 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
       "[WorkspaceLive] applying run_start conversation=#{socket.assigns.current_conversation_id}"
     )
 
+    model = model_display_from_payload(payload, socket)
+
     socket
     |> assign(:running, true)
     |> assign(:running_conversation_id, socket.assigns.current_conversation_id)
@@ -109,7 +111,15 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
     |> assign(:thinking_content, "")
     |> assign(:think_buffer, "")
     |> update_status(%{
-      model: ModelSelection.model_display_name(payload[:model], socket.assigns.available_models),
+      model: model,
+      active_model: model,
+      future_model:
+        ModelSelection.model_display_name(
+          socket.assigns.selected_model,
+          socket.assigns.available_models
+        ),
+      pending_model: nil,
+      pending_model_revision: nil,
       status: :running,
       status_detail: nil,
       input_tokens: 0,
@@ -149,12 +159,66 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
     else
       turns = payload_value(payload, :turn, Map.get(socket.assigns.status_info, :turns, 0))
 
+      model = model_display_from_payload(payload, socket)
+
       socket
       |> assign(:running, true)
       |> assign(:running_conversation_id, socket.assigns.current_conversation_id)
       |> assign(:stream_suppressed, false)
-      |> update_status(%{status: :running, turns: turns})
+      |> update_request_model_status(payload, model, %{
+        status: :running,
+        turns: turns
+      })
     end
+  end
+
+  def handle_agent_event(%{kind: :model_switch_accepted, payload: payload}, socket) do
+    update_status(socket, %{
+      pending_model: model_display_from_payload(payload, socket),
+      pending_model_revision: payload_value(payload, :revision),
+      model_switch_status: :accepted,
+      status_detail: nil
+    })
+  end
+
+  def handle_agent_event(%{kind: :model_switch_applied, payload: payload}, socket) do
+    model = model_display_from_payload(payload, socket)
+
+    update_status(socket, %{
+      model: model,
+      active_model: model,
+      pending_model: nil,
+      pending_model_revision: nil,
+      model_switch_status: :applied,
+      status_detail: nil
+    })
+  end
+
+  def handle_agent_event(%{kind: :provider_request_started, payload: payload}, socket) do
+    model = model_display_from_payload(payload, socket)
+
+    update_request_model_status(socket, payload, model, %{
+      model_switch_status: :request_started
+    })
+  end
+
+  def handle_agent_event(%{kind: kind, payload: payload}, socket)
+      when kind in [:model_switch_cancelled, :model_switch_expired] do
+    update_status(socket, %{
+      pending_model: nil,
+      pending_model_revision: nil,
+      model_switch_status: payload_value(payload, :status, kind),
+      status_detail: nil
+    })
+  end
+
+  def handle_agent_event(%{kind: :model_switch_failed, payload: payload}, socket) do
+    update_status(socket, %{
+      pending_model: nil,
+      pending_model_revision: nil,
+      model_switch_status: :failed,
+      status_detail: "Model switch failed: #{payload_value(payload, :error, "unknown error")}"
+    })
   end
 
   def handle_agent_event(%{kind: :usage_updated, payload: payload}, socket) do
@@ -344,6 +408,28 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
 
   def handle_agent_event(_event, socket), do: socket
 
+  defp update_request_model_status(socket, payload, model, overrides) do
+    request_revision = payload_value(payload, :config_revision)
+    pending_revision = Map.get(socket.assigns.status_info, :pending_model_revision)
+
+    base = Map.merge(overrides, %{model: model, active_model: model})
+
+    if is_integer(pending_revision) and
+         (not is_integer(request_revision) or pending_revision > request_revision) do
+      update_status(socket, Map.delete(base, :model_switch_status))
+    else
+      update_status(
+        socket,
+        Map.merge(base, %{pending_model: nil, pending_model_revision: nil})
+      )
+    end
+  end
+
+  defp model_display_from_payload(payload, socket) do
+    model = payload_value(payload, :model_ref) || payload_value(payload, :model)
+    ModelSelection.model_display_name(model, socket.assigns.available_models)
+  end
+
   defp project_text_patch(socket, payload) do
     if socket.assigns.stream_suppressed do
       socket
@@ -464,7 +550,18 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
       |> assign(:stream_suppressed, status == :cancelled)
       |> assign(:tools_active, %{})
       |> assign(:current_assistant_entry_id, nil)
-      |> update_status(Map.merge(%{status: status, status_detail: nil, turns: turns}, usage))
+      |> update_status(
+        Map.merge(
+          %{
+            status: status,
+            status_detail: nil,
+            turns: turns,
+            pending_model: nil,
+            pending_model_revision: nil
+          },
+          usage
+        )
+      )
       |> maybe_append_error_message(run_error, persist?: false)
 
     # If the send path did not name the chat, try again now. A completed run
@@ -482,7 +579,12 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
     |> assign(:tools_active, %{})
     |> assign(:current_assistant_entry_id, nil)
     |> assign(:pending_approval, nil)
-    |> update_status(%{status: :cancelled, status_detail: nil})
+    |> update_status(%{
+      status: :cancelled,
+      status_detail: nil,
+      pending_model: nil,
+      pending_model_revision: nil
+    })
   end
 
   defp seal_tool_work(socket), do: Timeline.seal_tool_work(socket)
@@ -538,6 +640,8 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
             socket
           end
 
+        socket = reconcile_model_status(socket, meta, running?)
+
         pending =
           Handbean.Agent.PendingMessages.reconcile(
             pending,
@@ -554,6 +658,40 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
     else
       socket
     end
+  end
+
+  @doc false
+  def reconcile_model_status(socket, _meta, false) do
+    update_status(socket, %{pending_model: nil, pending_model_revision: nil})
+  end
+
+  def reconcile_model_status(socket, meta, true) do
+    active_payload = meta[:active_model] || %{:model => meta[:model]}
+    pending_payload = meta[:pending_model]
+    active = model_display_from_payload(active_payload, socket)
+
+    pending =
+      if is_map(pending_payload),
+        do: model_display_from_payload(pending_payload, socket),
+        else: nil
+
+    pending_revision =
+      if is_map(pending_payload),
+        do: payload_value(pending_payload, :revision, meta[:model_switch_revision]),
+        else: nil
+
+    overrides = %{
+      pending_model: pending,
+      pending_model_revision: pending_revision,
+      model_switch_status: meta[:model_switch_status]
+    }
+
+    overrides =
+      if is_binary(active) and active != "",
+        do: Map.merge(overrides, %{model: active, active_model: active}),
+        else: overrides
+
+    update_status(socket, overrides)
   end
 
   def session_pending_messages(conv_id) do

@@ -22,7 +22,8 @@ defmodule HandbeanWeb.WorkspaceLive.MountAndInputTest do
       {:ok, _view, html} = live(conn, "/")
 
       assert html =~ "id=\"status-bar\""
-      refute html =~ "id=\"status-model\""
+      assert html =~ "id=\"status-model\""
+      assert html =~ "id=\"status-active-model\""
       refute html =~ "href=\"?locale="
       assert html =~ "Tokens:"
       assert html =~ "id=\"status-input-tokens\""

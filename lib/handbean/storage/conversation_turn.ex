@@ -12,6 +12,10 @@ defmodule Handbean.Storage.ConversationTurn do
     field :status, :string
     field :stop_reason, :string
     field :duration_ms, :integer
+    field :provider, :string
+    field :model, :string
+    field :reasoning_level, :string
+    field :config_revision, :integer, default: 0
     field :started_at, :utc_datetime_usec
     field :completed_at, :utc_datetime_usec
     timestamps()

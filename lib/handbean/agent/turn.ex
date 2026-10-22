@@ -8,7 +8,7 @@ defmodule Handbean.Agent.Turn do
   This is a pure function — no GenServer, no process overhead.
   """
 
-  alias Handbean.Agent.{Compactor, Message, ModelContext, State}
+  alias Handbean.Agent.{Compactor, Message, ModelContext, ModelSwitch, State}
   alias Handbean.Agent.Middleware
   alias Handbean.Agent.Middleware.ToolGuard
   alias Handbean.Agent.Tool.{Catalog, Executor}
@@ -213,7 +213,12 @@ defmodule Handbean.Agent.Turn do
       # session_end middleware
       mw_run(state, :session_end)
     else
-      Events.emit(opts, :run_start, %{model: state.config.model, loop_owner: :handbean})
+      Events.emit(opts, :run_start, %{
+        model: state.config.model,
+        reasoning_level: state.config.reasoning_level,
+        config_revision: state.config_revision,
+        loop_owner: :handbean
+      })
 
       run_start = System.monotonic_time(:millisecond)
 
@@ -328,10 +333,17 @@ defmodule Handbean.Agent.Turn do
   end
 
   defp run_turn(%State{} = state, opts) do
+    case ModelSwitch.apply_pending(state) do
+      {:ok, switched} -> run_provider_turn(switched, opts)
+      {:error, failed} -> mw_run(failed, :on_error)
+    end
+  end
+
+  defp run_provider_turn(%State{} = state, opts) do
     turn_number = state.turn + 1
 
-    # turn_start hook (read-only notification)
-    emit(opts, :turn_start, %{turn: turn_number})
+    # turn_start records the immutable configuration used by this provider request.
+    emit(opts, :turn_start, turn_model_payload(state, turn_number))
 
     :telemetry.execute(
       [:handbean, :turn, :start],
@@ -394,6 +406,21 @@ defmodule Handbean.Agent.Turn do
 
       result
     end
+  end
+
+  defp turn_model_payload(state, turn_number) do
+    provider_config = state.config.provider_config || %{}
+
+    %{
+      turn: turn_number,
+      model: state.config.model,
+      provider:
+        provider_config[:provider] || provider_config["provider"] ||
+          inspect(state.config.provider),
+      reasoning_level: state.config.reasoning_level,
+      config_revision: state.config_revision,
+      run_id: state.config.run_id
+    }
   end
 
   defp continue_turn(%State{} = state, opts), do: {:continue, state, opts}
@@ -527,6 +554,8 @@ defmodule Handbean.Agent.Turn do
       stream_tracker: stream_tracker,
       opts: opts
     }
+
+    emit(opts, :provider_request_started, turn_model_payload(state, state.turn + 1))
 
     {provider_result, streamed_text} = ProviderInvocation.invoke(completion)
 

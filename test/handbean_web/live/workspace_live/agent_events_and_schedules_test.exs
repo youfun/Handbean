@@ -11,6 +11,101 @@ defmodule HandbeanWeb.WorkspaceLive.AgentEventsAndSchedulesTest do
       assert has_element?(view, ~s(#status-bar[data-model="claude-sonnet"]))
     end
 
+    test "model switch events distinguish active and next-request models", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/")
+
+      send(view.pid, {:agent_event, agent_event(:run_start, %{model: "sol-model"})})
+
+      send(
+        view.pid,
+        {:agent_event,
+         agent_event(
+           :model_switch_accepted,
+           %{model_ref: "grok-model", model: "grok-model", status: :accepted, revision: 2},
+           2
+         )}
+      )
+
+      assert has_element?(view, ~s(#status-bar[data-model="sol-model"]))
+      assert has_element?(view, "#status-active-model", "sol-model")
+      assert has_element?(view, "#status-pending-model", "grok-model next request")
+
+      send(
+        view.pid,
+        {:agent_event,
+         agent_event(
+           :provider_request_started,
+           %{model: "sol-model", config_revision: 1},
+           3
+         )}
+      )
+
+      assert has_element?(view, "#status-active-model", "sol-model")
+      assert has_element?(view, "#status-pending-model", "grok-model next request")
+
+      send(
+        view.pid,
+        {:agent_event,
+         agent_event(
+           :model_switch_applied,
+           %{model_ref: "grok-model", model: "grok-model", status: :applied, revision: 2},
+           4
+         )}
+      )
+
+      assert has_element?(view, ~s(#status-bar[data-model="grok-model"]))
+      assert has_element?(view, "#status-active-model", "grok-model")
+      refute has_element?(view, "#status-pending-model")
+    end
+
+    test "recovery metadata overrides missing or stale model switch events" do
+      socket = %Phoenix.LiveView.Socket{
+        assigns: %{
+          __changed__: %{},
+          available_models: [],
+          status_info: %{
+            model: "old-model",
+            active_model: "old-model",
+            pending_model: "stale-model",
+            pending_model_revision: 1,
+            future_model: "future-model"
+          }
+        }
+      }
+
+      recovered =
+        HandbeanWeb.WorkspaceLive.RuntimeProjection.reconcile_model_status(
+          socket,
+          %{
+            active_model: %{model: "sol-model", model_ref: "sol-model", revision: 0},
+            pending_model: %{model: "grok-model", model_ref: "grok-model", revision: 2},
+            model_switch_status: :accepted,
+            model_switch_revision: 2
+          },
+          true
+        )
+
+      assert recovered.assigns.status_info.active_model == "sol-model"
+      assert recovered.assigns.status_info.pending_model == "grok-model"
+      assert recovered.assigns.status_info.pending_model_revision == 2
+      assert recovered.assigns.status_info.future_model == "future-model"
+
+      cleared =
+        HandbeanWeb.WorkspaceLive.RuntimeProjection.reconcile_model_status(
+          recovered,
+          %{
+            active_model: %{model: "sol-model"},
+            pending_model: nil,
+            model_switch_status: :cancelled,
+            model_switch_revision: 3
+          },
+          true
+        )
+
+      assert cleared.assigns.status_info.pending_model == nil
+      assert cleared.assigns.status_info.pending_model_revision == nil
+    end
+
     test "run_start event via bare struct (no tuple wrapper)", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/")
 

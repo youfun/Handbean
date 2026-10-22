@@ -34,6 +34,7 @@ defmodule Handbean.Agent.State do
     :model_context,
     :context_base_count,
     :usage_anchor,
+    config_revision: 0,
     context_edited: false,
     context_generation: 0
   ]
@@ -72,6 +73,7 @@ defmodule Handbean.Agent.State do
           model_context: [Message.t()] | nil,
           context_base_count: non_neg_integer(),
           usage_anchor: map() | nil,
+          config_revision: non_neg_integer(),
           context_edited: boolean(),
           context_generation: non_neg_integer()
         }
@@ -104,7 +106,16 @@ defmodule Handbean.Agent.State do
       tool_calls: [],
       provider_state: %{},
       response_metadata: %{},
-      run_metadata: %{},
+      run_metadata: %{
+        model_history: [
+          %{
+            revision: 0,
+            model: config.model,
+            reasoning_level: config.reasoning_level,
+            provider: provider_name(config)
+          }
+        ]
+      },
       provider_response_metadata: %{},
       tool_guard_overrides: %{},
       tool_guard_session_allow: [],
@@ -120,9 +131,16 @@ defmodule Handbean.Agent.State do
       model_context: nil,
       context_base_count: 0,
       usage_anchor: nil,
+      config_revision: 0,
       context_edited: false,
       context_generation: 0
     }
+  end
+
+  defp provider_name(config) do
+    provider_config = config.provider_config || %{}
+
+    provider_config[:provider] || provider_config["provider"] || inspect(config.provider)
   end
 
   @doc "Append messages to the conversation history."

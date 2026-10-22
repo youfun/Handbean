@@ -210,6 +210,15 @@ defmodule Handbean.PubSub.Session do
     GenServer.call(via_tuple(session_id), {:mark_run_finished, run_id})
   end
 
+  @doc "Project an active-run model switch without blocking execution."
+  def project_model_switch(session_id, run_id, status, payload)
+      when is_binary(run_id) and is_atom(status) and is_map(payload) do
+    case whereis(session_id) do
+      nil -> :ok
+      pid -> GenServer.cast(pid, {:transition_model_switch, run_id, status, payload})
+    end
+  end
+
   # ── Server Callbacks ──
 
   @impl true
@@ -241,6 +250,10 @@ defmodule Handbean.PubSub.Session do
         run_id: nil,
         run_supervisor: nil,
         model: Map.get(loaded, "model", model),
+        active_model: nil,
+        pending_model: nil,
+        model_switch_status: nil,
+        model_switch_revision: 0,
         workspace_path: Keyword.get(opts, :workspace_path)
       },
       agent_pid: nil,
@@ -287,6 +300,7 @@ defmodule Handbean.PubSub.Session do
     Process.monitor(agent_pid)
     Process.monitor(queue_pid)
     run_id = Keyword.get(opts, :run_id)
+    active_model = normalize_active_model(Keyword.get(opts, :model), state.meta.model)
 
     meta = %{
       state.meta
@@ -295,10 +309,21 @@ defmodule Handbean.PubSub.Session do
         queue_pid: queue_pid,
         run_id: run_id,
         run_supervisor: Keyword.get(opts, :run_supervisor),
+        model: active_model.model,
+        active_model: active_model,
+        pending_model: nil,
+        model_switch_status: nil,
         workspace_path: Keyword.get(opts, :workspace_path, state.meta.workspace_path)
     }
 
-    new_state = %{state | agent_pid: agent_pid, queue_pid: queue_pid, meta: meta}
+    new_state = %{
+      state
+      | agent_pid: agent_pid,
+        queue_pid: queue_pid,
+        model: active_model.model,
+        meta: meta
+    }
+
     new_state = maybe_save(new_state)
     {:reply, :ok, new_state}
   end
@@ -492,7 +517,31 @@ defmodule Handbean.PubSub.Session do
   def handle_call(:mark_run_finished, _from, state) do
     safe_seal_queue(state.queue_pid)
 
-    meta = %{state.meta | running?: false, agent_pid: nil, queue_pid: nil, run_id: nil}
+    state =
+      if state.meta.pending_model do
+        payload = %{
+          run_id: state.meta.run_id,
+          status: :expired,
+          revision: state.meta.model_switch_revision,
+          model_ref: state.meta.pending_model[:model_ref],
+          model: state.meta.pending_model[:model]
+        }
+
+        do_broadcast_event(state, :model_switch_expired, payload, force_save?: true)
+      else
+        state
+      end
+
+    meta = %{
+      state.meta
+      | running?: false,
+        agent_pid: nil,
+        queue_pid: nil,
+        run_id: nil,
+        pending_model: nil,
+        model_switch_status: nil
+    }
+
     new_state = %{state | agent_pid: nil, queue_pid: nil, meta: meta}
     new_state = maybe_save(new_state)
     Logger.debug("[Session] run finished session=#{state.session_id}")
@@ -500,6 +549,13 @@ defmodule Handbean.PubSub.Session do
   end
 
   @impl true
+  def handle_cast({:transition_model_switch, run_id, status, payload}, state) do
+    case transition_model_switch_state(state, run_id, status, payload) do
+      {:ok, new_state} -> {:noreply, new_state}
+      {:error, :stale_run} -> {:noreply, state}
+    end
+  end
+
   def handle_cast({:broadcast_event, kind, payload}, state) do
     if stale_run_event?(state, kind, payload) do
       Logger.debug(
@@ -771,7 +827,7 @@ defmodule Handbean.PubSub.Session do
   defp restore_active_run(state) do
     id = state.session_id
 
-    with [{pid, %{run_id: run_id, active?: true}}] when is_binary(run_id) <-
+    with [{pid, %{run_id: run_id, active?: true} = registry_meta}] when is_binary(run_id) <-
            Registry.lookup(Handbean.AgentRunRegistry, id),
          [{queue, _}] <- Registry.lookup(Handbean.AgentRunQueueRegistry, id),
          [{supervisor, _}] <- Registry.lookup(Handbean.AgentRunSupervisorRegistry, id) do
@@ -784,14 +840,99 @@ defmodule Handbean.PubSub.Session do
           agent_pid: pid,
           queue_pid: queue,
           run_id: run_id,
-          run_supervisor: supervisor
+          run_supervisor: supervisor,
+          model: registry_model(registry_meta[:model], state.meta.model),
+          active_model: normalize_active_model(registry_meta[:model], state.meta.model),
+          pending_model: registry_meta[:pending_model],
+          model_switch_status: registry_meta[:model_switch_status],
+          model_switch_revision:
+            registry_meta[:model_switch_revision] || state.meta.model_switch_revision
       }
 
-      %{state | agent_pid: pid, queue_pid: queue, meta: meta}
+      %{state | agent_pid: pid, queue_pid: queue, model: meta.model, meta: meta}
     else
       _ -> state
     end
   end
+
+  defp transition_model_switch_state(state, run_id, status, payload) do
+    if run_id == state.meta.run_id and state.meta.running? do
+      event_payload =
+        payload
+        |> Map.put(:run_id, run_id)
+        |> Map.put(:status, status)
+
+      {meta, model} = transition_model_meta(state.meta, state.model, status, payload)
+      new_state = %{state | meta: meta, model: model}
+
+      {:ok,
+       do_broadcast_event(new_state, model_switch_event(status), event_payload, force_save?: true)}
+    else
+      {:error, :stale_run}
+    end
+  end
+
+  defp transition_model_meta(meta, model, :accepted, payload) do
+    {%{
+       meta
+       | pending_model: payload,
+         model_switch_status: :accepted,
+         model_switch_revision: payload[:revision] || meta.model_switch_revision
+     }, model}
+  end
+
+  defp transition_model_meta(meta, _model, :applied, payload) do
+    model = payload[:model] || meta.model
+
+    {%{
+       meta
+       | model: model,
+         active_model: payload,
+         pending_model: nil,
+         model_switch_status: :applied,
+         model_switch_revision: payload[:revision] || meta.model_switch_revision
+     }, model}
+  end
+
+  defp transition_model_meta(meta, model, status, payload)
+       when status in [:cancelled, :failed, :expired] do
+    {%{
+       meta
+       | pending_model: nil,
+         model_switch_status: status,
+         model_switch_revision: payload[:revision] || meta.model_switch_revision
+     }, model}
+  end
+
+  defp transition_model_meta(meta, model, status, payload) do
+    {%{
+       meta
+       | model_switch_status: status,
+         model_switch_revision: payload[:revision] || meta.model_switch_revision
+     }, model}
+  end
+
+  defp model_switch_event(:accepted), do: :model_switch_accepted
+  defp model_switch_event(:applied), do: :model_switch_applied
+  defp model_switch_event(:cancelled), do: :model_switch_cancelled
+  defp model_switch_event(:failed), do: :model_switch_failed
+  defp model_switch_event(:expired), do: :model_switch_expired
+
+  defp normalize_active_model(%{} = model, fallback) do
+    Map.put_new(model, :model, fallback)
+  end
+
+  defp normalize_active_model(model, _fallback) when is_binary(model) do
+    %{model: model, model_ref: model, reasoning_level: nil, revision: 0}
+  end
+
+  defp normalize_active_model(_model, fallback) do
+    %{model: fallback, model_ref: fallback, reasoning_level: nil, revision: 0}
+  end
+
+  defp registry_model(%{model: model}, _fallback) when is_binary(model), do: model
+  defp registry_model(model, _fallback) when is_binary(model), do: model
+  defp registry_model(_model, fallback), do: fallback
 
   defp log_broadcast_request(_session_id, :message_delta, %{chunk: chunk})
        when is_binary(chunk) do

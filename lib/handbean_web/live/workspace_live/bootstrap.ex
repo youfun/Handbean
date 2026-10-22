@@ -105,6 +105,11 @@ defmodule HandbeanWeb.WorkspaceLive.Bootstrap do
       |> assign(:available_reasoning_levels, available_reasoning_levels)
       |> assign(:status_info, %{
         model: models.status_model,
+        active_model: models.status_model,
+        pending_model: nil,
+        pending_model_revision: nil,
+        future_model: models.status_model,
+        model_switch_status: nil,
         input_tokens: 0,
         total_input_tokens: 0,
         output_tokens: 0,

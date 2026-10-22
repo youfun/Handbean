@@ -3,6 +3,7 @@ defmodule HandbeanWeb.WorkspaceLive.ModelSelection do
 
   import Phoenix.Component, only: [assign: 3]
 
+  alias Handbean.Agent.{RunOpts, Runner}
   alias Handbean.Settings
   alias HandbeanWeb.WorkspaceLive.ConversationState
   alias HandbeanWeb.WorkspaceLive.StatusProjection
@@ -47,6 +48,7 @@ defmodule HandbeanWeb.WorkspaceLive.ModelSelection do
     socket
     |> assign_model(model)
     |> ConversationState.sync_conv_to()
+    |> request_active_switch()
   end
 
   def select_reasoning(socket, level) do
@@ -58,12 +60,12 @@ defmodule HandbeanWeb.WorkspaceLive.ModelSelection do
     socket
     |> assign(:selected_reasoning_level, selected)
     |> ConversationState.sync_conv_to()
+    |> request_active_switch()
   end
 
   def select_from_sheet(socket, model) do
     socket
-    |> assign_model(model)
-    |> ConversationState.sync_conv_to()
+    |> select(model)
     |> assign(:show_model_sheet, false)
   end
 
@@ -92,12 +94,19 @@ defmodule HandbeanWeb.WorkspaceLive.ModelSelection do
   def apply_effective(socket), do: apply_effective_model_ai_settings(socket)
 
   defp assign_model(socket, model) do
+    display = model_display_name(model, socket.assigns.available_models)
+
+    overrides =
+      if Map.get(socket.assigns, :running, false) do
+        %{future_model: display}
+      else
+        %{model: display, active_model: display, future_model: display, pending_model: nil}
+      end
+
     socket
     |> assign(:selected_model, model)
     |> sync_reasoning_for_model(model)
-    |> StatusProjection.update_status(%{
-      model: model_display_name(model, socket.assigns.available_models)
-    })
+    |> StatusProjection.update_status(overrides)
   end
 
   def maybe_assign_submitted_model(socket, %{"model" => model}) when is_binary(model) do
@@ -145,7 +154,7 @@ defmodule HandbeanWeb.WorkspaceLive.ModelSelection do
     |> assign(:selected_model, selected)
     |> assign(:effective_settings, settings)
     |> sync_reasoning_for_model(selected)
-    |> StatusProjection.update_status(%{model: model_display_name(selected, available)})
+    |> update_selected_status(model_display_name(selected, available))
   end
 
   def reload_workspace_models(socket) do
@@ -178,7 +187,7 @@ defmodule HandbeanWeb.WorkspaceLive.ModelSelection do
     |> assign(:available_models, available)
     |> assign(:selected_model, selected)
     |> sync_reasoning_for_model(selected)
-    |> StatusProjection.update_status(%{model: model_display_name(selected, available)})
+    |> update_selected_status(model_display_name(selected, available))
     |> maybe_sync_selected_model_to_conversation()
   end
 
@@ -459,9 +468,7 @@ defmodule HandbeanWeb.WorkspaceLive.ModelSelection do
         sync_reasoning_for_model(socket, selected_model)
       end
 
-    StatusProjection.update_status(socket, %{
-      model: model_display_name(selected_model, available)
-    })
+    update_selected_status(socket, model_display_name(selected_model, available))
   end
 
   def effective_model_and_reasoning(socket) do
@@ -503,6 +510,67 @@ defmodule HandbeanWeb.WorkspaceLive.ModelSelection do
   def om_from_effective(effective) do
     opts = Handbean.Settings.ModelAISettings.to_runtime_opts(effective)
     [om: Keyword.get(opts, :om, %{enabled: false})]
+  end
+
+  defp update_selected_status(socket, display) do
+    if Map.get(socket.assigns, :running, false) do
+      StatusProjection.update_status(socket, %{future_model: display})
+    else
+      StatusProjection.update_status(socket, %{
+        model: display,
+        active_model: display,
+        future_model: display,
+        pending_model: nil
+      })
+    end
+  end
+
+  defp request_active_switch(socket) do
+    conversation_id = socket.assigns[:current_conversation_id]
+
+    if socket.assigns[:running] and is_binary(conversation_id) do
+      with {:ok, %{running?: true, run_id: run_id}} <- Runner.status(conversation_id),
+           {workspace_path, effective} <- switch_settings(socket),
+           {:ok, run_opts} <-
+             RunOpts.for_selection(
+               workspace_path,
+               socket.assigns.selected_model,
+               socket.assigns.selected_reasoning_level,
+               effective
+             ),
+           {:ok, _accepted} <-
+             Runner.request_model_switch(conversation_id, run_id, %{
+               model_ref: socket.assigns.selected_model,
+               reasoning_level: socket.assigns.selected_reasoning_level,
+               run_opts: run_opts
+             }) do
+        socket
+      else
+        {:ok, %{running?: false}} -> socket
+        {:error, reason} when reason in [:not_found, :not_running] -> socket
+        {:error, {:run_mismatch, _current}} -> socket
+        {:error, reason} -> model_switch_error(socket, reason)
+      end
+    else
+      socket
+    end
+  end
+
+  defp switch_settings(socket) do
+    if ConversationState.free_chat?(socket) do
+      {nil, Settings.global_model_ai()}
+    else
+      path = ConversationState.current_workspace_path(socket)
+      {path, Settings.effective_model_ai(path)}
+    end
+  end
+
+  defp model_switch_error(socket, reason) do
+    Logger.warning("[ModelSelection] active-run model switch rejected: #{inspect(reason)}")
+
+    StatusProjection.update_status(socket, %{
+      status_detail: "Model switch failed: #{inspect(reason)}"
+    })
   end
 
   def resolve_selected_model(_workspace_path, nil),

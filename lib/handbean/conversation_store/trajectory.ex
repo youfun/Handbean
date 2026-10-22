@@ -246,6 +246,10 @@ defmodule Handbean.ConversationStore.Trajectory do
         status: "running",
         stop_reason: nil,
         duration_ms: nil,
+        provider: optional_string(value(attrs, :provider)),
+        model: optional_string(value(attrs, :model)),
+        reasoning_level: optional_string(value(attrs, :reasoning_level)),
+        config_revision: non_negative_integer(value(attrs, :config_revision), 0),
         started_at: timestamp,
         completed_at: nil,
         created_at: timestamp,
@@ -794,6 +798,10 @@ defmodule Handbean.ConversationStore.Trajectory do
       status: turn.status,
       stop_reason: turn.stop_reason,
       duration_ms: turn.duration_ms,
+      provider: turn.provider,
+      model: turn.model,
+      reasoning_level: turn.reasoning_level,
+      config_revision: turn.config_revision,
       started_at: iso8601(turn.started_at),
       completed_at: iso8601(turn.completed_at)
     }

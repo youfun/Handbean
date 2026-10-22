@@ -170,6 +170,28 @@ defmodule Handbean.Agent.Config do
   end
 
   @doc """
+  Reconfigure only the provider-dependent portion of an effective run config.
+
+  Runtime callbacks, task context, middleware, prompt projections, and tool limits
+  may be added after `from_opts/1` during Agent startup. A model switch must retain
+  those values while replacing the provider snapshot used by the next request.
+  """
+  @spec reconfigure_model(t(), keyword()) :: t()
+  def reconfigure_model(%__MODULE__{} = current, opts) when is_list(opts) do
+    candidate = from_opts(opts)
+
+    %{
+      current
+      | provider: candidate.provider,
+        provider_config: candidate.provider_config,
+        model: candidate.model,
+        reasoning_level: candidate.reasoning_level,
+        max_tokens: candidate.max_tokens,
+        system_prompt: reconfigure_model_context(current.system_prompt, candidate.provider)
+    }
+  end
+
+  @doc """
   Resolve provider module from model configuration.
 
   Mapping:
@@ -372,6 +394,13 @@ defmodule Handbean.Agent.Config do
       prompt
     end
   end
+
+  defp reconfigure_model_context(prompt, provider) when is_binary(prompt) do
+    prompt = String.replace(prompt, Handbean.Agent.ModelContext.prompt_section(), "")
+    maybe_append_model_context(prompt, provider)
+  end
+
+  defp reconfigure_model_context(prompt, _provider), do: prompt
 
   defp maybe_inject_inline_previews(system_prompt, opts) do
     if Keyword.get(opts, :source) == :live_view do

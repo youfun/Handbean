@@ -18,6 +18,9 @@ defmodule Handbean.Agent.Turn.Events do
       turns: result.turn,
       duration_ms: duration_ms,
       model: result.config.model,
+      reasoning_level: result.config.reasoning_level,
+      config_revision: result.config_revision,
+      model_history: Map.get(result.run_metadata, :model_history, []),
       loop_owner: :handbean,
       usage: result.usage,
       run_id: result.config.run_id

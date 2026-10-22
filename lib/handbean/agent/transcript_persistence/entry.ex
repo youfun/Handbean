@@ -252,6 +252,10 @@ defmodule Handbean.Agent.TranscriptPersistence.Entry do
       loop_owner: payload_value(payload, :loop_owner) || :handbean,
       backend: payload_value(payload, :backend),
       model: payload_value(payload, :model) || Keyword.get(opts, :model),
+      provider: payload_value(payload, :provider),
+      reasoning_level:
+        payload_value(payload, :reasoning_level) || Keyword.get(opts, :reasoning_level),
+      config_revision: payload_value(payload, :config_revision, 0),
       permission_mode: Keyword.get(opts, :permission_mode),
       permission_revision: Keyword.get(opts, :permission_revision),
       approval_mode: Keyword.get(opts, :approval_mode),

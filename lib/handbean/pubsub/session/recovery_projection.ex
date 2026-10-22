@@ -25,6 +25,7 @@ defmodule Handbean.PubSub.Session.RecoveryProjection do
       turn_start: nil,
       session_state: nil,
       usage_updated: nil,
+      model_switch: nil,
       active_tools: %{},
       pending_approval: nil
     }
@@ -44,6 +45,16 @@ defmodule Handbean.PubSub.Session.RecoveryProjection do
 
   defp reduce_recovery_event(%{kind: :usage_updated} = event, state),
     do: %{state | usage_updated: event}
+
+  defp reduce_recovery_event(%{kind: kind} = event, state)
+       when kind in [
+              :model_switch_accepted,
+              :model_switch_applied,
+              :model_switch_cancelled,
+              :model_switch_failed,
+              :model_switch_expired
+            ],
+       do: %{state | model_switch: event}
 
   defp reduce_recovery_event(%{kind: :tool_start} = event, state) do
     put_in(state, [:active_tools, recovery_tool_id(event)], event)
@@ -65,6 +76,7 @@ defmodule Handbean.PubSub.Session.RecoveryProjection do
       state.turn_start,
       state.session_state,
       state.usage_updated,
+      state.model_switch,
       Map.values(state.active_tools),
       state.pending_approval
     ]
