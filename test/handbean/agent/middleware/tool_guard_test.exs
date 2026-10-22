@@ -125,6 +125,32 @@ defmodule Handbean.Agent.Middleware.ToolGuardTest do
     assert guarded.tool_guard_execution_grants == %{}
   end
 
+  test "a tool outside the run authorization ceiling is denied without prompting" do
+    workspace = tmp_workspace(%{"tools" => %{"default_mode" => "prompt"}})
+
+    call = %{
+      type: "tool_use",
+      id: "unauthorized-bash",
+      name: "bash",
+      input: %{"command" => "pwd"}
+    }
+
+    config = %Config{
+      working_directory: workspace,
+      model: "fake",
+      middleware: [],
+      allowed_tools: []
+    }
+
+    assert {:tool_guard_denied, guarded} =
+             %State{State.init(config, "hi") | tool_guard_overrides: %{}}
+             |> State.append_messages([Message.tool_use([call])])
+             |> then(&ToolGuard.call(:after_tool_request, &1))
+
+    assert Enum.map(guarded.tool_guard_denied_calls, & &1.id) == ["unauthorized-bash"]
+    assert guarded.tool_guard_pending_grants == %{}
+  end
+
   test "mixed batches freeze already admitted calls while later approvals use the new revision" do
     workspace =
       tmp_workspace(%{

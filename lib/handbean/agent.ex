@@ -41,6 +41,14 @@ defmodule Handbean.Agent do
   end
 
   defp prepare_resume(interrupted_state, opts) do
+    free_chat? = free_chat_resume?(interrupted_state, opts)
+
+    opts =
+      opts
+      |> normalize_resume_scope(free_chat?)
+      |> enforce_free_chat_tool_boundary()
+      |> preserve_free_chat_ceiling(interrupted_state.config.allowed_tools, free_chat?)
+
     working_dir = Keyword.get(opts, :working_directory)
     tools = tools_for_run(opts, working_dir)
     Enum.each(tools, &Handbean.Tool.Registry.register/1)
@@ -51,8 +59,22 @@ defmodule Handbean.Agent do
 
     opts = maybe_bootstrap_mcp(opts)
 
+    interrupted_state = put_resume_mcp_scope(interrupted_state, opts[:context][:mcp_scope])
+
     interrupted_state =
-      put_in(interrupted_state.config.context[:mcp_scope], opts[:context][:mcp_scope])
+      if free_chat? do
+        context = Map.put(interrupted_state.config.context, :chat_scope, :free)
+
+        config = %{
+          interrupted_state.config
+          | allowed_tools: Keyword.fetch!(opts, :allowed_tools),
+            context: context
+        }
+
+        %{interrupted_state | config: config}
+      else
+        interrupted_state
+      end
 
     wrapped_opts =
       case Keyword.get(opts, :session_id) do
@@ -72,21 +94,7 @@ defmodule Handbean.Agent do
 
   @doc "Continue a run paused by the progress guard."
   def resume_after_stall_check(interrupted_state, decisions, opts) do
-    opts = maybe_bootstrap_mcp(opts)
-
-    wrapped_opts =
-      case Keyword.get(opts, :session_id) do
-        nil ->
-          opts
-
-        session_id ->
-          Keyword.put(
-            opts,
-            :on_event,
-            session_event_callback(session_id, Keyword.get(opts, :on_event))
-          )
-      end
-
+    {interrupted_state, wrapped_opts} = prepare_resume(interrupted_state, opts)
     {:ok, Turn.resume_after_stall_check(interrupted_state, decisions, wrapped_opts)}
   end
 
@@ -105,6 +113,8 @@ defmodule Handbean.Agent do
   """
   @spec run(String.t(), keyword()) :: {:ok, State.t()} | {:error, term()}
   def run(prompt, opts \\ []) do
+    opts = enforce_free_chat_tool_boundary(opts)
+
     # Register tools with the central registry.
     # Default: all built-in + memory tools.
     working_dir = Keyword.get(opts, :working_directory)
@@ -271,6 +281,87 @@ defmodule Handbean.Agent do
       {:ok, tools} -> tools
       :error -> maybe_append_beam_tools(default_tools(), working_dir)
     end
+  end
+
+  # Free chat has no workspace authority. Its explicitly selected tools may
+  # narrow the capability set, but neither callers nor the global registry may
+  # widen it beyond the canonical free-chat tools.
+  defp enforce_free_chat_tool_boundary(opts) do
+    if Keyword.get(opts, :chat_scope) == :free do
+      canonical_tools = free_chat_tools()
+      canonical_names = Enum.map(canonical_tools, & &1.name())
+
+      requested_names =
+        case Keyword.fetch(opts, :tools) do
+          {:ok, tools} -> tool_names(tools)
+          :error -> canonical_names
+        end
+
+      allowed_names =
+        canonical_names
+        |> Enum.filter(&(&1 in requested_names))
+        |> maybe_intersect_allowed_tools(Keyword.get(opts, :allowed_tools))
+
+      tools = Enum.filter(canonical_tools, &(&1.name() in allowed_names))
+
+      opts
+      |> Keyword.put(:tools, tools)
+      |> Keyword.put(:allowed_tools, allowed_names)
+      |> Keyword.put(:mcp, false)
+    else
+      opts
+    end
+  end
+
+  defp tool_names(tools) do
+    tools
+    |> List.wrap()
+    |> Enum.filter(&(is_atom(&1) and function_exported?(&1, :name, 0)))
+    |> Enum.map(& &1.name())
+  end
+
+  defp maybe_intersect_allowed_tools(names, nil), do: names
+
+  defp maybe_intersect_allowed_tools(names, allowed_tools) do
+    allowed_tools = List.wrap(allowed_tools)
+    Enum.filter(names, &(&1 in allowed_tools))
+  end
+
+  defp free_chat_resume?(state, opts) do
+    Keyword.get(opts, :chat_scope) == :free or
+      get_in(state.config.context || %{}, [:chat_scope]) in [:free, "free"]
+  end
+
+  defp normalize_resume_scope(opts, true), do: Keyword.put(opts, :chat_scope, :free)
+  defp normalize_resume_scope(opts, false), do: opts
+
+  defp preserve_free_chat_ceiling(opts, _existing_allowed, false), do: opts
+  defp preserve_free_chat_ceiling(opts, nil, true), do: opts
+
+  defp preserve_free_chat_ceiling(opts, existing_allowed, true) do
+    allowed_names =
+      opts
+      |> Keyword.fetch!(:allowed_tools)
+      |> Enum.filter(&(&1 in existing_allowed))
+
+    tools =
+      opts
+      |> Keyword.fetch!(:tools)
+      |> Enum.filter(&(&1.name() in allowed_names))
+
+    opts
+    |> Keyword.put(:tools, tools)
+    |> Keyword.put(:allowed_tools, allowed_names)
+  end
+
+  defp put_resume_mcp_scope(state, nil) do
+    context = Map.delete(state.config.context || %{}, :mcp_scope)
+    %{state | config: %{state.config | context: context}}
+  end
+
+  defp put_resume_mcp_scope(state, scope) do
+    context = Map.put(state.config.context || %{}, :mcp_scope, scope)
+    %{state | config: %{state.config | context: context}}
   end
 
   defp maybe_append_beam_tools(tools, working_dir)

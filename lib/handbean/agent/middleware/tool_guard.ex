@@ -33,7 +33,7 @@ defmodule Handbean.Agent.Middleware.ToolGuard do
 
     assessed =
       tool_calls
-      |> Enum.map(&{&1, ToolPolicy.assess(policy, &1, context)})
+      |> Enum.map(&{&1, assess(state, policy, &1, context)})
       |> deny_duplicate_call_ids()
 
     {denied_pairs, rest} =
@@ -91,7 +91,7 @@ defmodule Handbean.Agent.Middleware.ToolGuard do
         assessments =
           Map.new(
             pending_calls,
-            &{&1.id, ToolPolicy.assess(policy(state), &1, boundary_context(state))}
+            &{&1.id, assess(state, policy(state), &1, boundary_context(state))}
           )
 
         if Enum.any?(pending_calls, &(assessments[&1.id].decision == :prompt)) do
@@ -147,10 +147,10 @@ defmodule Handbean.Agent.Middleware.ToolGuard do
       context = boundary_context(state)
 
       {denied, remaining} =
-        Enum.split_with(pending, &(ToolPolicy.assess(policy, &1, context).decision == :deny))
+        Enum.split_with(pending, &(assess(state, policy, &1, context).decision == :deny))
 
       {prompt, auto} =
-        Enum.split_with(remaining, &(ToolPolicy.assess(policy, &1, context).decision == :prompt))
+        Enum.split_with(remaining, &(assess(state, policy, &1, context).decision == :prompt))
 
       reconciled =
         state
@@ -349,7 +349,7 @@ defmodule Handbean.Agent.Middleware.ToolGuard do
       hitl_ids
       |> Enum.map(fn id -> Enum.find(tool_calls, &(&1.id == id)) end)
       |> Enum.reject(&is_nil/1)
-      |> Enum.filter(&(ToolPolicy.assess(policy, &1, context).decision == :deny))
+      |> Enum.filter(&(assess(state, policy, &1, context).decision == :deny))
 
     latest_denied_ids = MapSet.new(latest_denied_calls, & &1.id)
     approvable_hitl_ids = Enum.reject(hitl_ids, &MapSet.member?(latest_denied_ids, &1))
@@ -712,6 +712,16 @@ defmodule Handbean.Agent.Middleware.ToolGuard do
         {call, assessment}
       end
     end)
+  end
+
+  defp assess(state, policy, call, context) do
+    allowed_tools = state.config.allowed_tools
+
+    if not is_nil(allowed_tools) and call.name not in allowed_tools do
+      %{decision: :deny, requirement: nil, reason: :unauthorized_tool}
+    else
+      ToolPolicy.assess(policy, call, context)
+    end
   end
 
   defp grants(pairs, context, provenance) do

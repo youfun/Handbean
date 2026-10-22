@@ -256,6 +256,7 @@ defmodule Handbean.Agent.Config do
       created_by_conversation_id: Keyword.get(opts, :created_by_conversation_id),
       run_id: Keyword.get(opts, :run_id),
       source: Keyword.get(opts, :source),
+      chat_scope: Keyword.get(opts, :chat_scope),
       user_time_zone: Keyword.get(opts, :user_time_zone),
       origin_conversation_id: get_in(Keyword.get(opts, :origin) || %{}, ["conversation_id"]),
       handoff_id: get_in(Keyword.get(opts, :origin) || %{}, ["handoff_id"]),
