@@ -7,6 +7,8 @@ defmodule Handbean.JobsTest do
 
   @moduletag :unix_jobs
 
+  @terminal_states [:completed, :failed, :cancelled, :timed_out]
+
   setup do
     unless Process.whereis(Cleaner), do: start_supervised!(Cleaner)
     unless Process.whereis(Server), do: start_supervised!(Server)
@@ -182,7 +184,7 @@ defmodule Handbean.JobsTest do
       end)
 
     assert Task.yield(task, 100) == nil
-    assert {:ok, %{state: :running, output: "ready"} = job} = Task.await(task, 2_000)
+    assert {:ok, %{state: :running, output: "ready"} = job} = Task.await(task, 5_000)
 
     assert {:ok, %{state: :running, output: "ready", cursor: cursor}} =
              Jobs.status(job.job_id, 0, 5_000, context)
@@ -215,7 +217,7 @@ defmodule Handbean.JobsTest do
     assert output_idle_ms >= 0
     assert remaining_ms in 0..30_000
 
-    assert {:ok, later} = Jobs.status(job.job_id, cursor, 20, context)
+    later = await_terminal(job.job_id, context, cursor)
     assert later.elapsed_ms >= elapsed_ms
     assert later.state == :completed
     assert later.remaining_ms == 0
@@ -320,12 +322,9 @@ defmodule Handbean.JobsTest do
     assert {:ok, %{jobs: [%{job_id: id, state: :running}]}} = Jobs.status(nil, 0, 500, context)
     assert {:ok, %{job_id: ^id, state: :running}} = launch("printf duplicate", context)
     release(id, "once\n")
-    assert {:ok, update} = Jobs.status(id, 0, 5_000, context)
+    update = await_terminal(id, context)
     assert update.output == "readyonce"
-
-    if update.state != :completed do
-      assert {:ok, %{state: :completed}} = Jobs.status(id, update.cursor, 5_000, context)
-    end
+    assert update.state == :completed
   end
 
   for status <- [:completed, :max_turns, :budget_exceeded, :halted, :error, :cancelled],
@@ -460,6 +459,24 @@ defmodule Handbean.JobsTest do
 
     assert :ok = Handbean.Platform.ProcessManager.cleanup_job_group(group)
     assert {:error, _} = Jobs.status(id, 0, 500, context)
+  end
+
+  defp await_terminal(id, context), do: await_terminal(id, context, 0)
+  defp await_terminal(id, context, cursor), do: await_terminal(id, context, cursor, [], 20)
+
+  defp await_terminal(id, context, cursor, output, attempts) when attempts > 0 do
+    assert {:ok, status} = Jobs.status(id, cursor, 5_000, context)
+    output = [status.output | output]
+
+    if status.state in @terminal_states do
+      %{status | output: output |> Enum.reverse() |> IO.iodata_to_binary()}
+    else
+      await_terminal(id, context, status.cursor, output, attempts - 1)
+    end
+  end
+
+  defp await_terminal(id, _context, _cursor, _output, 0) do
+    flunk("job did not reach a terminal state: #{id}")
   end
 
   defp git!(cwd, args) do

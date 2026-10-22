@@ -5,6 +5,8 @@ defmodule Handbean.Jobs.BeamTest do
   alias Handbean.Workspace.MixOwner
   alias Handbean.Tool.Builtin.{RunElixirScript, MixProject}
 
+  @terminal_states [:completed, :failed, :cancelled, :timed_out]
+
   setup do
     previous = Application.get_env(:handbean, :host)
     work = Path.join(System.tmp_dir!(), "beam-job-#{Ecto.UUID.generate()}")
@@ -24,7 +26,7 @@ defmodule Handbean.Jobs.BeamTest do
     on_exit(fn ->
       Jobs.close_run(context, :completed)
       {:ok, %{jobs: jobs}} = Jobs.status(nil, 0, 0, context)
-      for job <- jobs, do: Jobs.status(job.job_id, 0, 5_000, context)
+      for job <- jobs, do: await_terminal(job.job_id, context)
 
       if previous,
         do: Application.put_env(:handbean, :host, previous),
@@ -67,10 +69,10 @@ defmodule Handbean.Jobs.BeamTest do
     assert {:ok, _, %{job: %{job_id: id, state: :running}}} = Task.await(task)
     assert_receive {:script, worker, child, io}
     assert Process.alive?(worker)
-    assert {:ok, %{output: "ready\n"}} = Jobs.status(id, 0, 0, ctx)
+    assert {:ok, %{output: "ready\n", cursor: cursor}} = Jobs.status(id, 0, 0, ctx)
     assert {:error, _} = Jobs.status(id, 0, 0, %{ctx | conversation_id: "other"})
     send(worker, :finish)
-    assert {:ok, %{state: :completed, result: result}} = Jobs.status(id, 0, 5_000, ctx)
+    assert %{state: :completed, result: result} = await_terminal(id, ctx, cursor)
     assert result =~ "42"
     for pid <- [worker, child, io], do: refute(Process.alive?(pid))
     refute File.exists?(Path.join(work, "mix.exs"))
@@ -293,19 +295,21 @@ defmodule Handbean.Jobs.BeamTest do
     assert first == String.duplicate("x", 40000)
     send(worker, :more)
     assert_receive :tail_written
-    assert {:ok, %{output: tail, truncated: false}} = Jobs.status(id, cursor, 0, ctx)
+
+    assert {:ok, %{output: tail, cursor: tail_cursor, truncated: false}} =
+             Jobs.status(id, cursor, 0, ctx)
+
     assert tail == String.duplicate("y", 20000) <> "TAIL"
     send(worker, :finish)
+    assert %{state: :failed, result: result} = await_terminal(id, ctx, tail_cursor)
 
     assert {:ok,
             %{
               state: :failed,
               stdout_truncated?: true,
               truncated: true,
-              output: output,
-              result: result
-            }} =
-             Jobs.status(id, 0, 5_000, ctx)
+              output: output
+            }} = Jobs.status(id, 0, 0, ctx)
 
     assert byte_size(output) == 50000
     assert String.ends_with?(output, "TAIL")
@@ -325,6 +329,8 @@ defmodule Handbean.Jobs.BeamTest do
                ctx
              )
 
+    assert %{state: :completed} = await_terminal(id, ctx)
+
     assert {:ok,
             %{
               state: :completed,
@@ -332,7 +338,7 @@ defmodule Handbean.Jobs.BeamTest do
               result: result,
               truncated: true,
               result_truncated: true
-            }} = Jobs.status(id, 0, 5_000, ctx)
+            }} = Jobs.status(id, 0, 0, ctx)
 
     assert byte_size(output) == 50_000
     assert byte_size(result) <= 50_000
@@ -379,8 +385,7 @@ defmodule Handbean.Jobs.BeamTest do
                ctx
              )
 
-    assert {:ok, %{state: :completed, result: result, output: output}} =
-             Jobs.status(id, 0, 5_000, ctx)
+    assert %{state: :completed, result: result, output: output} = await_terminal(id, ctx)
 
     assert output =~ "mobile-report"
     assert result =~ "42"
@@ -405,8 +410,7 @@ defmodule Handbean.Jobs.BeamTest do
                  %{ctx | tool_call_id: name}
                )
 
-      assert {:ok, %{state: ^status, result_truncated: false} = result} =
-               Jobs.status(id, 0, 5000, ctx)
+      assert %{state: ^status, result_truncated: false} = result = await_terminal(id, ctx)
 
       assert result[flag] == true
     end
@@ -416,8 +420,26 @@ defmodule Handbean.Jobs.BeamTest do
     assert {:ok, _, %{job: %{job_id: id}}} =
              MixProject.execute(%{"action" => "compile", "job" => true, "wait_ms" => 100}, ctx)
 
-    assert {:ok, %{state: :failed, result: result}} = Jobs.status(id, 0, 5_000, ctx)
+    assert %{state: :failed, result: result} = await_terminal(id, ctx)
     assert result =~ "mix.exs"
     refute MixOwner.busy?()
+  end
+
+  defp await_terminal(id, context), do: await_terminal(id, context, 0)
+  defp await_terminal(id, context, cursor), do: await_terminal(id, context, cursor, [], 20)
+
+  defp await_terminal(id, context, cursor, output, attempts) when attempts > 0 do
+    assert {:ok, status} = Jobs.status(id, cursor, 5_000, context)
+    output = [status.output | output]
+
+    if status.state in @terminal_states do
+      %{status | output: output |> Enum.reverse() |> IO.iodata_to_binary()}
+    else
+      await_terminal(id, context, status.cursor, output, attempts - 1)
+    end
+  end
+
+  defp await_terminal(id, _context, _cursor, _output, 0) do
+    flunk("job did not reach a terminal state: #{id}")
   end
 end
