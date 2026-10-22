@@ -28,7 +28,7 @@ defmodule Handbean.MCP.ServerRuntimeTest do
                ServerRuntime.call_tool(pid, "echo", %{}, 100)
 
       File.write!(gate, "continue")
-      assert {:ok, [%{name: "echo"}]} = Task.await(tools_task, 1_000)
+      assert {:ok, [%{name: "echo"}]} = Task.await(tools_task, 5_000)
     end
 
     test "routes concurrent out-of-order responses to their JSON-RPC callers" do

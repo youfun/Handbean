@@ -27,6 +27,7 @@ defmodule Handbean.Tool.Builtin.MixProjectTest do
     assert missing =~ "mix.exs"
   end
 
+  @tag :external_api
   test "creates, installs, compiles, tests and runs a real Mix project", %{work: work, ctx: ctx} do
     write_project(work, :ok)
 
@@ -176,10 +177,11 @@ defmodule Handbean.Tool.Builtin.MixProjectTest do
     assert message =~ "belongs to the host"
   end
 
+  @tag :external_api
   test "first download reuses an exactly locked host application", %{work: work, ctx: ctx} do
     host_version = Application.spec(:jason, :vsn) |> to_string()
     host_path = :jason |> :code.lib_dir() |> to_string()
-    write_jason_project(work, "== #{host_version}")
+    write_jason_project(work, "== #{host_version}", "HandbeanMixJasonExact")
 
     assert {:ok, _deps_output, _deps} =
              MixProject.execute(%{"action" => "deps.get", "timeout_ms" => 60_000}, ctx)
@@ -191,7 +193,7 @@ defmodule Handbean.Tool.Builtin.MixProjectTest do
              MixProject.execute(
                %{
                  "action" => "run",
-                 "module" => "HandbeanMixJason.Demo",
+                 "module" => "HandbeanMixJasonExact.Demo",
                  "function" => "run",
                  "timeout_ms" => 60_000
                },
@@ -209,7 +211,7 @@ defmodule Handbean.Tool.Builtin.MixProjectTest do
   } do
     host_version = Application.spec(:jason, :vsn) |> to_string()
     conflicting_version = if host_version == "1.4.4", do: "1.4.5", else: "1.4.4"
-    write_jason_project(work, "~> 1.4")
+    write_jason_project(work, "~> 1.4", "HandbeanMixJasonConflict")
 
     File.write!(Path.join(work, "mix.lock"), """
     %{
@@ -377,9 +379,9 @@ defmodule Handbean.Tool.Builtin.MixProjectTest do
     """)
   end
 
-  defp write_jason_project(work, requirement) do
+  defp write_jason_project(work, requirement, namespace) do
     File.write!(Path.join(work, "mix.exs"), """
-    defmodule HandbeanMixJason.MixProject do
+    defmodule #{namespace}.MixProject do
       use Mix.Project
       def project, do: [app: :handbean_mix_jason, version: "0.1.0", deps: [{:jason, #{inspect(requirement)}}]]
     end
@@ -388,7 +390,7 @@ defmodule Handbean.Tool.Builtin.MixProjectTest do
     File.mkdir_p!(Path.join(work, "lib"))
 
     File.write!(Path.join(work, "lib/demo.ex"), """
-    defmodule HandbeanMixJason.Demo do
+    defmodule #{namespace}.Demo do
       def run, do: Jason.decode(~s({"host":true}))
     end
     """)
