@@ -289,6 +289,33 @@ defmodule Handbean.Agent.RunnerModelSwitchTest do
     assert_eventually(fn -> refute Process.alive?(runner) end)
   end
 
+  test "selecting the active model cancels a pending switch before the next request", %{sid: sid} do
+    assert {:ok, %{run_pid: runner}} = Coordinator.start_run(sid, "start", opts(BoundaryProvider))
+    assert_receive {:model_switch_provider_request, "sol", "sol-model", task}, 2_000
+    assert {:ok, %{run_id: run_id}} = Runner.status(sid)
+    assert {:ok, %{status: :accepted, revision: 1}} = request_switch(sid, run_id, "grok")
+
+    assert {:ok, %{status: :cancelled, revision: 2}} =
+             Runner.request_model_switch(sid, run_id, %{
+               model_ref: "sol/ref",
+               reasoning_level: "medium",
+               run_opts: opts(BoundaryProvider)
+             })
+
+    assert {:ok,
+            %{
+              active_model: %{model: "sol-model", reasoning_level: "medium"},
+              pending_model_switch: nil,
+              model_switch_revision: 2
+            }} = Runner.status(sid)
+
+    monitor = Process.monitor(runner)
+    send(task, :continue)
+    assert_receive {:model_switch_provider_request, "sol", "sol-model", ^task}, 2_000
+    send(task, :finish)
+    assert_receive {:DOWN, ^monitor, :process, ^runner, _reason}, 2_000
+  end
+
   defp opts(provider) do
     [
       workspace_path: File.cwd!(),

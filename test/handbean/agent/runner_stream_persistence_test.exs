@@ -353,7 +353,7 @@ defmodule Handbean.Agent.RunnerStreamPersistenceTest do
 
   test "the first visible chunk of a later tool turn commits immediately" do
     sid = "runner-multi-turn-stream-#{System.unique_integer([:positive])}"
-    {:ok, _} = Handbean.ConversationStore.create("default", id: sid)
+    {:ok, _} = Handbean.ConversationStore.create("default", id: sid, permission_mode: "yolo")
     :ok = Session.subscribe(sid)
 
     assert {:ok, %{action: :started, run_pid: runner}} =

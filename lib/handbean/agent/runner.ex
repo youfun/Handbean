@@ -3,31 +3,21 @@ defmodule Handbean.Agent.Runner do
   GenServer owner for one active agent run.
 
   Runner owns lifecycle state and delegates the expensive agent loop to the
-  run-local task supervisor inside `Handbean.Agent.RunSupervisor`.
+  run-local task supervisor inside `Handbean.Agent.RunSupervisor`. Initial input,
+  event persistence, stream policy, and model selection are synchronous modules;
+  their extraction does not introduce another process or state owner.
   """
 
   use GenServer
 
-  require Logger
-
-  alias Handbean.Agent.{ErrorReporter, StreamBatch}
+  alias Handbean.Agent.ErrorReporter
   alias Handbean.Agent.Middleware.ToolGuard
+  alias Handbean.Agent.Runner.{Events, InitialInput, ModelSelection, Stream}
   alias Handbean.PubSub.Session
 
+  require Logger
+
   @default_inactivity_timeout_ms 300_000
-  @progress_events [
-    :message_delta,
-    :thinking_delta,
-    :provider_items,
-    :provider_retry,
-    :tool_start,
-    :tool_end,
-    :turn_start,
-    :turn_end,
-    :candidate_message_injected,
-    :tool_approval_requested,
-    :stall_check_requested
-  ]
 
   defstruct [
     :conversation_id,
@@ -43,11 +33,8 @@ defmodule Handbean.Agent.Runner do
     :started_at,
     :deadline,
     :deadline_timer,
-    :stream_batch,
-    :active_model,
-    :pending_model_switch,
-    model_switch_revision: 0,
-    stream_started?: false,
+    :stream,
+    :model_selection,
     os_processes: []
   ]
 
@@ -125,6 +112,33 @@ defmodule Handbean.Agent.Runner do
     GenServer.call(runner_pid, {:fail_model_switch, run_id, task_pid, revision, reason})
   end
 
+  @doc false
+  def abort_unreplayable(state, reason) do
+    report_error(reason, state, failure_class: :run_tree_exit)
+    shutdown_run_tasks(state, state.task)
+    {state, flush_error} = flush_before_terminal(state)
+
+    payload =
+      %{
+        status: "error",
+        turns: 0,
+        error: inspect(reason),
+        execution: :unknown,
+        replayed: false,
+        run_id: state.opts[:run_id]
+      }
+      |> maybe_put_stream_flush_error(flush_error)
+
+    Events.persist_terminal(state.conversation_id, payload, state.opts)
+    Handbean.Agent.CandidateQueue.seal(state.queue_pid)
+    Session.broadcast_event(state.conversation_id, :run_end, payload)
+    Session.mark_run_finished(state.conversation_id, state.opts[:run_id])
+    schedule_terminal_callback(state, %{status: :error})
+    Logger.error("[Runner] run aborted without replay: #{inspect(reason)}")
+    stop_run_supervisor(state)
+    {:stop, :normal, %{state | status: :error, error: reason, task: nil}}
+  end
+
   @impl true
   def init(opts) do
     conversation_id = Keyword.fetch!(opts, :conversation_id)
@@ -143,14 +157,14 @@ defmodule Handbean.Agent.Runner do
       content: content,
       opts: Keyword.put(run_opts, :runner_pid, self()),
       queue_pid: queue_pid,
-      stream_batch: StreamBatch.new(run_opts),
-      active_model: model_snapshot(run_opts),
+      stream: Stream.new(run_opts),
+      model_selection: ModelSelection.new(run_opts),
       status: :idle
     }
 
     with :ok <- attach_delegation(state.opts, conversation_id),
          {:ok, content, opts} <-
-           accept_initial(queue_pid, conversation_id, content, state.opts) do
+           InitialInput.accept(queue_pid, conversation_id, content, state.opts) do
       owner = Keyword.get(opts, :delegation_owner)
       monitor = if is_pid(owner), do: Process.monitor(owner)
 
@@ -166,90 +180,6 @@ defmodule Handbean.Agent.Runner do
     end
   end
 
-  defp attach_delegation(opts, conversation_id) do
-    case Keyword.get(opts, :delegation_owner) do
-      nil -> :ok
-      owner -> Handbean.Agent.Delegation.attach(owner, conversation_id, self())
-    end
-  end
-
-  # Accepted new-run inbound is written here so
-  # exclusive RunSupervisor start is the accept gate and the user entry exists
-  # before handle_continue starts the provider task.
-  defp accept_initial(queue_pid, conversation_id, content, opts) do
-    with :ok <- Handbean.Agent.CandidateQueue.begin_initial(queue_pid, opts),
-         {:ok, _content, _opts} = accepted <- accept_inbound(conversation_id, content, opts),
-         :ok <- Handbean.Agent.CandidateQueue.commit_initial(queue_pid, opts) do
-      accepted
-    else
-      {:error, _reason} = error ->
-        :ok = Handbean.Agent.CandidateQueue.abort_initial(queue_pid, opts)
-        error
-    end
-  end
-
-  defp accept_inbound(conversation_id, content, opts) do
-    receipt = %{action: :started, run_id: Keyword.fetch!(opts, :run_id)}
-
-    if Keyword.get(opts, :persist_inbound?, true) do
-      inbound_opts = Keyword.put(opts, :deliver_as, :new_run)
-
-      case Handbean.Agent.TranscriptPersistence.accept_inbound(
-             conversation_id,
-             content,
-             receipt,
-             inbound_opts
-           ) do
-        {:ok, entry} ->
-          {content, opts} = align_inbound(content, opts, entry)
-          {:ok, content, opts}
-
-        :ok ->
-          {:ok, content, opts}
-
-        {:error, reason} ->
-          {:error, reason}
-      end
-    else
-      with true <- Handbean.ConversationStore.active?(conversation_id),
-           :ok <-
-             Handbean.Agent.OperationReceipt.complete(
-               {:message, conversation_id},
-               opts[:request_id],
-               receipt
-             ) do
-        {:ok, content, opts}
-      else
-        false -> {:error, :not_found}
-        {:error, reason} -> {:error, reason}
-      end
-    end
-  end
-
-  defp align_inbound(content, opts, %{"id" => id}) when is_binary(id) do
-    previous = opts[:transcript_id] || opts[:message_id]
-
-    cond do
-      previous == id ->
-        {content, opts}
-
-      is_nil(previous) ->
-        {content, Keyword.merge(opts, message_id: id, transcript_id: id)}
-
-      true ->
-        content =
-          case content do
-            %Handbean.Agent.Message{} = message -> %{message | id: id}
-            other -> other
-          end
-
-        opts = Keyword.merge(opts, message_id: id, transcript_id: id, inbound_id: id)
-        {content, opts}
-    end
-  end
-
-  defp align_inbound(content, opts, _entry), do: {content, opts}
-
   @impl true
   def handle_continue(:start_task, state) do
     prewarm_search(state)
@@ -258,9 +188,9 @@ defmodule Handbean.Agent.Runner do
       %{
         run_id: state.opts[:run_id],
         active?: true,
-        model: state.active_model,
-        pending_model: public_pending_switch(state.pending_model_switch),
-        model_switch_revision: state.model_switch_revision,
+        model: state.model_selection.active,
+        pending_model: ModelSelection.public_pending(state.model_selection),
+        model_switch_revision: state.model_selection.revision,
         model_switch_status: nil
       }
     end)
@@ -277,19 +207,12 @@ defmodule Handbean.Agent.Runner do
         run_id: Keyword.get(state.opts, :run_id),
         run_supervisor: state.opts[:run_supervisor],
         workspace_path: Keyword.get(state.opts, :workspace_path),
-        model: state.active_model
+        model: state.model_selection.active
       )
 
     started_at = System.monotonic_time(:millisecond)
     {deadline, timer} = arm_timeout(state)
-
-    run_opts =
-      state.opts
-      |> Keyword.put(:candidate_queue, state.queue_pid)
-      |> maybe_put_run_deadline(state, deadline)
-      |> put_compaction_callback(self())
-      |> put_persistence_callback(state.conversation_id)
-
+    run_opts = task_opts(state, deadline)
     start_task = if state.opts[:delegated?], do: :async, else: :async_nolink
 
     task =
@@ -336,78 +259,24 @@ defmodule Handbean.Agent.Runner do
         interrupt_type: interrupt_type(state),
         interrupt_data: interrupt_data(state),
         approval_batch_id: approval_batch_id(state),
-        active_model: state.active_model,
-        pending_model_switch: public_pending_switch(state.pending_model_switch),
-        model_switch_revision: state.model_switch_revision
+        active_model: state.model_selection.active,
+        pending_model_switch: ModelSelection.public_pending(state.model_selection),
+        model_switch_revision: state.model_selection.revision
       }}, state}
   end
 
   def handle_call({:owns_run_task?, reader_pid, run_id}, _from, state) do
-    owned? = owns_task?(state, reader_pid, run_id)
-
-    {:reply, owned?, state}
+    {:reply, owns_task?(state, reader_pid, run_id), state}
   end
 
   def handle_call({:request_model_switch, expected_run_id, selection}, _from, state)
       when state.status in [:running, :awaiting_approval] do
     with :ok <- validate_model_switch_identity(state, expected_run_id),
-         {:ok, normalized} <- normalize_model_selection(selection) do
-      if same_model?(state.active_model, normalized) do
-        revision = state.model_switch_revision + 1
-
-        next_state = %{
-          state
-          | pending_model_switch: nil,
-            model_switch_revision: revision
-        }
-
-        update_model_registry(next_state, :cancelled)
-
-        project_model_switch(
-          state.conversation_id,
-          state.opts[:run_id],
-          :cancelled,
-          public_pending_switch(Map.put(normalized, :revision, revision))
-        )
-
-        {:reply, {:ok, %{revision: revision, status: :cancelled}}, next_state}
-      else
-        revision = state.model_switch_revision + 1
-
-        config_opts =
-          state.opts
-          |> Keyword.drop([
-            :provider,
-            :provider_config,
-            :model,
-            :selected_model,
-            :reasoning_level,
-            :max_tokens
-          ])
-          |> Keyword.merge(normalized.run_opts)
-
-        pending =
-          normalized
-          |> Map.put(:revision, revision)
-          |> Map.put(:config_opts, config_opts)
-
-        next_state = %{
-          state
-          | pending_model_switch: pending,
-            model_switch_revision: revision
-        }
-
-        update_model_registry(next_state, :accepted)
-
-        project_model_switch(
-          state.conversation_id,
-          state.opts[:run_id],
-          :accepted,
-          public_pending_switch(pending)
-        )
-
-        {:reply, {:ok, %{revision: revision, status: :accepted}}, next_state}
-      end
+         {:ok, status, model_selection, public} <-
+           ModelSelection.request(state.model_selection, selection, state.opts) do
+      state = %{state | model_selection: model_selection}
+      project_model_switch(state, state.opts[:run_id], status, public)
+      {:reply, {:ok, %{revision: model_selection.revision, status: status}}, state}
     else
       {:error, reason} -> {:reply, {:error, reason}, state}
     end
@@ -421,8 +290,8 @@ defmodule Handbean.Agent.Runner do
     cond do
       caller != task_pid -> {:reply, {:error, :not_run_task}, state}
       not owns_task?(state, task_pid, run_id) -> {:reply, {:error, :not_run_task}, state}
-      is_nil(state.pending_model_switch) -> {:reply, :unchanged, state}
-      true -> {:reply, {:apply, state.pending_model_switch}, state}
+      is_nil(state.model_selection.pending) -> {:reply, :unchanged, state}
+      true -> {:reply, {:apply, state.model_selection.pending}, state}
     end
   end
 
@@ -431,35 +300,18 @@ defmodule Handbean.Agent.Runner do
         {caller, _tag},
         state
       ) do
-    cond do
-      caller != task_pid ->
-        {:reply, {:error, :not_run_task}, state}
+    if caller == task_pid and owns_task?(state, task_pid, run_id) do
+      case ModelSelection.commit(state.model_selection, revision, public) do
+        {:ok, model_selection, opts} ->
+          state = %{state | model_selection: model_selection, opts: opts}
+          project_model_switch(state, run_id, :applied, public)
+          {:reply, :ok, state}
 
-      not owns_task?(state, task_pid, run_id) ->
-        {:reply, {:error, :not_run_task}, state}
-
-      not match?(%{revision: ^revision}, state.pending_model_switch) ->
-        {:reply, {:error, :stale_revision}, state}
-
-      true ->
-        opts =
-          Keyword.merge(state.pending_model_switch.config_opts,
-            selected_model: public.model_ref,
-            model: public.model,
-            reasoning_level: public.reasoning_level
-          )
-
-        next_state = %{
-          state
-          | active_model: public,
-            pending_model_switch: nil,
-            opts: opts
-        }
-
-        update_model_registry(next_state, :applied)
-        project_model_switch(state.conversation_id, run_id, :applied, public)
-
-        {:reply, :ok, next_state}
+        {:error, reason} ->
+          {:reply, {:error, reason}, state}
+      end
+    else
+      {:reply, {:error, :not_run_task}, state}
     end
   end
 
@@ -468,74 +320,29 @@ defmodule Handbean.Agent.Runner do
         {caller, _tag},
         state
       ) do
-    if caller == task_pid and owns_task?(state, task_pid, run_id) and
-         match?(%{revision: ^revision}, state.pending_model_switch) do
-      public =
-        state.pending_model_switch
-        |> public_pending_switch()
-        |> Map.put(:error, inspect(reason))
+    if caller == task_pid and owns_task?(state, task_pid, run_id) do
+      case ModelSelection.fail(state.model_selection, revision, reason) do
+        {:ok, model_selection, public} ->
+          state = %{state | model_selection: model_selection}
+          project_model_switch(state, run_id, :failed, public)
+          {:reply, :ok, state}
 
-      next_state = %{state | pending_model_switch: nil}
-      update_model_registry(next_state, :failed)
-      project_model_switch(state.conversation_id, run_id, :failed, public)
-      {:reply, :ok, next_state}
+        {:error, reason} ->
+          {:reply, {:error, reason}, state}
+      end
     else
       {:reply, {:error, :stale_revision}, state}
     end
   end
 
   def handle_call({:persist_compaction, event}, _from, state) when is_map(event) do
-    reply =
-      Handbean.Agent.CompactionCheckpoint.persist(
-        state.conversation_id,
-        event,
-        state.opts
-      )
-
-    case reply do
-      {:ok, checkpoint} ->
-        Handbean.Memory.Reflector.maybe_trigger(
-          state.conversation_id,
-          checkpoint,
-          reflection_opts(state.opts)
-        )
-
-      _other ->
-        :ok
-    end
-
-    {:reply, reply, state}
-  end
-
-  def handle_call({:persist_event, {:message_delta, payload} = event}, _from, state)
-      when is_map(payload) and state.status == :running do
-    cond do
-      enriched_stream_delta?(payload) ->
-        case persist_event_after_flush(state, event) do
-          {:ok, projected, state} ->
-            {:reply, :ok, %{state | stream_started?: visible_delta?(projected)}}
-
-          {:error, reason, state} ->
-            {:reply, {:error, reason}, state}
-        end
-
-      empty_stream_chunk?(payload) ->
-        {:reply, :ok, state}
-
-      true ->
-        case queue_stream_event(state, event) do
-          {:ok, state} -> {:reply, :ok, state}
-          {:error, reason, state} -> {:reply, {:error, reason}, state}
-        end
-    end
+    {:reply, Events.compact(state.conversation_id, event, state.opts), state}
   end
 
   def handle_call({:persist_event, event}, _from, state) when state.status == :running do
-    state = %{state | stream_started?: false}
-
-    case persist_event_after_flush(state, event) do
-      {:ok, _projected, state} -> {:reply, :ok, state}
-      {:error, reason, state} -> {:reply, {:error, reason}, state}
+    case Stream.persist(state.stream, event, state.conversation_id, state.opts) do
+      {:ok, stream} -> {:reply, :ok, %{state | stream: stream}}
+      {:error, reason, stream} -> {:reply, {:error, reason}, %{state | stream: stream}}
     end
   end
 
@@ -560,7 +367,6 @@ defmodule Handbean.Agent.Runner do
         |> maybe_put_stream_flush_error(flush_error)
 
       Session.broadcast_event(state.conversation_id, :run_end, payload)
-
       Session.mark_run_finished(state.conversation_id, state.opts[:run_id])
       # Teardown may terminate this Runner immediately; acknowledge after all
       # run-owned tasks are down and before launching tree teardown.
@@ -675,9 +481,9 @@ defmodule Handbean.Agent.Runner do
     {:noreply, %{state | os_processes: [{os_pid, invocation} | state.os_processes]}}
   end
 
-  def handle_info({:run_progress, run_id, kind}, state)
-      when state.status == :running and kind in @progress_events do
-    if state.opts[:run_id] == run_id and not absolute_timeout?(state) do
+  def handle_info({:run_progress, run_id, kind}, %{status: :running} = state) do
+    if Events.progress_event?(kind) and state.opts[:run_id] == run_id and
+         not absolute_timeout?(state) do
       cancel_timeout(state.deadline_timer)
       {deadline, timer} = arm_timeout(state)
       {:noreply, %{state | deadline: deadline, deadline_timer: timer}}
@@ -704,7 +510,7 @@ defmodule Handbean.Agent.Runner do
       }
       |> maybe_put_stream_flush_error(flush_error)
 
-    persist_terminal_event(state, payload)
+    Events.persist_terminal(state.conversation_id, payload, state.opts)
     Handbean.Agent.CandidateQueue.seal(state.queue_pid)
     Session.broadcast_event(state.conversation_id, :run_end, payload)
     Session.mark_run_finished(state.conversation_id, state.opts[:run_id])
@@ -738,7 +544,7 @@ defmodule Handbean.Agent.Runner do
       }
       |> maybe_put_stream_flush_error(flush_error)
 
-    persist_terminal_event(state, payload)
+    Events.persist_terminal(state.conversation_id, payload, state.opts)
     Handbean.Agent.CandidateQueue.seal(state.queue_pid)
     Session.broadcast_event(state.conversation_id, :run_end, payload)
     Session.mark_run_finished(state.conversation_id, state.opts[:run_id])
@@ -751,23 +557,18 @@ defmodule Handbean.Agent.Runner do
   def handle_info({:run_inactivity, _stale}, state), do: {:noreply, state}
 
   def handle_info({:flush_stream_batch, token}, %{status: :running} = state) do
-    case state.stream_batch.timer do
-      {_timer_ref, ^token} ->
-        case flush_stream_batch(state) do
-          {:ok, state} ->
-            {:noreply, state}
-
-          {:error, reason, state} ->
-            finish_error(state, {:stream_flush_failed, reason})
-        end
-
-      _stale ->
-        {:noreply, state}
+    if Stream.timer_matches?(state.stream, token) do
+      case flush_stream_batch(state) do
+        {:ok, state} -> {:noreply, state}
+        {:error, reason, state} -> finish_error(state, {:stream_flush_failed, reason})
+      end
+    else
+      {:noreply, state}
     end
   end
 
   def handle_info({:flush_stream_batch, _token}, state) do
-    {:noreply, discard_stream_batch(state)}
+    {:noreply, %{state | stream: Stream.discard(state.stream)}}
   end
 
   def handle_info({:EXIT, _pid, reason}, state) when reason not in [:normal, :shutdown] do
@@ -812,31 +613,18 @@ defmodule Handbean.Agent.Runner do
 
   def handle_info(_message, state), do: {:noreply, state}
 
-  @doc false
-  def abort_unreplayable(state, reason) do
-    report_error(reason, state, failure_class: :run_tree_exit)
-    shutdown_run_tasks(state, state.task)
-    {state, flush_error} = flush_before_terminal(state)
+  defp attach_delegation(opts, conversation_id) do
+    case Keyword.get(opts, :delegation_owner) do
+      nil -> :ok
+      owner -> Handbean.Agent.Delegation.attach(owner, conversation_id, self())
+    end
+  end
 
-    payload =
-      %{
-        status: "error",
-        turns: 0,
-        error: inspect(reason),
-        execution: :unknown,
-        replayed: false,
-        run_id: state.opts[:run_id]
-      }
-      |> maybe_put_stream_flush_error(flush_error)
-
-    persist_terminal_event(state, payload)
-    Handbean.Agent.CandidateQueue.seal(state.queue_pid)
-    Session.broadcast_event(state.conversation_id, :run_end, payload)
-    Session.mark_run_finished(state.conversation_id, state.opts[:run_id])
-    schedule_terminal_callback(state, %{status: :error})
-    Logger.error("[Runner] run aborted without replay: #{inspect(reason)}")
-    stop_run_supervisor(state)
-    {:stop, :normal, %{state | status: :error, error: reason, task: nil}}
+  defp task_opts(state, deadline) do
+    state.opts
+    |> Keyword.put(:candidate_queue, state.queue_pid)
+    |> maybe_put_run_deadline(state, deadline)
+    |> Events.install(state.conversation_id, self())
   end
 
   defp finish_terminal(state, result, status) do
@@ -845,9 +633,7 @@ defmodule Handbean.Agent.Runner do
         Handbean.Agent.Provider.Cursor.Session.stop_for_conversation(state.conversation_id)
         Handbean.Agent.CandidateQueue.seal(state.queue_pid)
         Session.mark_run_finished(state.conversation_id, state.opts[:run_id])
-
         schedule_terminal_callback(state, %{status: status})
-
         stop_run_supervisor(state)
         {:noreply, %{state | status: status, result: result, task: nil}}
 
@@ -941,14 +727,7 @@ defmodule Handbean.Agent.Runner do
 
   defp resume_with_decisions(state, decisions) do
     {deadline, timer} = resume_timeout(state)
-
-    run_opts =
-      state.opts
-      |> Keyword.put(:candidate_queue, state.queue_pid)
-      |> maybe_put_run_deadline(state, deadline)
-      |> put_compaction_callback(self())
-      |> put_persistence_callback(state.conversation_id)
-
+    run_opts = task_opts(state, deadline)
     resume = resume_fun(state)
 
     Session.broadcast_event(state.conversation_id, :run_resumed, %{run_id: state.opts[:run_id]})
@@ -965,7 +744,7 @@ defmodule Handbean.Agent.Runner do
         interrupted_state: nil,
         deadline: deadline,
         deadline_timer: timer,
-        stream_started?: false
+        stream: Stream.resume(state.stream)
     }
   end
 
@@ -998,13 +777,7 @@ defmodule Handbean.Agent.Runner do
 
   defp resume_with_auto_review(state) do
     {deadline, timer} = resume_timeout(state)
-
-    run_opts =
-      state.opts
-      |> Keyword.put(:candidate_queue, state.queue_pid)
-      |> maybe_put_run_deadline(state, deadline)
-      |> put_compaction_callback(self())
-      |> put_persistence_callback(state.conversation_id)
+    run_opts = task_opts(state, deadline)
 
     Session.broadcast_event(state.conversation_id, :run_resumed, %{run_id: state.opts[:run_id]})
 
@@ -1020,7 +793,7 @@ defmodule Handbean.Agent.Runner do
         interrupted_state: nil,
         deadline: deadline,
         deadline_timer: timer,
-        stream_started?: false
+        stream: Stream.resume(state.stream)
     }
   end
 
@@ -1111,32 +884,7 @@ defmodule Handbean.Agent.Runner do
           payload
       end
 
-    persist_terminal_event(state, payload)
-  end
-
-  defp persist_terminal_event(state, payload) do
-    case Handbean.Agent.TranscriptPersistence.handle_event(
-           state.conversation_id,
-           {:run_end, payload},
-           state.opts
-         ) do
-      :ok ->
-        :ok
-
-      {:error, reason} ->
-        Logger.error(
-          "[Runner] terminal transcript persist failed conversation=#{state.conversation_id} " <>
-            "reason=#{inspect(reason)}"
-        )
-    end
-  rescue
-    error ->
-      # An unavailable disk must not crash/restart Runner and execute the run
-      # again. Persisted streaming entries remain recoverable on the next boot.
-      Logger.error("[Runner] terminal transcript persist failed: #{Exception.message(error)}")
-  catch
-    :exit, reason ->
-      Logger.error("[Runner] terminal transcript owner unavailable: #{inspect(reason)}")
+    Events.persist_terminal(state.conversation_id, payload, state.opts)
   end
 
   defp finish_error(state, reason) do
@@ -1146,7 +894,7 @@ defmodule Handbean.Agent.Runner do
       case reason do
         {:stream_flush_failed, flush_error} ->
           Handbean.Agent.TranscriptPersistence.discard_pending(state.conversation_id)
-          {discard_stream_batch(state), flush_error}
+          {%{state | stream: Stream.discard(state.stream)}, flush_error}
 
         _other ->
           flush_before_terminal(state)
@@ -1169,10 +917,9 @@ defmodule Handbean.Agent.Runner do
       run_id: state.opts[:run_id]
     }
 
-    persist_terminal_event(state, payload)
+    Events.persist_terminal(state.conversation_id, payload, state.opts)
     Handbean.Agent.CandidateQueue.seal(state.queue_pid)
     Session.broadcast_event(state.conversation_id, :run_end, payload)
-
     Session.mark_run_finished(state.conversation_id, state.opts[:run_id])
     schedule_terminal_callback(state, %{status: :error})
     Logger.error("[Runner] Agent run failed: #{message}")
@@ -1264,191 +1011,10 @@ defmodule Handbean.Agent.Runner do
     }
   end
 
-  defp put_persistence_callback(opts, conversation_id) do
-    user_on_event = Keyword.get(opts, :on_event)
-    progress = fn kind -> notify_progress_owner({kind, %{}}, opts) end
-    opts = Keyword.put(opts, :on_progress, progress)
-
-    Keyword.put(opts, :on_event, fn event ->
-      {kind, payload} = event
-
-      # 1. Run extension hooks (may block/transform)
-      hook_result =
-        if Keyword.get(opts, :delegated?, false),
-          do: :ok,
-          else: Handbean.Extension.HookPipeline.run(conversation_id, event)
-
-      case hook_result do
-        {:block, reason} ->
-          if Handbean.Extension.Event.blockable?(kind) do
-            Logger.debug(
-              "[Runner] event blocked by extension hook kind=#{kind} conversation=#{conversation_id} reason=#{reason}"
-            )
-          else
-            Logger.warning(
-              "[Runner] extension hook attempted to block read-only event kind=#{kind} conversation=#{conversation_id} reason=#{reason} — ignoring block"
-            )
-
-            route_persistence_event(conversation_id, event, opts, user_on_event)
-          end
-
-        {:transform, transformed_payload} ->
-          if Handbean.Extension.Event.blockable?(kind) do
-            transformed_event = {kind, Map.merge(payload, transformed_payload)}
-            route_persistence_event(conversation_id, transformed_event, opts, user_on_event)
-          else
-            Logger.debug(
-              "[Runner] extension hook attempted to transform read-only event kind=#{kind} conversation=#{conversation_id} — ignoring transform"
-            )
-
-            route_persistence_event(conversation_id, event, opts, user_on_event)
-          end
-
-        :ok ->
-          route_persistence_event(conversation_id, event, opts, user_on_event)
-      end
-    end)
-  end
-
-  defp put_compaction_callback(opts, runner) when is_pid(runner) do
-    Keyword.put(opts, :on_compaction_complete, fn event, state ->
-      event =
-        Map.merge(event, %{
-          context_edited: state.context_edited,
-          context_generation: state.context_generation,
-          context_window: state.config.max_tokens,
-          model: state.config.model,
-          run_id: state.config.run_id
-        })
-
-      GenServer.call(runner, {:persist_compaction, event}, 30_000)
-    end)
-  end
-
-  defp reflection_opts(opts) do
-    Keyword.take(opts, [
-      :builtin_memory_enabled,
-      :workspace_id,
-      :workspace_path,
-      :working_directory,
-      :model,
-      :reasoning_level,
-      :provider_config,
-      :om,
-      :transcript_store
-    ])
-  end
-
-  defp persist_and_callback(conversation_id, event, opts, user_on_event) do
-    track_search_access(event, opts)
-
-    # 2. Normal persistence + session broadcast
-    log_runner_event(conversation_id, event)
-
-    case Handbean.Agent.TranscriptPersistence.handle_event(conversation_id, event, opts) do
-      :ok ->
-        :ok
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-    |> case do
-      :ok ->
-        # 3. User callback (if any)
-        if is_function(user_on_event, 1) do
-          user_on_event.(event)
-        end
-
-        projected = Handbean.Agent.TranscriptPersistence.project_event(conversation_id, event)
-        broadcast_session_event(conversation_id, projected, opts)
-        {:ok, projected}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  defp route_persistence_event(conversation_id, event, opts, user_on_event) do
-    notify_progress_owner(event, opts)
-
-    case Keyword.get(opts, :runner_pid) do
-      pid when is_pid(pid) ->
-        case GenServer.call(pid, {:persist_event, event}, :infinity) do
-          :ok ->
-            :ok
-
-          {:error, reason} ->
-            raise "Transcript persistence failed: #{inspect(reason)} conversation=#{conversation_id}"
-        end
-
-      _missing ->
-        case persist_and_callback(conversation_id, event, opts, user_on_event) do
-          {:ok, _projected} ->
-            :ok
-
-          {:error, reason} ->
-            raise "Transcript persistence failed: #{inspect(reason)} conversation=#{conversation_id}"
-        end
-    end
-  end
-
-  defp queue_stream_event(%{stream_started?: false} = state, event) do
-    case persist_event_now(state, event) do
-      {:ok, projected} ->
-        {:ok, %{state | stream_started?: visible_delta?(projected)}}
-
-      {:error, reason} ->
-        {:error, reason, state}
-    end
-  end
-
-  defp queue_stream_event(state, {:message_delta, payload}) do
-    case StreamBatch.append(state.stream_batch, payload) do
-      {:boundary, _batch} ->
-        with {:ok, state} <- flush_stream_batch(state) do
-          queue_stream_event(%{state | stream_started?: false}, {:message_delta, payload})
-        end
-
-      {:ok, batch} ->
-        batch = if StreamBatch.empty?(batch), do: batch, else: maybe_arm_stream_timer(batch)
-        state = %{state | stream_batch: batch}
-
-        if StreamBatch.full?(state.stream_batch) do
-          flush_stream_batch(state)
-        else
-          {:ok, state}
-        end
-    end
-  end
-
-  defp persist_event_after_flush(state, event) do
-    case flush_stream_batch(state) do
-      {:ok, flushed_state} ->
-        case persist_event_now(flushed_state, event) do
-          {:ok, projected} -> {:ok, projected, flushed_state}
-          {:error, reason} -> {:error, reason, flushed_state}
-        end
-
-      {:error, reason, flushed_state} ->
-        {:error, reason, flushed_state}
-    end
-  end
-
   defp flush_stream_batch(state) do
-    batch = state.stream_batch
-
-    if StreamBatch.empty?(batch) do
-      cancel_stream_timer(batch.timer)
-      {:ok, %{state | stream_batch: StreamBatch.reset(batch)}}
-    else
-      cancel_stream_timer(batch.timer)
-      event = StreamBatch.event(batch)
-      state = %{state | stream_batch: StreamBatch.reset(batch)}
-
-      case persist_event_now(state, event) do
-        {:ok, _projected} -> {:ok, state}
-        {:error, reason} -> {:error, reason, state}
-      end
+    case Stream.flush(state.stream, state.conversation_id, state.opts) do
+      {:ok, stream} -> {:ok, %{state | stream: stream}}
+      {:error, reason, stream} -> {:error, reason, %{state | stream: stream}}
     end
   end
 
@@ -1463,73 +1029,6 @@ defmodule Handbean.Agent.Runner do
     end
   end
 
-  defp discard_stream_batch(state) do
-    cancel_stream_timer(state.stream_batch.timer)
-    %{state | stream_batch: StreamBatch.reset(state.stream_batch)}
-  end
-
-  defp maybe_arm_stream_timer(%StreamBatch{timer: nil} = batch) do
-    token = make_ref()
-    timer_ref = Process.send_after(self(), {:flush_stream_batch, token}, batch.max_wait_ms)
-    %{batch | timer: {timer_ref, token}}
-  end
-
-  defp maybe_arm_stream_timer(batch), do: batch
-
-  defp cancel_stream_timer({timer_ref, _token}) when is_reference(timer_ref),
-    do: Process.cancel_timer(timer_ref)
-
-  defp cancel_stream_timer(_timer), do: false
-
-  defp persist_event_now(state, event) do
-    opts = Keyword.put(state.opts, :runner_pid, self())
-
-    result =
-      try do
-        persist_and_callback(state.conversation_id, event, opts, state.opts[:on_event])
-      rescue
-        error -> {:error, {:exception, Exception.message(error)}}
-      catch
-        :exit, reason -> {:error, {:exit, reason}}
-        kind, reason -> {:error, {kind, reason}}
-      end
-
-    case result do
-      {:error, _reason} = error ->
-        # TranscriptPersistence may have staged an entry before its store write
-        # failed. A later terminal event must not retry that hidden buffer and
-        # prevent the durable error record from being written.
-        Handbean.Agent.TranscriptPersistence.discard_pending(state.conversation_id)
-        error
-
-      success ->
-        success
-    end
-  end
-
-  defp visible_delta?({:message_delta, payload}) do
-    text = Map.get(payload, :text, Map.get(payload, "text"))
-    is_binary(text) and text != ""
-  end
-
-  defp visible_delta?(_event), do: false
-
-  defp empty_stream_chunk?(payload) do
-    Map.get(payload, :chunk, Map.get(payload, "chunk")) in [nil, ""]
-  end
-
-  defp enriched_stream_delta?(payload) do
-    Enum.any?([:thinking, :thinking_delta, :provider_items], fn key ->
-      payload
-      |> Map.get(key, Map.get(payload, Atom.to_string(key)))
-      |> present_stream_metadata?()
-    end)
-  end
-
-  defp present_stream_metadata?(value) when value in [nil, "", []], do: false
-  defp present_stream_metadata?(value) when is_map(value), do: map_size(value) > 0
-  defp present_stream_metadata?(_value), do: true
-
   defp terminal_flush_reply(nil), do: :ok
   defp terminal_flush_reply(reason), do: {:error, {:stream_flush_failed, reason}}
 
@@ -1537,62 +1036,6 @@ defmodule Handbean.Agent.Runner do
 
   defp maybe_put_stream_flush_error(payload, reason) do
     Map.put(payload, :transcript_error, inspect({:stream_flush_failed, reason}))
-  end
-
-  defp track_search_access({:tool_end, payload}, opts) do
-    tool = Handbean.Utils.SafeMap.get_any(payload, :tool, "tool")
-    path = Handbean.Utils.SafeMap.get_any(payload, :file_path, "file_path")
-    workspace = opts[:working_directory]
-    successful? = is_nil(payload[:error]) and is_nil(payload["error"])
-    normalized_tool = if is_binary(tool), do: String.downcase(tool), else: ""
-
-    if successful? and normalized_tool in ["read", "edit", "write"] and
-         is_binary(workspace) and is_binary(path) do
-      Handbean.Search.touch(workspace, path)
-
-      if normalized_tool in ["edit", "write"] do
-        Handbean.Search.notify_path(workspace, path)
-      end
-    end
-
-    :ok
-  end
-
-  defp track_search_access(_event, _opts), do: :ok
-
-  defp notify_progress_owner({kind, _payload}, opts) when kind in @progress_events do
-    case Keyword.get(opts, :runner_pid) do
-      pid when is_pid(pid) -> send(pid, {:run_progress, Keyword.get(opts, :run_id), kind})
-      _ -> :ok
-    end
-  end
-
-  defp notify_progress_owner(_event, _opts), do: :ok
-
-  defp broadcast_session_event(conversation_id, {kind, payload}, opts) do
-    payload = stamp_run_id(payload, opts)
-    Session.broadcast_event(conversation_id, kind, payload)
-  end
-
-  defp stamp_run_id(payload, opts) when is_map(payload) do
-    Map.put_new(payload, :run_id, Keyword.get(opts, :run_id))
-  end
-
-  defp stamp_run_id(payload, _opts), do: payload
-
-  defp log_runner_event(_conversation_id, {:message_delta, %{chunk: chunk}})
-       when is_binary(chunk) do
-    :ok
-  end
-
-  defp log_runner_event(_conversation_id, {:thinking_delta, _payload}) do
-    :ok
-  end
-
-  defp log_runner_event(conversation_id, {kind, _payload}) do
-    if kind not in [:message_delta, :user_on_chunk] do
-      Logger.debug("[Runner] persistence callback #{kind} conversation=#{conversation_id}")
-    end
   end
 
   defp resolve_queue_pid!({:via, Registry, {registry, key}}) do
@@ -1607,68 +1050,17 @@ defmodule Handbean.Agent.Runner do
       match?(%Task{pid: ^task_pid}, state.task)
   end
 
-  defp normalize_model_selection(%{model_ref: model_ref, run_opts: run_opts} = selection)
-       when is_binary(model_ref) and is_list(run_opts) do
-    model = Keyword.get(run_opts, :model)
-
-    reasoning_level =
-      Map.get(selection, :reasoning_level) || Keyword.get(run_opts, :reasoning_level)
-
-    if is_binary(model) do
-      {:ok,
-       %{
-         model_ref: model_ref,
-         model: model,
-         reasoning_level: reasoning_level,
-         run_opts: run_opts
-       }}
-    else
-      {:error, :invalid_model_selection}
-    end
-  end
-
-  defp normalize_model_selection(_selection), do: {:error, :invalid_model_selection}
-
-  defp model_snapshot(opts) do
-    provider_config = Keyword.get(opts, :provider_config, %{})
-
-    %{
-      revision: 0,
-      model_ref: Keyword.get(opts, :selected_model) || Keyword.get(opts, :model),
-      model: Keyword.get(opts, :model),
-      reasoning_level: Keyword.get(opts, :reasoning_level),
-      provider:
-        provider_config[:provider] || provider_config["provider"] ||
-          inspect(Keyword.get(opts, :provider))
-    }
-  end
-
-  defp same_model?(active, pending) when is_map(active) do
-    active.model_ref == pending.model_ref and
-      active.reasoning_level == pending.reasoning_level
-  end
-
-  defp same_model?(_active, _pending), do: false
-
-  defp public_pending_switch(nil), do: nil
-
-  defp public_pending_switch(pending) do
-    Map.take(pending, [:revision, :model_ref, :model, :reasoning_level, :provider, :error])
-  end
-
-  defp update_model_registry(state, status) do
+  defp project_model_switch(state, run_id, status, public) do
     Registry.update_value(Handbean.AgentRunRegistry, state.conversation_id, fn meta ->
       Map.merge(meta, %{
-        model: state.active_model,
-        pending_model: public_pending_switch(state.pending_model_switch),
-        model_switch_revision: state.model_switch_revision,
+        model: state.model_selection.active,
+        pending_model: ModelSelection.public_pending(state.model_selection),
+        model_switch_revision: state.model_selection.revision,
         model_switch_status: status
       })
     end)
-  end
 
-  defp project_model_switch(conversation_id, run_id, status, payload) do
-    Session.project_model_switch(conversation_id, run_id, status, payload)
+    Session.project_model_switch(state.conversation_id, run_id, status, public)
   end
 
   defp call_runner(conversation_id, message) do
