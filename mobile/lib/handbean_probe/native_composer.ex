@@ -77,7 +77,7 @@ defmodule HandbeanProbe.NativeComposer do
               return_key: "send"
             ),
             render_thumbs(attachments),
-            icon("add", {:page, :attachments}),
+            icon("add", {:platform, :begin, :pick_photos}),
             if(running, do: icon("close", :stop)),
             icon("forward", :send)
           ]
@@ -100,10 +100,6 @@ defmodule HandbeanProbe.NativeComposer do
       padding: 6,
       background: color(:control)
     )
-  end
-
-  def render_entries(assigns \\ %{}) do
-    HandbeanProbe.NativeArtifactDelivery.render_entries(assigns)
   end
 
   def render_chips([]), do: nil

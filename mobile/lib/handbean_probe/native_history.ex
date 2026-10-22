@@ -50,7 +50,7 @@ defmodule HandbeanProbe.NativeHistory do
         group("pinned", gettext("已置顶"), pinned, ctx, nil)
       end
 
-    free_nodes = group("free", gettext("对话"), free, ctx, icon("add", {:new_free_chat}))
+    free_nodes = group("free", gettext("自由对话"), free, ctx, icon("add", {:new_free_chat}))
 
     workspace_nodes =
       Enum.flat_map(workspaces, fn %{workspace: workspace, conversations: conversations} ->

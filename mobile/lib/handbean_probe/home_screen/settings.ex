@@ -27,7 +27,7 @@ defmodule HandbeanProbe.HomeScreen.Settings do
   @scope :models
   @subscription_scope :subscription_login
 
-  @settings_pages [:models, :settings]
+  @settings_pages [:models, :settings, :model_ai, :workspace_models]
 
   # ── dispatch ──
 
@@ -49,6 +49,11 @@ defmodule HandbeanProbe.HomeScreen.Settings do
 
   def handle({:change, {:model_field, field}, value}, socket) do
     assign(socket, :models, ModelSettings.change(socket.assigns.models, field, value))
+  end
+
+  def handle({:change, {:workspace_builtin_memory, id}, enabled}, socket)
+      when is_boolean(enabled) do
+    action(socket, {:workspace_builtin_memory, id, enabled})
   end
 
   def handle({:change, {:toggle_model_enabled, provider, model, _current}, enabled}, socket)

@@ -27,6 +27,7 @@ defmodule HandbeanProbe.HomeScreen.State do
   alias HandbeanProbe.{
     ModelSettings,
     NativeFileViewer,
+    NativeSchedules,
     NativeWorkspaces,
     NativeWorkspaceTree,
     PendingRequests
@@ -76,6 +77,9 @@ defmodule HandbeanProbe.HomeScreen.State do
     git: nil,
     app_settings: nil,
 
+    # ── scheduled tasks ──
+    schedules: nil,
+
     # ── platform (composer attachments / system UI requests) ──
     pending_attachments: [],
     input_warning: nil,
@@ -83,8 +87,6 @@ defmodule HandbeanProbe.HomeScreen.State do
     composer_select: nil,
     pending_requests: nil,
     last_platform_request: nil,
-    artifact_path: "",
-    open_url_draft: "",
 
     # ── share intake ──
     share_intakes: [],
@@ -116,6 +118,7 @@ defmodule HandbeanProbe.HomeScreen.State do
         workspace_memory: HandbeanProbe.WorkspaceMemory.new(),
         mcp: HandbeanProbe.MCPSettings.empty(),
         git: HandbeanProbe.GitSettings.empty(),
+        schedules: NativeSchedules.new(),
         approval_export_inflight: MapSet.new(),
         pending_requests: PendingRequests.new(),
         merged_intake_ids: MapSet.new(),

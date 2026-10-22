@@ -23,7 +23,6 @@ defmodule HandbeanProbe.NativeArtifactDelivery do
   """
 
   use Gettext, backend: HandbeanProbe.Gettext
-  import HandbeanProbe.NativeUI
 
   alias Handbean.ArtifactDelivery
   alias Handbean.ArtifactDelivery.Url
@@ -44,64 +43,6 @@ defmodule HandbeanProbe.NativeArtifactDelivery do
   ]
 
   def delivery_kinds, do: @delivery_kinds
-
-  def render_entries(assigns) do
-    [
-      text(gettext("Attachments"), text_size: 16, padding_top: 16),
-      text(
-        gettext(
-          "Pick up to 4 photos from the gallery and add them to the current draft. Nothing is sent to a model until you tap send; only then can a cloud model receive them."
-        ),
-        text_size: 12,
-        padding_top: 8,
-        padding_bottom: 8
-      ),
-      button(gettext("Choose photos"), {:platform, :begin, :pick_photos}, fill_width: true),
-      text(gettext("Open a web page (system browser)"), text_size: 16, padding_top: 20),
-      text(
-        gettext(
-          "View pages, documents, orders, or login screens the Agent found in the system browser. This is not the Agent WebView in the conversation; for in-app viewing ask the Agent to use the browser tool."
-        ),
-        text_size: 12,
-        padding_top: 8,
-        padding_bottom: 8
-      ),
-      node(:text_field,
-        id: "open-url-draft",
-        value: Map.get(assigns, :open_url_draft, ""),
-        placeholder: "https://…",
-        background: color(:card),
-        plain: true,
-        multiline: false,
-        fill_width: true,
-        padding: 8,
-        on_change: {self(), :open_url_draft}
-      ),
-      button(gettext("Open in system browser"), {:delivery, :open_url}, fill_width: true),
-      text(gettext("Share or open an artifact file"), text_size: 16, padding_top: 20),
-      text(
-        gettext(
-          "Enter a path relative to the current workspace. Sharing first pins an export copy and hands it to apps such as WeChat, mail, or cloud storage; opening uses the system PDF/image/text/archive app. Arbitrary local paths are never handed to other apps."
-        ),
-        text_size: 12,
-        padding_top: 8,
-        padding_bottom: 8
-      ),
-      node(:text_field,
-        id: "artifact-path",
-        value: Map.get(assigns, :artifact_path, ""),
-        placeholder: gettext("e.g. reports/summary.pdf"),
-        background: color(:card),
-        plain: true,
-        multiline: false,
-        fill_width: true,
-        padding: 8,
-        on_change: {self(), :artifact_path}
-      ),
-      button(gettext("Open with a system app"), {:delivery, :open_file}, fill_width: true),
-      button(gettext("Share to another app"), {:delivery, :share_file}, fill_width: true)
-    ]
-  end
 
   def outcome_notice("ui_presented"), do: ArtifactDelivery.format_outcome("ui_presented")
 
@@ -146,7 +87,7 @@ defmodule HandbeanProbe.NativeArtifactDelivery do
   @doc """
   Export step of the artifact sequence for a user tap. `spec` is the
   `NativeWorkspaceOpen.spec/4` map (timeline / tree target) or a bare
-  workspace-relative path typed on the delivery page.
+  workspace-relative path.
   """
   def start_file_action(socket, kind, spec)
       when kind in [:open_file, :share_file] and is_map(spec) do

@@ -147,10 +147,12 @@ internal fun MobToggle(node: MobNode, modifier: Modifier) {
         Switch(
             checked         = checked,
             onCheckedChange = { new -> handle?.let { MobBridge.nativeSendChangeBool(it, new) } },
-            colors          = if (color != Color.Unspecified)
-                SwitchDefaults.colors(checkedThumbColor = color)
-            else
-                SwitchDefaults.colors(),
+            colors          = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = if (color != Color.Unspecified) color else Color(0xFF1A1815),
+                uncheckedThumbColor = Color(0xFF1A1815),
+                uncheckedTrackColor = Color(0xFFE4E0DA),
+            ),
         )
     }
 }

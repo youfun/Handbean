@@ -214,17 +214,20 @@ defmodule HandbeanProbe.ModelSettingsTest do
     tree = ModelSettings.render(state)
     blob = flatten_text(tree)
     assert blob =~ gettext("Memory Reflection")
-
-    assert blob =~
-             gettext(
-               "Compaction can produce reviewable memory candidates using the settings below."
-             )
+    assert blob =~ gettext("Advisor")
+    assert blob =~ gettext("Think level")
 
     refute blob =~ "Observational memory"
     refute blob =~ "Recent context limit"
 
+    refute blob =~
+             gettext(
+               "Compaction can produce reviewable memory candidates using the settings below."
+             )
+
     toggle = find_type(tree, :toggle, "toggle-memory-reflection")
-    assert toggle.props.label == gettext("Enable memory reflection")
+    assert blob =~ gettext("Enable memory reflection")
+    refute Map.get(toggle.props, :label)
     refute toggle.props.value
     assert tap_change?(tree, {:model_field, :om_reflector_enabled})
 
@@ -244,6 +247,37 @@ defmodule HandbeanProbe.ModelSettingsTest do
     {:ok, global} = Handbean.Settings.load_global()
     assert get_in(global, ["model_ai", "observational_memory", "reflector_enabled"]) == true
     refute inspect(opts) =~ "Follow"
+  end
+
+  test "advisor and memory think level persist through ModelAIOverride", %{ws_a: ws} do
+    save_named(ws, "alpha", "one")
+    state = ModelSettings.action({:scope, :global}, ModelSettings.load(ws), ws)
+    state = ModelSettings.action({:advisor_model, "alpha/one"}, state, ws)
+    state = ModelSettings.action({:advisor_reasoning, "low"}, state, ws)
+    state = ModelSettings.action({:om_reasoning, "high"}, state, ws)
+
+    settings = Handbean.Settings.effective_model_ai(ws["path"])
+    assert settings.advisor_model == "alpha/one"
+    assert settings.advisor_reasoning == "low"
+    assert settings.om_reasoning == "high"
+
+    tree = ModelSettings.render_model_ai(ModelSettings.load(ws))
+    assert find_type(tree, :settings_select, "select-advisor")
+    assert find_type(tree, :settings_select, "select-memory-reasoning")
+  end
+
+  test "workspace builtin memory rows come from WorkspaceStore", %{ws_a: ws_a, ws_b: ws_b} do
+    state = ModelSettings.load(ws_a)
+    ids = Enum.map(state.memory_workspaces, & &1.id)
+    assert ws_a["id"] in ids
+    assert ws_b["id"] in ids
+    refute "invented" in ids
+
+    enabled? = Enum.find(state.memory_workspaces, &(&1.id == ws_b["id"])).enabled
+    next = not enabled?
+    state = ModelSettings.action({:workspace_builtin_memory, ws_b["id"], next}, state, ws_a)
+    assert Enum.find(state.memory_workspaces, &(&1.id == ws_b["id"])).enabled == next
+    assert Handbean.WorkspaceSettings.builtin_memory_enabled(ws_b["path"]) == next
   end
 
   test "allowlist unconfigured, empty, and restricted behave as backend documents", %{

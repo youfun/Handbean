@@ -10,105 +10,85 @@
 msgid ""
 msgstr ""
 
-#: lib/handbean_probe/native_timeline.ex:249
+#: lib/handbean_probe/native_timeline.ex:359
 #, elixir-autogen, elixir-format
 msgid "%{count} cancelled"
 msgstr ""
 
-#: lib/handbean_probe/native_timeline.ex:242
+#: lib/handbean_probe/native_timeline.ex:354
 #, elixir-autogen, elixir-format
 msgid "%{count} failed"
 msgstr ""
-
-#: lib/handbean_probe/work_timeline.ex:156
-#, elixir-autogen, elixir-format
-msgid "%{count} file"
-msgid_plural "%{count} files"
-msgstr[0] ""
-msgstr[1] ""
-
-#: lib/handbean_probe/work_timeline.ex:160
-#, elixir-autogen, elixir-format
-msgid "%{count} guidance file"
-msgid_plural "%{count} guidance files"
-msgstr[0] ""
-msgstr[1] ""
-
-#: lib/handbean_probe/work_timeline.ex:157
-#, elixir-autogen, elixir-format
-msgid "%{count} search"
-msgid_plural "%{count} searches"
-msgstr[0] ""
-msgstr[1] ""
 
 #: lib/handbean_probe/model_settings/render_forms.ex:105
 #, elixir-autogen, elixir-format
 msgid "API Key"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render_forms.ex:125
+#: lib/handbean_probe/model_settings/render_forms.ex:113
 #, elixir-autogen, elixir-format
 msgid "API protocol"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/render.ex:213
-#: lib/handbean_probe/home_screen/render.ex:361
+#: lib/handbean_probe/home_screen/render.ex:265
+#: lib/handbean_probe/home_screen/render.ex:355
 #, elixir-autogen, elixir-format
 msgid "About"
 msgstr ""
 
-#: lib/handbean_probe/native_chat.ex:146
+#: lib/handbean_probe/native_chat.ex:194
 #, elixir-autogen, elixir-format
 msgid "Add a model in Settings first"
 msgstr ""
 
-#: lib/handbean_probe/native_approval.ex:306
+#: lib/handbean_probe/native_approval.ex:309
 #, elixir-autogen, elixir-format
 msgid "Allow once"
 msgstr ""
 
-#: lib/handbean_probe/native_approval.ex:308
+#: lib/handbean_probe/native_approval.ex:311
 #, elixir-autogen, elixir-format
 msgid "Allow this session"
 msgstr ""
 
-#: lib/handbean_probe/native_approval.ex:313
+#: lib/handbean_probe/native_approval.ex:316
 #, elixir-autogen, elixir-format
 msgid "Always allow"
 msgstr ""
 
-#: lib/handbean_probe/native_approval.ex:288
+#: lib/handbean_probe/native_approval.ex:291
 #, elixir-autogen, elixir-format
 msgid "Always allow/deny is saved to the current workspace; this session applies only to the current run."
 msgstr ""
 
-#: lib/handbean_probe/native_approval.ex:298
+#: lib/handbean_probe/native_approval.ex:301
 #, elixir-autogen, elixir-format
 msgid "Always deny"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/chat.ex:533
+#: lib/handbean_probe/home_screen/chat.ex:702
 #, elixir-autogen, elixir-format
 msgid "Approval submitted, but the rule could not be saved to the workspace."
 msgstr ""
 
-#: lib/handbean_probe/home_screen/chat.ex:539
+#: lib/handbean_probe/home_screen/chat.ex:708
 #, elixir-autogen, elixir-format
 msgid "Approval was not submitted. Please try again or reopen the conversation."
 msgstr ""
 
-#: lib/handbean_probe/native_approval.ex:45
+#: lib/handbean_probe/native_approval.ex:44
 #, elixir-autogen, elixir-format
 msgid "Asks for approval by default, so you decide whether to run each tool."
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:299
+#: lib/handbean_probe/home_screen/render.ex:356
+#: lib/handbean_probe/home_screen/settings_hub.ex:68
+#: lib/handbean_probe/model_settings/render.ex:500
 #, elixir-autogen, elixir-format
 msgid "Available Models"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/render.ex:133
-#: lib/handbean_probe/home_screen/render.ex:171
+#: lib/handbean_probe/home_screen/render.ex:248
 #, elixir-autogen, elixir-format
 msgid "Back to chat"
 msgstr ""
@@ -123,61 +103,62 @@ msgstr ""
 #: lib/handbean_probe/mcp_settings.ex:140
 #: lib/handbean_probe/mcp_settings.ex:196
 #: lib/handbean_probe/model_settings/render_confirm.ex:85
-#: lib/handbean_probe/model_settings/render_forms.ex:144
-#: lib/handbean_probe/model_settings/render_forms.ex:165
-#: lib/handbean_probe/model_settings/subscription_render.ex:33
-#: lib/handbean_probe/model_settings/subscription_render.ex:78
+#: lib/handbean_probe/model_settings/render_forms.ex:132
+#: lib/handbean_probe/model_settings/render_forms.ex:153
+#: lib/handbean_probe/model_settings/subscription_render.ex:45
+#: lib/handbean_probe/model_settings/subscription_render.ex:62
+#: lib/handbean_probe/model_settings/subscription_render.ex:98
+#: lib/handbean_probe/native_conversation_row.ex:211
+#: lib/handbean_probe/workspace_memory.ex:431
 #, elixir-autogen, elixir-format
 msgid "Cancel"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/nav.ex:158
+#: lib/handbean_probe/home_screen/nav.ex:165
 #, elixir-autogen, elixir-format
 msgid "Conversation ID copied"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/nav.ex:50
+#: lib/handbean_probe/home_screen/nav.ex:53
 #: lib/handbean_probe/home_screen/nav.ex:127
+#: lib/handbean_probe/home_screen/nav.ex:131
+#: lib/handbean_probe/home_screen/nav.ex:156
+#: lib/handbean_probe/home_screen/nav.ex:394
 #, elixir-autogen, elixir-format
 msgid "Conversation not found"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/render.ex:138
-#: lib/handbean_probe/home_screen/render.ex:257
+#: lib/handbean_probe/home_screen/render.ex:353
 #, elixir-autogen, elixir-format
 msgid "Conversations"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/chat.ex:242
+#: lib/handbean_probe/home_screen/chat.ex:305
+#: lib/handbean_probe/home_screen/nav.ex:222
 #, elixir-autogen, elixir-format
 msgid "Could not create the conversation. Check available storage."
 msgstr ""
 
-#: lib/handbean_probe/home_screen/chat.ex:131
+#: lib/handbean_probe/home_screen/chat.ex:148
 #, elixir-autogen, elixir-format
 msgid "Could not open. Check that the session is still available."
 msgstr ""
 
 #: lib/handbean_probe/model_settings/forms.ex:23
-#: lib/handbean_probe/model_settings/providers.ex:109
-#: lib/handbean_probe/model_settings/providers.ex:125
-#: lib/handbean_probe/model_settings/providers.ex:251
-#: lib/handbean_probe/model_settings/providers.ex:255
+#: lib/handbean_probe/model_settings/providers.ex:113
+#: lib/handbean_probe/model_settings/providers.ex:129
+#: lib/handbean_probe/model_settings/providers.ex:267
+#: lib/handbean_probe/model_settings/providers.ex:271
 #, elixir-autogen, elixir-format
 msgid "Could not read model configuration"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:88
+#: lib/handbean_probe/model_settings/render.ex:138
 #, elixir-autogen, elixir-format
 msgid "Default model"
 msgstr ""
 
-#: lib/handbean_probe/native_approval.ex:47
-#, elixir-autogen, elixir-format
-msgid "Denies tools by default; existing explicit rules may still allow operations."
-msgstr ""
-
-#: lib/handbean_probe/native_approval.ex:296
+#: lib/handbean_probe/native_approval.ex:299
 #, elixir-autogen, elixir-format
 msgid "Deny"
 msgstr ""
@@ -190,19 +171,10 @@ msgstr ""
 msgid "Display name"
 msgstr ""
 
-#: lib/handbean_probe/work_timeline.ex:126
-#, elixir-autogen, elixir-format
-msgid "Edited %{path}"
-msgstr ""
-
-#: lib/handbean_probe/model_settings/providers.ex:379
+#: lib/handbean_probe/model_settings/providers.ex:406
+#: lib/handbean_probe/model_settings/providers.ex:410
 #, elixir-autogen, elixir-format
 msgid "Enter a valid HTTPS Base URL"
-msgstr ""
-
-#: lib/handbean_probe/work_timeline.ex:148
-#, elixir-autogen, elixir-format
-msgid "Explored %{details}"
 msgstr ""
 
 #: lib/handbean_probe/native_approval.ex:25
@@ -210,32 +182,29 @@ msgstr ""
 msgid "Smart approval"
 msgstr ""
 
-#: lib/handbean_probe/native_timeline.ex:111
+#: lib/handbean_probe/native_timeline.ex:114
 #, elixir-autogen, elixir-format
 msgid "Generating…"
 msgstr ""
 
-#: lib/handbean_probe/native_timeline.ex:129
-#, elixir-autogen, elixir-format
-msgid "Hide Work"
-msgstr ""
-
-#: lib/handbean_probe/native_approval.ex:223
+#: lib/handbean_probe/native_approval.ex:226
 #, elixir-autogen, elixir-format
 msgid "Later"
 msgstr ""
 
+#: lib/handbean_probe/model_settings/render.ex:135
 #: lib/handbean_probe/model_settings/render_forms.ex:20
 #, elixir-autogen, elixir-format
 msgid "Model"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/render.ex:196
+#: lib/handbean_probe/home_screen/render.ex:357
+#: lib/handbean_probe/home_screen/settings_hub.ex:56
 #, elixir-autogen, elixir-format
 msgid "Model / AI"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/providers.ex:150
+#: lib/handbean_probe/model_settings/providers.ex:154
 #, elixir-autogen, elixir-format
 msgid "Model saved"
 msgstr ""
@@ -245,34 +214,29 @@ msgstr ""
 msgid "Model: %{model}"
 msgstr ""
 
-#: lib/handbean_probe/native_history.ex:51
-#, elixir-autogen, elixir-format
-msgid "No conversations yet"
-msgstr ""
-
-#: lib/handbean_probe/native_timeline.ex:283
+#: lib/handbean_probe/native_timeline.ex:405
 #, elixir-autogen, elixir-format
 msgid "No output yet"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/render.ex:167
+#: lib/handbean_probe/home_screen/render.ex:244
 #, elixir-autogen, elixir-format
 msgid "Not implemented yet"
 msgstr ""
 
-#: lib/handbean_probe/native_timeline.ex:299
+#: lib/handbean_probe/native_timeline.ex:545
 #, elixir-autogen, elixir-format
 msgid "Open preview · %{title}"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/chat.ex:155
+#: lib/handbean_probe/home_screen/chat.ex:177
 #, elixir-autogen, elixir-format
 msgid "Permission settings could not be saved. Please try again."
 msgstr ""
 
-#: lib/handbean_probe/home_screen/chat.ex:220
-#: lib/handbean_probe/home_screen/chat.ex:422
-#: lib/handbean_probe/native_chat.ex:145
+#: lib/handbean_probe/home_screen/chat.ex:274
+#: lib/handbean_probe/home_screen/chat.ex:592
+#: lib/handbean_probe/native_chat.ex:193
 #, elixir-autogen, elixir-format
 msgid "Please enter a message"
 msgstr ""
@@ -282,12 +246,12 @@ msgstr ""
 msgid "Provider: %{provider}"
 msgstr ""
 
-#: lib/handbean_probe/native_approval.ex:27
+#: lib/handbean_probe/native_approval.ex:28
 #, elixir-autogen, elixir-format
 msgid "Read-only mode"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:114
+#: lib/handbean_probe/model_settings/render.ex:151
 #, elixir-autogen, elixir-format
 msgid "Reasoning"
 msgstr ""
@@ -302,17 +266,17 @@ msgstr ""
 msgid "Reasoning: off"
 msgstr ""
 
-#: lib/handbean_probe/native_approval.ex:266
+#: lib/handbean_probe/native_approval.ex:269
 #, elixir-autogen, elixir-format
 msgid "Remember rule: %{pattern}"
 msgstr ""
 
-#: lib/handbean_probe/native_approval.ex:226
+#: lib/handbean_probe/native_approval.ex:229
 #, elixir-autogen, elixir-format
 msgid "Review the following actions. They run only after you allow them; later leaves them waiting."
 msgstr ""
 
-#: lib/handbean_probe/native_approval.ex:43
+#: lib/handbean_probe/native_approval.ex:46
 #, elixir-autogen, elixir-format
 msgid "Runs ordinary tools automatically. AI reviews operations that need approval."
 msgstr ""
@@ -322,7 +286,7 @@ msgstr ""
 msgid "Safe mode"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/defaults.ex:69
+#: lib/handbean_probe/model_settings/defaults.ex:71
 #, elixir-autogen, elixir-format
 msgid "Save failed. Check that the workspace is writable."
 msgstr ""
@@ -333,28 +297,17 @@ msgstr ""
 msgid "Save model"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/defaults.ex:68
+#: lib/handbean_probe/model_settings/defaults.ex:70
 #, elixir-autogen, elixir-format
 msgid "Saved. Takes effect on the next send."
 msgstr ""
 
-#: lib/handbean_probe/native_approval.ex:33
-#, elixir-autogen, elixir-format
-msgid "Saves to the current workspace and does not auto-approve a pending operation. More specific tool rules still take precedence."
-msgstr ""
-
-#: lib/handbean_probe/home_screen/render.ex:208
-#: lib/handbean_probe/home_screen/render.ex:360
-#, elixir-autogen, elixir-format
-msgid "Scheduled tasks"
-msgstr ""
-
-#: lib/handbean_probe/home_screen/render.ex:375
+#: lib/handbean_probe/home_screen/render.ex:480
 #, elixir-autogen, elixir-format
 msgid "Select a model"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/render.ex:182
+#: lib/handbean_probe/home_screen/render.ex:299
 #, elixir-autogen, elixir-format
 msgid "Send a message and work with AI"
 msgstr ""
@@ -364,128 +317,125 @@ msgstr ""
 msgid "Send a message…"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/chat.ex:320
-#: lib/handbean_probe/home_screen/chat.ex:459
+#: lib/handbean_probe/home_screen/chat.ex:490
+#: lib/handbean_probe/home_screen/chat.ex:629
 #, elixir-autogen, elixir-format
 msgid "Send failed. Check the model configuration and network, then try again."
 msgstr ""
 
-#: lib/handbean_probe/home_screen/render.ex:260
+#: lib/handbean_probe/home_screen/render.ex:264
+#: lib/handbean_probe/home_screen/render.ex:365
 #, elixir-autogen, elixir-format
 msgid "Settings"
 msgstr ""
 
-#: lib/handbean_probe/native_timeline.ex:130
-#, elixir-autogen, elixir-format
-msgid "Show Work"
-msgstr ""
-
-#: lib/handbean_probe/home_screen/render.ex:177
+#: lib/handbean_probe/home_screen/render.ex:294
 #, elixir-autogen, elixir-format
 msgid "Start a new conversation"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/render.ex:60
+#: lib/handbean_probe/home_screen/render.ex:81
 #, elixir-autogen, elixir-format
 msgid "Stopping…"
 msgstr ""
 
-#: lib/handbean_probe/native_timeline.ex:205
+#: lib/handbean_probe/native_timeline.ex:270
+#: lib/handbean_probe/workspace_memory.ex:574
 #, elixir-autogen, elixir-format
 msgid "System"
 msgstr ""
 
-#: lib/handbean_probe/native_timeline.ex:306
+#: lib/handbean_probe/native_timeline.ex:552
 #, elixir-autogen, elixir-format
 msgid "Take over browser · %{reason}"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/nav.ex:152
+#: lib/handbean_probe/home_screen/nav.ex:419
 #, elixir-autogen, elixir-format
 msgid "The conversation in the notification is unavailable"
 msgstr ""
 
-#: lib/handbean_probe/native_timeline.ex:111
+#: lib/handbean_probe/native_timeline.ex:114
 #, elixir-autogen, elixir-format
 msgid "Thinking…"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/providers.ex:194
+#: lib/handbean_probe/model_settings/providers.ex:212
 #, elixir-autogen, elixir-format
 msgid "This model already exists. Use edit instead."
 msgstr ""
 
-#: lib/handbean_probe/home_screen/render.ex:168
+#: lib/handbean_probe/home_screen/render.ex:245
 #, elixir-autogen, elixir-format
 msgid "This native experiment only opens chat, workspaces, and model settings."
 msgstr ""
 
-#: lib/handbean_probe/native_approval.ex:218
+#: lib/handbean_probe/native_approval.ex:221
 #, elixir-autogen, elixir-format
 msgid "Tool action needs approval"
 msgstr ""
 
-#: lib/handbean_probe/native_approval.ex:31
+#: lib/handbean_probe/native_approval.ex:32
 #, elixir-autogen, elixir-format
 msgid "Tool permissions"
 msgstr ""
 
-#: lib/handbean_probe/native_timeline.ex:110
+#: lib/handbean_probe/native_timeline.ex:113
 #, elixir-autogen, elixir-format
 msgid "Waiting for approval…"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/render.ex:112
+#: lib/handbean_probe/home_screen/render.ex:147
 #, elixir-autogen, elixir-format
 msgid "Waiting for tool approval · Review"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/render.ex:254
+#: lib/handbean_probe/home_screen/render.ex:350
+#: lib/handbean_probe/home_screen/settings_hub.ex:29
+#: lib/handbean_probe/home_screen/settings_hub.ex:40
+#: lib/handbean_probe/home_screen/settings_hub.ex:43
 #: lib/handbean_probe/home_screen/share.ex:393
 #: lib/handbean_probe/native_workspace_tree.ex:35
-#: lib/handbean_probe/native_workspace_tree.ex:110
 #: lib/handbean_probe/native_workspaces.ex:35
+#: lib/handbean_probe/workspace_memory.ex:241
+#: lib/handbean_probe/workspace_memory.ex:594
+#: lib/handbean_probe/workspace_memory.ex:598
 #, elixir-autogen, elixir-format
 msgid "Workspace"
 msgstr ""
 
-#: lib/handbean_probe/home_screen.ex:108
+#: lib/handbean_probe/home_screen.ex:123
 #, elixir-autogen, elixir-format
 msgid "Workspace initialization failed"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/defaults.ex:35
+#: lib/handbean_probe/model_settings/defaults.ex:37
 #, elixir-autogen, elixir-format
 msgid "Workspace policy does not allow this model"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/labels.ex:44
+#: lib/handbean_probe/model_settings/labels.ex:46
 #, elixir-autogen, elixir-format
 msgid "API key: configured"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/labels.ex:43
-#: lib/handbean_probe/model_settings/labels.ex:46
+#: lib/handbean_probe/model_settings/labels.ex:45
+#: lib/handbean_probe/model_settings/labels.ex:48
 #, elixir-autogen, elixir-format
 msgid "API key: not configured"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:258
-#, elixir-autogen, elixir-format
-msgid "Allowlist"
-msgstr ""
-
-#: lib/handbean_probe/model_settings/labels.ex:102
+#: lib/handbean_probe/model_settings/labels.ex:111
 #, elixir-autogen, elixir-format
 msgid "Catalog defaultModel"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/labels.ex:101
+#: lib/handbean_probe/model_settings/labels.ex:110
 #, elixir-autogen, elixir-format
 msgid "Catalog defaultProvider"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/providers.ex:338
+#: lib/handbean_probe/model_settings/providers.ex:354
 #, elixir-autogen, elixir-format
 msgid "Choose a replacement before deleting a referenced entry"
 msgstr ""
@@ -500,19 +450,15 @@ msgstr ""
 msgid "Context window"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/policy.ex:67
+#: lib/handbean_probe/model_settings/policy.ex:92
 #, elixir-autogen, elixir-format
 msgid "Current default model is not allowed. Choose an allowed model before sending."
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:71
+#: lib/handbean_probe/model_settings/render.ex:116
+#: lib/handbean_probe/model_settings/render.ex:128
 #, elixir-autogen, elixir-format
 msgid "Current workspace"
-msgstr ""
-
-#: lib/handbean_probe/model_settings/render.ex:416
-#, elixir-autogen, elixir-format
-msgid "Delete model"
 msgstr ""
 
 #: lib/handbean_probe/model_settings/render_confirm.ex:13
@@ -520,7 +466,7 @@ msgstr ""
 msgid "Delete model %{model}?"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:386
+#: lib/handbean_probe/model_settings/render.ex:614
 #, elixir-autogen, elixir-format
 msgid "Delete provider"
 msgstr ""
@@ -530,35 +476,35 @@ msgstr ""
 msgid "Delete provider %{provider} and its %{count} models?"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/labels.ex:141
+#: lib/handbean_probe/model_settings/labels.ex:150
 #, elixir-autogen, elixir-format
 msgid "Effective max output tokens: %{value} (%{source})"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/labels.ex:79
+#: lib/handbean_probe/model_settings/labels.ex:88
 #, elixir-autogen, elixir-format
 msgid "Effective: %{state} (%{source})"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:175
-#: lib/handbean_probe/model_settings/render.ex:176
+#: lib/handbean_probe/model_settings/render.ex:240
 #, elixir-autogen, elixir-format
 msgid "Follow default model"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:181
-#: lib/handbean_probe/model_settings/render.ex:182
+#: lib/handbean_probe/model_settings/labels.ex:74
+#: lib/handbean_probe/model_settings/render.ex:489
 #, elixir-autogen, elixir-format
 msgid "Model default"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/labels.ex:105
+#: lib/handbean_probe/model_settings/labels.ex:114
 #, elixir-autogen, elixir-format
 msgid "Global Model/AI %{field}"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/labels.ex:72
-#: lib/handbean_probe/model_settings/render.ex:69
+#: lib/handbean_probe/model_settings/labels.ex:81
+#: lib/handbean_probe/model_settings/render.ex:114
+#: lib/handbean_probe/model_settings/render.ex:127
 #, elixir-autogen, elixir-format
 msgid "Global default"
 msgstr ""
@@ -568,118 +514,70 @@ msgstr ""
 msgid "Max output tokens"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:185
+#: lib/handbean_probe/model_settings/render.ex:266
 #, elixir-autogen, elixir-format
 msgid "Memory scope"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:158
-#, elixir-autogen, elixir-format
-msgid "Memory: off"
-msgstr ""
-
-#: lib/handbean_probe/model_settings/render.ex:158
-#, elixir-autogen, elixir-format
-msgid "Memory: on"
-msgstr ""
-
-#: lib/handbean_probe/model_settings/providers.ex:355
+#: lib/handbean_probe/model_settings/providers.ex:371
 #, elixir-autogen, elixir-format
 msgid "Model deleted"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/policy.ex:64
+#: lib/handbean_probe/model_settings/policy.ex:89
 #, elixir-autogen, elixir-format
 msgid "No model is allowed in this workspace. Fix the allowlist before sending."
 msgstr ""
 
 #: lib/handbean_probe/mcp_settings.ex:159
-#: lib/handbean_probe/model_settings/render.ex:270
-#: lib/handbean_probe/model_settings/render.ex:456
+#: lib/handbean_probe/model_settings/render.ex:703
 #, elixir-autogen, elixir-format
 msgid "None"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/labels.ex:51
-#: lib/handbean_probe/model_settings/render.ex:427
+#: lib/handbean_probe/model_settings/labels.ex:50
+#: lib/handbean_probe/model_settings/render.ex:365
+#: lib/handbean_probe/model_settings/render.ex:674
 #, elixir-autogen, elixir-format
 msgid "None (use provider default)"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:150
-#, elixir-autogen, elixir-format
-msgid "Observational memory"
-msgstr ""
-
-#: lib/handbean_probe/model_settings/render.ex:173
+#: lib/handbean_probe/model_settings/render.ex:250
 #, elixir-autogen, elixir-format
 msgid "Memory model"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/labels.ex:99
+#: lib/handbean_probe/model_settings/labels.ex:108
 #, elixir-autogen, elixir-format
 msgid "Only checked models are allowed in this workspace."
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:268
-#, elixir-autogen, elixir-format
-msgid "Policy default"
-msgstr ""
-
-#: lib/handbean_probe/model_settings/render.ex:194
+#: lib/handbean_probe/model_settings/render.ex:281
 #, elixir-autogen, elixir-format
 msgid "Privacy mode"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/providers.ex:362
+#: lib/handbean_probe/model_settings/providers.ex:378
 #, elixir-autogen, elixir-format
 msgid "Provider deleted"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render_forms.ex:118
-#, elixir-autogen, elixir-format
-msgid "Provider max output tokens (override)"
-msgstr ""
-
-#: lib/handbean_probe/model_settings/providers.ex:169
+#: lib/handbean_probe/home_screen/settings.ex:211
+#: lib/handbean_probe/home_screen/settings.ex:283
+#: lib/handbean_probe/model_settings/providers.ex:187
 #, elixir-autogen, elixir-format
 msgid "Provider saved"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:220
-#, elixir-autogen, elixir-format
-msgid "Recent context limit"
-msgstr ""
-
-#: lib/handbean_probe/model_settings/memory.ex:42
-#, elixir-autogen, elixir-format
-msgid "Recent context limit must be zero or a positive integer"
-msgstr ""
-
-#: lib/handbean_probe/model_settings/labels.ex:113
+#: lib/handbean_probe/model_settings/labels.ex:122
 #, elixir-autogen, elixir-format
 msgid "Referenced setting"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:179
-#, elixir-autogen, elixir-format
-msgid "Memory reasoning"
-msgstr ""
-
-#: lib/handbean_probe/model_settings/render.ex:225
-#, elixir-autogen, elixir-format
-msgid "Save memory details"
-msgstr ""
-
 #: lib/handbean_probe/model_settings/render_forms.ex:97
-#: lib/handbean_probe/model_settings/render_forms.ex:135
+#: lib/handbean_probe/model_settings/render_forms.ex:123
 #, elixir-autogen, elixir-format
 msgid "Save provider"
-msgstr ""
-
-#: lib/handbean_probe/model_settings/render.ex:274
-#, elixir-autogen, elixir-format
-msgid "Save workspace policy"
 msgstr ""
 
 #: lib/handbean_probe/model_settings/render_confirm.ex:56
@@ -692,78 +590,75 @@ msgstr ""
 msgid "Still referenced. Choose a replacement, then confirm."
 msgstr ""
 
-#: lib/handbean_probe/model_settings/labels.ex:116
+#: lib/handbean_probe/model_settings/labels.ex:125
 #, elixir-autogen, elixir-format
 msgid "%{count} workspace settings files could not be read. References there are unknown."
 msgstr ""
 
-#: lib/handbean_probe/model_settings/providers.ex:328
+#: lib/handbean_probe/model_settings/providers.ex:344
 #: lib/handbean_probe/model_settings/render_confirm.ex:40
 #, elixir-autogen, elixir-format
 msgid "This is the provider's only model. Delete the provider instead."
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:253
+#: lib/handbean_probe/home_screen/settings_hub.ex:99
+#: lib/handbean_probe/model_settings/render.ex:344
+#: lib/handbean_probe/model_settings/render.ex:478
 #, elixir-autogen, elixir-format
 msgid "Unrestricted"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/labels.ex:108
+#: lib/handbean_probe/model_settings/labels.ex:117
 #, elixir-autogen, elixir-format
 msgid "Workspace %{id} Model/AI %{field}"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/labels.ex:111
+#: lib/handbean_probe/model_settings/labels.ex:120
 #, elixir-autogen, elixir-format
 msgid "Workspace %{id} policy default"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:235
-#, elixir-autogen, elixir-format
-msgid "Workspace model policy"
-msgstr ""
-
-#: lib/handbean_probe/model_settings/policy.ex:61
+#: lib/handbean_probe/model_settings/policy.ex:86
 #, elixir-autogen, elixir-format
 msgid "Workspace model policy is invalid. Fix settings before sending."
 msgstr ""
 
-#: lib/handbean_probe/model_settings/labels.ex:84
+#: lib/handbean_probe/model_settings/labels.ex:93
 #, elixir-autogen, elixir-format
 msgid "global default"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/labels.ex:137
+#: lib/handbean_probe/model_settings/labels.ex:146
 #, elixir-autogen, elixir-format
 msgid "model value"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/labels.ex:142
+#: lib/handbean_probe/model_settings/labels.ex:151
 #, elixir-autogen, elixir-format
 msgid "none"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/labels.ex:80
+#: lib/handbean_probe/model_settings/labels.ex:89
 #, elixir-autogen, elixir-format
 msgid "off"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/labels.ex:80
+#: lib/handbean_probe/model_settings/labels.ex:89
 #, elixir-autogen, elixir-format
 msgid "on"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/labels.ex:136
+#: lib/handbean_probe/model_settings/labels.ex:145
 #, elixir-autogen, elixir-format
 msgid "provider override"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/labels.ex:138
+#: lib/handbean_probe/model_settings/labels.ex:147
 #, elixir-autogen, elixir-format
 msgid "unset (request omits max_tokens or uses the protocol default)"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/labels.ex:83
+#: lib/handbean_probe/model_settings/labels.ex:92
 #, elixir-autogen, elixir-format
 msgid "workspace override"
 msgstr ""
@@ -797,57 +692,57 @@ msgstr ""
 msgid "Add to draft"
 msgstr ""
 
-#: lib/handbean_probe/share_workspace_import.ex:71
+#: lib/handbean_probe/share_workspace_import.ex:70
 #, elixir-autogen
 msgid "Shared files (imported into the current workspace):"
 msgstr ""
 
-#: lib/handbean_probe/share_workspace_import.ex:146
+#: lib/handbean_probe/share_workspace_import.ex:200
 #, elixir-autogen
 msgid "Unknown size"
 msgstr ""
 
-#: lib/handbean_probe/share_workspace_import.ex:154
+#: lib/handbean_probe/share_workspace_import.ex:208
 #, elixir-autogen
 msgid "Up to 4 files per share"
 msgstr ""
 
-#: lib/handbean_probe/share_workspace_import.ex:155
+#: lib/handbean_probe/share_workspace_import.ex:209
 #, elixir-autogen
 msgid "File exceeds 20 MB"
 msgstr ""
 
-#: lib/handbean_probe/share_workspace_import.ex:156
+#: lib/handbean_probe/share_workspace_import.ex:210
 #, elixir-autogen
 msgid "Shared files exceed 25 MB"
 msgstr ""
 
-#: lib/handbean_probe/share_workspace_import.ex:157
+#: lib/handbean_probe/share_workspace_import.ex:211
 #, elixir-autogen
 msgid "Unsupported file source"
 msgstr ""
 
-#: lib/handbean_probe/share_workspace_import.ex:158
+#: lib/handbean_probe/share_workspace_import.ex:212
 #, elixir-autogen
 msgid "Could not read file"
 msgstr ""
 
-#: lib/handbean_probe/native_approval.ex:235
+#: lib/handbean_probe/native_approval.ex:238
 #, elixir-autogen, elixir-format
 msgid "The system browser opens an external app, not the Agent WebView in this conversation. Sharing or opening a file only means the system UI appeared, not that the other side has read or finished receiving it."
 msgstr ""
 
-#: lib/handbean_probe/native_approval.ex:280
+#: lib/handbean_probe/native_approval.ex:283
 #, elixir-autogen, elixir-format
 msgid "Pinning the export copy; approval will not read a source file that is rewritten afterwards."
 msgstr ""
 
-#: lib/handbean_probe/native_approval.ex:326
+#: lib/handbean_probe/native_approval.ex:329
 #, elixir-autogen, elixir-format
 msgid "Pinned copy %{snapshot_id} · %{display_name} · %{size_bytes} bytes"
 msgstr ""
 
-#: lib/handbean_probe/native_approval.ex:336
+#: lib/handbean_probe/native_approval.ex:339
 #, elixir-autogen, elixir-format
 msgid "Copying the export copy…"
 msgstr ""
@@ -919,62 +814,69 @@ msgstr ""
 msgid "Discard"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/platform.ex:204
+#: lib/handbean_probe/home_screen/platform.ex:228
 #, elixir-autogen, elixir-format
 msgid "At most 4 attachments"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/platform.ex:205
+#: lib/handbean_probe/home_screen/platform.ex:229
 #, elixir-autogen, elixir-format
 msgid "Unsupported file type"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/platform.ex:207
+#: lib/handbean_probe/home_screen/platform.ex:231
 #, elixir-autogen, elixir-format
 msgid "This entry point is not available"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/platform.ex:213
+#: lib/handbean_probe/home_screen/platform.ex:237
 #, elixir-autogen, elixir-format
 msgid "Attachment not added: %{reason}"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/platform.ex:226
+#: lib/handbean_probe/home_screen/platform.ex:250
 #, elixir-autogen, elixir-format
 msgid "Some material was not added: %{reasons}"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/chat.ex:453
+#: lib/handbean_probe/home_screen/chat.ex:623
 #, elixir-autogen, elixir-format
 msgid "The current model cannot send images."
 msgstr ""
 
-#: lib/handbean_probe/home_screen/nav.ex:395
+#: lib/handbean_probe/home_screen/nav.ex:687
 #: lib/handbean_probe/native_local_image.ex:108
+#: lib/handbean_probe/native_timeline.ex:309
+#: lib/handbean_probe/native_timeline.ex:327
 #, elixir-autogen, elixir-format
 msgid "Attachment"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/nav.ex:398
+#: lib/handbean_probe/home_screen/nav.ex:211
+#: lib/handbean_probe/home_screen/nav.ex:690
 #: lib/handbean_probe/home_screen/share.ex:402
-#: lib/handbean_probe/native_history.ex:114
+#: lib/handbean_probe/native_conversation_row.ex:78
+#: lib/handbean_probe/native_history.ex:244
 #, elixir-autogen, elixir-format
 msgid "New conversation"
 msgstr ""
 
-#: lib/handbean_probe/native_workspace_tree.ex:367
-#: lib/handbean_probe/native_workspace_tree.ex:440
+#: lib/handbean_probe/home_screen/settings_hub.ex:107
+#: lib/handbean_probe/home_screen/settings_hub.ex:117
+#: lib/handbean_probe/home_screen/settings_hub.ex:125
+#: lib/handbean_probe/native_workspace_tree.ex:357
+#: lib/handbean_probe/native_workspace_tree.ex:430
 #: lib/handbean_probe/native_workspaces.ex:451
 #, elixir-autogen, elixir-format
 msgid "Loading…"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:373
+#: lib/handbean_probe/model_settings/render.ex:563
 #, elixir-autogen, elixir-format
 msgid "%{count} models"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/labels.ex:75
+#: lib/handbean_probe/model_settings/labels.ex:84
 #, elixir-autogen, elixir-format
 msgid "%{origin}: %{value}"
 msgstr ""
@@ -984,19 +886,14 @@ msgstr ""
 msgid "A file name in that folder is not allowed."
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:245
-#, elixir-autogen, elixir-format
-msgid "A policy default is only used when Model/AI has no model."
-msgstr ""
-
 #: lib/handbean_probe/native_workspaces.ex:594
 #, elixir-autogen, elixir-format
 msgid "Accessible folder"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/providers.ex:82
-#: lib/handbean_probe/model_settings/providers.ex:210
-#: lib/handbean_probe/model_settings/providers.ex:369
+#: lib/handbean_probe/model_settings/providers.ex:86
+#: lib/handbean_probe/model_settings/providers.ex:228
+#: lib/handbean_probe/model_settings/providers.ex:385
 #, elixir-autogen, elixir-format
 msgid "Add a provider first"
 msgstr ""
@@ -1007,17 +904,17 @@ msgstr ""
 msgid "Add accessible folder"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:302
+#: lib/handbean_probe/model_settings/render.ex:503
 #, elixir-autogen, elixir-format
 msgid "Add model"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:301
+#: lib/handbean_probe/model_settings/render.ex:502
 #, elixir-autogen, elixir-format
 msgid "Add provider"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/labels.ex:96
+#: lib/handbean_probe/model_settings/labels.ex:105
 #, elixir-autogen, elixir-format
 msgid "All catalog models are allowed in this workspace."
 msgstr ""
@@ -1030,17 +927,6 @@ msgstr ""
 #: lib/handbean_probe/model_settings/labels.ex:39
 #, elixir-autogen, elixir-format
 msgid "Anthropic Messages"
-msgstr ""
-
-#: lib/handbean_probe/home_screen/render.ex:238
-#, elixir-autogen, elixir-format
-msgid "Appearance is not available yet"
-msgstr ""
-
-#: lib/handbean_probe/home_screen/render.ex:258
-#: lib/handbean_probe/native_artifact_delivery.ex:50
-#, elixir-autogen, elixir-format
-msgid "Attachments"
 msgstr ""
 
 #: lib/handbean_probe/native_workspaces.ex:408
@@ -1059,11 +945,6 @@ msgstr ""
 msgid "Cancel import"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:101
-#, elixir-autogen, elixir-format
-msgid "Chat uses the Model/AI default first. If that is unset, it uses the workspace policy default, then the catalog provider default."
-msgstr ""
-
 #: lib/handbean_probe/native_workspaces.ex:604
 #, elixir-autogen, elixir-format
 msgid "Choose a folder"
@@ -1074,23 +955,18 @@ msgstr ""
 msgid "Choose a folder, not a file."
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:325
+#: lib/handbean_probe/model_settings/render.ex:526
 #, elixir-autogen, elixir-format
 msgid "Choose a provider"
 msgstr ""
 
-#: lib/handbean_probe/native_artifact_delivery.ex:59
-#, elixir-autogen, elixir-format
-msgid "Choose photos"
-msgstr ""
-
-#: lib/handbean_probe/model_settings/render.ex:135
+#: lib/handbean_probe/model_settings/render.ex:168
 #, elixir-autogen, elixir-format
 msgid "Clear all workspace Model/AI overrides"
 msgstr ""
 
-#: lib/handbean_probe/native_composer.ex:168
-#: lib/handbean_probe/native_timeline.ex:72
+#: lib/handbean_probe/native_composer.ex:164
+#: lib/handbean_probe/native_timeline.ex:75
 #, elixir-autogen, elixir-format
 msgid "Close"
 msgstr ""
@@ -1126,8 +1002,8 @@ msgstr ""
 msgid "Could not create the workspace. Check available storage."
 msgstr ""
 
-#: lib/handbean_probe/native_workspace_tree.ex:546
-#: lib/handbean_probe/native_workspace_tree.ex:547
+#: lib/handbean_probe/native_workspace_tree.ex:537
+#: lib/handbean_probe/native_workspace_tree.ex:538
 #, elixir-autogen, elixir-format
 msgid "Could not list this folder."
 msgstr ""
@@ -1148,12 +1024,7 @@ msgstr ""
 msgid "Current"
 msgstr ""
 
-#: lib/handbean_probe/native_workspace_tree.ex:114
-#, elixir-autogen, elixir-format
-msgid "Current workspace only. Read-only."
-msgstr ""
-
-#: lib/handbean_probe/model_settings/forms.ex:115
+#: lib/handbean_probe/model_settings/forms.ex:117
 #: lib/handbean_probe/model_settings/render_forms.ex:75
 #, elixir-autogen, elixir-format
 msgid "Custom name"
@@ -1164,33 +1035,24 @@ msgstr ""
 msgid "Data isolated"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:199
-#, elixir-autogen, elixir-format
-msgid "Data isolated keeps observer and reflector on the device-local path. It does not mean the app never uses the network."
-msgstr ""
-
 #: lib/handbean_probe/git_settings.ex:116
 #: lib/handbean_probe/native_workspaces.ex:591
 #, elixir-autogen, elixir-format
 msgid "Default"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/providers.ex:373
+#: lib/handbean_probe/model_settings/providers.ex:389
 #, elixir-autogen, elixir-format
 msgid "Display name is required"
 msgstr ""
 
 #: lib/handbean_probe/model_settings/render.ex:24
+#: lib/handbean_probe/model_settings/render.ex:53
 #, elixir-autogen, elixir-format
 msgid "Each provider has its own URL, protocol, and API key."
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:396
-#, elixir-autogen, elixir-format
-msgid "Edit model"
-msgstr ""
-
-#: lib/handbean_probe/model_settings/render.ex:378
+#: lib/handbean_probe/model_settings/render.ex:606
 #, elixir-autogen, elixir-format
 msgid "Edit provider"
 msgstr ""
@@ -1200,19 +1062,14 @@ msgstr ""
 msgid "Enter a display name"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/providers.ex:370
+#: lib/handbean_probe/model_settings/providers.ex:386
 #, elixir-autogen, elixir-format
 msgid "Enter a model name, for example gpt-4o"
 msgstr ""
 
-#: lib/handbean_probe/native_artifact_delivery.ex:495
+#: lib/handbean_probe/native_artifact_delivery.ex:578
 #, elixir-autogen, elixir-format
 msgid "Enter a path relative to the current workspace."
-msgstr ""
-
-#: lib/handbean_probe/native_artifact_delivery.ex:83
-#, elixir-autogen, elixir-format
-msgid "Enter a path relative to the current workspace. Sharing first pins an export copy and hands it to apps such as WeChat, mail, or cloud storage; opening uses the system PDF/image/text/archive app. Arbitrary local paths are never handed to other apps."
 msgstr ""
 
 #: lib/handbean_probe/model_settings/render_forms.ex:31
@@ -1220,24 +1077,14 @@ msgstr ""
 msgid "Example: gpt-4o or claude-sonnet-4"
 msgstr ""
 
-#: lib/handbean_probe/native_workspace_open.ex:131
+#: lib/handbean_probe/native_workspace_open.ex:134
 #, elixir-autogen, elixir-format
 msgid "File"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/render.ex:88
+#: lib/handbean_probe/home_screen/render.ex:256
 #, elixir-autogen, elixir-format
 msgid "Files"
-msgstr ""
-
-#: lib/handbean_probe/native_workspace_tree.ex:110
-#, elixir-autogen, elixir-format
-msgid "Files in %{name}"
-msgstr ""
-
-#: lib/handbean_probe/native_workspace_tree.ex:453
-#, elixir-autogen, elixir-format
-msgid "Folder"
 msgstr ""
 
 #: lib/handbean_probe/native_workspaces.ex:443
@@ -1245,7 +1092,7 @@ msgstr ""
 msgid "Folders"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:49
+#: lib/handbean_probe/model_settings/render.ex:89
 #, elixir-autogen, elixir-format
 msgid "Hide details"
 msgstr ""
@@ -1255,7 +1102,7 @@ msgstr ""
 msgid "Hide full path"
 msgstr ""
 
-#: lib/handbean_probe/native_workspace_tree.ex:122
+#: lib/handbean_probe/native_workspace_tree.ex:112
 #, elixir-autogen, elixir-format
 msgid "Hide hidden"
 msgstr ""
@@ -1268,11 +1115,6 @@ msgstr ""
 #: lib/handbean_probe/model_settings/labels.ex:17
 #, elixir-autogen, elixir-format
 msgid "Highest"
-msgstr ""
-
-#: lib/handbean_probe/model_settings/render.ex:246
-#, elixir-autogen, elixir-format
-msgid "If both a Model/AI default and a policy default are set, chat uses the Model/AI default."
 msgstr ""
 
 #: lib/handbean_probe/native_local_image.ex:118
@@ -1329,12 +1171,7 @@ msgstr ""
 msgid "Known models"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/labels.ex:49
-#, elixir-autogen, elixir-format
-msgid "Leave the field blank to keep the current key. A new value replaces it."
-msgstr ""
-
-#: lib/handbean_probe/native_workspace_tree.ex:427
+#: lib/handbean_probe/native_workspace_tree.ex:417
 #, elixir-autogen, elixir-format
 msgid "Load more"
 msgstr ""
@@ -1365,11 +1202,12 @@ msgid "Model name"
 msgstr ""
 
 #: lib/handbean_probe/model_settings/render.ex:25
+#: lib/handbean_probe/model_settings/render.ex:54
 #, elixir-autogen, elixir-format
 msgid "Models use that provider's connection settings. Edit them on the provider form."
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:49
+#: lib/handbean_probe/model_settings/render.ex:89
 #, elixir-autogen, elixir-format
 msgid "More details"
 msgstr ""
@@ -1379,17 +1217,17 @@ msgstr ""
 msgid "New provider"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/labels.ex:93
+#: lib/handbean_probe/model_settings/labels.ex:102
 #, elixir-autogen, elixir-format
 msgid "No allowlist is set. Every catalog model can be used."
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:358
+#: lib/handbean_probe/model_settings/render.ex:581
 #, elixir-autogen, elixir-format
 msgid "No models yet for this provider."
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:315
+#: lib/handbean_probe/model_settings/render.ex:516
 #, elixir-autogen, elixir-format
 msgid "No providers yet. Add a provider, then add a model."
 msgstr ""
@@ -1404,7 +1242,7 @@ msgstr ""
 msgid "No subfolders"
 msgstr ""
 
-#: lib/handbean_probe/native_workspace_tree.ex:233
+#: lib/handbean_probe/native_workspace_tree.ex:223
 #, elixir-autogen, elixir-format
 msgid "No workspace is open."
 msgstr ""
@@ -1414,20 +1252,23 @@ msgstr ""
 msgid "Not enough storage to import this folder."
 msgstr ""
 
+#: lib/handbean_probe/home_screen/settings_hub.ex:131
 #: lib/handbean_probe/model_settings/labels.ex:27
 #: lib/handbean_probe/model_settings/labels.ex:35
-#: lib/handbean_probe/model_settings/labels.ex:150
+#: lib/handbean_probe/model_settings/labels.ex:159
 #, elixir-autogen, elixir-format
 msgid "Not set"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/labels.ex:147
+#: lib/handbean_probe/model_settings/labels.ex:156
 #, elixir-autogen, elixir-format
 msgid "Not set (provider default)"
 msgstr ""
 
+#: lib/handbean_probe/home_screen/settings_hub.ex:111
 #: lib/handbean_probe/model_settings/labels.ex:12
 #: lib/handbean_probe/model_settings/labels.ex:18
+#: lib/handbean_probe/workspace_memory.ex:272
 #, elixir-autogen, elixir-format
 msgid "Off"
 msgstr ""
@@ -1437,42 +1278,31 @@ msgstr ""
 msgid "Only folders the app can already read. This is not the system Downloads picker."
 msgstr ""
 
-#: lib/handbean_probe/native_artifact_delivery.ex:492
+#: lib/handbean_probe/native_artifact_delivery.ex:575
 #, elixir-autogen, elixir-format
 msgid "Only http or https URLs are supported; file and script links cannot be opened."
 msgstr ""
 
-#: lib/handbean_probe/native_timeline.ex:414
+#: lib/handbean_probe/native_timeline.ex:699
 #, elixir-autogen, elixir-format
 msgid "Open"
 msgstr ""
 
-#: lib/handbean_probe/native_artifact_delivery.ex:60
-#, elixir-autogen, elixir-format
-msgid "Open a web page (system browser)"
-msgstr ""
-
-#: lib/handbean_probe/native_timeline.ex:415
-#: lib/handbean_probe/native_workspace_open.ex:135
+#: lib/handbean_probe/native_timeline.ex:700
+#: lib/handbean_probe/native_workspace_open.ex:138
 #, elixir-autogen, elixir-format
 msgid "Open in another app"
 msgstr ""
 
-#: lib/handbean_probe/native_artifact_delivery.ex:80
-#: lib/handbean_probe/native_timeline.ex:398
+#: lib/handbean_probe/native_timeline.ex:683
 #, elixir-autogen, elixir-format
 msgid "Open in system browser"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/render.ex:362
-#: lib/handbean_probe/model_settings/render.ex:36
+#: lib/handbean_probe/home_screen/render.ex:467
+#: lib/handbean_probe/model_settings/render.ex:73
 #, elixir-autogen, elixir-format
 msgid "Open menu"
-msgstr ""
-
-#: lib/handbean_probe/native_artifact_delivery.ex:101
-#, elixir-autogen, elixir-format
-msgid "Open with a system app"
 msgstr ""
 
 #: lib/handbean_probe/model_settings/labels.ex:37
@@ -1485,70 +1315,51 @@ msgstr ""
 msgid "OpenAI Responses"
 msgstr ""
 
-#: lib/handbean_probe/native_artifact_delivery.ex:52
-#, elixir-autogen, elixir-format
-msgid "Pick up to 4 photos from the gallery and add them to the current draft. Nothing is sent to a model until you tap send; only then can a cloud model receive them."
-msgstr ""
-
 #: lib/handbean_probe/native_workspaces.ex:592
 #, elixir-autogen, elixir-format
 msgid "Private empty workspace"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:328
+#: lib/handbean_probe/model_settings/render.ex:529
 #: lib/handbean_probe/model_settings/render_forms.ex:93
 #, elixir-autogen, elixir-format
 msgid "Provider"
 msgstr ""
 
-#: lib/handbean_probe/native_workspace_tree.ex:127
+#: lib/handbean_probe/native_schedules.ex:88
+#: lib/handbean_probe/native_workspace_tree.ex:117
 #, elixir-autogen, elixir-format
 msgid "Refresh"
 msgstr ""
 
-#: lib/handbean_probe/native_composer.ex:121
-#: lib/handbean_probe/native_composer.ex:169
+#: lib/handbean_probe/native_composer.ex:117
+#: lib/handbean_probe/native_composer.ex:165
 #, elixir-autogen, elixir-format
 msgid "Remove"
 msgstr ""
 
-#: lib/handbean_probe/native_workspace_tree.ex:413
+#: lib/handbean_probe/native_workspace_tree.ex:403
 #, elixir-autogen, elixir-format
 msgid "Retry"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render_forms.ex:114
-#, elixir-autogen, elixir-format
-msgid "Saved keys are never shown again."
-msgstr ""
-
-#: lib/handbean_probe/model_settings/render.ex:346
+#: lib/handbean_probe/model_settings/render.ex:547
 #, elixir-autogen, elixir-format
 msgid "Select a provider to see its models."
 msgstr ""
 
-#: lib/handbean_probe/native_workspace_open.ex:139
+#: lib/handbean_probe/native_workspace_open.ex:142
 #, elixir-autogen, elixir-format
 msgid "Share"
 msgstr ""
 
-#: lib/handbean_probe/native_timeline.ex:419
+#: lib/handbean_probe/native_timeline.ex:704
 #, elixir-autogen, elixir-format
 msgid "Share file"
 msgstr ""
 
-#: lib/handbean_probe/native_artifact_delivery.ex:81
-#, elixir-autogen, elixir-format
-msgid "Share or open an artifact file"
-msgstr ""
-
-#: lib/handbean_probe/native_artifact_delivery.ex:102
-#, elixir-autogen, elixir-format
-msgid "Share to another app"
-msgstr ""
-
-#: lib/handbean_probe/share_workspace_import.ex:91
-#: lib/handbean_probe/share_workspace_import.ex:95
+#: lib/handbean_probe/share_workspace_import.ex:90
+#: lib/handbean_probe/share_workspace_import.ex:94
 #, elixir-autogen, elixir-format
 msgid "Shared file"
 msgstr ""
@@ -1558,7 +1369,7 @@ msgstr ""
 msgid "Show full path"
 msgstr ""
 
-#: lib/handbean_probe/native_workspace_tree.ex:122
+#: lib/handbean_probe/native_workspace_tree.ex:112
 #, elixir-autogen, elixir-format
 msgid "Show hidden"
 msgstr ""
@@ -1566,11 +1377,6 @@ msgstr ""
 #: lib/handbean_probe/model_settings/labels.ex:30
 #, elixir-autogen, elixir-format
 msgid "Standard"
-msgstr ""
-
-#: lib/handbean_probe/model_settings/render.ex:198
-#, elixir-autogen, elixir-format
-msgid "Standard may use the same remote models as chat."
 msgstr ""
 
 #: lib/handbean_probe/native_workspaces.ex:338
@@ -1593,8 +1399,8 @@ msgstr ""
 msgid "Switching projects keeps running work in the previous conversation."
 msgstr ""
 
-#: lib/handbean_probe/native_workspace_open.ex:277
-#: lib/handbean_probe/native_workspace_tree.ex:545
+#: lib/handbean_probe/native_workspace_open.ex:286
+#: lib/handbean_probe/native_workspace_tree.ex:536
 #, elixir-autogen, elixir-format
 msgid "Symbolic links cannot be opened here."
 msgstr ""
@@ -1615,18 +1421,19 @@ msgstr ""
 msgid "That location cannot be added as a workspace."
 msgstr ""
 
-#: lib/handbean_probe/native_workspace_open.ex:268
-#: lib/handbean_probe/native_workspace_open.ex:271
+#: lib/handbean_probe/native_workspace_open.ex:277
+#: lib/handbean_probe/native_workspace_open.ex:280
 #, elixir-autogen, elixir-format
 msgid "That path is not a file in this workspace."
 msgstr ""
 
-#: lib/handbean_probe/home_screen/nav.ex:101
+#: lib/handbean_probe/home_screen/nav.ex:233
+#: lib/handbean_probe/home_screen/schedules.ex:235
 #, elixir-autogen, elixir-format
 msgid "That workspace is no longer available"
 msgstr ""
 
-#: lib/handbean_probe/native_artifact_delivery.ex:494
+#: lib/handbean_probe/native_artifact_delivery.ex:577
 #, elixir-autogen, elixir-format
 msgid "The URL must not contain a username or password."
 msgstr ""
@@ -1636,50 +1443,45 @@ msgstr ""
 msgid "The display name is not a filesystem path. The app creates a private folder."
 msgstr ""
 
-#: lib/handbean_probe/native_workspace_open.ex:280
-#: lib/handbean_probe/native_workspace_open.ex:286
 #: lib/handbean_probe/native_workspace_open.ex:289
+#: lib/handbean_probe/native_workspace_open.ex:295
+#: lib/handbean_probe/native_workspace_open.ex:298
 #, elixir-autogen, elixir-format
 msgid "The file could not be opened."
 msgstr ""
 
-#: lib/handbean_probe/native_artifact_delivery.ex:496
+#: lib/handbean_probe/native_artifact_delivery.ex:579
 #, elixir-autogen, elixir-format
 msgid "The file exceeds the export size limit."
 msgstr ""
 
-#: lib/handbean_probe/native_workspace_open.ex:274
+#: lib/handbean_probe/native_workspace_open.ex:283
 #, elixir-autogen, elixir-format
 msgid "The file is gone."
 msgstr ""
 
-#: lib/handbean_probe/native_artifact_delivery.ex:499
+#: lib/handbean_probe/native_artifact_delivery.ex:582
 #, elixir-autogen, elixir-format
 msgid "The system UI cannot be opened in this environment."
 msgstr ""
 
-#: lib/handbean_probe/home_screen/render.ex:240
-#, elixir-autogen, elixir-format
-msgid "Theme and display options are not part of this native experiment. Chat, workspaces, and model settings are available."
-msgstr ""
-
-#: lib/handbean_probe/native_workspace_open.ex:283
+#: lib/handbean_probe/native_workspace_open.ex:292
 #, elixir-autogen, elixir-format
 msgid "This file is no longer the open request."
 msgstr ""
 
-#: lib/handbean_probe/native_artifact_delivery.ex:501
-#: lib/handbean_probe/native_workspace_open.ex:262
+#: lib/handbean_probe/native_artifact_delivery.ex:584
+#: lib/handbean_probe/native_workspace_open.ex:271
 #, elixir-autogen, elixir-format
 msgid "This file is not in the current workspace."
 msgstr ""
 
-#: lib/handbean_probe/native_workspace_tree.ex:393
+#: lib/handbean_probe/native_workspace_tree.ex:383
 #, elixir-autogen, elixir-format
 msgid "This folder is empty."
 msgstr ""
 
-#: lib/handbean_probe/native_workspace_tree.ex:544
+#: lib/handbean_probe/native_workspace_tree.ex:535
 #, elixir-autogen, elixir-format
 msgid "This folder is gone."
 msgstr ""
@@ -1694,25 +1496,25 @@ msgstr ""
 msgid "This is not a readable app folder path."
 msgstr ""
 
-#: lib/handbean_probe/model_settings/providers.ex:334
+#: lib/handbean_probe/model_settings/providers.ex:350
 #: lib/handbean_probe/model_settings/render_confirm.ex:43
 #, elixir-autogen, elixir-format
 msgid "This is the only provider. The catalog must keep at least one."
 msgstr ""
 
-#: lib/handbean_probe/native_artifact_delivery.ex:504
-#: lib/handbean_probe/native_workspace_open.ex:265
+#: lib/handbean_probe/native_artifact_delivery.ex:587
+#: lib/handbean_probe/native_workspace_open.ex:274
 #, elixir-autogen, elixir-format
 msgid "This message is no longer in the open conversation."
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:372
+#: lib/handbean_probe/model_settings/render.ex:562
 #, elixir-autogen, elixir-format
 msgid "This provider has no models yet."
 msgstr ""
 
 #: lib/handbean_probe/model_settings/labels.ex:20
-#: lib/handbean_probe/model_settings/labels.ex:71
+#: lib/handbean_probe/model_settings/labels.ex:80
 #, elixir-autogen, elixir-format
 msgid "This workspace"
 msgstr ""
@@ -1722,17 +1524,12 @@ msgstr ""
 msgid "This workspace and global"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:100
-#, elixir-autogen, elixir-format
-msgid "This workspace can override the global default."
-msgstr ""
-
-#: lib/handbean_probe/model_settings/labels.ex:90
+#: lib/handbean_probe/model_settings/labels.ex:99
 #, elixir-autogen, elixir-format
 msgid "This workspace policy file is invalid: %{reason}"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/labels.ex:55
+#: lib/handbean_probe/model_settings/labels.ex:54
 #, elixir-autogen, elixir-format
 msgid "Unknown model: %{id}"
 msgstr ""
@@ -1748,17 +1545,12 @@ msgstr ""
 msgid "Up"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:112
+#: lib/handbean_probe/model_settings/render.ex:147
 #, elixir-autogen, elixir-format
 msgid "Use global default model"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:162
-#, elixir-autogen, elixir-format
-msgid "Use global memory switch"
-msgstr ""
-
-#: lib/handbean_probe/model_settings/render.ex:132
+#: lib/handbean_probe/model_settings/render.ex:163
 #, elixir-autogen, elixir-format
 msgid "Use global reasoning"
 msgstr ""
@@ -1766,11 +1558,6 @@ msgstr ""
 #: lib/handbean_probe/native_workspaces.ex:434
 #, elixir-autogen, elixir-format
 msgid "Use this folder"
-msgstr ""
-
-#: lib/handbean_probe/native_artifact_delivery.ex:62
-#, elixir-autogen, elixir-format
-msgid "View pages, documents, orders, or login screens the Agent found in the system browser. This is not the Agent WebView in the conversation; for in-app viewing ask the Agent to use the browser tool."
 msgstr ""
 
 #: lib/handbean_probe/native_workspaces.ex:232
@@ -1783,70 +1570,60 @@ msgstr ""
 msgid "Workspace created"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/render.ex:259
-#, elixir-autogen, elixir-format
-msgid "Workspace files"
-msgstr ""
-
 #: lib/handbean_probe/native_workspaces.ex:285
 #, elixir-autogen, elixir-format
 msgid "Workspace imported"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/render.ex:197
+#: lib/handbean_probe/home_screen/render.ex:360
 #, elixir-autogen, elixir-format
 msgid "Workspaces"
 msgstr ""
 
-#: lib/handbean_probe/native_artifact_delivery.ex:93
-#, elixir-autogen, elixir-format
-msgid "e.g. reports/summary.pdf"
-msgstr ""
-
-#: lib/handbean_probe/native_workspace_tree.ex:473
+#: lib/handbean_probe/native_workspace_tree.ex:464
 #, elixir-autogen, elixir-format
 msgid "symlink skipped"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/platform.ex:210
-#: lib/handbean_probe/native_artifact_delivery.ex:507
+#: lib/handbean_probe/home_screen/platform.ex:234
+#: lib/handbean_probe/native_artifact_delivery.ex:590
 #, elixir-autogen, elixir-format
 msgid "The system operation did not answer in time and was cancelled."
 msgstr ""
 
-#: lib/handbean_probe/model_settings/subscriptions.ex:97
-#: lib/handbean_probe/model_settings/subscriptions.ex:104
+#: lib/handbean_probe/model_settings/subscriptions.ex:98
+#: lib/handbean_probe/model_settings/subscriptions.ex:105
 #, elixir-autogen, elixir-format
 msgid "ChatGPT sign-in changed before the model list was saved."
 msgstr ""
 
-#: lib/handbean_probe/model_settings/subscription_render.ex:24
+#: lib/handbean_probe/model_settings/subscription_render.ex:53
 #, elixir-autogen, elixir-format
 msgid "Choose a subscription sign-in. Subscription quota is separate from API balance."
 msgstr ""
 
-#: lib/handbean_probe/model_settings/subscriptions.ex:155
+#: lib/handbean_probe/model_settings/subscriptions.ex:156
 #, elixir-autogen, elixir-format
 msgid "Connected ChatGPT / Codex subscription"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/subscriptions.ex:156
+#: lib/handbean_probe/model_settings/subscriptions.ex:157
 #, elixir-autogen, elixir-format
 msgid "Connected Cursor subscription"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/subscriptions.ex:158
+#: lib/handbean_probe/model_settings/subscriptions.ex:159
 #, elixir-autogen, elixir-format
 msgid "Connected subscription"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/subscriptions.ex:157
+#: lib/handbean_probe/model_settings/subscriptions.ex:158
 #, elixir-autogen, elixir-format
 msgid "Connected xAI / Grok subscription"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/subscription_render.ex:70
-#: lib/handbean_probe/model_settings/subscription_render.ex:86
+#: lib/handbean_probe/model_settings/subscription_render.ex:90
+#: lib/handbean_probe/model_settings/subscription_render.ex:106
 #, elixir-autogen, elixir-format
 msgid "Copy"
 msgstr ""
@@ -1856,91 +1633,93 @@ msgstr ""
 msgid "Copy ID"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/settings.ex:254
-#: lib/handbean_probe/home_screen/settings.ex:282
+#: lib/handbean_probe/home_screen/settings.ex:403
+#: lib/handbean_probe/home_screen/settings.ex:431
 #, elixir-autogen, elixir-format
 msgid "Could not open the verification link."
 msgstr ""
 
-#: lib/handbean_probe/model_settings/subscription_render.ex:71
+#: lib/handbean_probe/model_settings/subscription_render.ex:91
 #, elixir-autogen, elixir-format
 msgid "Open link"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/subscriptions.ex:167
+#: lib/handbean_probe/model_settings/subscriptions.ex:168
 #, elixir-autogen, elixir-format
 msgid "Open the link and authorize with your Cursor account. This uses an unofficial protocol. Cost is unknown and is not shown as free."
 msgstr ""
 
-#: lib/handbean_probe/model_settings/subscriptions.ex:161
+#: lib/handbean_probe/model_settings/subscriptions.ex:162
 #, elixir-autogen, elixir-format
 msgid "Open the link and enter the user code to authorize ChatGPT. This uses the Codex subscription, not an OpenAI API balance. Available models and limits depend on the account."
 msgstr ""
 
-#: lib/handbean_probe/model_settings/subscriptions.ex:173
+#: lib/handbean_probe/model_settings/subscriptions.ex:174
 #, elixir-autogen, elixir-format
 msgid "Open the link and enter the user code to authorize the xAI subscription."
 msgstr ""
 
-#: lib/handbean_probe/model_settings/subscriptions.ex:175
+#: lib/handbean_probe/model_settings/subscriptions.ex:176
 #, elixir-autogen, elixir-format
 msgid "Open the link to finish subscription sign-in."
 msgstr ""
 
-#: lib/handbean_probe/model_settings/subscription_render.ex:43
+#: lib/handbean_probe/model_settings/subscription_render.ex:20
 #, elixir-autogen, elixir-format
 msgid "Sign in"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/subscription_render.ex:22
+#: lib/handbean_probe/model_settings/subscription_render.ex:38
+#: lib/handbean_probe/model_settings/subscription_render.ex:51
 #, elixir-autogen, elixir-format
 msgid "Sign in with a subscription"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/subscription_render.ex:96
+#: lib/handbean_probe/model_settings/subscription_render.ex:39
+#: lib/handbean_probe/model_settings/subscription_render.ex:116
 #, elixir-autogen, elixir-format
 msgid "Starting sign-in…"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/subscriptions.ex:182
-#: lib/handbean_probe/model_settings/subscriptions.ex:194
+#: lib/handbean_probe/model_settings/subscriptions.ex:183
+#: lib/handbean_probe/model_settings/subscriptions.ex:195
 #, elixir-autogen, elixir-format
 msgid "Subscription login for %{id} is not available yet."
 msgstr ""
 
-#: lib/handbean_probe/model_settings/subscription_render.ex:42
-#: lib/handbean_probe/model_settings/subscription_render.ex:54
+#: lib/handbean_probe/model_settings/subscription_render.ex:19
+#: lib/handbean_probe/model_settings/subscription_render.ex:74
 #, elixir-autogen, elixir-format
 msgid "Subscription sign-in"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/subscriptions.ex:248
-#: lib/handbean_probe/model_settings/subscriptions.ex:251
+#: lib/handbean_probe/model_settings/subscriptions.ex:249
+#: lib/handbean_probe/model_settings/subscriptions.ex:252
 #, elixir-autogen, elixir-format
 msgid "Subscription sign-in failed."
 msgstr ""
 
-#: lib/handbean_probe/model_settings/subscription_render.ex:83
+#: lib/handbean_probe/model_settings/subscription_render.ex:103
 #, elixir-autogen, elixir-format
 msgid "User code"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/settings.ex:279
+#: lib/handbean_probe/home_screen/settings.ex:428
 #, elixir-autogen, elixir-format
 msgid "User code copied"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/subscription_render.ex:61
+#: lib/handbean_probe/model_settings/subscription_render.ex:81
 #, elixir-autogen, elixir-format
 msgid "Verification link"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/settings.ex:278
+#: lib/handbean_probe/home_screen/settings.ex:427
 #, elixir-autogen, elixir-format
 msgid "Verification link copied"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/subscription_render.ex:106
+#: lib/handbean_probe/model_settings/subscription_render.ex:126
 #, elixir-autogen, elixir-format
 msgid "Waiting for authorization…"
 msgstr ""
@@ -1981,7 +1760,7 @@ msgstr ""
 msgid "Add an HTTP server to make its tools available."
 msgstr ""
 
-#: lib/handbean_probe/app_settings.ex:92
+#: lib/handbean_probe/app_settings.ex:85
 #, elixir-autogen, elixir-format
 msgid "Alarm"
 msgstr ""
@@ -1996,14 +1775,9 @@ msgstr ""
 msgid "All workspaces, including future workspaces"
 msgstr ""
 
-#: lib/handbean_probe/app_settings.ex:86
+#: lib/handbean_probe/app_settings.ex:79
 #, elixir-autogen, elixir-format
 msgid "Allow calendar"
-msgstr ""
-
-#: lib/handbean_probe/app_settings.ex:119
-#, elixir-autogen, elixir-format
-msgid "Allowed"
 msgstr ""
 
 #: lib/handbean_probe/mcp_settings.ex:282
@@ -2011,17 +1785,18 @@ msgstr ""
 msgid "Allowed in %{count} workspaces"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/chat.ex:365
+#: lib/handbean_probe/home_screen/chat.ex:535
 #, elixir-autogen, elixir-format
 msgid "Already inserted; cannot undo."
 msgstr ""
 
-#: lib/handbean_probe/home_screen/render.ex:203
+#: lib/handbean_probe/home_screen/render.ex:363
+#: lib/handbean_probe/home_screen/settings_hub.ex:79
 #, elixir-autogen, elixir-format
 msgid "App"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/app_settings.ex:77
+#: lib/handbean_probe/home_screen/app_settings.ex:78
 #, elixir-autogen, elixir-format
 msgid "App settings are not available on this device."
 msgstr ""
@@ -2041,9 +1816,9 @@ msgstr ""
 msgid "Bearer token"
 msgstr ""
 
-#: lib/handbean_probe/app_settings.ex:127
-#: lib/handbean_probe/home_screen/app_settings.ex:75
+#: lib/handbean_probe/app_settings.ex:136
 #: lib/handbean_probe/home_screen/app_settings.ex:76
+#: lib/handbean_probe/home_screen/app_settings.ex:77
 #, elixir-autogen, elixir-format
 msgid "Bring Handbean to the front and try again."
 msgstr ""
@@ -2053,30 +1828,24 @@ msgstr ""
 msgid "Calendar"
 msgstr ""
 
-#: lib/handbean_probe/app_settings.ex:124
+#: lib/handbean_probe/app_settings.ex:133
 #, elixir-autogen, elixir-format
 msgid "Calendar access granted."
 msgstr ""
 
-#: lib/handbean_probe/app_settings.ex:112
+#: lib/handbean_probe/app_settings.ex:105
 #, elixir-autogen, elixir-format
 msgid "Calendar access has not been checked yet."
 msgstr ""
 
-#: lib/handbean_probe/app_settings.ex:116
+#: lib/handbean_probe/app_settings.ex:109
 #, elixir-autogen, elixir-format
 msgid "Calendar access is off. Allow it here, or turn it on in system settings."
 msgstr ""
 
-#: lib/handbean_probe/app_settings.ex:125
+#: lib/handbean_probe/app_settings.ex:134
 #, elixir-autogen, elixir-format
 msgid "Calendar access was not granted."
-msgstr ""
-
-#: lib/handbean_probe/home_screen/render.ex:253
-#: lib/handbean_probe/native_history.ex:95
-#, elixir-autogen, elixir-format
-msgid "Chats"
 msgstr ""
 
 #: lib/handbean_probe/app_settings.ex:62
@@ -2084,7 +1853,7 @@ msgstr ""
 msgid "Client"
 msgstr ""
 
-#: lib/handbean_probe/app_settings.ex:94
+#: lib/handbean_probe/app_settings.ex:87
 #, elixir-autogen, elixir-format
 msgid "Clock alarms open the system clock with the time filled in. They do not need a permission, and many devices still ask you to save."
 msgstr ""
@@ -2109,13 +1878,13 @@ msgstr ""
 msgid "Connected · %{count} tools"
 msgstr ""
 
-#: lib/handbean_probe/app_settings.ex:129
-#: lib/handbean_probe/home_screen/app_settings.ex:78
+#: lib/handbean_probe/app_settings.ex:138
+#: lib/handbean_probe/home_screen/app_settings.ex:79
 #, elixir-autogen, elixir-format
 msgid "Could not read calendar access."
 msgstr ""
 
-#: lib/handbean_probe/home_screen/chat.ex:368
+#: lib/handbean_probe/home_screen/chat.ex:538
 #, elixir-autogen, elixir-format
 msgid "Could not undo that message. Please try again."
 msgstr ""
@@ -2139,6 +1908,11 @@ msgstr ""
 #: lib/handbean_probe/git_settings.ex:171
 #: lib/handbean_probe/mcp_settings.ex:198
 #: lib/handbean_probe/mcp_settings.ex:247
+#: lib/handbean_probe/native_schedules.ex:202
+#: lib/handbean_probe/native_schedules.ex:224
+#: lib/handbean_probe/workspace_memory.ex:399
+#: lib/handbean_probe/workspace_memory.ex:432
+#: lib/handbean_probe/workspace_memory.ex:453
 #, elixir-autogen, elixir-format
 msgid "Delete"
 msgstr ""
@@ -2155,6 +1929,8 @@ msgstr ""
 
 #: lib/handbean_probe/mcp_settings.ex:118
 #: lib/handbean_probe/mcp_settings.ex:186
+#: lib/handbean_probe/model_settings/labels.ex:71
+#: lib/handbean_probe/native_schedules.ex:265
 #, elixir-autogen, elixir-format
 msgid "Disabled"
 msgstr ""
@@ -2167,6 +1943,7 @@ msgstr ""
 
 #: lib/handbean_probe/git_settings.ex:118
 #: lib/handbean_probe/mcp_settings.ex:127
+#: lib/handbean_probe/workspace_memory.ex:398
 #, elixir-autogen, elixir-format
 msgid "Edit"
 msgstr ""
@@ -2187,7 +1964,8 @@ msgid "Email"
 msgstr ""
 
 #: lib/handbean_probe/git_settings.ex:71
-#: lib/handbean_probe/home_screen/render.ex:202
+#: lib/handbean_probe/home_screen/render.ex:362
+#: lib/handbean_probe/home_screen/settings_hub.ex:78
 #, elixir-autogen, elixir-format
 msgid "Git"
 msgstr ""
@@ -2207,12 +1985,12 @@ msgstr ""
 msgid "HTTPS endpoint"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/render.ex:79
+#: lib/handbean_probe/home_screen/render.ex:108
 #, elixir-autogen, elixir-format
 msgid "Handbean"
 msgstr ""
 
-#: lib/handbean_probe/app_settings.ex:106
+#: lib/handbean_probe/app_settings.ex:99
 #, elixir-autogen, elixir-format
 msgid "Handbean can read and add events in the system calendar without opening the calendar app."
 msgstr ""
@@ -2227,14 +2005,9 @@ msgstr ""
 msgid "Id: %{id}"
 msgstr ""
 
-#: lib/handbean_probe/native_approval.ex:245
+#: lib/handbean_probe/native_approval.ex:248
 #, elixir-autogen, elixir-format
 msgid "If you approve only one system open or share action, the other open or share actions are skipped this round and the Agent has to request them again; this is not recorded as a deny by you."
-msgstr ""
-
-#: lib/handbean_probe/native_history.ex:38
-#, elixir-autogen, elixir-format
-msgid "Inactive over 72 hours"
 msgstr ""
 
 #: lib/handbean_probe/native_composer.ex:98
@@ -2242,13 +2015,15 @@ msgstr ""
 msgid "Insert next ▾"
 msgstr ""
 
-#: lib/handbean_probe/native_timeline.ex:338
+#: lib/handbean_probe/native_timeline.ex:584
 #, elixir-autogen, elixir-format
 msgid "Inserts after approval"
 msgstr ""
 
 #: lib/handbean_probe/git_settings.ex:172
 #: lib/handbean_probe/mcp_settings.ex:248
+#: lib/handbean_probe/native_schedules.ex:225
+#: lib/handbean_probe/workspace_memory.ex:454
 #, elixir-autogen, elixir-format
 msgid "Keep"
 msgstr ""
@@ -2279,7 +2054,8 @@ msgstr ""
 msgid "Loading MCP servers…"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/render.ex:201
+#: lib/handbean_probe/home_screen/render.ex:361
+#: lib/handbean_probe/home_screen/settings_hub.ex:77
 #, elixir-autogen, elixir-format
 msgid "MCP"
 msgstr ""
@@ -2292,16 +2068,6 @@ msgstr ""
 #: lib/handbean_probe/native_model_inputs.ex:42
 #, elixir-autogen, elixir-format
 msgid "Model input not supported"
-msgstr ""
-
-#: lib/handbean_probe/model_settings/render.ex:401
-#, elixir-autogen, elixir-format
-msgid "Model off"
-msgstr ""
-
-#: lib/handbean_probe/model_settings/render.ex:401
-#, elixir-autogen, elixir-format
-msgid "Model on"
 msgstr ""
 
 #: lib/handbean_probe/git_settings.ex:84
@@ -2325,17 +2091,18 @@ msgstr ""
 msgid "No model selected"
 msgstr ""
 
-#: lib/handbean_probe/app_settings.ex:120
+#: lib/handbean_probe/app_settings.ex:121
 #, elixir-autogen, elixir-format
 msgid "Not allowed"
 msgstr ""
 
-#: lib/handbean_probe/app_settings.ex:121
+#: lib/handbean_probe/app_settings.ex:117
+#: lib/handbean_probe/home_screen/settings_hub.ex:140
 #, elixir-autogen, elixir-format
 msgid "Not checked"
 msgstr ""
 
-#: lib/handbean_probe/native_timeline.ex:327
+#: lib/handbean_probe/native_timeline.ex:573
 #, elixir-autogen, elixir-format
 msgid "Not delivered"
 msgstr ""
@@ -2345,7 +2112,7 @@ msgstr ""
 msgid "Not valid UTF-8 text."
 msgstr ""
 
-#: lib/handbean_probe/app_settings.ex:126
+#: lib/handbean_probe/app_settings.ex:135
 #, elixir-autogen, elixir-format
 msgid "Opened system settings."
 msgstr ""
@@ -2360,22 +2127,17 @@ msgstr ""
 msgid "Place: %{place}"
 msgstr ""
 
-#: lib/handbean_probe/native_timeline.ex:341
+#: lib/handbean_probe/native_timeline.ex:587
 #, elixir-autogen, elixir-format
 msgid "Queued · when this run finishes"
 msgstr ""
 
-#: lib/handbean_probe/app_settings.ex:77
-#, elixir-autogen, elixir-format
-msgid "Read"
-msgstr ""
-
-#: lib/handbean_probe/native_timeline.ex:328
+#: lib/handbean_probe/native_timeline.ex:574
 #, elixir-autogen, elixir-format
 msgid "Resend"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/chat.ex:492
+#: lib/handbean_probe/home_screen/chat.ex:662
 #, elixir-autogen, elixir-format
 msgid "Resent, but the previous copy could not be removed from history."
 msgstr ""
@@ -2389,6 +2151,8 @@ msgstr ""
 #: lib/handbean_probe/git_settings.ex:155
 #: lib/handbean_probe/mcp_settings.ex:139
 #: lib/handbean_probe/mcp_settings.ex:195
+#: lib/handbean_probe/model_settings/render.ex:371
+#: lib/handbean_probe/workspace_memory.ex:430
 #, elixir-autogen, elixir-format
 msgid "Save"
 msgstr ""
@@ -2408,12 +2172,7 @@ msgstr ""
 msgid "Settings that belong to this app, not a workspace or model."
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:409
-#, elixir-autogen, elixir-format
-msgid "Show in model choices"
-msgstr ""
-
-#: lib/handbean_probe/app_settings.ex:87
+#: lib/handbean_probe/app_settings.ex:80
 #, elixir-autogen, elixir-format
 msgid "System settings"
 msgstr ""
@@ -2433,27 +2192,27 @@ msgstr ""
 msgid "Testing…"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/chat.ex:313
+#: lib/handbean_probe/home_screen/chat.ex:483
 #, elixir-autogen, elixir-format
 msgid "The message could not be saved. Nothing was sent to the model."
 msgstr ""
 
-#: lib/handbean_probe/home_screen/chat.ex:333
+#: lib/handbean_probe/home_screen/chat.ex:503
 #, elixir-autogen, elixir-format
 msgid "The message will be inserted at the next step. To wait until this run finishes, switch to “When done”, or write “when you’re done…”."
 msgstr ""
 
-#: lib/handbean_probe/home_screen/chat.ex:306
+#: lib/handbean_probe/home_screen/chat.ex:476
 #, elixir-autogen, elixir-format
 msgid "The review rules could not be read from the app package. Nothing was sent."
 msgstr ""
 
-#: lib/handbean_probe/native_artifact_delivery.ex:489
+#: lib/handbean_probe/native_artifact_delivery.ex:572
 #, elixir-autogen, elixir-format
 msgid "The text is too long to share."
 msgstr ""
 
-#: lib/handbean_probe/native_artifact_delivery.ex:488
+#: lib/handbean_probe/native_artifact_delivery.ex:571
 #, elixir-autogen, elixir-format
 msgid "There is no text to share."
 msgstr ""
@@ -2473,7 +2232,8 @@ msgstr ""
 msgid "Truncated to 1 MiB."
 msgstr ""
 
-#: lib/handbean_probe/home_screen/render.ex:209
+#: lib/handbean_probe/home_screen/render.ex:364
+#: lib/handbean_probe/home_screen/settings_hub.ex:81
 #, elixir-autogen, elixir-format
 msgid "UI"
 msgstr ""
@@ -2490,7 +2250,7 @@ msgstr ""
 msgid "Unable to display this file."
 msgstr ""
 
-#: lib/handbean_probe/native_timeline.ex:350
+#: lib/handbean_probe/native_timeline.ex:596
 #, elixir-autogen, elixir-format
 msgid "Undo"
 msgstr ""
@@ -2500,13 +2260,13 @@ msgstr ""
 msgid "Username"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/chat.ex:216
-#: lib/handbean_probe/home_screen/chat.ex:299
+#: lib/handbean_probe/home_screen/chat.ex:270
+#: lib/handbean_probe/home_screen/chat.ex:469
 #, elixir-autogen, elixir-format
 msgid "Wait until the current task finishes before generating a review."
 msgstr ""
 
-#: lib/handbean_probe/native_timeline.ex:344
+#: lib/handbean_probe/native_timeline.ex:590
 #, elixir-autogen, elixir-format
 msgid "Waiting to insert · next step"
 msgstr ""
@@ -2524,11 +2284,6 @@ msgstr ""
 #: lib/handbean_probe/mcp_settings.ex:167
 #, elixir-autogen, elixir-format
 msgid "Workspace access"
-msgstr ""
-
-#: lib/handbean_probe/app_settings.ex:81
-#, elixir-autogen, elixir-format
-msgid "Write"
 msgstr ""
 
 #: lib/handbean_probe/mcp_settings.ex:275
@@ -2551,120 +2306,153 @@ msgstr ""
 msgid "stdio · Read-only on mobile"
 msgstr ""
 
-#: lib/handbean_probe/workspace_memory.ex:130
+#: lib/handbean_probe/home_screen/render.ex:359
+#: lib/handbean_probe/home_screen/settings_hub.ex:63
+#: lib/handbean_probe/workspace_memory.ex:245
+#, elixir-autogen
 msgid "Workspace Memory"
 msgstr ""
 
-#: lib/handbean_probe/workspace_memory.ex:131
+#: lib/handbean_probe/workspace_memory.ex:246
+#, elixir-autogen
 msgid "Current workspace: %{name}"
 msgstr ""
 
-#: lib/handbean_probe/workspace_memory.ex:153
+#: lib/handbean_probe/workspace_memory.ex:293
+#, elixir-autogen
 msgid "Active memory"
 msgstr ""
 
-#: lib/handbean_probe/workspace_memory.ex:154
+#: lib/handbean_probe/workspace_memory.ex:294
+#, elixir-autogen
 msgid "Long-term memory"
 msgstr ""
 
-#: lib/handbean_probe/workspace_memory.ex:155
+#: lib/handbean_probe/workspace_memory.ex:295
+#, elixir-autogen
 msgid "Short-term memory"
 msgstr ""
 
-#: lib/handbean_probe/workspace_memory.ex:156
-#: lib/handbean_probe/workspace_memory.ex:304
+#: lib/handbean_probe/workspace_memory.ex:296
+#: lib/handbean_probe/workspace_memory.ex:511
+#, elixir-autogen
 msgid "Expired"
 msgstr ""
 
-#: lib/handbean_probe/workspace_memory.ex:169
+#: lib/handbean_probe/workspace_memory.ex:309
+#, elixir-autogen
 msgid "Search"
 msgstr ""
 
-#: lib/handbean_probe/workspace_memory.ex:170
+#: lib/handbean_probe/workspace_memory.ex:310
+#, elixir-autogen
 msgid "Search content or #ID…"
 msgstr ""
 
-#: lib/handbean_probe/workspace_memory.ex:172
+#: lib/handbean_probe/model_settings/render.ex:110
+#: lib/handbean_probe/workspace_memory.ex:312
+#, elixir-autogen
 msgid "Scope"
 msgstr ""
 
-#: lib/handbean_probe/workspace_memory.ex:178
+#: lib/handbean_probe/workspace_memory.ex:318
+#: lib/handbean_probe/workspace_memory.ex:426
+#, elixir-autogen
 msgid "Type"
 msgstr ""
 
-#: lib/handbean_probe/workspace_memory.ex:198
+#: lib/handbean_probe/workspace_memory.ex:338
+#, elixir-autogen
 msgid "Loading memory…"
 msgstr ""
 
-#: lib/handbean_probe/workspace_memory.ex:208
+#: lib/handbean_probe/workspace_memory.ex:351
+#, elixir-autogen
 msgid "No memories match these filters"
 msgstr ""
 
-#: lib/handbean_probe/workspace_memory.ex:209
+#: lib/handbean_probe/workspace_memory.ex:352
+#, elixir-autogen
 msgid "Try another scope, lifecycle, type, or search."
 msgstr ""
 
-#: lib/handbean_probe/workspace_memory.ex:230
+#: lib/handbean_probe/workspace_memory.ex:599
+#, elixir-autogen
 msgid "Global"
 msgstr ""
 
-#: lib/handbean_probe/workspace_memory.ex:246
+#: lib/handbean_probe/workspace_memory.ex:405
+#, elixir-autogen
 msgid "Copy #ID"
 msgstr ""
 
-#: lib/handbean_probe/workspace_memory.ex:247
+#: lib/handbean_probe/workspace_memory.ex:406
+#, elixir-autogen
 msgid "Copy content"
 msgstr ""
 
-#: lib/handbean_probe/workspace_memory.ex:262
+#: lib/handbean_probe/workspace_memory.ex:469
+#, elixir-autogen
 msgid "Connections"
 msgstr ""
 
-#: lib/handbean_probe/workspace_memory.ex:295
+#: lib/handbean_probe/workspace_memory.ex:502
+#, elixir-autogen
 msgid "Long-term · reinforced ×%{count}"
 msgstr ""
 
-#: lib/handbean_probe/workspace_memory.ex:297
+#: lib/handbean_probe/workspace_memory.ex:504
+#, elixir-autogen
 msgid "Long-term"
 msgstr ""
 
-#: lib/handbean_probe/workspace_memory.ex:307
+#: lib/handbean_probe/workspace_memory.ex:514
+#, elixir-autogen
 msgid "Short-term · expires in %{hours}h"
 msgstr ""
 
-#: lib/handbean_probe/workspace_memory.ex:311
+#: lib/handbean_probe/workspace_memory.ex:518
+#, elixir-autogen
 msgid "Short-term"
 msgstr ""
 
-#: lib/handbean_probe/workspace_memory.ex:325
+#: lib/handbean_probe/workspace_memory.ex:595
+#, elixir-autogen
 msgid "Include global"
 msgstr ""
 
-#: lib/handbean_probe/workspace_memory.ex:326
+#: lib/handbean_probe/workspace_memory.ex:596
+#, elixir-autogen
 msgid "Global only"
 msgstr ""
 
-#: lib/handbean_probe/workspace_memory.ex:328
+#: lib/handbean_probe/workspace_memory.ex:601
+#, elixir-autogen
 msgid "All"
 msgstr ""
 
-#: lib/handbean_probe/workspace_memory.ex:329
+#: lib/handbean_probe/workspace_memory.ex:602
+#, elixir-autogen
 msgid "Preference"
 msgstr ""
 
-#: lib/handbean_probe/workspace_memory.ex:330
+#: lib/handbean_probe/workspace_memory.ex:603
+#, elixir-autogen
 msgid "Rule"
 msgstr ""
 
-#: lib/handbean_probe/workspace_memory.ex:331
+#: lib/handbean_probe/workspace_memory.ex:604
+#, elixir-autogen
 msgid "Pattern"
 msgstr ""
 
-#: lib/handbean_probe/workspace_memory.ex:332
+#: lib/handbean_probe/workspace_memory.ex:605
+#, elixir-autogen
 msgid "Fact"
 msgstr ""
 
-#: lib/handbean_probe/workspace_memory.ex:333
+#: lib/handbean_probe/workspace_memory.ex:606
+#, elixir-autogen
 msgid "Context"
 msgstr ""
 
@@ -2672,53 +2460,47 @@ msgstr ""
 msgid "Memory"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/workspace_memory.ex:75
+#: lib/handbean_probe/home_screen/workspace_memory.ex:209
+#, elixir-autogen
 msgid "Memory ID copied"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/workspace_memory.ex:76
+#: lib/handbean_probe/home_screen/workspace_memory.ex:210
+#, elixir-autogen
 msgid "Memory content copied"
 msgstr ""
 
 #: lib/handbean_probe/native_timeline.ex:165
+#, elixir-autogen
 msgid "Open conversation"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/render.ex:86
+#: lib/handbean_probe/home_screen/render.ex:101
+#, elixir-autogen
 msgid "Child conversation"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:146
+#: lib/handbean_probe/model_settings/render.ex:320
 #, elixir-autogen, elixir-format
 msgid "Memory Reflection"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:149
-#, elixir-autogen, elixir-format
-msgid "Compaction can produce reviewable memory candidates using the settings below."
-msgstr ""
-
-#: lib/handbean_probe/model_settings/render.ex:167
+#: lib/handbean_probe/model_settings/render.ex:244
 #, elixir-autogen, elixir-format
 msgid "Enable memory reflection"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:172
-#, elixir-autogen, elixir-format
-msgid "When enabled, compaction generates reviewable memory candidates."
-msgstr ""
-
-#: lib/handbean_probe/model_settings/render.ex:217
+#: lib/handbean_probe/model_settings/render.ex:313
 #, elixir-autogen, elixir-format
 msgid "Save memory reflection settings"
 msgstr ""
 
-#: lib/handbean_probe/home_screen/settings.ex
+#: lib/handbean_probe/home_screen/settings.ex:311
 #, elixir-autogen, elixir-format
 msgid "Model list is unavailable. The existing list was kept."
 msgstr ""
 
-#: lib/handbean_probe/home_screen/settings.ex
+#: lib/handbean_probe/home_screen/settings.ex:305
 #, elixir-autogen, elixir-format
 msgid "Provider Base URL is invalid. Edit the provider and try again. The existing list was kept."
 msgstr ""
@@ -2733,17 +2515,678 @@ msgstr ""
 msgid "Default provider changed"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:406
+#: lib/handbean_probe/model_settings/render.ex:610
 #, elixir-autogen, elixir-format
 msgid "Disable all"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:426
+#: lib/handbean_probe/model_settings/render.ex:630
 #, elixir-autogen, elixir-format
 msgid "Set as default provider"
 msgstr ""
 
-#: lib/handbean_probe/model_settings/render.ex:418
+#: lib/handbean_probe/model_settings/render.ex:622
 #, elixir-autogen, elixir-format
 msgid "✓ Default provider"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/render.ex:260
+#: lib/handbean_probe/home_screen/render.ex:354
+#: lib/handbean_probe/native_schedules.ex:87
+#, elixir-autogen, elixir-format
+msgid "Scheduled tasks"
+msgstr ""
+
+#: lib/handbean_probe/native_schedules.ex:77
+#, elixir-autogen, elixir-format
+msgid "Loading scheduled tasks…"
+msgstr ""
+
+#: lib/handbean_probe/native_schedules.ex:95
+#, elixir-autogen, elixir-format
+msgid "No scheduled tasks yet"
+msgstr ""
+
+#: lib/handbean_probe/native_schedules.ex:97
+#, elixir-autogen, elixir-format
+msgid "Describe when and what to do in a chat, and the Agent will create a scheduled task."
+msgstr ""
+
+#: lib/handbean_probe/native_schedules.ex:170
+#, elixir-autogen, elixir-format
+msgid "Instruction"
+msgstr ""
+
+#: lib/handbean_probe/native_schedules.ex:175
+#, elixir-autogen, elixir-format
+msgid "Expand"
+msgstr ""
+
+#: lib/handbean_probe/native_schedules.ex:175
+#, elixir-autogen, elixir-format
+msgid "Collapse"
+msgstr ""
+
+#: lib/handbean_probe/native_schedules.ex:189
+#, elixir-autogen, elixir-format
+msgid "Pause"
+msgstr ""
+
+#: lib/handbean_probe/native_schedules.ex:192
+#, elixir-autogen, elixir-format
+msgid "Resume"
+msgstr ""
+
+#: lib/handbean_probe/native_schedules.ex:200
+#, elixir-autogen, elixir-format
+msgid "Run now"
+msgstr ""
+
+#: lib/handbean_probe/native_schedules.ex:201
+#, elixir-autogen, elixir-format
+msgid "Revise"
+msgstr ""
+
+#: lib/handbean_probe/native_schedules.ex:217
+#, elixir-autogen, elixir-format
+msgid "Delete scheduled task \"%{name}\"?"
+msgstr ""
+
+#: lib/handbean_probe/native_schedules.ex:219
+#, elixir-autogen, elixir-format
+msgid "It will no longer run on schedule. The conversation history is kept."
+msgstr ""
+
+#: lib/handbean_probe/native_schedules.ex:262
+#, elixir-autogen, elixir-format
+msgid "Paused"
+msgstr ""
+
+#: lib/handbean_probe/native_schedules.ex:268
+#, elixir-autogen, elixir-format
+msgid "Completed"
+msgstr ""
+
+#: lib/handbean_probe/native_schedules.ex:274
+#, elixir-autogen, elixir-format
+msgid "Running"
+msgstr ""
+
+#: lib/handbean_probe/native_schedules.ex:280
+#, elixir-autogen, elixir-format
+msgid "Overdue"
+msgstr ""
+
+#: lib/handbean_probe/native_schedules.ex:283
+#, elixir-autogen, elixir-format
+msgid "Enabled"
+msgstr ""
+
+#: lib/handbean_probe/native_schedules.ex:295
+#, elixir-autogen, elixir-format
+msgid "Next: %{at}"
+msgstr ""
+
+#: lib/handbean_probe/native_schedules.ex:300
+#, elixir-autogen, elixir-format
+msgid "No next run"
+msgstr ""
+
+#: lib/handbean_probe/native_schedules.ex:303
+#, elixir-autogen, elixir-format
+msgid "No next run · Last %{at}"
+msgstr ""
+
+#: lib/handbean_probe/native_schedules.ex:311
+#, elixir-autogen, elixir-format
+msgid "Conversation"
+msgstr ""
+
+#: lib/handbean_probe/native_schedules.ex:357
+#, elixir-autogen, elixir-format
+msgid "Failed"
+msgstr ""
+
+#: lib/handbean_probe/native_schedules.ex:358
+#, elixir-autogen, elixir-format
+msgid "Stalled"
+msgstr ""
+
+#: lib/handbean_probe/native_schedules.ex:359
+#, elixir-autogen, elixir-format
+msgid "Halted"
+msgstr ""
+
+#: lib/handbean_probe/native_schedules.ex:360
+#, elixir-autogen, elixir-format
+msgid "Unknown result"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/schedules.ex:108
+#, elixir-autogen, elixir-format
+msgid "Revise \"%{name}\":"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/schedules.ex:129
+#, elixir-autogen, elixir-format
+msgid "Queued to run now"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/schedules.ex:136
+#, elixir-autogen, elixir-format
+msgid "Could not run the scheduled task: %{reason}"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/schedules.ex:148
+#, elixir-autogen, elixir-format
+msgid "Could not update the scheduled task: %{reason}"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/schedules.ex:166
+#, elixir-autogen, elixir-format
+msgid "Could not delete the scheduled task: %{reason}"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/schedules.ex:239
+#, elixir-autogen, elixir-format
+msgid "The task's conversation is unavailable"
+msgstr ""
+
+#: lib/handbean_probe/native_schedules.ex:277
+#, elixir-autogen, elixir-format
+msgid "Skipped"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/settings_hub.ex:102
+#, elixir-autogen, elixir-format
+msgid "%{count} providers"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/settings_hub.ex:120
+#, elixir-autogen, elixir-format
+msgid "%{count} servers"
+msgstr ""
+
+#: lib/handbean_probe/model_settings/render.ex:412
+#, elixir-autogen, elixir-format
+msgid "%{selected} / %{total}"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/settings_hub.ex:112
+#, elixir-autogen, elixir-format
+msgid "%{state} · %{count} active"
+msgstr ""
+
+#: lib/handbean_probe/native_timeline.ex:469
+#, elixir-autogen, elixir-format
+msgid "1 line not shown"
+msgid_plural "%{count} lines not shown"
+msgstr[0] ""
+msgstr[1] ""
+
+#: lib/handbean_probe/model_settings/render.ex:339
+#, elixir-autogen, elixir-format
+msgid "Access mode"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/settings_hub.ex:50
+#, elixir-autogen, elixir-format
+msgid "Add workspace"
+msgstr ""
+
+#: lib/handbean_probe/model_settings/render.ex:235
+#, elixir-autogen, elixir-format
+msgid "Advisor"
+msgstr ""
+
+#: lib/handbean_probe/model_settings/render.ex:185
+#, elixir-autogen, elixir-format
+msgid "Advisor model"
+msgstr ""
+
+#: lib/handbean_probe/workspace_memory.ex:534
+#: lib/handbean_probe/workspace_memory.ex:570
+#, elixir-autogen, elixir-format
+msgid "Agent"
+msgstr ""
+
+#: lib/handbean_probe/native_conversation_row.ex:157
+#, elixir-autogen, elixir-format
+msgid "Archive"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/settings_hub.ex:139
+#, elixir-autogen, elixir-format
+msgid "Calendar allowed"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/settings_hub.ex:141
+#, elixir-autogen, elixir-format
+msgid "Calendar off"
+msgstr ""
+
+#: lib/handbean_probe/model_settings/render.ex:421
+#, elixir-autogen, elixir-format
+msgid "Clear"
+msgstr ""
+
+#: lib/handbean_probe/workspace_memory.ex:425
+#, elixir-autogen, elixir-format
+msgid "Content"
+msgstr ""
+
+#: lib/handbean_probe/native_timeline.ex:449
+#, elixir-autogen, elixir-format
+msgid "Copy relative path"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/workspace_memory.ex:207
+#, elixir-autogen, elixir-format
+msgid "Could not delete memory"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/workspace_memory.ex:205
+#, elixir-autogen, elixir-format
+msgid "Could not promote memory"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/nav.ex:292
+#, elixir-autogen, elixir-format
+msgid "Could not rename the conversation"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/ui_settings.ex:21
+#, elixir-autogen, elixir-format
+msgid "Could not save language preference."
+msgstr ""
+
+#: lib/handbean_probe/home_screen/workspace_memory.ex:52
+#, elixir-autogen, elixir-format
+msgid "Could not save workspace memory setting"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/workspace_memory.ex:152
+#: lib/handbean_probe/home_screen/workspace_memory.ex:206
+#, elixir-autogen, elixir-format
+msgid "Could not update memory"
+msgstr ""
+
+#: lib/handbean_probe/workspace_memory.ex:446
+#, elixir-autogen, elixir-format
+msgid "Delete memory #%{id}?"
+msgstr ""
+
+#: lib/handbean_probe/workspace_memory.ex:420
+#, elixir-autogen, elixir-format
+msgid "Edit memory #%{id}"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/ui_settings.ex:38
+#: lib/handbean_probe/home_screen/ui_settings.ex:46
+#, elixir-autogen, elixir-format
+msgid "English"
+msgstr ""
+
+#: lib/handbean_probe/workspace_memory.ex:259
+#, elixir-autogen, elixir-format
+msgid "External memory tools remain available when built-in memory is off."
+msgstr ""
+
+#: lib/handbean_probe/model_settings/render.ex:602
+#, elixir-autogen, elixir-format
+msgid "Fetch models"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/settings.ex:290
+#, elixir-autogen, elixir-format
+msgid "Fetched %{total} models, %{added} new"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/settings.ex:235
+#: lib/handbean_probe/home_screen/settings.ex:268
+#, elixir-autogen, elixir-format
+msgid "Fetching models…"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/settings_hub.ex:98
+#: lib/handbean_probe/model_settings/render.ex:477
+#, elixir-autogen, elixir-format
+msgid "Invalid"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/ui_settings.ex:31
+#, elixir-autogen, elixir-format
+msgid "Language"
+msgstr ""
+
+#: lib/handbean_probe/workspace_memory.ex:549
+#: lib/handbean_probe/workspace_memory.ex:573
+#, elixir-autogen, elixir-format
+msgid "Legacy"
+msgstr ""
+
+#: lib/handbean_probe/workspace_memory.ex:628
+#, elixir-autogen, elixir-format
+msgid "Memory content and type are required"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/workspace_memory.ex:203
+#, elixir-autogen, elixir-format
+msgid "Memory deleted"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/workspace_memory.ex:201
+#, elixir-autogen, elixir-format
+msgid "Memory promoted"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/workspace_memory.ex:202
+#, elixir-autogen, elixir-format
+msgid "Memory updated"
+msgstr ""
+
+#: lib/handbean_probe/native_timeline.ex:173
+#, elixir-autogen, elixir-format
+msgid "Message"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/settings.ex:299
+#, elixir-autogen, elixir-format
+msgid "Model discovery failed"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/nav.ex:278
+#, elixir-autogen, elixir-format
+msgid "Name cannot be empty"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/nav.ex:285
+#, elixir-autogen, elixir-format
+msgid "Name cannot exceed 80 characters"
+msgstr ""
+
+#: lib/handbean_probe/model_settings/render.ex:396
+#, elixir-autogen, elixir-format
+msgid "No matching models"
+msgstr ""
+
+#: lib/handbean_probe/model_settings/render.ex:181
+#, elixir-autogen, elixir-format
+msgid "No workspace model"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/ui_settings.ex:41
+#, elixir-autogen, elixir-format
+msgid "Not available"
+msgstr ""
+
+#: lib/handbean_probe/model_settings/render.ex:180
+#, elixir-autogen, elixir-format
+msgid "Not configured"
+msgstr ""
+
+#: lib/handbean_probe/model_settings/labels.ex:41
+#, elixir-autogen, elixir-format
+msgid "Ollama Cloud"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/settings_hub.ex:111
+#: lib/handbean_probe/workspace_memory.ex:267
+#, elixir-autogen, elixir-format
+msgid "On"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/settings_hub.ex:96
+#: lib/handbean_probe/model_settings/render.ex:349
+#: lib/handbean_probe/model_settings/render.ex:476
+#, elixir-autogen, elixir-format
+msgid "Only checked models"
+msgstr ""
+
+#: lib/handbean_probe/model_settings/labels.ex:42
+#, elixir-autogen, elixir-format
+msgid "OpenCode Go"
+msgstr ""
+
+#: lib/handbean_probe/native_conversation_row.ex:123
+#, elixir-autogen, elixir-format
+msgid "Pin"
+msgstr ""
+
+#: lib/handbean_probe/workspace_memory.ex:396
+#, elixir-autogen, elixir-format
+msgid "Promote"
+msgstr ""
+
+#: lib/handbean_probe/app_settings.ex:125
+#, elixir-autogen, elixir-format
+msgid "Read allowed"
+msgstr ""
+
+#: lib/handbean_probe/app_settings.ex:113
+#, elixir-autogen, elixir-format
+msgid "Read and write allowed"
+msgstr ""
+
+#: lib/handbean_probe/workspace_memory.ex:537
+#: lib/handbean_probe/workspace_memory.ex:571
+#, elixir-autogen, elixir-format
+msgid "Reflection"
+msgstr ""
+
+#: lib/handbean_probe/native_conversation_row.ex:147
+#: lib/handbean_probe/native_conversation_row.ex:204
+#: lib/handbean_probe/native_conversation_row.ex:207
+#, elixir-autogen, elixir-format
+msgid "Rename"
+msgstr ""
+
+#: lib/handbean_probe/native_approval.ex:48
+#, elixir-autogen, elixir-format
+msgid "Runs tools without asking. Built-in env and credential-path intercepts still apply."
+msgstr ""
+
+#: lib/handbean_probe/native_approval.ex:34
+#, elixir-autogen, elixir-format
+msgid "Saves to the current conversation and applies to subsequent tool calls. More specific tool rules still take precedence."
+msgstr ""
+
+#: lib/handbean_probe/workspace_memory.ex:341
+#, elixir-autogen, elixir-format
+msgid "Saving memory…"
+msgstr ""
+
+#: lib/handbean_probe/workspace_memory.ex:556
+#, elixir-autogen, elixir-format
+msgid "Scope: %{scope} · Source: %{source}"
+msgstr ""
+
+#: lib/handbean_probe/model_settings/render.ex:390
+#, elixir-autogen, elixir-format
+msgid "Search models or providers"
+msgstr ""
+
+#: lib/handbean_probe/model_settings/render.ex:418
+#, elixir-autogen, elixir-format
+msgid "Select all"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/chat.ex:402
+#, elixir-autogen, elixir-format
+msgid "Sent to subagent %{ref}."
+msgstr ""
+
+#: lib/handbean_probe/home_screen/chat.ex:403
+#, elixir-autogen, elixir-format
+msgid "Subagent %{ref} is answering a follow-up."
+msgstr ""
+
+#: lib/handbean_probe/home_screen/ui_settings.ex:41
+#, elixir-autogen, elixir-format
+msgid "Theme"
+msgstr ""
+
+#: lib/handbean_probe/model_settings/render.ex:193
+#: lib/handbean_probe/model_settings/render.ex:258
+#, elixir-autogen, elixir-format
+msgid "Think level"
+msgstr ""
+
+#: lib/handbean_probe/workspace_memory.ex:447
+#, elixir-autogen, elixir-format
+msgid "This also removes its connections."
+msgstr ""
+
+#: lib/handbean_probe/native_conversation_row.ex:122
+#, elixir-autogen, elixir-format
+msgid "Unpin"
+msgstr ""
+
+#: lib/handbean_probe/workspace_memory.ex:257
+#, elixir-autogen, elixir-format
+msgid "Use built-in memory"
+msgstr ""
+
+#: lib/handbean_probe/model_settings/labels.ex:72
+#, elixir-autogen, elixir-format
+msgid "Use global"
+msgstr ""
+
+#: lib/handbean_probe/model_settings/labels.ex:70
+#, elixir-autogen, elixir-format
+msgid "Use the model selected above"
+msgstr ""
+
+#: lib/handbean_probe/workspace_memory.ex:540
+#: lib/handbean_probe/workspace_memory.ex:572
+#, elixir-autogen, elixir-format
+msgid "User"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/settings_hub.ex:93
+#: lib/handbean_probe/home_screen/settings_hub.ex:105
+#: lib/handbean_probe/home_screen/settings_hub.ex:115
+#: lib/handbean_probe/home_screen/settings_hub.ex:123
+#: lib/handbean_probe/home_screen/settings_hub.ex:137
+#: lib/handbean_probe/home_screen/settings_hub.ex:142
+#, elixir-autogen, elixir-format
+msgid "View"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/render.ex:358
+#: lib/handbean_probe/home_screen/settings_hub.ex:58
+#, elixir-autogen, elixir-format
+msgid "Workspace Models"
+msgstr ""
+
+#: lib/handbean_probe/model_settings/render.ex:207
+#, elixir-autogen, elixir-format
+msgid "Workspace advisor"
+msgstr ""
+
+#: lib/handbean_probe/model_settings/render.ex:363
+#, elixir-autogen, elixir-format
+msgid "Workspace default model"
+msgstr ""
+
+#: lib/handbean_probe/model_settings/render.ex:376
+#, elixir-autogen, elixir-format
+msgid "Workspace models"
+msgstr ""
+
+#: lib/handbean_probe/app_settings.ex:129
+#, elixir-autogen, elixir-format
+msgid "Write allowed"
+msgstr ""
+
+#: lib/handbean_probe/workspace_memory.ex:579
+#, elixir-autogen, elixir-format
+msgid "available; inspect in Web"
+msgstr ""
+
+#: lib/handbean_probe/workspace_memory.ex:580
+#, elixir-autogen, elixir-format
+msgid "changed; inspect in Web"
+msgstr ""
+
+#: lib/handbean_probe/workspace_memory.ex:581
+#, elixir-autogen, elixir-format
+msgid "deleted"
+msgstr ""
+
+#: lib/handbean_probe/workspace_memory.ex:583
+#, elixir-autogen, elixir-format
+msgid "legacy source unresolved"
+msgstr ""
+
+#: lib/handbean_probe/workspace_memory.ex:584
+#, elixir-autogen, elixir-format
+msgid "no exact source"
+msgstr ""
+
+#: lib/handbean_probe/workspace_memory.ex:582
+#, elixir-autogen, elixir-format
+msgid "unavailable"
+msgstr ""
+
+#: lib/handbean_probe/native_approval.ex:27
+#, elixir-autogen, elixir-format
+msgid "yolo"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/ui_settings.ex:34
+#: lib/handbean_probe/home_screen/ui_settings.ex:47
+#, elixir-autogen, elixir-format
+msgid "中文 (简体)"
+msgstr ""
+
+#: lib/handbean_probe/native_history.ex:50
+#, elixir-autogen, elixir-format
+msgid "已置顶"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/render.ex:349
+#: lib/handbean_probe/native_history.ex:53
+#, elixir-autogen, elixir-format
+msgid "自由对话"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/chat.ex:368
+#, elixir-autogen, elixir-format
+msgid "A direct command is already running for this conversation."
+msgstr ""
+
+#: lib/handbean_probe/home_screen/chat.ex:328
+#, elixir-autogen, elixir-format
+msgid "Direct commands are available only in workspace conversations."
+msgstr ""
+
+#: lib/handbean_probe/home_screen/chat.ex:375
+#, elixir-autogen, elixir-format
+msgid "Direct commands are not available on this host or workspace."
+msgstr ""
+
+#: lib/handbean_probe/home_screen/chat.ex:322
+#, elixir-autogen, elixir-format
+msgid "Direct workspace commands are not supported on this device."
+msgstr ""
+
+#: lib/handbean_probe/home_screen/chat.ex:360
+#, elixir-autogen, elixir-format
+msgid "Enter a command after !."
+msgstr ""
+
+#: lib/handbean_probe/home_screen/chat.ex:332
+#, elixir-autogen, elixir-format
+msgid "Remove attachments before running a direct command."
+msgstr ""
+
+#: lib/handbean_probe/home_screen/chat.ex:363
+#, elixir-autogen, elixir-format
+msgid "That direct command is invalid or too long."
+msgstr ""
+
+#: lib/handbean_probe/home_screen/chat.ex:379
+#, elixir-autogen, elixir-format
+msgid "The direct command could not be started."
 msgstr ""

@@ -25,6 +25,7 @@ defmodule HandbeanProbe.HomeScreen do
   alias HandbeanProbe.HomeScreen.{
     AppSettings,
     Async,
+    UiSettings,
     Chat,
     Delivery,
     FileNav,
@@ -35,6 +36,7 @@ defmodule HandbeanProbe.HomeScreen do
     Platform,
     Render,
     Requests,
+    Schedules,
     Settings,
     Share,
     State,
@@ -88,11 +90,12 @@ defmodule HandbeanProbe.HomeScreen do
 
   def mount(_params, _session, socket) do
     # Process-global so the shared Handbean.Gettext backend (e.g. Intent outcomes) follows too.
-    Gettext.put_locale(HandbeanProbe.Gettext.locale())
+    HandbeanProbe.Gettext.apply(HandbeanProbe.Gettext.locale())
 
     case WorkspaceStore.ensure_default!() do
       {:ok, default} ->
         Phoenix.PubSub.subscribe(Handbean.PubSub, "models:updated")
+        Phoenix.PubSub.subscribe(Handbean.PubSub, "runtime:schedules")
         Handbean.Permissions.ConversationMode.subscribe()
         {workspace, conversation} = NativeWorkspaces.restore(default)
 
@@ -327,27 +330,18 @@ defmodule HandbeanProbe.HomeScreen do
        do: Share.handle(msg, socket)
 
   # platform requests, attachments, image cards
-  defp dispatch({:change, field, _} = msg, socket)
-       when field in [:artifact_path, :open_url_draft],
-       do: Platform.handle(msg, socket)
-
   defp dispatch({:tap, {:platform, :begin, _}} = msg, socket), do: Platform.handle(msg, socket)
   defp dispatch({:platform, _, _} = msg, socket), do: Platform.handle(msg, socket)
   defp dispatch({:platform, _, _, _} = msg, socket), do: Platform.handle(msg, socket)
 
-  defp dispatch(
-         {:engine_result, %Inbound.EngineResult{request_id: request_id}} = msg,
-         %{assigns: %{page: :app}} = socket
-       ) do
+  defp dispatch({:engine_result, %Inbound.EngineResult{request_id: request_id}} = msg, socket) do
+    # Calendar status is requested from the settings hub too, not only :app.
     if Requests.ctx(socket, request_id)[:kind] == :app_settings do
       AppSettings.handle(msg, socket)
     else
       Platform.handle(msg, socket)
     end
   end
-
-  defp dispatch({:engine_result, %Inbound.EngineResult{}} = msg, socket),
-    do: Platform.handle(msg, socket)
 
   defp dispatch({:tap, {:remove_attachment, _}} = msg, socket), do: Platform.handle(msg, socket)
   defp dispatch({:tap, {:open_draft_image, _}} = msg, socket), do: Platform.handle(msg, socket)
@@ -357,7 +351,6 @@ defmodule HandbeanProbe.HomeScreen do
     do: Platform.handle(msg, socket)
 
   # system delivery
-  defp dispatch({:tap, {:delivery, _}} = msg, socket), do: Delivery.handle(msg, socket)
   defp dispatch({:tap, {:delivery, _, _}} = msg, socket), do: Delivery.handle(msg, socket)
 
   # files, workspace page, directory picker
@@ -416,6 +409,32 @@ defmodule HandbeanProbe.HomeScreen do
   defp dispatch({:tap, {:memory_copy, _, _}} = msg, %{assigns: %{page: :memory}} = socket),
     do: WorkspaceMemory.handle(msg, socket)
 
+  # scheduled task center
+  defp dispatch({:schedule_changed, _conversation_id}, socket), do: Schedules.reload(socket)
+
+  defp dispatch({:tap, :schedule_refresh}, %{assigns: %{page: :schedules}} = socket),
+    do: Schedules.handle({:tap, :schedule_refresh}, socket)
+
+  defp dispatch({:tap, action} = msg, %{assigns: %{page: :schedules}} = socket)
+       when action in [:schedule_delete, :schedule_dismiss_confirm],
+       do: Schedules.handle(msg, socket)
+
+  defp dispatch({kind, :schedule_dismiss_confirm} = msg, %{assigns: %{page: :schedules}} = socket)
+       when kind in [:tap, :dismiss],
+       do: Schedules.handle(msg, socket)
+
+  defp dispatch({:tap, {action, _}} = msg, %{assigns: %{page: :schedules}} = socket)
+       when action in [
+              :schedule_pause,
+              :schedule_resume,
+              :schedule_run_now,
+              :schedule_ask_delete,
+              :schedule_open,
+              :schedule_revise,
+              :schedule_toggle_instruction
+            ],
+       do: Schedules.handle(msg, socket)
+
   # model / AI settings
   defp dispatch({:change, {:git_identity, _}, _} = msg, socket),
     do: GitSettings.handle(msg, socket)
@@ -446,6 +465,9 @@ defmodule HandbeanProbe.HomeScreen do
        when action in [:request_calendar, :open_app_settings],
        do: AppSettings.handle(msg, socket)
 
+  defp dispatch({:tap, {:locale, locale}} = msg, socket) when locale in ["zh_CN", "en"],
+    do: UiSettings.handle(msg, socket)
+
   defp dispatch({:change, {:mcp_field, _}, _} = msg, socket), do: MCPSettings.handle(msg, socket)
 
   defp dispatch({:dismiss, :mcp_dismiss_confirm} = msg, socket),
@@ -474,6 +496,9 @@ defmodule HandbeanProbe.HomeScreen do
        do: Settings.handle(msg, socket)
 
   defp dispatch({:change, {:model_field, _}, _} = msg, socket), do: Settings.handle(msg, socket)
+
+  defp dispatch({:change, {:workspace_builtin_memory, _}, _} = msg, socket),
+    do: Settings.handle(msg, socket)
 
   defp dispatch({:change, {:toggle_model_enabled, _, _, _}, _} = msg, socket),
     do: Settings.handle(msg, socket)
@@ -539,6 +564,18 @@ defmodule HandbeanProbe.HomeScreen do
 
   defp async_result(:workspace_memory_mutated, result, socket),
     do: WorkspaceMemory.mutation_result(result, socket)
+
+  defp async_result(:schedules_loaded, result, socket),
+    do: Schedules.loaded(socket, result)
+
+  defp async_result(kind, result, socket)
+       when kind in [
+              :schedule_paused,
+              :schedule_resumed,
+              :schedule_deleted,
+              :schedule_run_claimed
+            ],
+       do: Schedules.result(kind, result, socket)
 
   defp async_result(:models_fetched, result, socket),
     do: Settings.handle_subscription(:models_fetched, result, socket)

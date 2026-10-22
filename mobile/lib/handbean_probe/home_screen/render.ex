@@ -8,7 +8,7 @@ defmodule HandbeanProbe.HomeScreen.Render do
   use Gettext, backend: HandbeanProbe.Gettext
   import HandbeanProbe.NativeUI
 
-  alias HandbeanProbe.HomeScreen.{Nav, Notice, Share}
+  alias HandbeanProbe.HomeScreen.{Nav, Notice, SettingsHub, Share}
 
   alias HandbeanProbe.{
     ModelSettings,
@@ -16,11 +16,24 @@ defmodule HandbeanProbe.HomeScreen.Render do
     GitSettings,
     NativeApproval,
     NativeComposer,
+    NativeSchedules,
     NativeTimeline,
     NativeWorkspaceOpen,
     NativeWorkspaces,
     WorkspaceMemory
   }
+
+  @settings_detail_pages [
+    :models,
+    :model_ai,
+    :workspace_models,
+    :memory,
+    :workspace,
+    :mcp,
+    :git,
+    :app,
+    :appearance
+  ]
 
   def render(a) do
     if NativeWorkspaceOpen.overlay?(a) do
@@ -53,6 +66,8 @@ defmodule HandbeanProbe.HomeScreen.Render do
   defp render_page(a) do
     back_target =
       cond do
+        a.page == :settings -> inspect({:page, :chat})
+        a.page in @settings_detail_pages -> inspect({:page, :settings})
         a.page != :chat -> inspect({:page, :chat})
         (a.conversation_stack || []) != [] -> inspect(:close_subagent_conversation)
         true -> nil
@@ -91,17 +106,7 @@ defmodule HandbeanProbe.HomeScreen.Render do
     row([
       icon("menu", {:page, :history}),
       text(gettext("Handbean"), text_size: 13, font_weight: "bold", padding_right: 8),
-      button(
-        chat_title(a),
-        {:page, :workspace},
-        text_size: 11,
-        weight: 1,
-        background: color(:surface)
-      ),
-      if(not Nav.free_chat?(a),
-        do: button(gettext("Files"), {:page, :files}, text_size: 11, background: color(:surface))
-      ),
-      icon("info", {:page, :about})
+      text(chat_title(a), text_size: 11, weight: 1)
     ])
   end
 
@@ -113,6 +118,13 @@ defmodule HandbeanProbe.HomeScreen.Render do
       ],
       weights: [0, 1]
     )
+  end
+
+  defp header(%{page: page}) when page in @settings_detail_pages do
+    row([
+      icon("back", {:page, :settings}),
+      text(page_title(page), text_size: 14, weight: 1)
+    ])
   end
 
   defp header(a) do
@@ -166,12 +178,6 @@ defmodule HandbeanProbe.HomeScreen.Render do
     ])
   end
 
-  defp content(%{page: :attachments} = a),
-    do:
-      scroll(
-        NativeComposer.render_entries(a) ++ [button(gettext("Back to chat"), {:page, :chat})]
-      )
-
   defp content(%{page: :history} = a) do
     selected_id =
       case a.chat do
@@ -199,15 +205,31 @@ defmodule HandbeanProbe.HomeScreen.Render do
   defp content(%{page: :files} = a),
     do: HandbeanProbe.NativeChanges.render_content(a)
 
+  defp content(%{page: :schedules} = a),
+    do: NativeSchedules.render(a.schedules || NativeSchedules.new())
+
   defp content(%{page: :permissions} = a),
     do: scroll(NativeApproval.render_modes(a.permission_mode))
 
-  defp content(%{page: :settings} = a), do: content(%{a | page: :models})
+  defp content(%{page: :settings} = a) do
+    node(:column, [weight: 1, fill_width: true], [
+      SettingsHub.render(a)
+    ])
+  end
 
   defp content(%{page: page} = a)
-       when page in [:models, :memory, :workspace, :mcp, :git, :appearance, :app] do
+       when page in [
+              :models,
+              :model_ai,
+              :workspace_models,
+              :memory,
+              :workspace,
+              :mcp,
+              :git,
+              :appearance,
+              :app
+            ] do
     node(:column, [weight: 1, fill_width: true], [
-      settings_tabs(page),
       settings_body(a),
       if(page == :models,
         do: ModelSettings.subscription_sheet(a.models, Map.get(a, :notice))
@@ -285,37 +307,23 @@ defmodule HandbeanProbe.HomeScreen.Render do
     ])
   end
 
-  defp settings_tabs(page) do
-    node(:column, [fill_width: true, padding_bottom: 8], [
-      segment_row([
-        tab_button(gettext("Model / AI"), {:page, :models}, page == :models),
-        tab_button(gettext("Memory"), {:page, :memory}, page == :memory),
-        tab_button(gettext("Workspaces"), {:page, :workspace}, page == :workspace),
-        tab_button(gettext("MCP"), {:page, :mcp}, page == :mcp)
-      ]),
-      segment_row(
-        [
-          tab_button(gettext("Git"), {:page, :git}, page == :git),
-          tab_button(gettext("App"), {:page, :app}, page == :app),
-          appearance_tab(page)
-        ],
-        padding_top: 8
-      )
-    ])
-  end
-
-  # Appearance is not built yet. Keep it the same size as the other tabs,
-  # and only quiet the label, so it does not stretch into a section bar.
-  defp appearance_tab(page) do
-    selected? = page == :appearance
-
-    tab_button(gettext("UI"), {:page, :appearance}, selected?,
-      text_color: if(selected?, do: color(:card), else: color(:hint))
-    )
-  end
-
   defp settings_body(%{page: :models} = a),
-    do: scroll(ModelSettings.render(a.models), id: "models-#{inspect(a.models.editing)}")
+    do:
+      scroll(ModelSettings.render_available_models(a.models),
+        id: "models-#{inspect(a.models.editing)}"
+      )
+
+  defp settings_body(%{page: :model_ai} = a),
+    do:
+      scroll(ModelSettings.render_model_ai(a.models || ModelSettings.empty()),
+        id: "settings-model-ai"
+      )
+
+  defp settings_body(%{page: :workspace_models} = a),
+    do:
+      scroll(ModelSettings.render_workspace_models(a.models || ModelSettings.empty()),
+        id: "settings-workspace-models"
+      )
 
   defp settings_body(%{page: :workspace} = a),
     do: NativeWorkspaces.render(a.workspaces, a.workspace)
@@ -333,32 +341,27 @@ defmodule HandbeanProbe.HomeScreen.Render do
     HandbeanProbe.AppSettings.render(a.app_settings || HandbeanProbe.AppSettings.new())
   end
 
-  defp settings_body(%{page: :appearance}) do
-    scroll([
-      card([
-        text(gettext("Appearance is not available yet"), text_size: 16),
-        text(
-          gettext(
-            "Theme and display options are not part of this native experiment. Chat, workspaces, and model settings are available."
-          ),
-          text_size: 13,
-          text_color: color(:muted),
-          padding_top: 8
-        )
-      ])
-    ])
-  end
+  defp settings_body(%{page: :appearance}),
+    do: HandbeanProbe.HomeScreen.UiSettings.render()
 
   defp chat_title(a) do
     if Nav.free_chat?(a),
-      do: gettext("Chats"),
+      do: gettext("自由对话"),
       else: (a.workspace && a.workspace["name"]) || gettext("Workspace")
   end
 
   defp page_title(:history), do: gettext("Conversations")
-  defp page_title(:attachments), do: gettext("Attachments")
   defp page_title(:schedules), do: gettext("Scheduled tasks")
   defp page_title(:about), do: gettext("About")
+  defp page_title(:models), do: gettext("Available Models")
+  defp page_title(:model_ai), do: gettext("Model / AI")
+  defp page_title(:workspace_models), do: gettext("Workspace Models")
+  defp page_title(:memory), do: gettext("Workspace Memory")
+  defp page_title(:workspace), do: gettext("Workspaces")
+  defp page_title(:mcp), do: gettext("MCP")
+  defp page_title(:git), do: gettext("Git")
+  defp page_title(:app), do: gettext("App")
+  defp page_title(:appearance), do: gettext("UI")
   defp page_title(_), do: gettext("Settings")
 
   defp composer_controls(a) do

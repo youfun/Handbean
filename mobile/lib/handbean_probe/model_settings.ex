@@ -29,7 +29,8 @@ defmodule HandbeanProbe.ModelSettings do
   alias HandbeanProbe.ModelSettings.RenderConfirm
 
   @subscription_fields [:subscription_picker, :subscription_login, :subscription_busy?]
-  @reload_ui_fields @subscription_fields ++ [:scope, :notice]
+  @reload_ui_fields @subscription_fields ++
+                      [:scope, :notice, :policy_query, :select_open, :help_open]
 
   def empty do
     %{
@@ -48,6 +49,8 @@ defmodule HandbeanProbe.ModelSettings do
       defaults_by_scope: %{},
       sources_by_scope: %{},
       policy: %{mode: :unrestricted, allowed: %{}, default_model: nil, configured?: false},
+      policy_query: "",
+      memory_workspaces: [],
       confirm: nil,
       chat_blocked: nil,
       help_open: %{},
@@ -90,6 +93,8 @@ defmodule HandbeanProbe.ModelSettings do
         defaults_by_scope: defaults_by_scope,
         sources_by_scope: sources_by_scope,
         policy: ModelPolicy.form(path),
+        policy_query: (previous && previous.policy_query) || "",
+        memory_workspaces: memory_workspace_rows(),
         chat_blocked: Policy.chat_blocked(path, allowed, effective_default),
         subscription_picker: previous && previous.subscription_picker,
         subscription_login: previous && previous.subscription_login,
@@ -144,6 +149,9 @@ defmodule HandbeanProbe.ModelSettings do
 
   def change(state, field, value) do
     cond do
+      field == :policy_query ->
+        %{state | policy_query: to_string(value || "")}
+
       state.form && Map.has_key?(state.form, field) ->
         form = Map.put(state.form, field, value)
         %{state | form: Forms.hydrate(form, field, value)}
@@ -224,12 +232,32 @@ defmodule HandbeanProbe.ModelSettings do
   def action({:inherit, field}, state, ws), do: Defaults.inherit(state, field, ws)
   def action(:inherit_all, state, ws), do: Defaults.inherit_all(state, ws)
 
+  def action({:advisor_model, model}, state, ws),
+    do: Defaults.save_field(state, ws, :advisor_model, Defaults.blank_to_nil(model))
+
+  def action({:advisor_reasoning, level}, state, ws),
+    do: Defaults.save_field(state, ws, :advisor_reasoning, Defaults.blank_to_nil(level))
+
+  def action({:advisor_mode, mode}, state, ws) when mode in [:inherit, :custom, :disabled],
+    do: Defaults.save_field(state, ws, :advisor_mode, mode)
+
   def action({:om_model, model}, state, ws), do: Memory.set_model(state, model, ws)
   def action({:om_memory_scope, scope}, state, ws), do: Memory.set_scope(state, scope, ws)
   def action({:om_privacy_mode, mode}, state, ws), do: Memory.set_privacy(state, mode, ws)
+  def action({:om_reasoning, level}, state, ws), do: Memory.set_reasoning(state, level, ws)
+
+  def action({:om_reflector_enabled, enabled}, state, ws) when is_boolean(enabled),
+    do: Memory.set_enabled(state, enabled, ws)
+
   def action(:save_memory_details, state, ws), do: Memory.save_details(state, ws)
 
+  def action({:workspace_builtin_memory, id, enabled}, state, _ws) when is_boolean(enabled),
+    do: Memory.set_workspace_builtin(state, id, enabled)
+
   def action({:policy_mode, mode}, state, _ws), do: Policy.set_mode(state, mode)
+
+  def action({:policy_provider, provider, action}, state, _ws),
+    do: Policy.set_provider_models(state, provider, action)
 
   def action({:toggle_policy_model, provider, model}, state, _ws),
     do: Policy.toggle_model(state, provider, model)
@@ -307,9 +335,35 @@ defmodule HandbeanProbe.ModelSettings do
     |> Map.put(:advisor, :global)
   end
 
+  defp memory_workspace_rows do
+    Enum.flat_map(Handbean.WorkspaceStore.list(), fn ws ->
+      id = ws["id"]
+      path = ws["path"]
+
+      if is_binary(id) and id != "" and is_binary(path) and path != "" do
+        [
+          %{
+            id: id,
+            name: ws["name"] || id,
+            path: path,
+            enabled: Handbean.WorkspaceSettings.builtin_memory_enabled(path)
+          }
+        ]
+      else
+        []
+      end
+    end)
+  end
+
   # ── render ──
 
   def render(state), do: Render.render(state)
+
+  def render_model_ai(state), do: Render.model_ai(state)
+
+  def render_workspace_models(state), do: Render.workspace_models(state)
+
+  def render_available_models(state), do: Render.available_models(state)
 
   def subscription_sheet(state, notice \\ nil),
     do: HandbeanProbe.ModelSettings.SubscriptionRender.modal(state, notice)

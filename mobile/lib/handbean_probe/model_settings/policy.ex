@@ -45,6 +45,31 @@ defmodule HandbeanProbe.ModelSettings.Policy do
     %{state | policy: Map.put(state.policy, :default_model, Defaults.blank_to_nil(model))}
   end
 
+  def set_provider_models(state, provider, :all) when is_binary(provider) do
+    ids =
+      state.models
+      |> Enum.filter(&(&1.provider_id == provider))
+      |> Enum.map(& &1.model_id)
+      |> MapSet.new()
+
+    allowed = Map.put(state.policy.allowed || %{}, provider, ids)
+    %{state | policy: %{state.policy | mode: :restricted, allowed: allowed}}
+  end
+
+  def set_provider_models(state, provider, :none) when is_binary(provider) do
+    allowed = Map.delete(state.policy.allowed || %{}, provider)
+
+    policy =
+      state.policy
+      |> Map.put(:mode, :restricted)
+      |> Map.put(:allowed, allowed)
+      |> clear_invalid_default()
+
+    %{state | policy: policy}
+  end
+
+  def set_provider_models(state, _provider, _action), do: state
+
   def save(state, workspace) do
     case ModelPolicy.save(workspace["path"], state.policy) do
       :ok -> ModelSettings.reload(state, workspace, Defaults.saved_notice())

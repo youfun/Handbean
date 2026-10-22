@@ -18,6 +18,7 @@ defmodule HandbeanProbe.HomeScreen.Nav do
     Notice,
     Platform,
     Requests,
+    Schedules,
     Settings,
     Share,
     State,
@@ -69,6 +70,9 @@ defmodule HandbeanProbe.HomeScreen.Nav do
         page == :history ->
           reload_history(socket)
 
+        page == :settings ->
+          load_settings_hub(socket)
+
         page == :mcp ->
           MCPSettings.load(socket)
 
@@ -80,6 +84,9 @@ defmodule HandbeanProbe.HomeScreen.Nav do
 
         page == :app ->
           AppSettings.load(socket)
+
+        page == :schedules ->
+          Schedules.load(socket)
 
         Settings.settings_page?(page) ->
           Settings.load_models(socket)
@@ -237,6 +244,18 @@ defmodule HandbeanProbe.HomeScreen.Nav do
   end
 
   # ── transitions ──
+
+  defp load_settings_hub(socket) do
+    workspace = socket.assigns.workspace
+
+    socket
+    |> assign(:workspaces, NativeWorkspaces.load(workspace))
+    |> Settings.load_models()
+    |> WorkspaceMemory.load()
+    |> MCPSettings.load()
+    |> GitSettings.load()
+    |> AppSettings.load()
+  end
 
   defp confirm_rename(socket, title) do
     case socket.assigns.rename_conversation do

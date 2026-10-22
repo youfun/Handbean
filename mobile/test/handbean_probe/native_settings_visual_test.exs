@@ -54,17 +54,19 @@ defmodule HandbeanProbe.NativeSettingsVisualTest do
     toggle = find_type(tree, :toggle, "toggle-memory-reflection")
 
     assert blob =~ "记忆反思"
-    assert blob =~ "压缩后可按以下设置生成可审核的记忆候选。"
-    assert toggle.props.label == "启用记忆反思"
-    assert blob =~ "启用后，压缩会生成可审核的记忆候选。"
+    assert blob =~ "启用记忆反思"
+    refute Map.get(toggle.props, :label)
     assert blob =~ "保存记忆反思设置"
     assert blob =~ "记忆模型"
     assert blob =~ "记忆范围"
+    assert blob =~ "思考等级" or blob =~ "Think level"
 
     refute blob =~ "Memory Reflection"
     refute blob =~ "Compaction can produce reviewable memory candidates"
-    refute toggle.props.label =~ "Enable memory reflection"
+    refute toggle.props[:label] == "Enable memory reflection"
     refute blob =~ "When enabled, compaction generates reviewable memory candidates"
+    refute blob =~ "压缩后可按以下设置生成可审核的记忆候选。"
+    refute blob =~ "启用后，压缩会生成可审核的记忆候选。"
   end
 
   test "reasoning defaults to medium and preserves explicit off", %{workspace: ws} do
@@ -428,7 +430,76 @@ defmodule HandbeanProbe.NativeSettingsVisualTest do
     assert item.path in texts(NativeWorkspaces.render(expanded, ws))
   end
 
-  test "settings chrome marks appearance unavailable and uses selected tabs" do
+  test "settings home is an index of Web panels, without inlined forms" do
+    tree =
+      HomeScreen.render(
+        HandbeanProbe.HomeScreen.State.new(
+          page: :settings,
+          workspace: %{"id" => "w", "name" => "W", "path" => "/tmp"},
+          workspaces: %{
+            mode: :list,
+            items: [%{id: "w", name: "W", path: "/tmp", current?: true}],
+            name: "",
+            error: nil,
+            notice: nil,
+            browser: nil,
+            import: nil,
+            creating?: false,
+            expanded_paths: MapSet.new()
+          },
+          approval_open: false
+        )
+      )
+
+    blob = flatten_text(tree)
+    assert blob =~ gettext("Model / AI")
+    assert blob =~ gettext("Workspace Models")
+    assert blob =~ gettext("Available Models")
+    assert blob =~ gettext("Workspace Memory")
+    refute blob =~ gettext("Default model")
+    refute blob =~ gettext("Current workspace")
+    refute blob =~ gettext("Access mode")
+    refute blob =~ gettext("Workspace model policy")
+    refute find_type(tree, :settings_select, "select-provider")
+    refute find_type(tree, :settings_select, "select-reasoning")
+    assert find_type(tree, :settings_select, "select-workspace")
+    assert tap?(tree, {:page, :model_ai})
+    assert tap?(tree, {:page, :workspace_models})
+
+    titles =
+      walk(tree)
+      |> Enum.filter(
+        &(&1.type == :text && &1.props[:text] in [gettext("Model / AI"), gettext("Workspace")])
+      )
+      |> Enum.map(& &1.props)
+
+    assert Enum.all?(titles, &(&1[:max_lines] == 1))
+    refute Enum.any?(titles, &(&1[:weight] || &1[:text_align]))
+  end
+
+  test "settings more rows keep the title text without fill-width alignment" do
+    tree =
+      HomeScreen.render(
+        HandbeanProbe.HomeScreen.State.new(
+          page: :settings,
+          workspace: %{"id" => "w", "name" => "W", "path" => "/tmp"},
+          approval_open: false
+        )
+      )
+
+    row = find_tap(tree, {:page, :models})
+    refute is_nil(row)
+
+    texts =
+      walk(row)
+      |> Enum.filter(&(&1.type == :text))
+      |> Enum.map(& &1.props)
+
+    assert Enum.any?(texts, &(&1[:text] == gettext("Available Models") && is_nil(&1[:weight])))
+    refute Enum.any?(texts, &(&1[:text_align] == "right"))
+  end
+
+  test "settings UI page offers language and leaves theme unavailable" do
     tree =
       HomeScreen.render(
         HandbeanProbe.HomeScreen.State.new(
@@ -439,11 +510,18 @@ defmodule HandbeanProbe.NativeSettingsVisualTest do
       )
 
     blob = flatten_text(tree)
-    assert blob =~ gettext("UI")
-    assert blob =~ gettext("Git")
-    assert blob =~ gettext("App")
-    assert blob =~ gettext("Appearance is not available yet")
+    assert blob =~ gettext("Language")
+    assert blob =~ gettext("中文 (简体)")
+    assert blob =~ gettext("English")
+    assert blob =~ gettext("Theme")
+    assert blob =~ gettext("Not available")
+    refute blob =~ gettext("Theme is not available on this device yet.")
+    refute blob =~ gettext("Choose the interface language.")
+    refute blob =~ gettext("Appearance is not available yet")
+    refute blob =~ gettext("Model / AI")
     refute blob =~ "models.allow.providers"
+    assert tap?(tree, {:locale, "zh_CN"})
+    assert tap?(tree, {:locale, "en"})
   end
 
   test "app settings shows calendar grant lines without claiming an alarm permission" do
@@ -488,6 +566,60 @@ defmodule HandbeanProbe.NativeSettingsVisualTest do
     assert blob =~ gettext("No Git accounts yet.")
     assert blob =~ gettext("Save identity")
     refute blob =~ "settings-git"
+  end
+
+  test "Model/AI page stacks labels above controls and includes Advisor", %{workspace: ws} do
+    save_named(ws, "alpha", "one")
+    state = ModelSettings.action({:scope, :global}, ModelSettings.load(ws), ws)
+    tree = ModelSettings.render_model_ai(state)
+    blob = flatten_text(tree)
+
+    assert blob =~ gettext("Advisor")
+    assert blob =~ gettext("Advisor model")
+    assert blob =~ gettext("Think level")
+    assert blob =~ gettext("Enable memory reflection")
+    assert find_type(tree, :settings_select, "select-advisor")
+    assert find_type(tree, :settings_select, "select-advisor-reasoning")
+    assert find_type(tree, :settings_select, "select-memory-reasoning")
+    refute find_type(tree, :settings_select, "select-provider")
+
+    titles =
+      walk(tree)
+      |> Enum.filter(&(&1.type == :text && &1.props[:text] == gettext("Default model")))
+      |> Enum.map(& &1.props)
+
+    assert Enum.all?(titles, &(&1[:max_lines] == 1))
+    refute Enum.any?(titles, &(&1[:weight] || &1[:text_align]))
+
+    loaded = ModelSettings.load(ws)
+    assert Enum.any?(loaded.memory_workspaces, &(&1.id == ws["id"]))
+    toggle = find_type(tree, :toggle, "toggle-workspace-memory-#{ws["id"]}")
+    assert toggle
+  end
+
+  test "workspace models page searches and can select a whole provider", %{workspace: ws} do
+    save_named(ws, "alpha", "one")
+    save_named(ws, "alpha", "two")
+    save_named(ws, "beta", "keep")
+
+    state = ModelSettings.action({:policy_mode, :restricted}, ModelSettings.load(ws), ws)
+    tree = ModelSettings.render_workspace_models(state)
+    blob = flatten_text(tree)
+
+    assert blob =~ gettext("Search models or providers")
+    assert blob =~ gettext("Select all")
+    assert blob =~ gettext("Clear")
+    assert tap?(tree, {:policy_provider, "alpha", :all})
+    assert find_type(tree, :text_field, "{:model_field, :policy_query}")
+
+    filtered = ModelSettings.change(state, :policy_query, "keep")
+    filtered_blob = flatten_text(ModelSettings.render_workspace_models(filtered))
+    assert filtered_blob =~ "keep"
+    refute filtered_blob =~ "one"
+
+    selected = ModelSettings.action({:policy_provider, "alpha", :all}, state, ws)
+    assert MapSet.member?(selected.policy.allowed["alpha"], "one")
+    assert MapSet.member?(selected.policy.allowed["alpha"], "two")
   end
 
   defp save_named(workspace, provider, model) do

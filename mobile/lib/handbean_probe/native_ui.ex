@@ -370,6 +370,190 @@ defmodule HandbeanProbe.NativeUI do
     )
   end
 
+  def settings_section(title) do
+    text(title,
+      text_size: 12,
+      text_color: color(:muted),
+      padding_left: 16,
+      padding_top: 14,
+      padding_bottom: 6
+    )
+  end
+
+  def settings_group(children, props \\ []) do
+    rows = children |> List.wrap() |> Enum.reject(&is_nil/1)
+
+    inner =
+      Enum.intersperse(
+        rows,
+        node(:box, height: 1, fill_width: true, background: color(:separator))
+      )
+
+    node(:column, [fill_width: true, padding_bottom: 8], [
+      node(
+        :column,
+        Keyword.merge(
+          [
+            fill_width: true,
+            background: color(:card),
+            border_color: color(:border),
+            border_width: 1,
+            corner_radius: 12
+          ],
+          props
+        ),
+        inner
+      )
+    ])
+  end
+
+  def settings_form_field(label, control) do
+    node(
+      :column,
+      [
+        fill_width: true,
+        padding_left: 16,
+        padding_right: 16,
+        padding_top: 12,
+        padding_bottom: 12
+      ],
+      [
+        text(label, text_size: 13, text_color: color(:muted), max_lines: 1, padding_bottom: 6),
+        control
+      ]
+    )
+  end
+
+  def settings_toggle_row(name, value?, tag, props \\ []) do
+    {toggle_id, props} = Keyword.pop(props, :id, id(tag))
+
+    row(
+      [
+        text(name, text_size: 16, max_lines: 1),
+        node(:box, weight: 1),
+        node(:toggle,
+          id: toggle_id,
+          value: value?,
+          color: color(:ink),
+          on_change: {self(), tag}
+        )
+      ],
+      Keyword.merge(
+        [
+          fill_width: true,
+          padding_top: 12,
+          padding_bottom: 12,
+          padding_left: 16,
+          padding_right: 16
+        ],
+        props
+      )
+    )
+  end
+
+  def settings_value_row(name, value, props \\ []) do
+    row(
+      [
+        text(name, text_size: 16, max_lines: 1),
+        node(:box, weight: 1),
+        text(to_string(value || ""),
+          text_size: 13,
+          text_color: color(:muted),
+          max_lines: 1
+        )
+      ],
+      Keyword.merge(
+        [
+          fill_width: true,
+          padding_top: 12,
+          padding_bottom: 12,
+          padding_left: 16,
+          padding_right: 16
+        ],
+        props
+      )
+    )
+  end
+
+  def settings_control_row(name, control, props \\ []) do
+    row(
+      [
+        text(name, text_size: 16, max_lines: 1),
+        node(:box, weight: 1),
+        control
+      ],
+      Keyword.merge(
+        [
+          fill_width: true,
+          padding_top: 8,
+          padding_bottom: 8,
+          padding_left: 16,
+          padding_right: 16
+        ],
+        props
+      )
+    )
+  end
+
+  def settings_check_row(name, checked?, tag, props \\ []) do
+    row(
+      [
+        text(name, text_size: 16, max_lines: 1),
+        node(:box, weight: 1),
+        text(if(checked?, do: "✓", else: ""), text_size: 16, text_color: color(:ink))
+      ],
+      Keyword.merge(
+        [
+          fill_width: true,
+          padding_top: 12,
+          padding_bottom: 12,
+          padding_left: 16,
+          padding_right: 16,
+          on_tap: {self(), tag},
+          id: id(tag),
+          accessibility_role: "button"
+        ],
+        props
+      )
+    )
+  end
+
+  @doc "Grouped settings row: title, current value, drill chevron."
+  def settings_nav_row(name, value, tag, props \\ []) do
+    quiet? = Keyword.get(props, :quiet, false)
+    props = Keyword.delete(props, :quiet)
+    name_color = if quiet?, do: color(:hint), else: color(:ink)
+
+    # Do not put `weight` or `text_align` on the label/value texts. Android
+    # Text with text_align applies fillMaxWidth, which in a Row collapses the
+    # title to zero width and wraps it into a tall column of glyphs.
+    row(
+      [
+        text(name, text_size: 16, text_color: name_color, max_lines: 1),
+        node(:box, weight: 1),
+        text(to_string(value || ""),
+          text_size: 13,
+          text_color: color(:muted),
+          max_lines: 1
+        ),
+        text("›", text_size: 18, text_color: color(:hint))
+      ],
+      Keyword.merge(
+        [
+          fill_width: true,
+          padding_top: 12,
+          padding_bottom: 12,
+          padding_left: 16,
+          padding_right: 16,
+          on_tap: {self(), tag},
+          id: id(tag),
+          accessibility_role: "button"
+        ],
+        props
+      )
+    )
+  end
+
   def card(children, props \\ []) do
     node(:column, [fill_width: true, padding_bottom: 12], [
       node(

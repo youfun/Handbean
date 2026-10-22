@@ -29,9 +29,6 @@ defmodule HandbeanProbe.HomeScreen.Platform do
 
   # ── dispatch ──
 
-  def handle({:change, :artifact_path, text}, socket), do: assign(socket, :artifact_path, text)
-  def handle({:change, :open_url_draft, text}, socket), do: assign(socket, :open_url_draft, text)
-
   def handle({:tap, {:platform, :begin, kind}}, socket), do: begin(socket, kind, %{})
   def handle({:platform, :begin, kind}, socket), do: begin(socket, kind, %{})
   def handle({:platform, :begin, kind, payload}, socket), do: begin(socket, kind, payload)

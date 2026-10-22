@@ -64,6 +64,16 @@ defmodule HandbeanProbe.ModelSettings.Labels do
     if is_binary(id) and id != "", do: id, else: fallback
   end
 
+  def follow_label(id, _state, fallback) when id in [nil, ""], do: fallback
+  def follow_label(id, state, _fallback), do: default_model(id, state)
+
+  def advisor_mode(:custom), do: gettext("Use the model selected above")
+  def advisor_mode(:disabled), do: gettext("Disabled")
+  def advisor_mode(_), do: gettext("Use global")
+
+  def think_level(level) when level in [nil, ""], do: gettext("Model default")
+  def think_level(level), do: reasoning(level)
+
   def source_line(field, sources, value) do
     origin =
       case Map.get(sources, field, :global) do

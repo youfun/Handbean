@@ -218,6 +218,8 @@ root = ensure(
     '    case "list":          return "list.bullet"\n',
     '    case "history":       return "clock.arrow.circlepath"\n'
     '    case "folder":        return "folder"\n'
+    '    case "expand_more":   return "chevron.down"\n'
+    '    case "expand_less":   return "chevron.up"\n'
     '    case "list":          return "list.bullet"\n',
     "MobRootView.swift icons",
 )

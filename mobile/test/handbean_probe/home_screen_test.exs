@@ -220,13 +220,13 @@ defmodule HandbeanProbe.HomeScreenTest do
     assert find(view, :text_field).props.multiline
     assert find(view, :text_field).props.plain
     assert text(view) =~ gettext("Start a new conversation")
-    view = info(view, {:tap, {:page, :attachments}})
-    assert text(view) =~ gettext("Attachments")
-    assert text(view) =~ gettext("Choose photos")
-    assert text(view) =~ gettext("Open in system browser")
-    assert text(view) =~ gettext("Share or open an artifact file")
-    assert text(view) =~ gettext("Open with a system app")
-    assert text(view) =~ gettext("Share to another app")
+
+    assert Enum.any?(
+             flatten(tree(view)),
+             &(&1.type == :icon and &1.props[:name] == "add" and
+                 match?({_, {:platform, :begin, :pick_photos}}, &1.props[:on_tap]))
+           )
+
     refute text(view) =~ "{:platform"
     refute text(view) =~ gettext("Not implemented yet")
     view = info(view, {:tap, {:page, :workspace}})
@@ -237,7 +237,18 @@ defmodule HandbeanProbe.HomeScreenTest do
            )
 
     view = info(view, {:tap, {:page, :settings}})
+    assert text(view) =~ gettext("Model / AI")
+    assert text(view) =~ gettext("Workspace")
+    refute text(view) =~ gettext("Default model")
+
+    refute Enum.any?(
+             flatten(tree(view)),
+             &(&1.type == :settings_select && &1.props[:id] == "select-reasoning")
+           )
+
+    view = info(view, {:tap, {:page, :model_ai}})
     assert text(view) =~ gettext("Default model")
+    assert text(view) =~ gettext("Advisor")
 
     assert Enum.any?(
              flatten(tree(view)),
@@ -246,6 +257,7 @@ defmodule HandbeanProbe.HomeScreenTest do
 
     view = info(view, {:tap, {:reasoning, "medium"}})
     assert assigns(view).models.defaults.reasoning == "medium"
+    view = info(view, {:tap, {:page, :models}})
     view = info(view, {:tap, :add_model})
     assert assigns(view).models.editing == nil
     view = info(view, {:tap, :add_provider})
@@ -613,8 +625,9 @@ defmodule HandbeanProbe.HomeScreenTest do
     assert notice_text(view) =~ gettext("Conversation ID copied")
   end
 
-  test "app entries live in the pinned footer of the history drawer", %{view: view} do
+  test "app entries live in the history drawer, not the chat header", %{view: view} do
     refute find(view, :icon, id: "{:page, :settings}")
+    refute find(view, :icon, id: "{:page, :about}")
     refute text(view) =~ gettext("Scheduled tasks")
     refute text(view) =~ gettext("Settings")
 
@@ -635,16 +648,65 @@ defmodule HandbeanProbe.HomeScreenTest do
     assert about.props.on_tap
     assert text(view) =~ gettext("About")
 
-    # The footer is pinned below the scroll area, so it stays reachable no
-    # matter how long the conversation list grows.
-    scroll = find(view, :scroll)
-    assert scroll
-    footer_ids = ["history-files", "history-tasks", "history-settings", "history-about"]
-    refute Enum.any?(flatten(scroll), &(&1.props[:id] in footer_ids))
+    view = info(view, {:tap, {:page, :schedules}})
+    assert assigns(view).page == :schedules
+    refute assigns(view).schedules.loading?
+    assert find(view, :scroll, id: "native-schedules")
 
     view = info(view, {:tap, {:page, :history}})
     view = info(view, {:tap, {:page, :settings}})
-    assert text(view) =~ gettext("Default model")
+    assert text(view) =~ gettext("Model / AI")
+  end
+
+  test "settings hub calendar status is not shown as an unread attachment", %{view: view} do
+    install_platform_fake(fn _req, _opts -> {:ok, :async} end)
+    view = info(view, {:tap, {:page, :settings}})
+
+    [%{ref: request_id, generation: generation}] =
+      PendingRequests.by_kind(assigns(view).pending_requests, :app_settings)
+
+    json =
+      Jason.encode!(%{
+        "calendar_read" => true,
+        "calendar_write" => true,
+        "outcome" => "listed"
+      })
+
+    view =
+      info(
+        view,
+        {:engine_result, %{request_id: request_id, generation: generation, result: json}}
+      )
+
+    notice_text = Notice.text(assigns(view).notice) || ""
+    refute notice_text =~ "unreadable"
+    refute notice_text =~ gettext("Attachment not added")
+    assert assigns(view).app_settings.calendar_read == true
+    assert assigns(view).app_settings.calendar_write == true
+  end
+
+  test "UI language persists through Settings.UI", %{view: view} do
+    previous_env = Application.get_env(:handbean_probe, :locale)
+    previous_locale = Gettext.get_locale(HandbeanProbe.Gettext)
+
+    on_exit(fn ->
+      if previous_env,
+        do: Application.put_env(:handbean_probe, :locale, previous_env),
+        else: Application.delete_env(:handbean_probe, :locale)
+
+      _ = Handbean.Settings.UI.save_locale(previous_locale)
+      HandbeanProbe.Gettext.apply(previous_locale)
+    end)
+
+    Application.delete_env(:handbean_probe, :locale)
+    view = info(view, {:tap, {:page, :appearance}})
+    assert text(view) =~ gettext("Language")
+    view = info(view, {:tap, {:locale, "en"}})
+    assert Handbean.Settings.UI.locale() == "en"
+    assert Gettext.get_locale(HandbeanProbe.Gettext) == "en"
+    assert text(view) =~ "Not available"
+    refute text(view) =~ "Choose the interface language."
+    refute text(view) =~ "Theme is not available on this device yet."
   end
 
   test "a free-chat notification opens without inventing a workspace", %{view: view} do
@@ -2694,21 +2756,17 @@ defmodule HandbeanProbe.HomeScreenTest do
     workspace = assigns(view).workspace
     File.write!(Path.join(workspace["path"], "report.pdf"), "%PDF")
 
-    view = info(view, {:tap, {:page, :attachments}})
-    view = info(view, {:change, :open_url_draft, "file:///tmp/x"})
-    view = info(view, {:tap, {:delivery, :open_url}})
+    view = info(view, {:tap, {:delivery, :open_url, "file:///tmp/x"}})
     assert assigns(view).notice
     refute_received {:platform_cmd, _}
 
-    view = info(view, {:change, :open_url_draft, "https://example.com/order"})
-    view = info(view, {:tap, {:delivery, :open_url}})
+    view = info(view, {:tap, {:delivery, :open_url, "https://example.com/order"}})
     assert_receive {:platform_cmd, url_req}, 1_000
     assert url_req.op == "platform_open_url"
     assert url_req.payload["url"] == "https://example.com/order"
     refute Map.has_key?(url_req.payload, "action")
 
-    view = info(view, {:change, :artifact_path, "report.pdf"})
-    view = info(view, {:tap, {:delivery, :share_file}})
+    view = info(view, {:tap, {:delivery, :share_file, "report.pdf"}})
     assert_receive {:platform_cmd, export_req}, 1_000
     assert export_req.op == "platform_export"
     assert export_req.payload["relative_path"] == "report.pdf"
@@ -2752,9 +2810,7 @@ defmodule HandbeanProbe.HomeScreenTest do
     Application.put_env(:handbean_probe, :android_intent_await_ms, 0)
     on_exit(fn -> Application.delete_env(:handbean_probe, :android_intent_await_ms) end)
 
-    view = info(view, {:tap, {:page, :attachments}})
-    view = info(view, {:change, :open_url_draft, "https://example.com/slow"})
-    view = info(view, {:tap, {:delivery, :open_url}})
+    view = info(view, {:tap, {:delivery, :open_url, "https://example.com/slow"}})
     assert_receive {:platform_cmd, %{op: "platform_open_url", request_id: request_id}}, 1_000
     assert PendingRequests.has?(assigns(view).pending_requests, request_id)
 
@@ -2770,7 +2826,6 @@ defmodule HandbeanProbe.HomeScreenTest do
              gettext("The system operation did not answer in time and was cancelled.")
 
     # A late host reply for the expired request is dropped without a second notice.
-    view = info(view, {:tap, {:page, :attachments}})
 
     view =
       info(view, {:engine_result, %{request_id: request_id, result: ~s({"outcome":"opened"})}})
@@ -2786,9 +2841,7 @@ defmodule HandbeanProbe.HomeScreenTest do
       {:ok, :async}
     end)
 
-    view = info(view, {:tap, {:page, :attachments}})
-    view = info(view, {:change, :open_url_draft, "https://example.com/gen"})
-    view = info(view, {:tap, {:delivery, :open_url}})
+    view = info(view, {:tap, {:delivery, :open_url, "https://example.com/gen"}})
     assert_receive {:platform_cmd, %{op: "platform_open_url"} = req}, 1_000
 
     stale =
@@ -2893,9 +2946,6 @@ defmodule HandbeanProbe.HomeScreenTest do
 
       refute text(view) =~
                Gettext.with_locale("zh_CN", fn -> gettext("Start a new conversation") end)
-
-      view = info(view, {:tap, {:page, :attachments}})
-      assert text(view) =~ "Open in system browser"
     end
 
     test "unknown locale values fall back to the default" do

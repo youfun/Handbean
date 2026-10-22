@@ -56,9 +56,9 @@ defmodule HandbeanProbe.NativeHistoryTest do
     history = sample_history()
     rendered = NativeHistory.render(history, %{selected_id: "a-new"})
 
-    assert texts(rendered) |> Enum.filter(&(&1 in [gettext("已置顶"), gettext("对话")])) == [
+    assert texts(rendered) |> Enum.filter(&(&1 in [gettext("已置顶"), gettext("自由对话")])) == [
              gettext("已置顶"),
-             gettext("对话")
+             gettext("自由对话")
            ]
 
     assert "Alpha" in texts(rendered)
@@ -93,7 +93,7 @@ defmodule HandbeanProbe.NativeHistoryTest do
       })
 
     assert gettext("已置顶") in texts(rendered)
-    assert gettext("对话") in texts(rendered)
+    assert gettext("自由对话") in texts(rendered)
     assert "Alpha" in texts(rendered)
     refute "pinned-a" in texts(rendered)
     refute "free-new" in texts(rendered)
@@ -107,7 +107,7 @@ defmodule HandbeanProbe.NativeHistoryTest do
     rendered = NativeHistory.render(history, %{})
 
     refute gettext("已置顶") in texts(rendered)
-    assert gettext("对话") in texts(rendered)
+    assert gettext("自由对话") in texts(rendered)
     assert "Alpha" in texts(rendered)
     assert "0" in texts(rendered)
     refute {:toggle_history_group, "pinned"} in tags(rendered)
