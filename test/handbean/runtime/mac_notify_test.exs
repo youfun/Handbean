@@ -1,5 +1,5 @@
 defmodule Handbean.Runtime.MacNotifyTest do
-  use ExUnit.Case, async: false
+  use Handbean.DataCase, async: false
 
   alias Handbean.Runtime.MacNotify
   alias Handbean.Runtime.MacNotify.Bridge

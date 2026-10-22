@@ -16,7 +16,7 @@ defmodule Handbean.DogfoodSmoke do
   - Multi-turn: tool_results → provider continuation
   """
 
-  use ExUnit.Case, async: false
+  use Handbean.DataCase, async: false
   import ExUnit.CaptureLog, only: [with_log: 1]
 
   alias Handbean.Agent
@@ -168,9 +168,6 @@ defmodule Handbean.DogfoodSmoke do
   end
 
   setup ctx do
-    :ok = Ecto.Adapters.SQL.Sandbox.checkout(Handbean.Repo)
-    Ecto.Adapters.SQL.Sandbox.mode(Handbean.Repo, {:shared, self()})
-
     Enum.each(
       [
         Handbean.Tool.Builtin.Read,

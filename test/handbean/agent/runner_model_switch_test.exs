@@ -1,13 +1,12 @@
 defmodule Handbean.Agent.RunnerModelSwitchTest do
-  use ExUnit.Case, async: false
+  use Handbean.DataCase, async: false
+
+  import Handbean.TestSupport.RuntimeLifecycle
 
   alias Handbean.Agent.{Config, Coordinator, Message, Runner}
   alias Handbean.PubSub.Session
 
   setup do
-    :ok = Ecto.Adapters.SQL.Sandbox.checkout(Handbean.Repo)
-    Ecto.Adapters.SQL.Sandbox.mode(Handbean.Repo, {:shared, self()})
-
     old_home = System.get_env("HOME")
     home_dir = Path.join(System.tmp_dir!(), "handbean_model_switch_#{Ecto.UUID.generate()}")
     File.mkdir_p!(home_dir)
@@ -19,18 +18,23 @@ defmodule Handbean.Agent.RunnerModelSwitchTest do
     end
 
     {:ok, conversation} = Handbean.ConversationStore.create("default", timeline: [])
+    sid = conversation["id"]
 
     assert {:ok, _metadata} =
-             Handbean.Permissions.ConversationMode.update(conversation["id"], :yolo,
-               source: :test
-             )
+             Handbean.Permissions.ConversationMode.update(sid, :yolo, source: :test)
 
     on_exit(fn ->
-      if old_home, do: System.put_env("HOME", old_home), else: System.delete_env("HOME")
-      File.rm_rf(home_dir)
+      try do
+        stop_run!(sid)
+        drain_terminal_callbacks!()
+        sync_runtime_observers!()
+      after
+        if old_home, do: System.put_env("HOME", old_home), else: System.delete_env("HOME")
+        File.rm_rf(home_dir)
+      end
     end)
 
-    %{sid: conversation["id"]}
+    %{sid: sid}
   end
 
   defmodule BoundaryProvider do

@@ -4,7 +4,9 @@ defmodule Handbean.Extension.HotReloadTest do
   tearing down an active RunSupervisor.
   """
 
-  use ExUnit.Case, async: false
+  use Handbean.DataCase, async: false
+
+  import Handbean.TestSupport.RuntimeLifecycle
 
   alias Handbean.Agent.Coordinator
   alias Handbean.Agent.ExtensionBridge
@@ -14,9 +16,6 @@ defmodule Handbean.Extension.HotReloadTest do
   @tmp_base Path.join(System.tmp_dir!(), "sigil_hot_reload_test")
 
   setup do
-    :ok = Ecto.Adapters.SQL.Sandbox.checkout(Handbean.Repo)
-    Ecto.Adapters.SQL.Sandbox.mode(Handbean.Repo, {:shared, self()})
-
     tmp = Path.join(@tmp_base, "case_#{System.unique_integer([:positive])}")
     File.mkdir_p!(tmp)
     {:ok, tmp} = Handbean.Security.PathValidator.canonicalize(tmp)
@@ -26,13 +25,18 @@ defmodule Handbean.Extension.HotReloadTest do
     Application.put_env(:handbean, :trust_project_code, true)
 
     on_exit(fn ->
-      if old_home, do: System.put_env("HOME", old_home), else: System.delete_env("HOME")
+      try do
+        drain_terminal_callbacks!()
+        sync_runtime_observers!()
+      after
+        if old_home, do: System.put_env("HOME", old_home), else: System.delete_env("HOME")
 
-      if is_nil(old_trust),
-        do: Application.delete_env(:handbean, :trust_project_code),
-        else: Application.put_env(:handbean, :trust_project_code, old_trust)
+        if is_nil(old_trust),
+          do: Application.delete_env(:handbean, :trust_project_code),
+          else: Application.put_env(:handbean, :trust_project_code, old_trust)
 
-      File.rm_rf!(tmp)
+        File.rm_rf!(tmp)
+      end
     end)
 
     registry = :"hot_reload_reg_#{System.unique_integer([:positive])}"
@@ -93,6 +97,7 @@ defmodule Handbean.Extension.HotReloadTest do
 
     assert {:ok, conversation} = Handbean.ConversationStore.create("default", timeline: [])
     conversation_id = conversation["id"]
+    on_exit(fn -> stop_run!(conversation_id) end)
     parent = self()
 
     assert {:ok, %{action: :started}} =
@@ -107,7 +112,7 @@ defmodule Handbean.Extension.HotReloadTest do
                max_turns: 3
              )
 
-    assert_receive {:hot_reload_provider_started, _task_pid}, 1_000
+    assert_receive {:hot_reload_provider_started, task_pid}, 1_000
     assert {:ok, %{run_pid: run_pid}} = Coordinator.status(conversation_id)
     run_ref = Process.monitor(run_pid)
 
@@ -124,8 +129,9 @@ defmodule Handbean.Extension.HotReloadTest do
     assert Process.alive?(run_pid)
     assert {:ok, entry} = Handbean.Tool.Registry.get("ext__hotdemo__ping")
     assert {:ok, ":v2"} = entry.executor.(%{}, %{})
-  after
-    :ok
+
+    send(task_pid, :finish)
+    assert_receive {:DOWN, ^run_ref, :process, ^run_pid, _reason}, 2_000
   end
 
   test "start_link preloads extensions already on disk", %{tmp: tmp, registry: registry} do
