@@ -2197,6 +2197,14 @@ msgstr ""
 msgid "新建自由对话"
 msgstr "新建自由对话"
 
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:118
+#: lib/handbean_web/live/workspace_live/sidebar_header_components.ex:97
+#: lib/handbean_web/live/workspace_live/sidebar_list_components.ex:247
+#: lib/handbean_web/live/workspace_live/sidebar_list_components.ex:687
+#, elixir-autogen, elixir-format
+msgid "自由对话"
+msgstr "自由对话"
+
 #: lib/handbean_web/live/workspace_live/chat_components.ex:1101
 #, elixir-autogen, elixir-format
 msgid "智能审批"

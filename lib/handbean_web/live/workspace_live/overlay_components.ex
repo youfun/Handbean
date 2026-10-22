@@ -115,7 +115,7 @@ defmodule HandbeanWeb.WorkspaceLive.OverlayComponents do
             aria-expanded={to_string(not free_collapsed?)}
             aria-controls="sheet-free-conversations"
           >
-            <span class="truncate flex-1 min-w-0">{gettext("对话")}</span>
+            <span class="truncate flex-1 min-w-0">{gettext("自由对话")}</span>
             <span id="sheet-free-count" class="sheet-conv-count" title={gettext("会话数量")}>
               {free_conversation_count(@conversations_by_workspace)}
             </span>
@@ -522,7 +522,6 @@ defmodule HandbeanWeb.WorkspaceLive.OverlayComponents do
         <% end %>
       </div>
     </div>
-
     """
   end
 

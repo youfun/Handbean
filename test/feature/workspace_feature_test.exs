@@ -178,7 +178,7 @@ defmodule HandbeanWeb.Feature.WorkspaceFeatureTest do
       session =
         conn
         |> visit("/")
-        |> assert_has("#free-chats", "Chats")
+        |> assert_has("#free-chats", "Free chats")
         |> assert_has("#workspace-panel")
         |> click_button("#new-free-conversation", "")
 

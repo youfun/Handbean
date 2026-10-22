@@ -601,8 +601,19 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationEvents do
 
   def handle("toggle_tool_work", _params, socket), do: {:noreply, socket}
 
+  def handle("toggle_permission_menu", _params, %{assigns: %{chat_scope: :free}} = socket) do
+    {:noreply, assign(socket, :show_permission_menu, false)}
+  end
+
   def handle("toggle_permission_menu", _params, socket) do
     {:noreply, update(socket, :show_permission_menu, &(!&1))}
+  end
+
+  def handle("select_permission_mode", _params, %{assigns: %{chat_scope: :free}} = socket) do
+    {:noreply,
+     socket
+     |> assign(:permission_mode, :deny)
+     |> assign(:show_permission_menu, false)}
   end
 
   def handle("select_permission_mode", %{"mode" => mode_str}, socket)

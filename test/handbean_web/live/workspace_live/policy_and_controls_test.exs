@@ -330,7 +330,7 @@ defmodule HandbeanWeb.WorkspaceLive.PolicyAndControlsTest do
   end
 
   describe "tool permissions menu" do
-    test "permission event without a workspace reports failure and keeps the session usable", %{
+    test "free chat hides permission controls and ignores forged permission events", %{
       conn: conn
     } do
       {:ok, workspace} = Handbean.WorkspaceStore.ensure_default!()
@@ -340,15 +340,49 @@ defmodule HandbeanWeb.WorkspaceLive.PolicyAndControlsTest do
       {:ok, conversation} = Handbean.ConversationStore.create_free(title: "Permission regression")
       {:ok, view, _html} = live(conn, "/c/#{conversation["id"]}")
 
-      assert capture_log(fn ->
-               html = render_click(view, "select_permission_mode", %{"mode" => "yolo"})
-               assert html =~ "Failed to update permission mode"
-             end) =~ "not_found"
+      refute has_element?(view, ".permission-menu-container")
+      refute has_element?(view, "button[phx-click='toggle_permission_menu']")
+
+      render_click(view, "toggle_permission_menu", %{})
+      render_click(view, "select_permission_mode", %{"mode" => "yolo"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.permission_mode == :deny
+      refute assigns.show_permission_menu
 
       assert File.read!(settings_path) == original
       render_click(view, "select_permission_mode", %{})
       render_click(view, "select_permission_mode", %{"mode" => "invalid"})
       assert render(view) =~ "Permission regression"
+    end
+
+    test "switching from workspace yolo to free chat clears the permission projection", %{
+      conn: conn
+    } do
+      {:ok, _default_ws} = Handbean.WorkspaceStore.ensure_default!()
+      {:ok, view, _html} = live(conn, "/")
+      _workspace_conversation_id = create_default_conversation(view)
+
+      view |> element("button[phx-click='toggle_permission_menu']") |> render_click()
+
+      view
+      |> element("button[phx-click='select_permission_mode'][phx-value-mode='yolo']")
+      |> render_click()
+
+      assert has_element?(view, ".permission-menu-container", "yolo ▾")
+
+      {:ok, free_conversation} =
+        Handbean.ConversationStore.create_free(title: "No permission control")
+
+      render_click(view, "select_free_conversation", %{"id" => free_conversation["id"]})
+      assert_patch(view, "/c/#{free_conversation["id"]}")
+
+      refute has_element?(view, ".permission-menu-container")
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.chat_scope == :free
+      assert assigns.permission_mode == :deny
+      refute assigns.show_permission_menu
     end
 
     test "toggles permission menu and selects new permission mode", %{conn: conn} do

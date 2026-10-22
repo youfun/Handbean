@@ -545,7 +545,7 @@ defmodule HandbeanWeb.WorkspaceLive.NavigationAndFreeChatTest do
 
       view |> element("#new-free-conversation") |> render_click()
 
-      assert render(view) =~ "Chats"
+      assert render(view) =~ "Free chats"
 
       html =
         view

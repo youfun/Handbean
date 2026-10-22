@@ -113,6 +113,7 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
         available_clis={@available_clis}
         available_models={@available_models}
         available_reasoning_levels={@available_reasoning_levels}
+        chat_scope={@chat_scope}
         cli_models_error={@cli_models_error}
         cli_models_loading={@cli_models_loading}
         composer_error={@composer_error}

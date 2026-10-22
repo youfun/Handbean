@@ -244,7 +244,7 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarListComponents do
               }
               class="workspace-header min-w-0 text-left px-2 py-1.5 text-xs flex items-center gap-1.5"
             >
-              <span class="truncate flex-1">{gettext("对话")}</span>
+              <span class="truncate flex-1">{gettext("自由对话")}</span>
             </button>
             <span class="workspace-title-rule" aria-hidden="true"></span>
             <button
@@ -684,7 +684,7 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarListComponents do
                 ]}></span>
                 <span class="truncate flex-1">{conv.title}</span>
                 <span class="conversation-badge">
-                  {if(conv.scope == "free", do: gettext("对话"), else: conv.workspace_label)}
+                  {if(conv.scope == "free", do: gettext("自由对话"), else: conv.workspace_label)}
                 </span>
               </button>
               <button

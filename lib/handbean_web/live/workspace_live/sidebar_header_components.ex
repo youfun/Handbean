@@ -94,6 +94,6 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarHeaderComponents do
     """
   end
 
-  defp mobile_header_label(:free, _workspace_label), do: gettext("对话")
+  defp mobile_header_label(:free, _workspace_label), do: gettext("自由对话")
   defp mobile_header_label(_chat_scope, workspace_label), do: workspace_label
 end

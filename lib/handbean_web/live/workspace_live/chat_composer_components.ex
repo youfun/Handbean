@@ -10,6 +10,7 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComposerComponents do
   attr :available_clis, :list, required: true
   attr :available_models, :list, required: true
   attr :available_reasoning_levels, :list, required: true
+  attr :chat_scope, :any, required: true
   attr :cli_models_error, :any, required: true
   attr :cli_models_loading, :boolean, required: true
   attr :composer_error, :any, required: true
@@ -138,7 +139,7 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComposerComponents do
           >
             {model_empty_message(@workspace_path)}
           </div>
-          <div class="permission-menu-container">
+          <div :if={@chat_scope != :free} class="permission-menu-container">
             <button
               type="button"
               class="pill"

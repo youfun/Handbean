@@ -1,6 +1,8 @@
 defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
   @moduledoc false
 
+  use Gettext, backend: Handbean.Gettext
+
   import Phoenix.Component, only: [assign: 3, update: 3]
   import Phoenix.LiveView, only: [start_async: 3, stream: 4]
 
@@ -480,7 +482,9 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
     |> assign(:workspace_path, nil)
     |> assign(:workspace_root, nil)
     |> assign(:checkout_available?, false)
-    |> assign(:workspace_label, "Chats")
+    |> assign(:workspace_label, gettext("自由对话"))
+    |> assign(:permission_mode, :deny)
+    |> assign(:show_permission_menu, false)
     |> assign(:expanded_tool_groups, MapSet.new())
     |> assign(:pending_messages, %{})
     |> assign(:history_before, nil)

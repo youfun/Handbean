@@ -241,7 +241,7 @@ defmodule HandbeanWeb.WorkspaceLive.Bootstrap do
             conversation_id: id,
             workspace_path: nil,
             workspace_root: nil,
-            workspace_label: "Chats",
+            workspace_label: gettext("自由对话"),
             model_root: default_ws["path"]
           }
 
@@ -300,7 +300,7 @@ defmodule HandbeanWeb.WorkspaceLive.Bootstrap do
         conversation_id: conversation_id,
         workspace_path: nil,
         workspace_root: nil,
-        workspace_label: "Chats",
+        workspace_label: gettext("自由对话"),
         model_root: default_ws["path"]
       }
     else

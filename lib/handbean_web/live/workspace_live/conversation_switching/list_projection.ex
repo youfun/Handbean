@@ -1,9 +1,11 @@
 defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching.ListProjection do
   @moduledoc false
 
-  require Logger
+  use Gettext, backend: Handbean.Gettext
 
   alias HandbeanWeb.WorkspaceLive.ConversationState
+
+  require Logger
 
   @free_key :free
   @sidebar_page_size 10
@@ -132,7 +134,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching.ListProjection do
     |> Map.get(@free_key, [])
     |> Enum.reject(&archived_conversation?/1)
     |> sort_sidebar_conversations()
-    |> Enum.map(&conversation_row(&1, nil, "对话", "free"))
+    |> Enum.map(&conversation_row(&1, nil, gettext("自由对话"), "free"))
   end
 
   def free_conversation_slice(conversations_by_workspace, limit, current_conversation_id)
@@ -306,7 +308,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching.ListProjection do
     Map.put(row, :age, HandbeanWeb.WorkspaceLive.ViewComponents.short_relative_time(row))
   end
 
-  defp archived_bucket(@free_key, _ws_map), do: {nil, "对话", "free"}
+  defp archived_bucket(@free_key, _ws_map), do: {nil, gettext("自由对话"), "free"}
 
   defp archived_bucket(ws_id, ws_map),
     do: {ws_id, Map.get(ws_map, ws_id, ws_id), "workspace"}
@@ -366,7 +368,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching.ListProjection do
   defp stream_workspace_id(@free_key), do: nil
   defp stream_workspace_id(ws_id), do: ws_id
 
-  defp stream_workspace_name(@free_key, _ws_names), do: "对话"
+  defp stream_workspace_name(@free_key, _ws_names), do: gettext("自由对话")
   defp stream_workspace_name(ws_id, ws_names), do: Map.get(ws_names, ws_id, ws_id)
 
   defp thread_tree_rows(conversations, row_fun) do
