@@ -56,6 +56,65 @@ defmodule Handbean.PubSub.SessionSQLiteTest do
     assert :ok = Session.mark_run_finished(id, "run-1")
   end
 
+  test "next-turn acceptance and deletion persist matching transcript and snapshot", %{id: id} do
+    {:ok, _pid} =
+      Session.start_or_get(session_id: id, model: "fake", session_store_enabled?: true)
+
+    {:ok, queue} = Handbean.Agent.CandidateQueue.start_link(session_id: id, owner: self())
+    :ok = Session.attach_run(id, self(), queue, run_id: "current")
+    :ok = Session.subscribe(id)
+
+    opts = [
+      deliver_as: :next_turn,
+      expected_run_id: "current",
+      persist_candidate?: true,
+      message_id: "future",
+      transcript_id: "future"
+    ]
+
+    assert {:error, :stale_run} =
+             Session.enqueue_candidate(
+               id,
+               "rejected",
+               Keyword.put(opts, :expected_run_id, "old-run")
+             )
+
+    assert [] = Session.get_pending_messages(id)
+    assert {:ok, []} = Handbean.ConversationTranscriptStore.list(id)
+
+    assert {:ok, %{action: :enqueued, run_id: "current", run_pid: nil}} =
+             Session.enqueue_candidate(id, "remember me", opts)
+
+    assert [%{id: "future", content: "remember me", deliver_as: :next_turn}] =
+             Session.get_pending_messages(id)
+
+    assert {:ok, [%{"id" => "future", "content" => "remember me"}]} =
+             Handbean.ConversationTranscriptStore.list(id)
+
+    assert {:ok, %{"next_turn_messages" => [%{"content" => "remember me"}]}} =
+             Handbean.SessionStore.SQLite.load(id)
+
+    assert_receive {:agent_event,
+                    %AgentEvent{
+                      kind: :candidate_message_injected,
+                      seq: 1,
+                      payload: %{message_id: "future", run_id: "current"}
+                    }}
+
+    assert {:ok, %{deliver_as: :next_turn}} = Session.delete_pending_message(id, "future")
+    assert [] = Session.get_pending_messages(id)
+    assert {:ok, []} = Handbean.ConversationTranscriptStore.list(id)
+
+    assert {:ok, %{"next_turn_messages" => []}} = Handbean.SessionStore.SQLite.load(id)
+
+    assert_receive {:agent_event,
+                    %AgentEvent{
+                      kind: :candidate_message_deleted,
+                      seq: 2,
+                      payload: %{message_id: "future"}
+                    }}
+  end
+
   test "restart restores persisted events and next-turn messages without runtime handles", %{
     id: id
   } do

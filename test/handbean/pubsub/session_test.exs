@@ -492,6 +492,81 @@ defmodule Handbean.PubSub.SessionTest do
     end
   end
 
+  describe "model switch projection" do
+    test "projects accepted and applied models while ignoring a stale run" do
+      sid = "model-switch-#{System.unique_integer([:positive])}"
+      {:ok, _pid} = Session.start_link(session_id: sid, model: "initial")
+      {:ok, queue} = Handbean.Agent.CandidateQueue.start_link(session_id: sid, owner: self())
+      :ok = Session.attach_run(sid, self(), queue, run_id: "current", model: "initial")
+      :ok = Session.subscribe(sid)
+      model = %{model: "replacement", model_ref: "provider/replacement", revision: 1}
+
+      :ok = Session.project_model_switch(sid, "old-run", :applied, model)
+      assert %{last_seq: 0, meta: %{model: "initial"}} = Session.snapshot(sid)
+
+      :ok = Session.project_model_switch(sid, "current", :accepted, model)
+
+      assert %{last_seq: 1, epoch: epoch, meta: meta} = Session.snapshot(sid)
+      assert meta.model == "initial"
+      assert meta.pending_model == model
+      assert meta.model_switch_status == :accepted
+      assert meta.model_switch_revision == 1
+
+      assert_receive {:agent_event,
+                      %AgentEvent{
+                        kind: :model_switch_accepted,
+                        seq: 1,
+                        epoch: ^epoch,
+                        payload: %{run_id: "current", status: :accepted}
+                      }}
+
+      :ok = Session.project_model_switch(sid, "current", :applied, model)
+      assert %{last_seq: 2, meta: meta} = Session.snapshot(sid)
+      assert meta.model == "replacement"
+      assert meta.active_model == model
+      assert meta.pending_model == nil
+      assert meta.model_switch_status == :applied
+      assert meta.model_switch_revision == 1
+      assert_receive {:agent_event, %AgentEvent{kind: :model_switch_applied, seq: 2}}
+    end
+
+    test "finishing a run publishes expiration before clearing its pending model" do
+      sid = "model-expiration-#{System.unique_integer([:positive])}"
+      {:ok, _pid} = Session.start_link(session_id: sid, model: "initial")
+      {:ok, queue} = Handbean.Agent.CandidateQueue.start_link(session_id: sid, owner: self())
+      :ok = Session.attach_run(sid, self(), queue, run_id: "current")
+      :ok = Session.subscribe(sid)
+
+      :ok =
+        Session.project_model_switch(sid, "current", :accepted, %{
+          model: "replacement",
+          model_ref: "provider/replacement",
+          revision: 2
+        })
+
+      assert :ok = Session.mark_run_finished(sid, "current")
+      assert_receive {:agent_event, %AgentEvent{kind: :model_switch_accepted, seq: 1}}
+
+      assert_receive {:agent_event,
+                      %AgentEvent{
+                        kind: :model_switch_expired,
+                        seq: 2,
+                        payload: %{run_id: "current", status: :expired, revision: 2}
+                      }}
+
+      assert %{last_seq: 2, meta: meta} = Session.snapshot(sid)
+      assert meta.model == "initial"
+      assert meta.running? == false
+      assert meta.run_id == nil
+      assert meta.pending_model == nil
+      assert meta.model_switch_status == nil
+      assert meta.model_switch_revision == 2
+
+      :ok = Session.project_model_switch(sid, "current", :applied, %{model: "late"})
+      assert %{last_seq: 2, meta: %{model: "initial"}} = Session.snapshot(sid)
+    end
+  end
+
   describe "broadcast/2" do
     test "broadcasts a pre-built AgentEvent and appends to snapshot" do
       sid = "test-#{System.unique_integer([:positive])}"

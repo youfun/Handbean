@@ -15,15 +15,20 @@ defmodule Handbean.PubSub.Session do
 
   use GenServer
 
-  alias Handbean.Agent.Message
   alias Handbean.PubSub.AgentEvent
-  alias Handbean.PubSub.Session.{RecoveryProjection, SnapshotCodec}
+
+  alias Handbean.PubSub.Session.{
+    CandidateMessages,
+    ModelProjection,
+    Persistence,
+    RecoveryProjection,
+    SnapshotCodec
+  }
 
   require Logger
 
   @max_snapshot_events 500
   @throttle_default_ms 50
-  @pending_queue_timeout_ms 100
 
   # Disk-save throttle window for bursty streaming and per-turn events.
   # Run lifecycle, approval and candidate-message boundaries always force-save.
@@ -226,9 +231,8 @@ defmodule Handbean.PubSub.Session do
     session_id = Keyword.fetch!(opts, :session_id)
     model = Keyword.get(opts, :model, "unknown")
 
-    session_store = session_store(opts)
-    store_opts = store_opts(opts, session_store)
-    loaded = load_snapshot(session_id, session_store, store_opts)
+    {session_store, store_opts, recorder_opts} = Persistence.options(opts)
+    loaded = Persistence.load(session_id, session_store, store_opts)
 
     state = %{
       session_id: session_id,
@@ -264,7 +268,7 @@ defmodule Handbean.PubSub.Session do
       save_timer: nil,
       session_store: session_store,
       store_opts: store_opts,
-      recorder_opts: recorder_opts(opts)
+      recorder_opts: recorder_opts
     }
 
     Logger.debug("[Session] Created #{session_id} (model: #{model})")
@@ -300,7 +304,7 @@ defmodule Handbean.PubSub.Session do
     Process.monitor(agent_pid)
     Process.monitor(queue_pid)
     run_id = Keyword.get(opts, :run_id)
-    active_model = normalize_active_model(Keyword.get(opts, :model), state.meta.model)
+    active_model = ModelProjection.normalize(Keyword.get(opts, :model), state.meta.model)
 
     meta = %{
       state.meta
@@ -333,15 +337,15 @@ defmodule Handbean.PubSub.Session do
 
     case deliver_as do
       :next_turn ->
-        {content, opts} = stamp_queue_ids(content, opts)
+        {content, opts} = CandidateMessages.stamp_ids(content, opts)
         opts = Keyword.put(opts, :run_id, state.meta.run_id)
-        message = normalize_message(content, opts)
+        message = CandidateMessages.normalize(content, opts)
         receipt = %{action: :enqueued, run_id: state.meta.run_id}
         new_state = %{state | next_turn_messages: state.next_turn_messages ++ [message]}
 
         with true <- opts[:expected_run_id] in [nil, state.meta.run_id],
              {:ok, snapshot_saved?} <-
-               persist_next_turn(state.session_id, content, receipt, opts, new_state) do
+               Persistence.accept_next_turn(new_state, content, receipt, opts) do
           new_state =
             if snapshot_saved?, do: mark_snapshot_saved(new_state), else: maybe_save(new_state)
 
@@ -374,14 +378,14 @@ defmodule Handbean.PubSub.Session do
             {:reply, {:error, :no_active_run}, state}
 
           true ->
-            {content, opts} = stamp_queue_ids(content, opts)
+            {content, opts} = CandidateMessages.stamp_ids(content, opts)
             opts = Keyword.put(opts, :run_id, state.meta.run_id)
 
             case Handbean.Agent.CandidateQueue.enqueue(state.queue_pid, content, opts) do
               :ok ->
                 broadcast_event(state.session_id, :candidate_message_injected, %{
                   message_id: Keyword.fetch!(opts, :message_id),
-                  content: message_text(content),
+                  content: CandidateMessages.text(content),
                   deliver_as: kind,
                   run_id: state.meta.run_id
                 })
@@ -404,39 +408,8 @@ defmodule Handbean.PubSub.Session do
   end
 
   def handle_call(:get_pending_messages, _from, state) do
-    queue_msgs =
-      case state.queue_pid do
-        nil ->
-          []
-
-        queue_pid ->
-          try do
-            Handbean.Agent.CandidateQueue.get_messages(queue_pid, @pending_queue_timeout_ms)
-            |> Enum.map(fn %{message: msg, metadata: meta} ->
-              %{
-                id: msg.id,
-                content: msg.content,
-                role: msg.role,
-                deliver_as: meta.deliver_as
-              }
-            end)
-          catch
-            :exit, _ -> []
-          end
-      end
-
-    next_turn_msgs =
-      state.next_turn_messages
-      |> Enum.map(fn msg ->
-        %{
-          id: msg.id,
-          content: msg.content,
-          role: msg.role,
-          deliver_as: :next_turn
-        }
-      end)
-
-    {:reply, queue_msgs ++ next_turn_msgs, state}
+    messages = CandidateMessages.pending(state.queue_pid, state.next_turn_messages)
+    {:reply, messages, state}
   end
 
   def handle_call({:promote_pending_message, message_id}, _from, state) do
@@ -466,7 +439,7 @@ defmodule Handbean.PubSub.Session do
       {[_deleted], remaining} ->
         new_state = %{state | next_turn_messages: remaining}
 
-        case delete_next_turn(state.session_id, message_id, new_state) do
+        case Persistence.delete_next_turn(new_state, message_id) do
           {:ok, snapshot_saved?} ->
             new_state =
               if snapshot_saved?, do: mark_snapshot_saved(new_state), else: maybe_save(new_state)
@@ -515,7 +488,7 @@ defmodule Handbean.PubSub.Session do
   end
 
   def handle_call(:mark_run_finished, _from, state) do
-    safe_seal_queue(state.queue_pid)
+    CandidateMessages.seal(state.queue_pid)
 
     state =
       if state.meta.pending_model do
@@ -583,7 +556,7 @@ defmodule Handbean.PubSub.Session do
         control_events: append_control(state.control_events, event)
     }
 
-    maybe_record_event(new_state, event)
+    Persistence.record_event(new_state, event)
 
     new_state =
       maybe_save_throttled(new_state, force?: event.kind not in @throttled_snapshot_events)
@@ -646,7 +619,7 @@ defmodule Handbean.PubSub.Session do
           "[Session] agent process down session=#{state.session_id} reason=#{inspect(reason)}"
         end)
 
-        safe_seal_queue(state.queue_pid)
+        CandidateMessages.seal(state.queue_pid)
         meta = %{state.meta | running?: false, agent_pid: nil, queue_pid: nil, run_id: nil}
         new_state = %{state | agent_pid: nil, queue_pid: nil, meta: meta}
         new_state = maybe_save(new_state)
@@ -663,122 +636,8 @@ defmodule Handbean.PubSub.Session do
 
   # ── Helpers ──
 
-  defp stamp_queue_ids(content, opts) do
-    struct_id =
-      case content do
-        %Message{id: id} when is_binary(id) and id != "" -> id
-        _ -> nil
-      end
-
-    opt_message_id = present_queue_id(Keyword.get(opts, :message_id))
-    opt_transcript_id = present_queue_id(Keyword.get(opts, :transcript_id))
-    canonical = opt_message_id || opt_transcript_id || struct_id || Ecto.UUID.generate()
-
-    content =
-      case content do
-        %Message{} = message -> %{message | id: canonical}
-        other -> other
-      end
-
-    {content, Keyword.put(opts, :message_id, canonical)}
-  end
-
-  defp present_queue_id(id) when is_binary(id) and id != "", do: id
-  defp present_queue_id(_), do: nil
-
-  defp normalize_message(%Message{} = message, opts) do
-    %{message | id: message.id || Keyword.get(opts, :message_id)}
-  end
-
-  defp normalize_message(content, opts) when is_binary(content) do
-    %Message{role: :user, content: content, id: Keyword.get(opts, :message_id)}
-  end
-
-  defp message_text(%Message{} = message), do: Message.text(message) || ""
-  defp message_text(content) when is_binary(content), do: content
-  defp message_text(content), do: inspect(content)
-
-  defp load_snapshot(session_id, store, opts) do
-    if session_store_enabled?(opts) do
-      case store.load(session_id, opts) do
-        {:ok, snapshot} -> snapshot
-        {:error, _reason} -> %{}
-      end
-    else
-      %{}
-    end
-  end
-
-  # Core broadcast/append/persist pipeline shared by call and cast paths.
-  defp persist_next_turn(id, content, receipt, opts, state) do
-    if sqlite_accept_transaction?(opts, state) do
-      Handbean.Repo.transaction(fn ->
-        with :ok <- persist_next_turn_inbound(id, content, receipt, opts),
-             :ok <- state.session_store.save(id, SnapshotCodec.encode(state), state.store_opts) do
-          :ok
-        else
-          {:error, reason} -> Handbean.Repo.rollback(reason)
-        end
-      end)
-      |> case do
-        {:ok, :ok} ->
-          Handbean.ConversationStore.broadcast_title_updated(id)
-          {:ok, true}
-
-        {:error, reason} ->
-          {:error, reason}
-      end
-    else
-      case persist_next_turn_inbound(id, content, receipt, opts) do
-        :ok -> {:ok, false}
-        {:error, reason} -> {:error, reason}
-      end
-    end
-  end
-
-  defp persist_next_turn_inbound(id, content, receipt, opts) do
-    if opts[:persist_candidate?] do
-      case Handbean.Agent.TranscriptPersistence.accept_inbound(id, content, receipt, opts) do
-        {:ok, _} -> :ok
-        error -> error
-      end
-    else
-      Handbean.Agent.OperationReceipt.complete({:message, id}, opts[:request_id], receipt)
-    end
-  end
-
-  defp sqlite_accept_transaction?(opts, state) do
-    opts[:persist_candidate?] == true and session_store_enabled?(state.store_opts) and
-      state.session_store == Handbean.SessionStore.SQLite and
-      Handbean.ConversationTranscriptStore.impl(opts) ==
-        Handbean.ConversationTranscriptStore.ConversationStore
-  end
-
   defp mark_snapshot_saved(state) do
     %{state | last_throttle: System.monotonic_time(:millisecond)}
-  end
-
-  defp delete_next_turn(id, message_id, state) do
-    if state.session_store == Handbean.SessionStore.SQLite and
-         session_store_enabled?(state.store_opts) do
-      Handbean.Repo.transaction(fn ->
-        with :ok <- Handbean.ConversationTranscriptStore.delete(id, message_id),
-             :ok <- state.session_store.save(id, SnapshotCodec.encode(state), state.store_opts) do
-          :ok
-        else
-          {:error, reason} -> Handbean.Repo.rollback(reason)
-        end
-      end)
-      |> case do
-        {:ok, :ok} -> {:ok, true}
-        {:error, reason} -> {:error, reason}
-      end
-    else
-      case Handbean.ConversationTranscriptStore.delete(id, message_id) do
-        :ok -> {:ok, false}
-        {:error, reason} -> {:error, reason}
-      end
-    end
   end
 
   defp stale_run_event?(state, _kind, payload) do
@@ -811,7 +670,7 @@ defmodule Handbean.PubSub.Session do
         control_events: append_control(state.control_events, event)
     }
 
-    maybe_record_event(new_state, event)
+    Persistence.record_event(new_state, event)
     maybe_save_throttled(new_state, force?: Keyword.get(opts, :force_save?, true))
   end
 
@@ -841,8 +700,8 @@ defmodule Handbean.PubSub.Session do
           queue_pid: queue,
           run_id: run_id,
           run_supervisor: supervisor,
-          model: registry_model(registry_meta[:model], state.meta.model),
-          active_model: normalize_active_model(registry_meta[:model], state.meta.model),
+          model: ModelProjection.registry_model(registry_meta[:model], state.meta.model),
+          active_model: ModelProjection.normalize(registry_meta[:model], state.meta.model),
           pending_model: registry_meta[:pending_model],
           model_switch_status: registry_meta[:model_switch_status],
           model_switch_revision:
@@ -862,77 +721,17 @@ defmodule Handbean.PubSub.Session do
         |> Map.put(:run_id, run_id)
         |> Map.put(:status, status)
 
-      {meta, model} = transition_model_meta(state.meta, state.model, status, payload)
+      {meta, model} = ModelProjection.transition(state.meta, state.model, status, payload)
       new_state = %{state | meta: meta, model: model}
 
       {:ok,
-       do_broadcast_event(new_state, model_switch_event(status), event_payload, force_save?: true)}
+       do_broadcast_event(new_state, ModelProjection.event_kind(status), event_payload,
+         force_save?: true
+       )}
     else
       {:error, :stale_run}
     end
   end
-
-  defp transition_model_meta(meta, model, :accepted, payload) do
-    {%{
-       meta
-       | pending_model: payload,
-         model_switch_status: :accepted,
-         model_switch_revision: payload[:revision] || meta.model_switch_revision
-     }, model}
-  end
-
-  defp transition_model_meta(meta, _model, :applied, payload) do
-    model = payload[:model] || meta.model
-
-    {%{
-       meta
-       | model: model,
-         active_model: payload,
-         pending_model: nil,
-         model_switch_status: :applied,
-         model_switch_revision: payload[:revision] || meta.model_switch_revision
-     }, model}
-  end
-
-  defp transition_model_meta(meta, model, status, payload)
-       when status in [:cancelled, :failed, :expired] do
-    {%{
-       meta
-       | pending_model: nil,
-         model_switch_status: status,
-         model_switch_revision: payload[:revision] || meta.model_switch_revision
-     }, model}
-  end
-
-  defp transition_model_meta(meta, model, status, payload) do
-    {%{
-       meta
-       | model_switch_status: status,
-         model_switch_revision: payload[:revision] || meta.model_switch_revision
-     }, model}
-  end
-
-  defp model_switch_event(:accepted), do: :model_switch_accepted
-  defp model_switch_event(:applied), do: :model_switch_applied
-  defp model_switch_event(:cancelled), do: :model_switch_cancelled
-  defp model_switch_event(:failed), do: :model_switch_failed
-  defp model_switch_event(:expired), do: :model_switch_expired
-
-  defp normalize_active_model(%{} = model, fallback) do
-    Map.put_new(model, :model, fallback)
-  end
-
-  defp normalize_active_model(model, _fallback) when is_binary(model) do
-    %{model: model, model_ref: model, reasoning_level: nil, revision: 0}
-  end
-
-  defp normalize_active_model(_model, fallback) do
-    %{model: fallback, model_ref: fallback, reasoning_level: nil, revision: 0}
-  end
-
-  defp registry_model(%{model: model}, _fallback) when is_binary(model), do: model
-  defp registry_model(model, _fallback) when is_binary(model), do: model
-  defp registry_model(_model, fallback), do: fallback
 
   defp log_broadcast_request(_session_id, :message_delta, %{chunk: chunk})
        when is_binary(chunk) do
@@ -966,18 +765,10 @@ defmodule Handbean.PubSub.Session do
     Logger.debug("[Session] broadcasting #{kind} session=#{session_id} seq=#{seq}")
   end
 
-  defp maybe_record_event(state, event) do
-    if event_recorder_enabled?(state.recorder_opts) do
-      Handbean.EventRecorder.record(state.session_id, event, state.recorder_opts)
-    end
-  end
-
   defp maybe_save(state) do
     state = cancel_scheduled_save(state)
 
-    if session_store_enabled?(state.store_opts) do
-      state.session_store.save(state.session_id, SnapshotCodec.encode(state), state.store_opts)
-    end
+    Persistence.save(state)
 
     %{state | last_throttle: System.monotonic_time(:millisecond)}
   end
@@ -1016,58 +807,6 @@ defmodule Handbean.PubSub.Session do
   end
 
   defp cancel_scheduled_save(state), do: state
-
-  defp event_recorder_enabled?(opts) do
-    Keyword.get(
-      opts,
-      :event_recorder_enabled?,
-      Application.get_env(:handbean, :event_recorder_enabled?, true)
-    )
-  end
-
-  defp session_store_enabled?(opts) do
-    Keyword.get(
-      opts,
-      :session_store_enabled?,
-      Application.get_env(:handbean, :session_store_enabled?, true)
-    )
-  end
-
-  defp session_store(opts) do
-    Keyword.get(opts, :session_store) ||
-      Application.get_env(:handbean, :session_store, Handbean.SessionStore.SQLite)
-  end
-
-  defp store_opts(opts, session_store) do
-    store_opts =
-      opts
-      |> Keyword.get(:session_store_opts, [])
-      |> Keyword.put_new(
-        :session_store_enabled?,
-        Keyword.get(
-          opts,
-          :session_store_enabled?,
-          Application.get_env(:handbean, :session_store_enabled?, true)
-        )
-      )
-
-    if session_store == Handbean.SessionStore.SQLite,
-      do: Keyword.put(store_opts, :recovery_projection?, true),
-      else: store_opts
-  end
-
-  defp recorder_opts(opts) do
-    opts
-    |> Keyword.take([:event_dir, :event_recorder_enabled?])
-  end
-
-  defp safe_seal_queue(queue_pid) when is_pid(queue_pid) do
-    Handbean.Agent.CandidateQueue.seal(queue_pid)
-  catch
-    :exit, _reason -> :ok
-  end
-
-  defp safe_seal_queue(_queue_pid), do: :ok
 
   defp maybe_broadcast_run_lifecycle(session_id, %{kind: kind, payload: payload})
        when kind in [
