@@ -3322,3 +3322,48 @@ msgstr "未知"
 #, elixir-autogen, elixir-format
 msgid "In verification"
 msgstr "验证中"
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:324
+#, elixir-autogen, elixir-format
+msgid "A direct command is already running for this conversation."
+msgstr "此对话已有一条直接命令正在运行。"
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:277
+#, elixir-autogen, elixir-format
+msgid "Direct commands are available only in workspace conversations."
+msgstr "直接命令只能在工作区对话中使用。"
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:328
+#, elixir-autogen, elixir-format
+msgid "Direct commands are not available on this host or workspace."
+msgstr "此主机或工作区无法使用直接命令。"
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:318
+#, elixir-autogen, elixir-format
+msgid "Enter a command after !."
+msgstr "请在 ! 后输入命令。"
+
+#: lib/handbean_web/live/workspace_live/chat_timeline_components.ex:448
+#, elixir-autogen, elixir-format
+msgid "Exit code: %{code}"
+msgstr "退出码：%{code}"
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:285
+#, elixir-autogen, elixir-format
+msgid "Remove attachments before running a direct command."
+msgstr "运行直接命令前请先移除附件。"
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:321
+#, elixir-autogen, elixir-format
+msgid "That direct command is invalid or too long."
+msgstr "该直接命令无效或过长。"
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:332
+#, elixir-autogen, elixir-format
+msgid "The direct command could not be started."
+msgstr "无法启动该直接命令。"
+
+#: lib/handbean_web/live/workspace_live/chat_timeline_components.ex:433
+#, elixir-autogen, elixir-format
+msgid "Workspace command"
+msgstr "工作区命令"

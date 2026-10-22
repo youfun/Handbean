@@ -110,6 +110,16 @@ defmodule HandbeanWeb.WorkspaceLive.InfoEvents do
      |> ConversationRouting.navigate_after_delete(next_id)}
   end
 
+  def handle({:conversation_entry_updated, conv_id, entry}, socket)
+      when is_binary(conv_id) and is_map(entry) do
+    if socket.assigns.current_conversation_id == conv_id and
+         newer_entry_revision?(socket.assigns.timeline, entry) do
+      {:noreply, RuntimeProjection.timeline_insert(socket, entry)}
+    else
+      {:noreply, socket}
+    end
+  end
+
   def handle({:conversation_updated, conv_id}, socket) do
     socket =
       socket
@@ -145,7 +155,7 @@ defmodule HandbeanWeb.WorkspaceLive.InfoEvents do
       if socket.assigns.current_conversation_id == conv_id do
         case Handbean.ConversationTranscriptStore.list(conv_id) do
           {:ok, entries} ->
-            RuntimeProjection.reconcile_handoffs(socket, entries)
+            RuntimeProjection.reconcile_transcript(socket, entries)
 
           _ ->
             socket
@@ -389,6 +399,20 @@ defmodule HandbeanWeb.WorkspaceLive.InfoEvents do
 
   defp apply_sidebar_title(socket, conv_id, title, source \\ "auto"),
     do: ConversationSwitching.apply_sidebar_title(socket, conv_id, title, source)
+
+  defp newer_entry_revision?(timeline, entry) do
+    case RuntimeProjection.find_entry(timeline || [], entry["id"]) do
+      nil ->
+        true
+
+      current ->
+        current_revision = current["revision"]
+        incoming_revision = entry["revision"]
+
+        not (is_integer(current_revision) and is_integer(incoming_revision) and
+               incoming_revision <= current_revision)
+    end
+  end
 
   defp reload_permission_mode(socket, conversation_id) do
     if socket.assigns.current_conversation_id == conversation_id do

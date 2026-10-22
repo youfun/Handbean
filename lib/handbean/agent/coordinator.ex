@@ -29,10 +29,15 @@ defmodule Handbean.Agent.Coordinator do
          :ok <- validate_model_policy(opts),
          :ok <- validate_advisor_policy(opts),
          :ok <- validate_conversation_access(conversation_id, opts),
-         :ok <- reserve_operation(conversation_id, content, opts),
-         opts <- ensure_run_id(opts),
-         {:ok, _pid} <- Session.start_or_get(session_id: conversation_id, model: opts[:model]) do
-      admit_message(conversation_id, content, opts, 2)
+         :ok <- reserve_operation(conversation_id, content, opts) do
+      opts = ensure_run_id(opts)
+
+      result =
+        with {:ok, _pid} <- Session.start_or_get(session_id: conversation_id, model: opts[:model]) do
+          admit_message(conversation_id, content, opts, 2)
+        end
+
+      maybe_release_unaccepted(result, conversation_id, content, opts)
     end
   end
 
@@ -168,6 +173,17 @@ defmodule Handbean.Agent.Coordinator do
   defp replay_action(_other), do: :started
 
   defp release_idle_busy(conversation_id, content, opts) do
+    release_unaccepted(conversation_id, content, opts, :busy)
+  end
+
+  defp maybe_release_unaccepted({:error, reason}, conversation_id, content, opts)
+       when reason in [:queue_full, :run_in_progress, :no_active_run, :stale_run, :sealed] do
+    release_unaccepted(conversation_id, content, opts, reason)
+  end
+
+  defp maybe_release_unaccepted(result, _conversation_id, _content, _opts), do: result
+
+  defp release_unaccepted(conversation_id, content, opts, reason) do
     request_id = Keyword.get(opts, :request_id)
 
     case Handbean.Agent.OperationReceipt.release_reserved(
@@ -175,7 +191,7 @@ defmodule Handbean.Agent.Coordinator do
            request_id,
            operation_fingerprint(conversation_id, content, opts)
          ) do
-      :ok -> {:error, :busy}
+      :ok -> {:error, reason}
       {:error, _reason} -> {:error, :delivery_unknown}
     end
   end
@@ -186,18 +202,35 @@ defmodule Handbean.Agent.Coordinator do
 
   defp reserve_operation(conversation_id, content, opts) do
     request_id = Keyword.get(opts, :request_id)
-
     fingerprint = operation_fingerprint(conversation_id, content, opts)
 
-    case Handbean.Agent.OperationReceipt.reserve(
-           {:message, conversation_id},
-           request_id,
-           fingerprint
-         ) do
-      :ok -> :ok
-      {:replay, receipt} -> {:ok, replay_ack(receipt)}
-      {:unknown, reason} -> {:error, reason}
-      {:error, reason} -> {:error, reason}
+    with :ok <- maybe_release_retry_reservation(conversation_id, request_id, fingerprint, opts) do
+      case Handbean.Agent.OperationReceipt.reserve(
+             {:message, conversation_id},
+             request_id,
+             fingerprint
+           ) do
+        :ok -> :ok
+        {:replay, receipt} -> {:ok, replay_ack(receipt)}
+        {:unknown, reason} -> {:error, reason}
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  defp maybe_release_retry_reservation(conversation_id, request_id, fingerprint, opts) do
+    if Keyword.get(opts, :retry_reserved?, false) do
+      case Handbean.Agent.OperationReceipt.release_reserved(
+             {:message, conversation_id},
+             request_id,
+             fingerprint
+           ) do
+        :ok -> :ok
+        {:error, reason} when reason in [:not_reserved, :idempotency_conflict] -> :ok
+        {:error, _reason} -> {:error, :delivery_unknown}
+      end
+    else
+      :ok
     end
   end
 
@@ -254,8 +287,10 @@ defmodule Handbean.Agent.Coordinator do
     with :ok <- Handbean.Storage.Health.check_write(),
          :ok <- validate_conversation_access(conversation_id, opts),
          {:ok, _module} <- Handbean.Agent.CliAgent.Run.validate_input(content, opts),
-         opts <- ensure_run_id(opts) do
-      admit_cli_run(conversation_id, content, display_text, opts, 2)
+         :ok <- reserve_operation(conversation_id, content, opts) do
+      opts = ensure_run_id(opts)
+      result = admit_cli_run(conversation_id, content, display_text, opts, 2)
+      maybe_release_unaccepted(result, conversation_id, content, opts)
     end
   end
 
@@ -309,7 +344,7 @@ defmodule Handbean.Agent.Coordinator do
       opts
       |> Keyword.put(:deliver_as, :follow_up)
       |> Keyword.put(:expected_run_id, active.run_id)
-      |> Keyword.put(:persist_candidate?, true)
+      |> Keyword.put(:persist_candidate?, Keyword.get(opts, :persist_inbound?, true))
 
     case enqueue_candidate(conversation_id, content, candidate_opts) do
       {:error, reason} when reason in [:sealed, :no_active_run, :stale_run] ->
@@ -954,6 +989,7 @@ defmodule Handbean.Agent.Coordinator do
       transcript_history_messages(
         conversation_id,
         Keyword.get(opts, :run_id),
+        Keyword.get(opts, :transcript_id),
         history_workspace_path(opts)
       )
     end)
@@ -963,11 +999,19 @@ defmodule Handbean.Agent.Coordinator do
     if free_chat?(opts), do: nil, else: opts[:working_directory]
   end
 
-  defp transcript_history_messages(conversation_id, current_run_id, workspace_path) do
+  defp transcript_history_messages(
+         conversation_id,
+         current_run_id,
+         current_transcript_id,
+         workspace_path
+       ) do
     case Handbean.ConversationTranscriptStore.list(conversation_id) do
       {:ok, entries} ->
         entries
-        |> Enum.reject(&(current_run_id && Map.get(&1, "run_id") == current_run_id))
+        |> Enum.reject(fn entry ->
+          (current_run_id && Map.get(entry, "run_id") == current_run_id) or
+            (current_transcript_id && Map.get(entry, "id") == current_transcript_id)
+        end)
         |> Handbean.Attachments.History.to_messages(workspace_path, conversation_id)
 
       {:error, reason} ->

@@ -707,6 +707,9 @@ defmodule HandbeanWeb.WorkspaceLive do
   def handle_info({:conversation_updated, _} = message, socket),
     do: InfoEvents.handle(message, socket)
 
+  def handle_info({:conversation_entry_updated, _, _} = message, socket),
+    do: InfoEvents.handle(message, socket)
+
   def handle_info({:conversation_title_ready, _, _} = message, socket),
     do: InfoEvents.handle(message, socket)
 

@@ -581,6 +581,92 @@ defmodule HandbeanWeb.WorkspaceLive.SendMessageHistoryTest do
       assert :sys.get_state(view.pid).socket.assigns.current_conversation_id == first["id"]
     end
 
+    test "leading exclamation executes directly, then admits the result to the Agent", %{
+      conn: conn
+    } do
+      {:ok, workspace} = Handbean.WorkspaceStore.get("default")
+      File.mkdir_p!(workspace["default_checkout_path"])
+
+      {:ok, view, _html} = live(conn, "/")
+      conversation_id = create_default_conversation(view)
+
+      operation_id = Ecto.UUID.generate()
+
+      view
+      |> element("form")
+      |> render_submit(%{
+        "message" => "!printf handbean-direct",
+        "workspace_command_operation_id" => operation_id
+      })
+
+      assert has_element?(view, "[data-user-msg]", "!printf handbean-direct")
+
+      assert eventually_render(view, fn html ->
+               html =~ "handbean-direct" and html =~ "Exit code: 0"
+             end)
+
+      assert eventually_render(view, fn _html ->
+               entries = Handbean.ConversationStore.load_messages(conversation_id)
+               terminal = Enum.find(entries, &(&1["role"] == "tool"))
+
+               terminal && terminal["agent_response_status"] == "accepted" &&
+                 terminal["consumption"] == "consumed"
+             end)
+
+      entries = Handbean.ConversationStore.load_messages(conversation_id)
+      assert Enum.count(entries, &(&1["direct_command"] == true)) == 2
+      terminal = Enum.find(entries, &(&1["role"] == "tool"))
+      assert terminal["id"] == "workspace-command-tool-#{operation_id}"
+      assert terminal["tool_status"] == "done"
+      assert terminal["output"] == "handbean-direct"
+    end
+
+    test "a rejected retry keeps the direct-command operation id until the draft changes", %{
+      conn: conn
+    } do
+      {:ok, workspace} = Handbean.WorkspaceStore.get("default")
+      File.mkdir_p!(workspace["default_checkout_path"])
+
+      {:ok, view, _html} = live(conn, "/")
+      conversation_id = create_default_conversation(view)
+      owner = self()
+
+      assert {:ok, %{state: :started}} =
+               Handbean.WorkspaceCommand.submit(conversation_id, "held",
+                 operation_id: "held-web-command",
+                 source: :test,
+                 executor: fn _, _, _ ->
+                   send(owner, {:held_workspace_command, self()})
+
+                   receive do
+                     :finish -> {:ok, "done", %{exit_code: 0}}
+                   end
+                 end,
+                 responder: fn _, _ -> {:ok, %{action: :started}} end
+               )
+
+      assert_receive {:held_workspace_command, worker}, 1_000
+      render_hook(view, "update_input", %{"value" => "!pwd"})
+      operation_id = :sys.get_state(view.pid).socket.assigns.workspace_command_intent.operation_id
+
+      view |> element("form") |> render_submit(%{"message" => "!pwd"})
+
+      assert :sys.get_state(view.pid).socket.assigns.workspace_command_intent.operation_id ==
+               operation_id
+
+      view |> element("form") |> render_submit(%{"message" => "!pwd"})
+
+      assert :sys.get_state(view.pid).socket.assigns.workspace_command_intent.operation_id ==
+               operation_id
+
+      render_hook(view, "update_input", %{"value" => "!whoami"})
+
+      assert :sys.get_state(view.pid).socket.assigns.workspace_command_intent.operation_id !=
+               operation_id
+
+      send(worker, :finish)
+    end
+
     test "sets running state after submitting a message", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/")
 
@@ -599,6 +685,20 @@ defmodule HandbeanWeb.WorkspaceLive.SendMessageHistoryTest do
 
       rendered = render(view)
       refute rendered =~ "disabled"
+    end
+  end
+
+  defp eventually_render(view, predicate, attempts \\ 50)
+  defp eventually_render(_view, _predicate, 0), do: false
+
+  defp eventually_render(view, predicate, attempts) do
+    if predicate.(render(view)) do
+      true
+    else
+      receive do
+      after
+        10 -> eventually_render(view, predicate, attempts - 1)
+      end
     end
   end
 end

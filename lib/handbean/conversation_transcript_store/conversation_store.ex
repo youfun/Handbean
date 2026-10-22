@@ -122,6 +122,29 @@ defmodule Handbean.ConversationTranscriptStore.ConversationStore do
   end
 
   @impl true
+  def append_many(conversation_id, entries, _opts) when is_list(entries) do
+    entries = Enum.map(entries, &stringify_keys/1)
+
+    WriteTransaction.run(fn ->
+      Enum.map(entries, &insert_entry(conversation_id, &1))
+    end)
+    |> case do
+      {:ok, persisted} ->
+        if Enum.any?(persisted, &(&1["role"] == "user")) and not Repo.in_transaction?(),
+          do: Handbean.ConversationStore.broadcast_title_updated(conversation_id)
+
+        {:ok, persisted}
+
+      {:error, reason} ->
+        {:error, normalize_constraint(reason)}
+    end
+  rescue
+    error in Ecto.ConstraintError -> {:error, normalize_constraint(error)}
+  end
+
+  def append_many(_conversation_id, _entries, _opts), do: {:error, :invalid_entry}
+
+  @impl true
   def complete_tool_call(conversation_id, tool_entry, media_entry, media_ids, _opts)
       when is_binary(conversation_id) and is_map(tool_entry) and is_list(media_ids) do
     WriteTransaction.run(fn ->
@@ -315,7 +338,9 @@ defmodule Handbean.ConversationTranscriptStore.ConversationStore do
   def unfinished_runs do
     assistant_runs =
       from(entry in ConversationEntry,
-        where: entry.role == "assistant" and entry.status == "streaming",
+        where:
+          entry.role == "assistant" and entry.status == "streaming" and
+            fragment("coalesce(json_extract(?, '$.direct_command'), 0) != 1", entry.payload),
         select: {entry.conversation_id, entry.run_id},
         distinct: true
       )
@@ -323,7 +348,9 @@ defmodule Handbean.ConversationTranscriptStore.ConversationStore do
 
     tool_runs =
       from(entry in ConversationEntry,
-        where: entry.content_type == "tool" and entry.tool_status == "running",
+        where:
+          entry.content_type == "tool" and entry.tool_status == "running" and
+            fragment("coalesce(json_extract(?, '$.direct_command'), 0) != 1", entry.payload),
         select: {entry.conversation_id, entry.run_id},
         distinct: true
       )
@@ -345,8 +372,9 @@ defmodule Handbean.ConversationTranscriptStore.ConversationStore do
       from(entry in ConversationEntry,
         where:
           entry.conversation_id == ^conversation_id and
-            ((entry.role == "assistant" and entry.status == "streaming") or
-               (entry.content_type == "tool" and entry.tool_status == "running")),
+            (((entry.role == "assistant" and entry.status == "streaming") or
+                (entry.content_type == "tool" and entry.tool_status == "running")) and
+               fragment("coalesce(json_extract(?, '$.direct_command'), 0) != 1", entry.payload)),
         group_by: entry.run_id,
         select: entry.run_id
       )
@@ -362,6 +390,83 @@ defmodule Handbean.ConversationTranscriptStore.ConversationStore do
       |> Repo.all()
 
     Enum.uniq(entry_runs ++ lifecycle_runs)
+  end
+
+  @impl true
+  def interrupt_workspace_commands(error, _opts) when is_binary(error) do
+    WriteTransaction.run(fn ->
+      rows =
+        ConversationEntry
+        |> where(
+          [entry],
+          entry.content_type == "tool" and entry.tool_status == "running" and
+            fragment("json_extract(?, '$.direct_command') = 1", entry.payload)
+        )
+        |> Repo.all()
+
+      completed_at = iso8601(now())
+
+      Enum.each(rows, fn row ->
+        case update_cas(
+               row.conversation_id,
+               row.entry_id,
+               %{
+                 "tool_status" => "error",
+                 "tool_error" => error,
+                 "consumption" => "pending",
+                 "agent_response_status" => "pending",
+                 "completed_at" => completed_at
+               },
+               32
+             ) do
+          {:ok, _entry} -> :ok
+          {:error, reason} -> Repo.rollback(reason)
+        end
+      end)
+
+      rows |> Enum.map(& &1.conversation_id) |> Enum.uniq()
+    end)
+    |> case do
+      {:ok, conversation_ids} -> {:ok, conversation_ids}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @impl true
+  def pending_workspace_command_responses(_opts) do
+    rows =
+      from(entry in ConversationEntry,
+        join: conversation in Conversation,
+        on: conversation.id == entry.conversation_id,
+        where:
+          conversation.status == "active" and conversation.visibility == "user" and
+            entry.content_type == "tool" and entry.tool_status in ["done", "error"] and
+            fragment("json_extract(?, '$.direct_command') = 1", entry.payload) and
+            fragment("json_extract(?, '$.consumption') != 'consumed'", entry.payload) and
+            fragment(
+              "json_extract(?, '$.agent_response_status') IN ('pending', 'accepted')",
+              entry.payload
+            ),
+        order_by: [asc: entry.sequence],
+        select: {entry.conversation_id, entry}
+      )
+      |> Repo.all()
+      |> Enum.map(fn {conversation_id, entry} -> {conversation_id, public_entry(entry)} end)
+
+    {:ok, rows}
+  rescue
+    error -> {:error, error}
+  end
+
+  @impl true
+  def claim_workspace_command_response(conversation_id, entry_id, attempt_id, _opts) do
+    patch = %{
+      "agent_response_request_id" => attempt_id,
+      "agent_response_status" => "pending",
+      "agent_response_error" => nil
+    }
+
+    claim_workspace_command_response_cas(conversation_id, entry_id, patch, 32)
   end
 
   @doc false
@@ -445,6 +550,61 @@ defmodule Handbean.ConversationTranscriptStore.ConversationStore do
 
   defp consume_cas(_conversation_id, _entry_id, _patch, _attempts),
     do: {:error, :invalid_entry_id}
+
+  defp claim_workspace_command_response_cas(_conversation_id, _entry_id, _patch, 0),
+    do: {:error, :conflict}
+
+  defp claim_workspace_command_response_cas(conversation_id, entry_id, patch, attempts) do
+    case Repo.one(
+           from entry in ConversationEntry,
+             where: entry.conversation_id == ^conversation_id and entry.entry_id == ^entry_id
+         ) do
+      nil ->
+        {:error, :not_found}
+
+      row ->
+        current = public_entry(row)
+
+        cond do
+          current["consumption"] == "consumed" ->
+            {:error, :already_consumed}
+
+          current["direct_command"] != true ->
+            {:error, :invalid_entry}
+
+          true ->
+            merged =
+              current
+              |> deep_merge(patch)
+              |> Map.put("updated_at", iso8601(now()))
+
+            attrs = entry_attrs(merged)
+
+            query =
+              from entry in ConversationEntry,
+                where: entry.id == ^row.id and entry.revision == ^row.revision
+
+            changes =
+              attrs
+              |> Map.drop([:conversation_id, :entry_id, :sequence, :created_at])
+              |> Map.put(:revision, row.revision + 1)
+
+            case Repo.update_all(query, set: Map.to_list(changes)) do
+              {1, _} ->
+                updated = Repo.get!(ConversationEntry, row.id)
+                {:ok, public_entry(updated)}
+
+              {0, _} ->
+                claim_workspace_command_response_cas(
+                  conversation_id,
+                  entry_id,
+                  patch,
+                  attempts - 1
+                )
+            end
+        end
+    end
+  end
 
   defp update_cas(_conversation_id, _entry_id, _patch, 0), do: {:error, :conflict}
 
@@ -550,6 +710,7 @@ defmodule Handbean.ConversationTranscriptStore.ConversationStore do
     SET tool_status = ?, payload = json_set(payload, '$.tool_error', json(?)),
         revision = revision + 1, updated_at = ?
     WHERE conversation_id = ? AND run_id IS ? AND content_type = 'tool' AND tool_status = 'running'
+      AND coalesce(json_extract(payload, '$.direct_command'), 0) != 1
     """
 
     case Repo.query(sql, [

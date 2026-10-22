@@ -89,6 +89,7 @@ defmodule HandbeanWeb.WorkspaceLive.InputEvents do
 
     {:noreply,
      socket
+     |> Composer.track_workspace_command_intent(value)
      |> assign(:input_value, value)
      |> assign(:skill_suggestions, suggestions)}
   end

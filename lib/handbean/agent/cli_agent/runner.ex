@@ -133,7 +133,8 @@ defmodule Handbean.Agent.CliAgent.Runner do
 
   defp finish_init(conversation_id, content, display_text, run_opts, queue_pid) do
     result =
-      with {:ok, _entry} <- persist_inbound(conversation_id, content, run_opts),
+      with {:ok, _entry} <-
+             accept_initial(queue_pid, conversation_id, content, run_opts),
            :ok <-
              Session.attach_run(conversation_id, self(), queue_pid,
                run_id: run_opts[:run_id],
@@ -529,9 +530,37 @@ defmodule Handbean.Agent.CliAgent.Runner do
     if map_size(input) > 0, do: input, else: %{options: options}
   end
 
+  defp accept_initial(queue_pid, conversation_id, content, opts) do
+    with :ok <- CandidateQueue.begin_initial(queue_pid, opts),
+         {:ok, _entry} = accepted <- persist_inbound(conversation_id, content, opts),
+         :ok <- CandidateQueue.commit_initial(queue_pid, opts) do
+      accepted
+    else
+      {:error, _reason} = error ->
+        :ok = CandidateQueue.abort_initial(queue_pid, opts)
+        error
+    end
+  end
+
   defp persist_inbound(conversation_id, content, opts) do
     receipt = %{action: :started, run_id: opts[:run_id]}
-    TranscriptPersistence.accept_inbound(conversation_id, content, receipt, opts)
+
+    if Keyword.get(opts, :persist_inbound?, true) do
+      TranscriptPersistence.accept_inbound(conversation_id, content, receipt, opts)
+    else
+      with true <- Handbean.ConversationStore.active?(conversation_id),
+           :ok <-
+             Handbean.Agent.OperationReceipt.complete(
+               {:message, conversation_id},
+               opts[:request_id],
+               receipt
+             ) do
+        {:ok, nil}
+      else
+        false -> {:error, :not_found}
+        {:error, reason} -> {:error, reason}
+      end
+    end
   end
 
   defp persist_and_broadcast_start(state) do

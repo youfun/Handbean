@@ -109,6 +109,69 @@ defmodule Handbean.Agent.CandidateQueueTest do
       assert {:unexpected_crash, _} = catch_exit(CandidateQueue.enqueue(queue, "message"))
     end
 
+    test "holds a duplicate while initial admission is pending and never queues it" do
+      {:ok, queue} =
+        CandidateQueue.start_link(session_id: "cq-initial-dedupe", owner: self(), max_size: 1)
+
+      initial_opts = [
+        request_id: "initial-request",
+        message_id: "initial-message",
+        run_id: "run-1"
+      ]
+
+      assert :ok = CandidateQueue.begin_initial(queue, initial_opts)
+
+      duplicate =
+        Task.async(fn ->
+          CandidateQueue.enqueue(queue, "same observation",
+            request_id: "initial-request",
+            message_id: "initial-message",
+            run_id: "run-1",
+            deliver_as: :follow_up
+          )
+        end)
+
+      assert Task.yield(duplicate, 20) == nil
+
+      assert %{status: :pending, waiters: [_waiter]} =
+               :sys.get_state(queue).accepted_requests["initial-request"]
+
+      assert :ok = CandidateQueue.commit_initial(queue, initial_opts)
+      assert :ok = Task.await(duplicate)
+      assert [] = CandidateQueue.drain_follow_up(queue)
+    end
+
+    test "releases a duplicate waiter when initial admission aborts" do
+      {:ok, queue} = CandidateQueue.start_link(session_id: "cq-initial-abort", owner: self())
+
+      initial_opts = [
+        request_id: "aborted-request",
+        message_id: "aborted-message",
+        run_id: "run-1"
+      ]
+
+      assert :ok = CandidateQueue.begin_initial(queue, initial_opts)
+
+      duplicate =
+        Task.async(fn ->
+          CandidateQueue.enqueue(queue, "same observation",
+            request_id: "aborted-request",
+            message_id: "aborted-message",
+            run_id: "run-1",
+            deliver_as: :follow_up
+          )
+        end)
+
+      assert Task.yield(duplicate, 20) == nil
+
+      assert %{status: :pending, waiters: [_waiter]} =
+               :sys.get_state(queue).accepted_requests["aborted-request"]
+
+      assert :ok = CandidateQueue.abort_initial(queue, initial_opts)
+      assert {:error, :sealed} = Task.await(duplicate)
+      assert [] = CandidateQueue.drain_follow_up(queue)
+    end
+
     test "reports pending messages" do
       {:ok, queue} = CandidateQueue.start_link(session_id: "cq-pending", owner: self())
 

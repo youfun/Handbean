@@ -42,7 +42,10 @@ defmodule HandbeanProbe.WorkTimeline do
     |> Map.put("work_edit", role == :edit)
     |> Map.put("work_added", diff_count(entry, "add"))
     |> Map.put("work_removed", diff_count(entry, "remove"))
-    |> Map.put("tool_output_open", Map.get(outputs, entry["id"], false))
+    |> Map.put(
+      "tool_output_open",
+      Map.get(outputs, entry["id"], entry["direct_command"] == true)
+    )
   end
 
   defp annotate_tool(entry, _groups, _outputs), do: entry

@@ -8,7 +8,8 @@ defmodule Handbean.Agent.CompactionCheckpoint do
   @version 1
   @stable_fields ~w(
     id role content content_type message_type attachments raw_content images status phase
-    tool_use_id tool_name tool_status input output tool_error content_blocks
+    tool_use_id tool_name tool_status input output tool_error content_blocks direct_command
+    consumption consumed_run_id agent_response_status
   )
 
   @spec persist(String.t(), map(), keyword()) :: {:ok, map()} | {:error, term()}
@@ -38,7 +39,8 @@ defmodule Handbean.Agent.CompactionCheckpoint do
              entries,
              checkpoint["first_entry_id"],
              checkpoint["covered_through_id"]
-           ) do
+           ),
+         true <- no_unconsumed_direct_observation?(source) do
       checkpoint["source_count"] == length(source) and
         checkpoint["source_digest"] == digest(source)
     else
@@ -97,6 +99,7 @@ defmodule Handbean.Agent.CompactionCheckpoint do
            end),
          {:ok, boundary_id} <- raw_boundary(messages, id_index),
          {:ok, source} <- source_entries(entries, first_id, boundary_id),
+         true <- no_unconsumed_direct_observation?(source),
          summary when is_binary(summary) and summary != "" <- event[:summary] do
       {:ok,
        %{
@@ -169,6 +172,13 @@ defmodule Handbean.Agent.CompactionCheckpoint do
       nil -> {:error, :missing_boundary}
       id -> {:ok, id}
     end
+  end
+
+  defp no_unconsumed_direct_observation?(entries) do
+    not Enum.any?(entries, fn entry ->
+      entry["direct_command"] == true and entry["role"] == "tool" and
+        entry["tool_status"] in ["done", "error"] and entry["consumption"] != "consumed"
+    end)
   end
 
   defp source_entries(entries, first_id, boundary_id)

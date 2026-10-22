@@ -117,6 +117,7 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
         cli_models_error={@cli_models_error}
         cli_models_loading={@cli_models_loading}
         composer_error={@composer_error}
+        current_conversation_id={@current_conversation_id}
         input_value={@input_value}
         pending_attachments={@pending_attachments}
         permission_mode={@permission_mode}

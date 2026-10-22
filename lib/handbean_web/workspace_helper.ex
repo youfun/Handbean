@@ -610,7 +610,11 @@ defmodule HandbeanWeb.WorkspaceHelper do
     first = hd(tools)
     group_id = entry_id(first)
     completed? = not open? and Enum.all?(tools, &tool_terminal?/1)
-    collapsed? = completed? and group_id != "" and not MapSet.member?(expanded_ids, group_id)
+
+    collapsed? =
+      completed? and group_id != "" and not direct_command?(first) and
+        not MapSet.member?(expanded_ids, group_id)
+
     summary = if open?, do: nil, else: tool_work_summary(tools)
     roles = Enum.map(tools, &tool_work_role(tool_name(&1)))
     nested_explore? = not open? and :explore in roles and Enum.any?(roles, &(&1 != :explore))
@@ -632,6 +636,12 @@ defmodule HandbeanWeb.WorkspaceHelper do
        |> Map.put("work_target", line.target)}
     end)
   end
+
+  defp direct_command?(entry) when is_map(entry) do
+    Map.get(entry, "direct_command") == true or Map.get(entry, :direct_command) == true
+  end
+
+  defp direct_command?(_entry), do: false
 
   defp tool_entry?(entry) when is_map(entry) do
     Map.get(entry, "content_type") == "tool" or Map.get(entry, :content_type) == "tool"

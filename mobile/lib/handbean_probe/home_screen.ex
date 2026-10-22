@@ -96,6 +96,7 @@ defmodule HandbeanProbe.HomeScreen do
       {:ok, default} ->
         Phoenix.PubSub.subscribe(Handbean.PubSub, "models:updated")
         Phoenix.PubSub.subscribe(Handbean.PubSub, "runtime:schedules")
+        Phoenix.PubSub.subscribe(Handbean.PubSub, "conversation:updated")
         Handbean.Permissions.ConversationMode.subscribe()
         {workspace, conversation} = NativeWorkspaces.restore(default)
 
@@ -515,6 +516,9 @@ defmodule HandbeanProbe.HomeScreen do
   end
 
   defp dispatch(:conversation_bean_frame, socket), do: Nav.advance_bean(socket)
+
+  defp dispatch({:conversation_updated, _conversation_id} = msg, socket),
+    do: Chat.handle(msg, socket)
 
   defp dispatch(_message, socket), do: socket
 

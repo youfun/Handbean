@@ -50,10 +50,20 @@ defmodule HandbeanWeb.WorkspaceLive.MessageSubmission do
     {socket, message} = ModelSelection.apply_command(socket, message)
     socket = assign(socket, :composer_error, nil)
 
-    if dm = subagent_dm(socket, message) do
-      send_subagent_dm(socket, dm)
-    else
-      send_conversation_message(socket, message)
+    case maybe_send_workspace_command(
+           socket,
+           message,
+           params["workspace_command_operation_id"]
+         ) do
+      {:handled, result} ->
+        result
+
+      :continue ->
+        if dm = subagent_dm(socket, message) do
+          send_subagent_dm(socket, dm)
+        else
+          send_conversation_message(socket, message)
+        end
     end
   end
 
@@ -65,10 +75,21 @@ defmodule HandbeanWeb.WorkspaceLive.MessageSubmission do
       |> ModelSelection.apply_submitted(params)
       |> assign(:composer_error, nil)
 
-    if message != "" or socket.assigns.pending_attachments != [] or has_upload_entries?(socket) do
-      send_or_queue_current(socket, message, :steer)
-    else
-      {:noreply, socket}
+    case maybe_send_workspace_command(
+           socket,
+           message,
+           params["workspace_command_operation_id"]
+         ) do
+      {:handled, result} ->
+        result
+
+      :continue ->
+        if message != "" or socket.assigns.pending_attachments != [] or
+             has_upload_entries?(socket) do
+          send_or_queue_current(socket, message, :steer)
+        else
+          {:noreply, socket}
+        end
     end
   end
 
@@ -80,10 +101,21 @@ defmodule HandbeanWeb.WorkspaceLive.MessageSubmission do
       |> ModelSelection.apply_submitted(params)
       |> assign(:composer_error, nil)
 
-    if message != "" or socket.assigns.pending_attachments != [] or has_upload_entries?(socket) do
-      send_or_queue_current(socket, message, :follow_up)
-    else
-      {:noreply, socket}
+    case maybe_send_workspace_command(
+           socket,
+           message,
+           params["workspace_command_operation_id"]
+         ) do
+      {:handled, result} ->
+        result
+
+      :continue ->
+        if message != "" or socket.assigns.pending_attachments != [] or
+             has_upload_entries?(socket) do
+          send_or_queue_current(socket, message, :follow_up)
+        else
+          {:noreply, socket}
+        end
     end
   end
 
@@ -233,6 +265,85 @@ defmodule HandbeanWeb.WorkspaceLive.MessageSubmission do
       do: Handbean.Agent.free_chat_tools(),
       else: Handbean.Agent.default_tools()
   end
+
+  defp maybe_send_workspace_command(socket, message, client_operation_id) do
+    case Handbean.WorkspaceCommand.parse(message) do
+      :not_command ->
+        :continue
+
+      {:error, reason} ->
+        {:handled, {:noreply, assign(socket, :composer_error, workspace_command_error(reason))}}
+
+      {:ok, command} ->
+        {:handled, send_workspace_command(socket, command, client_operation_id)}
+    end
+  end
+
+  defp send_workspace_command(socket, command, client_operation_id) do
+    cond do
+      socket.assigns.chat_scope == :free ->
+        {:noreply,
+         assign(
+           socket,
+           :composer_error,
+           gettext("Direct commands are available only in workspace conversations.")
+         )}
+
+      socket.assigns.pending_attachments != [] or has_upload_entries?(socket) ->
+        {:noreply,
+         assign(
+           socket,
+           :composer_error,
+           gettext("Remove attachments before running a direct command.")
+         )}
+
+      true ->
+        socket = ensure_current_conversation(socket)
+        conversation_id = socket.assigns.current_conversation_id
+
+        {socket, operation_id} =
+          Composer.workspace_command_operation(socket, command, client_operation_id)
+
+        case Handbean.WorkspaceCommand.submit(conversation_id, command,
+               source: :web,
+               operation_id: operation_id
+             ) do
+          {:ok, %{entries: entries}} ->
+            socket =
+              Enum.reduce(entries, socket, fn entry, acc ->
+                RuntimeProjection.timeline_insert(acc, entry)
+              end)
+
+            {:noreply,
+             socket
+             |> assign(:input_value, "")
+             |> Composer.clear_workspace_command_intent()
+             |> assign(:composer_error, nil)
+             |> Composer.forget(conversation_id)
+             |> push_event("user-message-sent", %{})}
+
+          {:error, reason} ->
+            {:noreply, assign(socket, :composer_error, workspace_command_error(reason))}
+        end
+    end
+  end
+
+  defp workspace_command_error(:empty_command),
+    do: gettext("Enter a command after !.")
+
+  defp workspace_command_error(:invalid_command),
+    do: gettext("That direct command is invalid or too long.")
+
+  defp workspace_command_error(:busy),
+    do: gettext("A direct command is already running for this conversation.")
+
+  defp workspace_command_error(reason)
+       when reason in [:not_available, :not_workspace_conversation, :workspace_unavailable] do
+    gettext("Direct commands are not available on this host or workspace.")
+  end
+
+  defp workspace_command_error(_reason),
+    do: gettext("The direct command could not be started.")
 
   def send_conversation_message(socket, message) do
     if message != "" or socket.assigns.pending_attachments != [] or has_upload_entries?(socket) do

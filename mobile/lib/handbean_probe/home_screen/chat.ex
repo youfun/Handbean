@@ -27,7 +27,11 @@ defmodule HandbeanProbe.HomeScreen.Chat do
 
   # ── dispatch ──
 
-  def handle({:change, :draft, text}, socket), do: assign(socket, :draft, text)
+  def handle({:change, :draft, text}, socket) do
+    intent = workspace_command_intent(socket, text)
+    assign(socket, draft: text, workspace_command_intent: intent)
+  end
+
   def handle({:change, :review_place, text}, socket), do: assign(socket, :review_place, text)
   def handle({:change, :review_feeling, text}, socket), do: assign(socket, :review_feeling, text)
   def handle({:submit, :send}, socket), do: handle({:tap, :send}, socket)
@@ -201,6 +205,17 @@ defmodule HandbeanProbe.HomeScreen.Chat do
     reload_permission_mode(socket, conversation_id)
   end
 
+  def handle({:conversation_updated, conversation_id}, %{assigns: %{chat: chat}} = socket)
+      when not is_nil(chat) do
+    if chat.conversation["id"] == conversation_id do
+      assign(socket, :chat, %{chat | entries: NativeChat.reload_entries(chat)})
+    else
+      socket
+    end
+  end
+
+  def handle({:conversation_updated, _conversation_id}, socket), do: socket
+
   def handle({:agent_event, event}, %{assigns: %{chat: chat}} = socket) when not is_nil(chat) do
     projected = NativeChat.project(event, chat) |> schedule_reload()
     socket = assign(socket, :chat, projected)
@@ -244,6 +259,7 @@ defmodule HandbeanProbe.HomeScreen.Chat do
   defp start_send(socket, composer_mode) do
     a = socket.assigns
     content = HandbeanProbe.WritingPhotoReviews.compose_user_text(a)
+    raw_draft = a.draft || ""
     running? = match?(%{running: true}, a.chat)
 
     cond do
@@ -258,6 +274,9 @@ defmodule HandbeanProbe.HomeScreen.Chat do
 
       content == "" and a.pending_attachments == [] ->
         Notice.put_error(socket, gettext("Please enter a message"))
+
+      composer_mode == :chat and workspace_command_input?(raw_draft) ->
+        send_workspace_command(socket, raw_draft)
 
       HandbeanProbe.NativeModelInputs.warning(a) != nil ->
         HandbeanProbe.NativeModelInputs.check(socket)
@@ -289,6 +308,144 @@ defmodule HandbeanProbe.HomeScreen.Chat do
             )
         end
     end
+  end
+
+  defp workspace_command_input?(content) do
+    Handbean.WorkspaceCommand.parse(content) != :not_command
+  end
+
+  defp send_workspace_command(socket, content) do
+    a = socket.assigns
+
+    cond do
+      not Handbean.WorkspaceCommand.supported?() ->
+        Notice.put_error(
+          socket,
+          gettext("Direct workspace commands are not supported on this device.")
+        )
+
+      is_nil(a.workspace) or a.free_draft == true ->
+        Notice.put_error(
+          socket,
+          gettext("Direct commands are available only in workspace conversations.")
+        )
+
+      a.pending_attachments != [] ->
+        Notice.put_error(socket, gettext("Remove attachments before running a direct command."))
+
+      true ->
+        case Handbean.WorkspaceCommand.parse(content) do
+          {:ok, command} ->
+            intent = socket.assigns.workspace_command_intent
+
+            case Nav.ensure_conversation(socket) do
+              {:ok, socket} ->
+                socket
+                |> assign(:workspace_command_intent, intent)
+                |> submit_workspace_command(command)
+
+              {:error, reason} ->
+                workspace_command_error(socket, reason)
+            end
+
+          {:error, reason} ->
+            workspace_command_error(socket, reason)
+        end
+    end
+  end
+
+  defp submit_workspace_command(socket, command) do
+    conversation_id = Nav.current_conversation_id(socket)
+
+    {socket, operation_id} =
+      ensure_workspace_command_intent(socket, command, conversation_id)
+
+    case Handbean.WorkspaceCommand.submit(conversation_id, command,
+           source: :mobile,
+           operation_id: operation_id
+         ) do
+      {:ok, _operation} ->
+        a = socket.assigns
+        chat = %{a.chat | entries: NativeChat.reload_entries(a.chat)}
+
+        socket
+        |> assign(
+          chat: chat,
+          draft: "",
+          workspace_command_intent: nil,
+          drafts: NativeWorkspaces.clear_draft(a.drafts, a.workspace, chat.conversation),
+          composer_open_id: nil,
+          timeline_open: nil,
+          notice: nil
+        )
+        |> Notice.clear()
+
+      {:error, reason} ->
+        workspace_command_error(socket, reason)
+    end
+  end
+
+  defp workspace_command_error(socket, :empty_command) do
+    Notice.put_error(socket, gettext("Enter a command after !."))
+  end
+
+  defp workspace_command_error(socket, :invalid_command) do
+    Notice.put_error(socket, gettext("That direct command is invalid or too long."))
+  end
+
+  defp workspace_command_error(socket, :busy) do
+    Notice.put_error(
+      socket,
+      gettext("A direct command is already running for this conversation.")
+    )
+  end
+
+  defp workspace_command_error(socket, reason)
+       when reason in [:not_available, :not_workspace_conversation, :workspace_unavailable] do
+    Notice.put_error(
+      socket,
+      gettext("Direct commands are not available on this host or workspace.")
+    )
+  end
+
+  defp workspace_command_error(socket, _reason) do
+    Notice.put_error(socket, gettext("The direct command could not be started."))
+  end
+
+  defp workspace_command_intent(socket, input) do
+    current = socket.assigns.workspace_command_intent
+    conversation_id = Nav.current_conversation_id(socket)
+
+    case Handbean.WorkspaceCommand.parse(input) do
+      {:ok, command} ->
+        if is_map(current) and current.command == command and
+             current.conversation_id == conversation_id do
+          current
+        else
+          %{
+            command: command,
+            conversation_id: conversation_id,
+            operation_id: Ecto.UUID.generate()
+          }
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp ensure_workspace_command_intent(socket, command, conversation_id) do
+    current = socket.assigns.workspace_command_intent
+
+    intent =
+      if is_map(current) and current.command == command and
+           current.conversation_id in [nil, conversation_id] do
+        %{current | conversation_id: conversation_id}
+      else
+        %{command: command, conversation_id: conversation_id, operation_id: Ecto.UUID.generate()}
+      end
+
+    {assign(socket, :workspace_command_intent, intent), intent.operation_id}
   end
 
   defp maybe_send_direct_message(socket, content, :chat) do

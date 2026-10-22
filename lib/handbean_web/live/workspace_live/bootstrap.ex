@@ -151,6 +151,7 @@ defmodule HandbeanWeb.WorkspaceLive.Bootstrap do
       |> assign(:think_buffer, "")
       # Agent state
       |> assign(:input_value, "")
+      |> assign(:workspace_command_intent, nil)
       |> assign(:composer_error, nil)
       |> assign(:running, false)
       |> assign(:running_conversation_id, nil)

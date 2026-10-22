@@ -441,6 +441,67 @@ defmodule Handbean.AttachmentsTest do
              )
   end
 
+  test "compaction cannot cover a direct command result before an Agent consumes it" do
+    {:ok, conv} = Handbean.ConversationStore.create("default")
+    conversation_id = conv["id"]
+
+    entries = [
+      %{
+        "id" => "direct-compaction-user",
+        "content_type" => "user_msg",
+        "role" => "user",
+        "content" => "before"
+      },
+      %{
+        "id" => "direct-compaction-result",
+        "content_type" => "tool",
+        "role" => "tool",
+        "tool_name" => "bash",
+        "tool_status" => "done",
+        "input" => %{"command" => "pwd"},
+        "output" => "/workspace",
+        "direct_command" => true,
+        "consumption" => "pending",
+        "agent_response_status" => "pending"
+      },
+      %{
+        "id" => "direct-compaction-assistant",
+        "content_type" => "assistant_msg",
+        "role" => "assistant",
+        "content" => "after",
+        "status" => "completed"
+      }
+    ]
+
+    {:ok, [first_entry, direct_entry, assistant_entry]} =
+      Handbean.ConversationTranscriptStore.append_many(conversation_id, entries)
+
+    [first, _direct_observation, assistant] =
+      History.to_messages([first_entry, direct_entry, assistant_entry], nil, conversation_id)
+
+    event = %{
+      first: first,
+      previous_summary: nil,
+      messages_to_summarize: [assistant],
+      summary: "must not hide pending command output",
+      context_edited: false,
+      run_id: "run-direct"
+    }
+
+    assert {:error, :invalid_provenance} =
+             Handbean.Agent.CompactionCheckpoint.persist(conversation_id, event, [])
+
+    assert {:ok, _entry} =
+             Handbean.ConversationTranscriptStore.update(
+               conversation_id,
+               "direct-compaction-result",
+               %{"consumption" => "consumed", "consumed_run_id" => "run-direct"}
+             )
+
+    assert {:ok, _checkpoint} =
+             Handbean.Agent.CompactionCheckpoint.persist(conversation_id, event, [])
+  end
+
   test "history reuses chained checkpoints, preserves suffix reasoning, and falls back" do
     {:ok, conv} = Handbean.ConversationStore.create("default")
     id = conv["id"]

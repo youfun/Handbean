@@ -424,8 +424,35 @@ defmodule HandbeanWeb.WorkspaceLive.ChatTimelineComponents do
                 )
               ]}
             >
+              <div
+                :if={entry["direct_command"] == true}
+                id={"workspace-command-#{entry["id"]}"}
+                class="rounded border border-edge px-3 py-2"
+              >
+                <div class="flex items-center justify-between gap-3 text-xs text-tertiary">
+                  <span>{gettext("Workspace command")}</span>
+                  <span>{render_tool_status(tool_entry_status(entry))}</span>
+                </div>
+                <pre class="mt-2 overflow-x-auto whitespace-pre-wrap break-words text-xs text-secondary"><code>{get_in(entry, ["input", "command"])}</code></pre>
+                <pre
+                  :if={is_binary(entry["output"]) and entry["output"] != ""}
+                  class="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs text-primary"
+                ><code>{entry["output"]}</code></pre>
+                <div :if={entry["tool_error"]} class="mt-2 whitespace-pre-wrap text-xs text-error">
+                  {entry["tool_error"]}
+                </div>
+                <div
+                  :if={is_integer(get_in(entry, ["details", "exit_code"]))}
+                  class="mt-2 text-[0.68rem] text-tertiary"
+                >
+                  {gettext("Exit code: %{code}", code: get_in(entry, ["details", "exit_code"]))}
+                </div>
+              </div>
               <button
-                :if={entry["work_group_first"] && entry["work_group_complete"]}
+                :if={
+                  entry["direct_command"] != true && entry["work_group_first"] &&
+                    entry["work_group_complete"]
+                }
                 type="button"
                 id={"tool-work-summary-#{entry["work_group_id"]}"}
                 class="tool-work-summary"
@@ -439,7 +466,10 @@ defmodule HandbeanWeb.WorkspaceLive.ChatTimelineComponents do
                 </span>
               </button>
               <div
-                :if={!entry["work_collapsed"] && !FileChangeCard.change_entry?(entry)}
+                :if={
+                  entry["direct_command"] != true && !entry["work_collapsed"] &&
+                    !FileChangeCard.change_entry?(entry)
+                }
                 id={"tool-work-line-#{entry["id"]}"}
                 class={"tool-work-line indent-#{entry["work_indent"] || 1}"}
               >
@@ -531,7 +561,10 @@ defmodule HandbeanWeb.WorkspaceLive.ChatTimelineComponents do
                 <p class="mt-1 text-xs text-tertiary">{install_prompt.hint}</p>
               </div>
               <div
-                :if={render_tool_details? && is_nil(install_prompt) && tool_entry_error(entry)}
+                :if={
+                  entry["direct_command"] != true && render_tool_details? &&
+                    is_nil(install_prompt) && tool_entry_error(entry)
+                }
                 class="mt-1 text-error truncate"
               >
                 {inspect(tool_entry_error(entry))}

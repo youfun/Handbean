@@ -12,6 +12,7 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
 
   defdelegate timeline_insert(socket, entry, opts \\ []), to: Timeline
   defdelegate reconcile_handoffs(socket, entries), to: Timeline
+  defdelegate reconcile_transcript(socket, entries), to: Timeline
   defdelegate mark_revert_confirm(socket, change_id), to: Timeline
   defdelegate refresh_file_change(socket, id), to: Timeline
   defdelegate refresh_tool_work(socket, group_id), to: Timeline

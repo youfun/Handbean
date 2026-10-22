@@ -3282,3 +3282,48 @@ msgstr ""
 #, elixir-autogen, elixir-format
 msgid "In verification"
 msgstr ""
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:324
+#, elixir-autogen, elixir-format
+msgid "A direct command is already running for this conversation."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:277
+#, elixir-autogen, elixir-format
+msgid "Direct commands are available only in workspace conversations."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:328
+#, elixir-autogen, elixir-format
+msgid "Direct commands are not available on this host or workspace."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:318
+#, elixir-autogen, elixir-format
+msgid "Enter a command after !."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_timeline_components.ex:448
+#, elixir-autogen, elixir-format
+msgid "Exit code: %{code}"
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:285
+#, elixir-autogen, elixir-format
+msgid "Remove attachments before running a direct command."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:321
+#, elixir-autogen, elixir-format
+msgid "That direct command is invalid or too long."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/message_submission.ex:332
+#, elixir-autogen, elixir-format
+msgid "The direct command could not be started."
+msgstr ""
+
+#: lib/handbean_web/live/workspace_live/chat_timeline_components.ex:433
+#, elixir-autogen, elixir-format
+msgid "Workspace command"
+msgstr ""

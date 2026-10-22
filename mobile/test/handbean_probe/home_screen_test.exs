@@ -487,6 +487,117 @@ defmodule HandbeanProbe.HomeScreenTest do
     refute tree(view).props.drawer_open
   end
 
+  test "standard native host rejects direct workspace commands before model or conversation creation",
+       %{
+         view: view
+       } do
+    view = info(view, {:change, :draft, "  !git status"})
+    operation_id = assigns(view).workspace_command_intent.operation_id
+    view = info(view, {:tap, :send})
+
+    assert assigns(view).chat == nil
+    assert assigns(view).draft == "  !git status"
+    assert assigns(view).workspace_command_intent.operation_id == operation_id
+
+    assert notice_text(view) =~
+             gettext("Direct workspace commands are not supported on this device.")
+
+    view = info(view, {:tap, :send})
+    assert assigns(view).workspace_command_intent.operation_id == operation_id
+
+    view = info(view, {:change, :draft, "!pwd"})
+    assert assigns(view).workspace_command_intent.operation_id != operation_id
+
+    assert Handbean.ConversationStore.list_for_workspace("default") == []
+    refute_receive {:provider_request, _, _}, 50
+  end
+
+  test "failed first direct command send keeps its new conversation and operation id", %{
+    view: view,
+    dir: dir
+  } do
+    workspace_path = Path.join(dir, "direct-command-workspace")
+    File.mkdir_p!(workspace_path)
+    {:ok, workspace} = Handbean.WorkspaceStore.add(workspace_path, name: "Direct commands")
+    view = info(view, {:tap, {:workspace, workspace["id"]}})
+
+    host = Application.fetch_env!(:handbean, :host)
+    Handbean.Host.put!(host |> Map.put(:shell, true) |> Map.put(:shell_isolation, :none))
+
+    owner = self()
+
+    executor = fn _command, _execution_context, _timeout ->
+      send(owner, {:workspace_command_blocked, self()})
+
+      receive do
+        :finish -> {:ok, "finished", %{exit_code: 0}}
+      end
+    end
+
+    conversation_ids =
+      Enum.map(1..8, fn index ->
+        {:ok, conversation} =
+          Handbean.ConversationStore.create(assigns(view).workspace["id"],
+            title: "Blocking command #{index}"
+          )
+
+        assert {:ok, %{state: :started}} =
+                 Handbean.WorkspaceCommand.submit(conversation["id"], "blocking-#{index}",
+                   operation_id: "native-blocking-#{index}",
+                   executor: executor,
+                   responder: fn _, _ -> {:ok, %{action: :started}} end
+                 )
+
+        conversation["id"]
+      end)
+
+    on_exit(fn -> Enum.each(conversation_ids, &Handbean.WorkspaceCommand.cancel/1) end)
+
+    for _ <- 1..8, do: assert_receive({:workspace_command_blocked, _worker}, 1_000)
+
+    view = info(view, {:change, :draft, "!pwd"})
+    operation_id = assigns(view).workspace_command_intent.operation_id
+    assert assigns(view).workspace_command_intent.conversation_id == nil
+
+    view = info(view, {:tap, :send})
+    conversation_id = assigns(view).chat.conversation["id"]
+
+    assert assigns(view).draft == "!pwd"
+    assert assigns(view).workspace_command_intent.operation_id == operation_id
+    assert assigns(view).workspace_command_intent.conversation_id == conversation_id
+
+    assert notice_text(view) =~
+             gettext("A direct command is already running for this conversation.")
+
+    assert length(Handbean.ConversationStore.list_for_workspace(assigns(view).workspace["id"])) ==
+             9
+
+    view = info(view, {:tap, :send})
+
+    assert assigns(view).chat.conversation["id"] == conversation_id
+    assert assigns(view).workspace_command_intent.operation_id == operation_id
+
+    assert length(Handbean.ConversationStore.list_for_workspace(assigns(view).workspace["id"])) ==
+             9
+  end
+
+  test "review generation does not reinterpret an exclamation draft as a direct command", %{
+    view: view
+  } do
+    view =
+      view
+      |> info({:change, :draft, "!git status"})
+      |> info({:change, :review_place, "Cafe"})
+      |> info({:change, :review_feeling, "Quiet and bright"})
+      |> info({:tap, :toggle_composer_mode})
+      |> info({:tap, :generate_review})
+
+    refute notice_text(view) =~
+             gettext("Direct workspace commands are not supported on this device.")
+
+    assert length(Handbean.ConversationStore.list_for_workspace("default")) == 1
+  end
+
   test "blank send does not create a conversation; failed send preserves draft and conversation",
        %{view: view} do
     view = info(view, {:tap, :send})

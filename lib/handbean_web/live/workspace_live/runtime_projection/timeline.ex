@@ -41,6 +41,17 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection.Timeline do
   def reconcile_handoffs(socket, entries) when is_list(entries) do
     entries
     |> Enum.filter(&conversation_entry?/1)
+    |> reconcile_entries(socket)
+  end
+
+  def reconcile_transcript(socket, entries) when is_list(entries) do
+    entries
+    |> Handbean.PubSub.Projection.visible_entries()
+    |> reconcile_entries(socket)
+  end
+
+  defp reconcile_entries(entries, socket) do
+    entries
     |> Enum.filter(&entry_in_loaded_window?(socket, &1))
     |> Enum.reject(&timeline_entry_unchanged?(socket.assigns.timeline, &1))
     |> Enum.reduce(socket, fn entry, acc -> timeline_insert(acc, entry) end)

@@ -14,6 +14,7 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComposerComponents do
   attr :cli_models_error, :any, required: true
   attr :cli_models_loading, :boolean, required: true
   attr :composer_error, :any, required: true
+  attr :current_conversation_id, :any, required: true
   attr :input_value, :any, required: true
   attr :pending_attachments, :list, required: true
   attr :permission_mode, :any, required: true
@@ -39,6 +40,7 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComposerComponents do
         phx-change="composer_drop"
         class={["composer dropzone", if(@running, do: "composer-running", else: "")]}
       >
+        <input type="hidden" name="workspace_command_operation_id" value="" />
         <div
           :if={@composer_error}
           class="composer-error"
@@ -193,6 +195,10 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComposerComponents do
               phx-value-value={@input_value}
               phx-hook="ComposerPasteUpload"
               data-upload-name="images"
+              data-command-intent-key="handbean:workspace-command-intent"
+              data-command-intent-scope={
+                @current_conversation_id || "new:#{@workspace_path || @chat_scope}"
+              }
               placeholder={
                 if(@running,
                   do: gettext("Running: send inserts next · queue waits until this run finishes"),

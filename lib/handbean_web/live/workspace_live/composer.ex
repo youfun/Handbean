@@ -44,6 +44,69 @@ defmodule HandbeanWeb.WorkspaceLive.Composer do
 
   def forget(socket, _), do: socket
 
+  def track_workspace_command_intent(socket, input) when is_binary(input) do
+    intent = socket.assigns[:workspace_command_intent]
+    conversation_id = socket.assigns[:current_conversation_id]
+
+    next_intent =
+      case Handbean.WorkspaceCommand.parse(input) do
+        {:ok, command} ->
+          if is_map(intent) and intent.command == command and
+               intent.conversation_id == conversation_id do
+            intent
+          else
+            %{
+              command: command,
+              conversation_id: conversation_id,
+              operation_id: Ecto.UUID.generate()
+            }
+          end
+
+        _ ->
+          nil
+      end
+
+    assign(socket, :workspace_command_intent, next_intent)
+  end
+
+  def track_workspace_command_intent(socket, _input),
+    do: assign(socket, :workspace_command_intent, nil)
+
+  def workspace_command_operation(socket, command, client_operation_id \\ nil)
+      when is_binary(command) do
+    conversation_id = socket.assigns[:current_conversation_id]
+    current = socket.assigns[:workspace_command_intent]
+
+    operation_id =
+      valid_client_operation_id(client_operation_id) ||
+        if(
+          is_map(current) and current.command == command and
+            current.conversation_id == conversation_id,
+          do: current.operation_id,
+          else: Ecto.UUID.generate()
+        )
+
+    intent = %{
+      command: command,
+      conversation_id: conversation_id,
+      operation_id: operation_id
+    }
+
+    {assign(socket, :workspace_command_intent, intent), operation_id}
+  end
+
+  def clear_workspace_command_intent(socket),
+    do: assign(socket, :workspace_command_intent, nil)
+
+  defp valid_client_operation_id(id) when is_binary(id) do
+    case Ecto.UUID.cast(id) do
+      {:ok, operation_id} -> operation_id
+      :error -> nil
+    end
+  end
+
+  defp valid_client_operation_id(_id), do: nil
+
   defp stash_current(socket) do
     id = socket.assigns[:current_conversation_id]
     draft = current_draft(socket)

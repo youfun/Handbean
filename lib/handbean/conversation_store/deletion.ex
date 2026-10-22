@@ -143,7 +143,8 @@ defmodule Handbean.ConversationStore.Deletion do
   def runtime_active?(conversation_ids) when is_list(conversation_ids) do
     Enum.any?(conversation_ids, fn id ->
       Registry.lookup(Handbean.AgentRunSupervisorRegistry, id) != [] or
-        Registry.lookup(Handbean.AgentRunRegistry, id) != []
+        Registry.lookup(Handbean.AgentRunRegistry, id) != [] or
+        Handbean.WorkspaceCommand.active?(id)
     end)
   end
 
@@ -151,6 +152,7 @@ defmodule Handbean.ConversationStore.Deletion do
   def force_quiesce(conversation_ids) when is_list(conversation_ids) do
     Enum.each(conversation_ids, fn id ->
       _ = Handbean.Agent.Runner.cancel(id)
+      _ = Handbean.WorkspaceCommand.cancel(id)
       _ = Handbean.AgentRunSupervisor.stop_run(id)
 
       Enum.each(Registry.lookup(Handbean.AgentRunRegistry, id), fn {pid, _metadata} ->
@@ -317,6 +319,7 @@ defmodule Handbean.ConversationStore.Deletion do
   defp quiesce(ids) do
     Enum.each(ids, fn id ->
       _ = Handbean.Agent.Runner.cancel(id)
+      _ = Handbean.WorkspaceCommand.cancel(id)
       _ = Handbean.SessionSupervisor.stop_session(id)
     end)
   end

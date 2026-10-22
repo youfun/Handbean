@@ -14,14 +14,27 @@ defmodule Handbean.ConversationTranscriptStore do
   @callback complete_tool_call(String.t(), entry(), entry() | nil, [String.t()], keyword()) ::
               {:ok, %{tool_entry: entry(), media_entry: entry() | nil}} | {:error, term()}
   @callback consume(String.t(), [String.t()], map(), keyword()) :: :ok | {:error, term()}
-  @optional_callbacks page: 2, complete_tool_call: 5, consume: 4
   @callback append(String.t(), entry(), keyword()) :: {:ok, entry()} | {:error, term()}
+  @callback append_many(String.t(), [entry()], keyword()) :: {:ok, [entry()]} | {:error, term()}
+  @callback interrupt_workspace_commands(String.t(), keyword()) ::
+              {:ok, [String.t()]} | {:error, term()}
+  @callback pending_workspace_command_responses(keyword()) ::
+              {:ok, [{String.t(), entry()}]} | {:error, term()}
+  @callback claim_workspace_command_response(String.t(), String.t(), String.t(), keyword()) ::
+              {:ok, entry()} | {:error, term()}
   @callback update(String.t(), String.t(), map(), keyword()) :: {:ok, entry()} | {:error, term()}
   @callback append_content(String.t(), String.t(), String.t(), String.t() | nil, keyword()) ::
               {:ok, %{id: String.t(), text_bytes: non_neg_integer()}} | {:error, term()}
   @callback delete(String.t(), String.t(), keyword()) :: :ok | {:error, term()}
   @callback replace_all(String.t(), [entry()], keyword()) :: :ok | {:error, term()}
-  @optional_callbacks append_content: 5
+  @optional_callbacks page: 2,
+                      complete_tool_call: 5,
+                      consume: 4,
+                      append_content: 5,
+                      append_many: 3,
+                      interrupt_workspace_commands: 2,
+                      pending_workspace_command_responses: 1,
+                      claim_workspace_command_response: 4
 
   @doc "Load all transcript entries for a conversation."
   @spec list(String.t(), keyword()) :: {:ok, [entry()]} | {:error, term()}
@@ -50,6 +63,53 @@ defmodule Handbean.ConversationTranscriptStore do
   def append(conversation_id, entry, opts \\ [])
       when is_binary(conversation_id) and is_map(entry) do
     impl(opts).append(conversation_id, entry, opts)
+  end
+
+  @doc "Atomically append an ordered batch of transcript entries."
+  @spec append_many(String.t(), [entry()], keyword()) :: {:ok, [entry()]} | {:error, term()}
+  def append_many(conversation_id, entries, opts \\ [])
+      when is_binary(conversation_id) and is_list(entries) do
+    store = impl(opts)
+
+    if Code.ensure_loaded?(store) and function_exported?(store, :append_many, 3),
+      do: store.append_many(conversation_id, entries, opts),
+      else: {:error, :unsupported}
+  end
+
+  @doc false
+  @spec interrupt_workspace_commands(String.t(), keyword()) ::
+          {:ok, [String.t()]} | {:error, term()}
+  def interrupt_workspace_commands(error, opts \\ []) when is_binary(error) do
+    store = impl(opts)
+
+    if Code.ensure_loaded?(store) and function_exported?(store, :interrupt_workspace_commands, 2),
+      do: store.interrupt_workspace_commands(error, opts),
+      else: {:error, :unsupported}
+  end
+
+  @doc false
+  @spec pending_workspace_command_responses(keyword()) ::
+          {:ok, [{String.t(), entry()}]} | {:error, term()}
+  def pending_workspace_command_responses(opts \\ []) do
+    store = impl(opts)
+
+    if Code.ensure_loaded?(store) and
+         function_exported?(store, :pending_workspace_command_responses, 1),
+       do: store.pending_workspace_command_responses(opts),
+       else: {:error, :unsupported}
+  end
+
+  @doc false
+  @spec claim_workspace_command_response(String.t(), String.t(), String.t(), keyword()) ::
+          {:ok, entry()} | {:error, term()}
+  def claim_workspace_command_response(conversation_id, entry_id, attempt_id, opts \\ [])
+      when is_binary(conversation_id) and is_binary(entry_id) and is_binary(attempt_id) do
+    store = impl(opts)
+
+    if Code.ensure_loaded?(store) and
+         function_exported?(store, :claim_workspace_command_response, 4),
+       do: store.claim_workspace_command_response(conversation_id, entry_id, attempt_id, opts),
+       else: {:error, :unsupported}
   end
 
   @doc "Patch one transcript entry by id."

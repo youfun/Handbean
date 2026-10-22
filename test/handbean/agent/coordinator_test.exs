@@ -223,6 +223,41 @@ defmodule Handbean.Agent.CoordinatorTest do
     assert {:error, :not_found} = Handbean.Agent.Runner.status(sid)
   end
 
+  test "new-run request identity suppresses a racing follow-up in the same Handbean run" do
+    sid = "coord-initial-dedupe-#{System.unique_integer([:positive])}"
+    request_id = "request-#{Ecto.UUID.generate()}"
+    message_id = "message-#{Ecto.UUID.generate()}"
+    {:ok, _} = Handbean.ConversationStore.create("default", id: sid)
+
+    assert {:ok, %{action: :started, run_id: run_id}} =
+             Coordinator.add_message(
+               sid,
+               "one observation",
+               opts(
+                 request_id: request_id,
+                 message_id: message_id,
+                 provider: HoldProvider,
+                 provider_config: %{notify: self()}
+               )
+             )
+
+    assert_receive {:held, provider_pid}
+    assert {:ok, %{queue_pid: queue_pid}} = Handbean.Agent.Runner.status(sid)
+
+    assert :ok =
+             Handbean.Agent.CandidateQueue.enqueue(queue_pid, "one observation",
+               request_id: request_id,
+               message_id: message_id,
+               run_id: run_id,
+               deliver_as: :follow_up,
+               persist_candidate?: false
+             )
+
+    assert [] = Handbean.Agent.CandidateQueue.drain_follow_up(queue_pid)
+    send(provider_pid, :release)
+    assert_receive_run_end(sid)
+  end
+
   test "require_idle admission ignores a stale Session projection and uses Runner ownership" do
     sid = "coord-stale-session-#{System.unique_integer([:positive])}"
     {:ok, _} = Handbean.ConversationStore.create("default", id: sid)

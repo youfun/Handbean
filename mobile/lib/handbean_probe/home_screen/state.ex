@@ -54,6 +54,7 @@ defmodule HandbeanProbe.HomeScreen.State do
     chat: nil,
     draft: "",
     drafts: %{},
+    workspace_command_intent: nil,
     stopping: false,
     permission_mode: :prompt,
     deliver_mode: :steer,
@@ -145,6 +146,7 @@ defmodule HandbeanProbe.HomeScreen.State do
   def chat_reset do
     [
       notice: nil,
+      workspace_command_intent: nil,
       stopping: false,
       page: :chat,
       work_groups: %{},

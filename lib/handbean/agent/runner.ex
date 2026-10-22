@@ -124,7 +124,8 @@ defmodule Handbean.Agent.Runner do
     }
 
     with :ok <- attach_delegation(state.opts, conversation_id),
-         {:ok, content, opts} <- accept_inbound(conversation_id, content, state.opts) do
+         {:ok, content, opts} <-
+           accept_initial(queue_pid, conversation_id, content, state.opts) do
       owner = Keyword.get(opts, :delegation_owner)
       monitor = if is_pid(owner), do: Process.monitor(owner)
 
@@ -150,6 +151,18 @@ defmodule Handbean.Agent.Runner do
   # Accepted new-run inbound is written here so
   # exclusive RunSupervisor start is the accept gate and the user entry exists
   # before handle_continue starts the provider task.
+  defp accept_initial(queue_pid, conversation_id, content, opts) do
+    with :ok <- Handbean.Agent.CandidateQueue.begin_initial(queue_pid, opts),
+         {:ok, _content, _opts} = accepted <- accept_inbound(conversation_id, content, opts),
+         :ok <- Handbean.Agent.CandidateQueue.commit_initial(queue_pid, opts) do
+      accepted
+    else
+      {:error, _reason} = error ->
+        :ok = Handbean.Agent.CandidateQueue.abort_initial(queue_pid, opts)
+        error
+    end
+  end
+
   defp accept_inbound(conversation_id, content, opts) do
     receipt = %{action: :started, run_id: Keyword.fetch!(opts, :run_id)}
 

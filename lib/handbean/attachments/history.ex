@@ -53,6 +53,12 @@ defmodule Handbean.Attachments.History do
 
     messages =
       cond do
+        entry["direct_command"] == true and role == "user" ->
+          []
+
+        entry["direct_command"] == true and role == "tool" ->
+          restore_workspace_command(entry)
+
         role == "tool" and attachments == [] ->
           restore_tool(entry, conversation_id)
 
@@ -115,6 +121,15 @@ defmodule Handbean.Attachments.History do
   defp reasoning_block?(%{"type" => "responses_reasoning"}), do: true
   defp reasoning_block?(%{type: "responses_reasoning"}), do: true
   defp reasoning_block?(_block), do: false
+
+  defp restore_workspace_command(%{"tool_status" => status} = entry)
+       when status in ["done", "error"] do
+    content = Handbean.WorkspaceCommand.AgentResponse.observation(entry)
+
+    [%Message{role: :user, content: content, id: entry["id"]}]
+  end
+
+  defp restore_workspace_command(_entry), do: []
 
   defp restore_tool(entry, conversation_id) do
     images = Handbean.Tool.Images.project(entry["images"])

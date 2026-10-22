@@ -58,7 +58,10 @@ defmodule Handbean.Application do
           Handbean.SessionSupervisor,
           Handbean.AgentRunSupervisor,
           {Task.Supervisor, name: Handbean.AgentRunTaskSupervisor},
-          Handbean.Platform.ProcessRunner.InvocationSupervisor,
+          Handbean.Platform.ProcessRunner.InvocationSupervisor
+        ] ++
+        Handbean.WorkspaceCommand.child_specs() ++
+        [
           Handbean.Agent.Delegation
         ] ++
         Handbean.Runtime.MacNotify.children() ++

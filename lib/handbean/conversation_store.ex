@@ -282,11 +282,7 @@ defmodule Handbean.ConversationStore do
   end
 
   def broadcast_title_updated(conversation_id, title \\ nil) when is_binary(conversation_id) do
-    Phoenix.PubSub.broadcast(
-      Handbean.PubSub,
-      "conversation:updated",
-      {:conversation_updated, conversation_id}
-    )
+    broadcast_updated(conversation_id)
 
     if present?(title) do
       Phoenix.PubSub.broadcast(
@@ -295,6 +291,31 @@ defmodule Handbean.ConversationStore do
         {:conversation_title_ready, conversation_id, title}
       )
     end
+
+    :ok
+  end
+
+  @doc "Broadcast that durable conversation state changed; subscribers must re-read its owner."
+  def broadcast_updated(conversation_id) when is_binary(conversation_id) do
+    Phoenix.PubSub.broadcast(
+      Handbean.PubSub,
+      "conversation:updated",
+      {:conversation_updated, conversation_id}
+    )
+
+    :ok
+  end
+
+  @doc "Broadcast a durable entry update together with the owning conversation update."
+  def broadcast_updated(conversation_id, entry)
+      when is_binary(conversation_id) and is_map(entry) do
+    :ok = broadcast_updated(conversation_id)
+
+    Phoenix.PubSub.broadcast(
+      Handbean.PubSub,
+      "conversation:updated",
+      {:conversation_entry_updated, conversation_id, entry}
+    )
 
     :ok
   end
