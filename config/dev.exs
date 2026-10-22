@@ -15,7 +15,12 @@ config :handbean, Handbean.Repo,
 
 # For development, we disable any cache and enable
 # debugging and code reloading.
-#
+secret_key_base =
+  System.get_env("SECRET_KEY_BASE") ||
+    "4q06/NhjIcyS+rVbrFZwpEUfBdrXzc70mUo4pQwFco7LB/q/QE9B6xkPp0hTMlfO"
+
+config :handbean, :web_push_access_secret, secret_key_base
+
 # The watchers configuration can be used to run external
 # watchers to your application. For example, we can use it
 # to bundle .js and .css sources.
@@ -32,9 +37,7 @@ config :handbean, HandbeanWeb.Endpoint,
   check_origin: ["//localhost", "//127.0.0.1"],
   code_reloader: true,
   debug_errors: true,
-  secret_key_base:
-    System.get_env("SECRET_KEY_BASE") ||
-      "4q06/NhjIcyS+rVbrFZwpEUfBdrXzc70mUo4pQwFco7LB/q/QE9B6xkPp0hTMlfO",
+  secret_key_base: secret_key_base,
   watchers: [
     esbuild: {Esbuild, :install_and_run, [:handbean, ~w(--watch --sourcemap=inline)]}
   ]

@@ -12,10 +12,13 @@ config :handbean, Handbean.Repo,
 
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
+# Test-only, not a secret.
+secret_key_base = "/BytCcxUvybaKIBsl3vksg1IngjTMcAYie8+ggR39G4ggiReaVsF6jKTpQrMt6+X"
+config :handbean, :web_push_access_secret, secret_key_base
+
 config :handbean, HandbeanWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: 4002],
-  # test-only, not a secret
-  secret_key_base: "/BytCcxUvybaKIBsl3vksg1IngjTMcAYie8+ggR39G4ggiReaVsF6jKTpQrMt6+X",
+  secret_key_base: secret_key_base,
   server: false
 
 # Print only warnings and errors during test
@@ -35,6 +38,7 @@ config :phoenix,
 # The app Clock must not claim rows while tests drive time themselves.
 config :handbean, :schedule_clock, enabled: false
 config :handbean, :schedule_dispatch, :sync
+config :handbean, :web_push, dispatch: false
 config :handbean, Handbean.Media.Cleaner, schedule_pending_delete?: false
 config :handbean, Handbean.WorkspaceCommand, response_recovery?: false
 config :error_tracker, enabled: false

@@ -118,6 +118,12 @@ config :handbean, :access,
   username: access_username,
   password: access_password
 
+# The browser enrollment flow generates and persists VAPID keys automatically.
+# The operator supplies a contact URI, never a private key in frontend config.
+if config_env() != :test do
+  config :handbean, :web_push, subject: System.get_env("HANDBEAN_WEB_PUSH_SUBJECT")
+end
+
 config :handbean,
   trust_project_code:
     String.downcase(System.get_env("HANDBEAN_TRUST_PROJECT_CODE", "false")) in [
@@ -211,6 +217,8 @@ if config_env() == :prod do
   config :handbean, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
   allow_http? = System.get_env("HANDBEAN_ALLOW_HTTP") == "1"
+
+  config :handbean, :web_push_access_secret, secret_key_base
 
   config :handbean, HandbeanWeb.Endpoint,
     url: [

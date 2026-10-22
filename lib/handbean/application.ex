@@ -66,6 +66,8 @@ defmodule Handbean.Application do
         ] ++
         Handbean.Runtime.MacNotify.children() ++
         [
+          {Task.Supervisor, name: Handbean.WebPush.TaskSupervisor},
+          Handbean.WebPush.Dispatcher,
           Handbean.Runtime.TaskTracker,
           Handbean.Schedule.Clock,
           Handbean.Schedule.Recorder

@@ -371,6 +371,56 @@ defmodule Handbean.Runtime.TaskTrackerTest do
     Process.exit(runner, :kill)
   end
 
+  test "browser pushes follow normalized transitions independently of the native foreground" do
+    Phoenix.PubSub.subscribe(Handbean.PubSub, "runtime:web_push")
+    Application.put_env(:handbean, :runtime_notify_visible, true)
+    {:ok, conversation} = Handbean.ConversationStore.create_free()
+    sid = conversation["id"]
+    TaskTracker.viewing(self(), sid)
+
+    capture_event_queries(sid, :run_start, %{run_id: "push-run"})
+    assert_received {:web_push_event, {:started, %{run_id: "push-run"}}}
+
+    for kind <- [:tool_approval_requested, :stall_check_requested, :tool_approval_requested] do
+      capture_event_queries(sid, kind, %{run_id: "push-run"})
+    end
+
+    assert_received {:web_push_event, {:waiting, %{run_id: "push-run"}}}
+    refute_received {:web_push_event, {:waiting, _}}
+
+    capture_event_queries(sid, :run_resumed, %{run_id: "push-run"})
+    assert_received {:web_push_event, {:started, %{run_id: "push-run"}}}
+    capture_event_queries(sid, :tool_approval_requested, %{run_id: "push-run"})
+    assert_received {:web_push_event, {:waiting, %{run_id: "push-run"}}}
+
+    capture_event_queries(sid, :run_end, %{run_id: "push-run", status: "completed"})
+    assert_received {:web_push_event, {:ended, %{run_id: "push-run"}, :completed}}
+    refute_received {:notify_action, {:system_ended, _, _}}
+    refute_received {:notify_action, {:in_app_ended, _, _}}
+
+    capture_event_queries(sid, :run_end, %{run_id: "push-run", status: "completed"})
+    refute_received {:web_push_event, _}
+  end
+
+  test "browser pushes omit internal and stale runs but publish cancellation to invalidate waiting" do
+    Phoenix.PubSub.subscribe(Handbean.PubSub, "runtime:web_push")
+    {:ok, hidden} = Handbean.ConversationStore.create_free(visibility: "internal")
+    capture_event_queries(hidden["id"], :run_start, %{run_id: "hidden"})
+    capture_event_queries(hidden["id"], :run_end, %{run_id: "hidden", status: "completed"})
+    refute_received {:web_push_event, _}
+
+    {:ok, conversation} = Handbean.ConversationStore.create_free()
+    sid = conversation["id"]
+    capture_event_queries(sid, :run_start, %{run_id: "current"})
+    assert_received {:web_push_event, {:started, _}}
+    capture_event_queries(sid, :run_end, %{run_id: "old", status: "completed"})
+    refute_received {:web_push_event, _}
+    capture_event_queries(sid, :tool_approval_requested, %{run_id: "current"})
+    assert_received {:web_push_event, {:waiting, _}}
+    capture_event_queries(sid, :run_end, %{run_id: "current", status: "cancelled"})
+    assert_received {:web_push_event, {:ended, %{run_id: "current"}, :cancelled}}
+  end
+
   def capture_tracker_query(_event, _measurements, metadata, {tracker, recipient, ref}) do
     if self() == tracker and String.starts_with?(metadata.query, "SELECT") do
       send(recipient, {ref, metadata.query})

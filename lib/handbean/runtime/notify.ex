@@ -12,7 +12,8 @@ defmodule Handbean.Runtime.Notify do
           required(:run_id) => String.t(),
           optional(:workspace_id) => String.t() | nil,
           optional(:title) => String.t() | nil,
-          optional(:status) => :running | :waiting_confirmation
+          optional(:status) => :running | :waiting_confirmation,
+          optional(:waiting_episode) => pos_integer() | nil
         }
 
   @type snapshot :: %{

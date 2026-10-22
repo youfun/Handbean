@@ -109,7 +109,8 @@ defmodule Handbean.Runtime.TaskTracker do
       run_id: resolve_run_id(payload, conversation_id, conversation_id),
       workspace_id: summary["workspace_id"],
       title: summary["title"],
-      status: :running
+      status: :running,
+      waiting_episode: nil
     }
 
     state = monitor_runner(state, conversation_id, task.run_id)
@@ -144,7 +145,7 @@ defmodule Handbean.Runtime.TaskTracker do
     case Map.get(state.tasks, conversation_id) do
       %{status: :waiting_confirmation} = task ->
         if event_matches_task?(task, payload) do
-          task = %{task | status: :running}
+          task = %{task | status: :running, waiting_episode: nil}
           state = put_in(state, [:tasks, conversation_id], task)
           dispatch(state, {:started, task})
           {:noreply, state}
@@ -160,6 +161,7 @@ defmodule Handbean.Runtime.TaskTracker do
   defp handle_lifecycle(_message, state, _summary), do: {:noreply, state}
 
   defp dispatch(state, event) do
+    Handbean.WebPush.Dispatcher.broadcast(event)
     snapshot = broadcast_snapshot(state)
 
     context = %{
@@ -210,10 +212,11 @@ defmodule Handbean.Runtime.TaskTracker do
         state
 
       task ->
-        if event_matches_task?(task, payload) do
+        if event_matches_task?(task, payload) and task.status != :waiting_confirmation do
           task = %{
             task
             | status: :waiting_confirmation,
+              waiting_episode: System.unique_integer([:positive, :monotonic]),
               run_id: resolve_run_id(payload, conversation_id, task.run_id)
           }
 

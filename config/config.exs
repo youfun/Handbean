@@ -53,6 +53,9 @@ config :logger, :default_formatter,
 # Use Erlang/OTP's built-in JSON implementation through Handbean's Phoenix adapter.
 config :phoenix, :json_library, Handbean.JSON
 
+# Push endpoints are capability URLs; browser encryption keys must not enter request logs.
+config :phoenix, :filter_parameters, ["password", "subscription", "endpoint", "p256dh", "auth"]
+
 # ── Gettext i18n 配置 ──
 config :handbean, Handbean.Gettext,
   default_locale: "zh_CN",

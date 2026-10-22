@@ -10,6 +10,11 @@
     <.live_title default="Handbean" phx-no-format>{assigns[:page_title]}</.live_title>
     <link rel="icon" href={~p"/favicon.ico"} sizes="any" />
     <link rel="icon" href={~p"/images/logo.svg"} type="image/svg+xml" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#172321" />
+    <link rel="apple-touch-icon" href={~p"/images/pwa-192.png"} />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Handbean" />
     <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
     <link phx-track-static rel="stylesheet" href={~p"/assets/default.css"} />
     <link phx-track-static rel="stylesheet" href={~p"/assets/css/theme-system.css"} />
@@ -100,6 +105,27 @@
     </style>
   </head>
   <body>
+    <div
+      id="connection-status"
+      class="connection-status"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      hidden
+    >
+      <span class="connection-status-dot" aria-hidden="true"></span>
+      <span data-connection-copy></span>
+      <span hidden aria-hidden="true">
+        <span data-connection-message="connected"></span>
+        <span data-connection-message="offline">
+          {gettext("已离线。请检查网络与 Handbean 服务。")}
+        </span>
+        <span data-connection-message="reconnecting">
+          {gettext("连接已中断，正在重新连接…")}
+        </span>
+        <span data-connection-message="restored">{gettext("已重新连接。")}</span>
+      </span>
+    </div>
     <div id="mob-bridge" phx-hook="MobHook" style="display:none"></div>
     {@inner_content}
   </body>

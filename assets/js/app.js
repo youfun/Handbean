@@ -15,6 +15,11 @@ import { ConversationActivity } from "./hooks/conversation_activity.js";
 import { ScheduleCountdown } from "./hooks/schedule_countdown.js";
 import { BoundSelect, ModelPicker } from "./hooks/model_picker.js";
 import { SettingsNav } from "./hooks/settings_nav.js";
+import { PushNotifications } from "./hooks/push_notifications.js";
+import { PWAInstall } from "./hooks/pwa_install.js";
+import { bootWebPush } from "./web_push.js";
+import { bootPWAInstall } from "./pwa_install.js";
+import { createConnectionStatus } from "./connection_status.js";
 
 const ConversationSidebar = {
   ...ConversationHover,
@@ -48,6 +53,11 @@ if (!serverTheme) {
   document.documentElement.setAttribute("data-theme", theme);
 }
 installImageLightbox();
+bootPWAInstall();
+bootWebPush();
+const connectionStatus = createConnectionStatus(document.getElementById("connection-status"), window);
+const bindConnectionStatus = () => connectionStatus.bind(document.querySelector("[data-phx-main]"));
+window.addEventListener("phx:page-loading-stop", bindConnectionStatus);
 window.addEventListener("phx:scroll_to_file_change", ({ detail }) => {
   requestAnimationFrame(() => {
     document.getElementById(detail.id)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -81,7 +91,7 @@ const MobHook = {
 }
 
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content");
-let Hooks = { StreamingMarkdown, ChatScroll, ConversationNav, ConversationSearch, ComposerPasteUpload, ComposerSpeech, WorkspacePanel, FilePreview, FileTabs, FileImage, CopyText, ConversationContextMenu, ConversationActivity, ConversationSidebar, LocalWebGPUProbe, GhosttyTerminal, ThemeBridge, MobHook, BrowserSurface, ScheduleCountdown, ModelPicker, BoundSelect, SettingsNav };
+let Hooks = { StreamingMarkdown, ChatScroll, ConversationNav, ConversationSearch, ComposerPasteUpload, ComposerSpeech, WorkspacePanel, FilePreview, FileTabs, FileImage, CopyText, ConversationContextMenu, ConversationActivity, ConversationSidebar, LocalWebGPUProbe, GhosttyTerminal, ThemeBridge, MobHook, BrowserSurface, ScheduleCountdown, ModelPicker, BoundSelect, SettingsNav, PushNotifications, PWAInstall };
 
 try {
   let liveSocket = new LiveSocket("/live", Socket, {
@@ -95,6 +105,7 @@ try {
 
   // LiveView turns on diff logging for localhost. Keep the console quiet.
   liveSocket.disableDebug();
+  bindConnectionStatus();
   liveSocket.connect();
   window.liveSocket = liveSocket;
   window.addEventListener("phx:scroll-to-run", (event) => {

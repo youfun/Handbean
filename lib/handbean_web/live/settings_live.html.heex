@@ -770,7 +770,9 @@
 
       <!-- UI Settings Tab -->
       <div :if={@active_tab == :ui} class="settings-content-wrap">
-        <div class="settings-content-card">
+        <div class="settings-content-card settings-form-section">
+          <HandbeanWeb.Components.PWAInstall.render />
+          <HandbeanWeb.Components.PushNotifications.render locale={@locale} />
           <div class="settings-form-section">
             <div class="settings-section-title">{gettext("UI Settings")}</div>
             <div class="settings-help-text">

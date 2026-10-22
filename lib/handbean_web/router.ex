@@ -37,6 +37,37 @@ defmodule HandbeanWeb.Router do
     plug :accepts, ["json"]
   end
 
+  pipeline :browser_api do
+    plug :accepts, ["json"]
+    plug :fetch_session
+    plug HandbeanWeb.Access
+    plug :protect_from_forgery
+    plug :put_secure_browser_headers
+    plug :put_locale
+  end
+
+  # The worker is a static script with no session data. Service worker requests
+  # cannot add the XHR header required by Plug's JavaScript-response CSRF check.
+  pipeline :service_worker do
+    plug :fetch_session
+    plug HandbeanWeb.Access
+    plug :put_secure_browser_headers
+  end
+
+  scope "/", HandbeanWeb do
+    pipe_through :service_worker
+    get "/sw.js", WebPushController, :service_worker
+  end
+
+  scope "/api/web-push", HandbeanWeb do
+    pipe_through :browser_api
+
+    get "/config", WebPushController, :config
+    post "/subscription", WebPushController, :create
+    delete "/subscription", WebPushController, :delete
+    post "/test", WebPushController, :test
+  end
+
   scope "/", HandbeanWeb do
     get "/desktop-health", DesktopHealthController, :show
   end

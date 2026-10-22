@@ -296,3 +296,58 @@
   color: var(--sig-error);
   border-color: color-mix(in srgb, var(--sig-error) 28%, transparent);
 }
+
+/* ── Browser connection state ── */
+.connection-status {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 12px);
+  left: 50%;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(92vw, 520px);
+  min-height: 38px;
+  height: auto;
+  padding: 8px 14px;
+  transform: translateX(-50%);
+  border: 1px solid var(--sig-border-default);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--sig-bg-elevated) 94%, transparent);
+  color: var(--sig-text-secondary);
+  box-shadow: var(--sig-pop-shadow);
+  backdrop-filter: blur(12px);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.connection-status[hidden] {
+  display: none;
+}
+
+.connection-status-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  background: var(--sig-warning, #b7791f);
+  animation: connection-status-pulse 1.2s ease-in-out infinite;
+}
+
+.connection-status[data-state="offline"] .connection-status-dot {
+  background: var(--sig-error, #b42318);
+  animation: none;
+}
+
+.connection-status[data-state="restored"] .connection-status-dot {
+  background: var(--sig-success, #237a57);
+  animation: none;
+}
+
+@keyframes connection-status-pulse {
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .connection-status-dot { animation: none; }
+}

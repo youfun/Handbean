@@ -2,6 +2,154 @@
 msgid ""
 msgstr ""
 
+# Web Push notifications
+#: lib/handbean_web/components/push_notifications.ex:20
+#, elixir-autogen
+msgid "推送通知"
+msgstr ""
+
+#: lib/handbean_web/components/push_notifications.ex:23
+#, elixir-autogen
+msgid "在此浏览器接收任务完成和需要处理的提醒。每台设备需单独开启。"
+msgstr ""
+
+#: lib/handbean_web/components/push_notifications.ex:24
+#, elixir-autogen
+msgid "通知尽力送达，服务器离线或重启期间可能错过提醒。"
+msgstr ""
+
+#: lib/handbean_web/components/push_notifications.ex:30
+#, elixir-autogen
+msgid "此浏览器的通知"
+msgstr ""
+
+#: lib/handbean_web/components/push_notifications.ex:32
+#: lib/handbean_web/components/push_notifications.ex:55
+#, elixir-autogen
+msgid "正在检查通知支持…"
+msgstr ""
+
+#: lib/handbean_web/components/push_notifications.ex:35
+#: lib/handbean_web/components/push_notifications.ex:57
+#, elixir-autogen
+msgid "操作未完成，请检查网络与浏览器通知设置后重试。"
+msgstr ""
+
+#: lib/handbean_web/components/push_notifications.ex:40
+#, elixir-autogen
+msgid "开启通知"
+msgstr ""
+
+#: lib/handbean_web/components/push_notifications.ex:43
+#, elixir-autogen
+msgid "关闭通知"
+msgstr ""
+
+#: lib/handbean_web/components/push_notifications.ex:46
+#, elixir-autogen
+msgid "发送测试通知"
+msgstr ""
+
+#: lib/handbean_web/components/push_notifications.ex:56
+#, elixir-autogen
+msgid "关闭通知尚未完成，请重试以清理订阅。"
+msgstr ""
+
+#: lib/handbean_web/components/push_notifications.ex:59
+#, elixir-autogen
+msgid "此订阅属于之前的浏览器会话，请先关闭通知，再重新开启。"
+msgstr ""
+
+#: lib/handbean_web/components/push_notifications.ex:62
+#, elixir-autogen
+msgid "通知订阅已过期，请点击开启通知重新连接此浏览器。"
+msgstr ""
+
+#: lib/handbean_web/components/push_notifications.ex:64
+#, elixir-autogen
+msgid "通知订阅数量已达上限，请关闭其他设备的通知后重试。"
+msgstr ""
+
+#: lib/handbean_web/components/push_notifications.ex:65
+#, elixir-autogen
+msgid "订阅保存失败，浏览器订阅尚未清理，请点击关闭通知重试。"
+msgstr ""
+
+#: lib/handbean_web/components/push_notifications.ex:66
+#, elixir-autogen
+msgid "正在更新通知设置…"
+msgstr ""
+
+#: lib/handbean_web/components/push_notifications.ex:67
+#, elixir-autogen
+msgid "通知已关闭。点击开启后，浏览器会请求通知权限。"
+msgstr ""
+
+#: lib/handbean_web/components/push_notifications.ex:68
+#, elixir-autogen
+msgid "此浏览器已开启通知。"
+msgstr ""
+
+#: lib/handbean_web/components/push_notifications.ex:69
+#, elixir-autogen
+msgid "测试通知已发送，请检查系统通知。"
+msgstr ""
+
+#: lib/handbean_web/components/push_notifications.ex:71
+#, elixir-autogen
+msgid "通知权限已被拒绝，请在浏览器的站点设置中允许通知后刷新页面。"
+msgstr ""
+
+#: lib/handbean_web/components/push_notifications.ex:73
+#, elixir-autogen
+msgid "尚未授予通知权限，可以再次点击开启通知。"
+msgstr ""
+
+#: lib/handbean_web/components/push_notifications.ex:74
+#, elixir-autogen
+msgid "推送通知需要 HTTPS 安全连接（本机 localhost 除外）。"
+msgstr ""
+
+#: lib/handbean_web/components/push_notifications.ex:75
+#, elixir-autogen
+msgid "此浏览器不支持推送通知，请使用支持 Web Push 的浏览器。"
+msgstr ""
+
+#: lib/handbean_web/components/push_notifications.ex:77
+#, elixir-autogen
+msgid "在 iPhone 或 iPad 上，请在 Safari 中选择“分享”→“添加到主屏幕”，再从主屏幕打开 Handbean 开启通知。"
+msgstr ""
+
+#: lib/handbean_web/components/push_notifications.ex:80
+#, elixir-autogen
+msgid "服务器尚未配置推送通知，请联系管理员配置 Web Push 联系地址。"
+msgstr ""
+
+#: lib/handbean_web/components/push_notifications.ex:82
+#, elixir-autogen
+msgid "通知配置已更新，请点击开启通知重新连接此浏览器。"
+msgstr ""
+
+#: lib/handbean/web_push/delivery.ex:59
+#, elixir-autogen
+msgid "Background notifications are ready on this device."
+msgstr ""
+
+#: lib/handbean/web_push/delivery.ex:168
+#, elixir-autogen
+msgid "A task needs your confirmation."
+msgstr ""
+
+#: lib/handbean/web_push/delivery.ex:169
+#, elixir-autogen
+msgid "A task has completed."
+msgstr ""
+
+#: lib/handbean/web_push/delivery.ex:170
+#, elixir-autogen
+msgid "A task stopped with an error."
+msgstr ""
+
 # ── file_browser_component.ex ──
 #: lib/handbean_web/live/file_browser_component.ex:56
 #, elixir-autogen
@@ -128,7 +276,7 @@ msgstr ""
 
 #: lib/handbean_web/components/model_picker.ex:96
 #: lib/handbean_web/components/model_picker.ex:120
-#: lib/handbean_web/live/workspace_live/conversation_search_components.ex:205
+#: lib/handbean_web/live/workspace_live/conversation_search_components.ex:212
 #: lib/handbean_web/live/workspace_live/sidebar_checkout_components.ex:86
 #: lib/handbean_web/live/workspace_live/sidebar_checkout_components.ex:101
 #: lib/handbean_web/live/workspace_live/workspace_components.ex:227
@@ -466,13 +614,13 @@ msgstr ""
 msgid "Collapse workspace"
 msgstr ""
 
-#: lib/handbean_web/live/settings_live.html.heex:777
+#: lib/handbean_web/live/settings_live.html.heex:779
 #, elixir-autogen, elixir-format
 msgid "Configure layout, language, and theme preferences."
 msgstr ""
 
-#: lib/handbean_web/live/settings_live.html.heex:783
-#: lib/handbean_web/live/settings_live.html.heex:789
+#: lib/handbean_web/live/settings_live.html.heex:785
+#: lib/handbean_web/live/settings_live.html.heex:791
 #, elixir-autogen, elixir-format
 msgid "Language"
 msgstr ""
@@ -488,7 +636,7 @@ msgstr ""
 msgid "Show workspace"
 msgstr ""
 
-#: lib/handbean_web/live/settings_live.html.heex:775
+#: lib/handbean_web/live/settings_live.html.heex:777
 #, elixir-autogen, elixir-format
 msgid "UI Settings"
 msgstr ""
@@ -520,7 +668,7 @@ msgstr ""
 msgid "Available Models"
 msgstr ""
 
-#: lib/handbean_web/live/settings_live.html.heex:818
+#: lib/handbean_web/live/settings_live.html.heex:820
 #, elixir-autogen, elixir-format
 msgid "English"
 msgstr ""
@@ -582,7 +730,7 @@ msgstr ""
 msgid "不限制"
 msgstr ""
 
-#: lib/handbean_web/live/settings_live.html.heex:803
+#: lib/handbean_web/live/settings_live.html.heex:805
 #, elixir-autogen, elixir-format
 msgid "中文 (简体)"
 msgstr ""
@@ -1135,7 +1283,7 @@ msgstr ""
 msgid "Checks the browser boundaries needed by a future local model setting. It does not download or run a model."
 msgstr ""
 
-#: lib/handbean_web/live/settings_live.html.heex:785
+#: lib/handbean_web/live/settings_live.html.heex:787
 #, elixir-autogen, elixir-format
 msgid "Choose the interface language."
 msgstr ""
@@ -1214,7 +1362,7 @@ msgstr ""
 msgid "Custom headers"
 msgstr ""
 
-#: lib/handbean_web/live/settings_live.html.heex:853
+#: lib/handbean_web/live/settings_live.html.heex:855
 #, elixir-autogen, elixir-format
 msgid "Dark"
 msgstr ""
@@ -1394,12 +1542,12 @@ msgstr ""
 msgid "Leave blank to keep the saved token"
 msgstr ""
 
-#: lib/handbean_web/live/settings_live.html.heex:842
+#: lib/handbean_web/live/settings_live.html.heex:844
 #, elixir-autogen, elixir-format
 msgid "Light"
 msgstr ""
 
-#: lib/handbean_web/live/settings_live.html.heex:827
+#: lib/handbean_web/live/settings_live.html.heex:829
 #, elixir-autogen, elixir-format
 msgid "Light, dark, or follow the system."
 msgstr ""
@@ -1631,7 +1779,7 @@ msgstr ""
 msgid "Symlinks are not opened from the workspace tree"
 msgstr ""
 
-#: lib/handbean_web/live/settings_live.html.heex:864
+#: lib/handbean_web/live/settings_live.html.heex:866
 #, elixir-autogen, elixir-format
 msgid "System"
 msgstr ""
@@ -1652,8 +1800,8 @@ msgstr ""
 msgid "Testing..."
 msgstr ""
 
-#: lib/handbean_web/live/settings_live.html.heex:825
-#: lib/handbean_web/live/settings_live.html.heex:832
+#: lib/handbean_web/live/settings_live.html.heex:827
+#: lib/handbean_web/live/settings_live.html.heex:834
 #, elixir-autogen, elixir-format
 msgid "Theme"
 msgstr ""
@@ -2166,7 +2314,7 @@ msgstr ""
 #: lib/handbean_web/live/workspace_live/conversation_switching/list_projection.ex:311
 #: lib/handbean_web/live/workspace_live/conversation_switching/list_projection.ex:371
 #: lib/handbean_web/live/workspace_live/overlay_components.ex:118
-#: lib/handbean_web/live/workspace_live/sidebar_header_components.ex:97
+#: lib/handbean_web/live/workspace_live/sidebar_header_components.ex:118
 #: lib/handbean_web/live/workspace_live/sidebar_list_components.ex:270
 #: lib/handbean_web/live/workspace_live/sidebar_list_components.ex:713
 #, elixir-autogen, elixir-format
@@ -2345,6 +2493,7 @@ msgstr ""
 msgid "重命名工作区"
 msgstr ""
 
+#: lib/handbean_web/components/push_notifications.ex:49
 #: lib/handbean_web/live/workspace_live/sidebar_list_components.ex:124
 #, elixir-autogen, elixir-format
 msgid "重试"
@@ -2684,7 +2833,7 @@ msgstr ""
 msgid "交给 Agent"
 msgstr ""
 
-#: lib/handbean_web/live/workspace_live/sidebar_header_components.ex:89
+#: lib/handbean_web/live/workspace_live/sidebar_header_components.ex:110
 #, elixir-autogen, elixir-format
 msgid "任务数量"
 msgstr ""
@@ -3691,14 +3840,14 @@ msgstr ""
 msgid "频率"
 msgstr ""
 
-#: lib/handbean_web/live/workspace_live/conversation_search_components.ex:209
+#: lib/handbean_web/live/workspace_live/conversation_search_components.ex:216
 #, elixir-autogen, elixir-format
 msgid "%{count} conversation"
 msgid_plural "%{count} conversations"
 msgstr[0] ""
 msgstr[1] ""
 
-#: lib/handbean_web/live/workspace_live/conversation_search_components.ex:220
+#: lib/handbean_web/live/workspace_live/conversation_search_components.ex:227
 #, elixir-autogen, elixir-format
 msgid "All"
 msgstr ""
@@ -3713,8 +3862,8 @@ msgstr ""
 msgid "Archived"
 msgstr ""
 
-#: lib/handbean_web/live/workspace_live/conversation_search_components.ex:223
-#: lib/handbean_web/live/workspace_live/conversation_search_components.ex:228
+#: lib/handbean_web/live/workspace_live/conversation_search_components.ex:230
+#: lib/handbean_web/live/workspace_live/conversation_search_components.ex:235
 #, elixir-autogen, elixir-format
 msgid "Assistant reply"
 msgstr ""
@@ -3734,7 +3883,7 @@ msgstr ""
 msgid "Conversation range"
 msgstr ""
 
-#: lib/handbean_web/live/workspace_live/conversation_search.ex:153
+#: lib/handbean_web/live/workspace_live/conversation_search.ex:164
 #, elixir-autogen, elixir-format
 msgid "Conversation search is temporarily unavailable."
 msgstr ""
@@ -3744,23 +3893,23 @@ msgstr ""
 msgid "Conversation search results"
 msgstr ""
 
-#: lib/handbean_web/live/workspace_live/conversation_search.ex:205
+#: lib/handbean_web/live/workspace_live/conversation_search.ex:223
 #: lib/handbean_web/live/workspace_live/conversation_search_components.ex:88
 #, elixir-autogen, elixir-format
 msgid "Free chat"
 msgstr ""
 
-#: lib/handbean_web/live/workspace_live/conversation_search_components.ex:206
+#: lib/handbean_web/live/workspace_live/conversation_search_components.ex:213
 #, elixir-autogen, elixir-format
 msgid "Includes archived conversations"
 msgstr ""
 
-#: lib/handbean_web/live/workspace_live/conversation_search_components.ex:204
+#: lib/handbean_web/live/workspace_live/conversation_search_components.ex:205
 #, elixir-autogen, elixir-format
 msgid "Continue search"
 msgstr ""
 
-#: lib/handbean_web/live/workspace_live/conversation_search_components.ex:204
+#: lib/handbean_web/live/workspace_live/conversation_search_components.ex:205
 #, elixir-autogen, elixir-format
 msgid "Load more"
 msgstr ""
@@ -3785,7 +3934,7 @@ msgstr ""
 msgid "No matching conversations"
 msgstr ""
 
-#: lib/handbean_web/live/workspace_live/conversation_search_components.ex:204
+#: lib/handbean_web/live/workspace_live/conversation_search_components.ex:211
 #, elixir-autogen, elixir-format
 msgid "Open"
 msgstr ""
@@ -3830,26 +3979,27 @@ msgid "Search titles, user messages, assistant replies…"
 msgstr ""
 
 #: lib/handbean_web/live/workspace_live/conversation_search_components.ex:120
+#: lib/handbean_web/live/workspace_live/conversation_search_components.ex:203
 #, elixir-autogen, elixir-format
 msgid "Searching conversations…"
 msgstr ""
 
-#: lib/handbean_web/live/workspace_live/conversation_search_components.ex:203
+#: lib/handbean_web/live/workspace_live/conversation_search_components.ex:210
 #, elixir-autogen, elixir-format
 msgid "Select"
 msgstr ""
 
-#: lib/handbean_web/live/workspace_live/conversation_search.ex:110
+#: lib/handbean_web/live/workspace_live/conversation_search.ex:121
 #, elixir-autogen, elixir-format
 msgid "The matching message is no longer available."
 msgstr ""
 
-#: lib/handbean_web/live/workspace_live/conversation_search.ex:113
+#: lib/handbean_web/live/workspace_live/conversation_search.ex:124
 #, elixir-autogen, elixir-format
 msgid "This conversation is no longer available."
 msgstr ""
 
-#: lib/handbean_web/live/workspace_live/conversation_search_components.ex:221
+#: lib/handbean_web/live/workspace_live/conversation_search_components.ex:228
 #, elixir-autogen, elixir-format
 msgid "Title"
 msgstr ""
@@ -3864,8 +4014,8 @@ msgstr ""
 msgid "Continue searching to check older conversations and messages."
 msgstr ""
 
-#: lib/handbean_web/live/workspace_live/conversation_search_components.ex:222
-#: lib/handbean_web/live/workspace_live/conversation_search_components.ex:227
+#: lib/handbean_web/live/workspace_live/conversation_search_components.ex:229
+#: lib/handbean_web/live/workspace_live/conversation_search_components.ex:234
 #, elixir-autogen, elixir-format
 msgid "User input"
 msgstr ""
@@ -3875,7 +4025,7 @@ msgstr ""
 msgid "Viewing a search result in conversation history"
 msgstr ""
 
-#: lib/handbean_web/live/workspace_live/conversation_search.ex:206
+#: lib/handbean_web/live/workspace_live/conversation_search.ex:224
 #, elixir-autogen, elixir-format
 msgid "Workspace"
 msgstr ""
@@ -3883,4 +4033,96 @@ msgstr ""
 #: lib/handbean_web/live/workspace_live/conversation_events.ex:76
 #, elixir-autogen, elixir-format
 msgid "The linked message is no longer available."
+msgstr ""
+
+#: lib/handbean_web/components/pwa_install.ex:52
+#, elixir-autogen, elixir-format
+msgid "Handbean 可以安装为独立窗口。"
+msgstr ""
+
+#: lib/handbean_web/components/pwa_install.ex:66
+#, elixir-autogen, elixir-format
+msgid "iPhone 和 iPad 需要通过 Safari 添加到主屏幕。"
+msgstr ""
+
+#: lib/handbean_web/components/pwa_install.ex:33
+#, elixir-autogen, elixir-format
+msgid "从主屏幕打开 Handbean"
+msgstr ""
+
+#: lib/handbean_web/components/pwa_install.ex:29
+#, elixir-autogen, elixir-format
+msgid "在 Safari 中点击“分享”"
+msgstr ""
+
+#: lib/handbean_web/components/pwa_install.ex:26
+#: lib/handbean_web/components/pwa_install.ex:50
+#, elixir-autogen, elixir-format
+msgid "如果浏览器支持安装，可以从浏览器菜单安装 Handbean。"
+msgstr ""
+
+#: lib/handbean_web/components/pwa_install.ex:16
+#: lib/handbean_web/components/pwa_install.ex:43
+#, elixir-autogen, elixir-format
+msgid "安装 Handbean"
+msgstr ""
+
+#: lib/handbean_web/components/pwa_install.ex:18
+#, elixir-autogen, elixir-format
+msgid "将 Handbean 安装为独立窗口。应用仍连接当前 Handbean 服务，不会离线保存对话或工作区文件。"
+msgstr ""
+
+#: lib/handbean_web/components/pwa_install.ex:60
+#, elixir-autogen, elixir-format
+msgid "已取消安装。需要时可从浏览器菜单再次安装。"
+msgstr ""
+
+#: lib/handbean_web/components/layouts/root.html.heex:121
+#, elixir-autogen, elixir-format
+msgid "已离线。请检查网络与 Handbean 服务。"
+msgstr ""
+
+#: lib/handbean_web/components/layouts/root.html.heex:126
+#, elixir-autogen, elixir-format
+msgid "已重新连接。"
+msgstr ""
+
+#: lib/handbean_web/components/pwa_install.ex:63
+#, elixir-autogen, elixir-format
+msgid "未能打开安装确认，请尝试使用浏览器菜单安装。"
+msgstr ""
+
+#: lib/handbean_web/components/pwa_install.ex:53
+#, elixir-autogen, elixir-format
+msgid "正在打开浏览器安装确认…"
+msgstr ""
+
+#: lib/handbean_web/components/pwa_install.ex:24
+#, elixir-autogen, elixir-format
+msgid "此设备上的应用"
+msgstr ""
+
+#: lib/handbean_web/components/pwa_install.ex:54
+#, elixir-autogen, elixir-format
+msgid "浏览器正在完成安装…"
+msgstr ""
+
+#: lib/handbean_web/components/layouts/root.html.heex:124
+#, elixir-autogen, elixir-format
+msgid "连接已中断，正在重新连接…"
+msgstr ""
+
+#: lib/handbean_web/components/pwa_install.ex:31
+#, elixir-autogen, elixir-format
+msgid "选择“添加到主屏幕”"
+msgstr ""
+
+#: lib/handbean_web/components/pwa_install.ex:56
+#, elixir-autogen, elixir-format
+msgid "Handbean 已安装。请从系统中的 Handbean 图标打开独立窗口。"
+msgstr ""
+
+#: lib/handbean_web/components/pwa_install.ex:58
+#, elixir-autogen, elixir-format
+msgid "Handbean 正以独立窗口运行。"
 msgstr ""
