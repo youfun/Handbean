@@ -95,6 +95,8 @@ defmodule HandbeanProbe.RuntimeCleanup do
   end
 end
 
+Code.require_file("support/home_screen_case.ex", __DIR__)
+
 data_dir =
   Path.join(System.tmp_dir!(), "handbean_probe_test_#{System.unique_integer([:positive])}")
 
