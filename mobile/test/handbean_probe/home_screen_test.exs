@@ -736,6 +736,85 @@ defmodule HandbeanProbe.HomeScreenTest do
     assert notice_text(view) =~ gettext("Conversation ID copied")
   end
 
+  test "chat header overflow is conversation actions, not settings", %{view: view} do
+    workspace_id = assigns(view).workspace["id"]
+    {:ok, c} = Handbean.ConversationStore.create(workspace_id, title: "Header menu")
+    view = info(view, {:tap, {:conversation, c["id"]}})
+
+    menu = find(view, :text, id: "chat-conversation-menu")
+    assert menu.props.text == "⋯"
+    assert menu.props.on_tap
+    refute find(view, :icon, name: "more")
+    refute find(view, :icon, id: "{:page, :settings}")
+    refute text(view) =~ gettext("Settings")
+
+    view = info(view, {:tap, {:toggle_conversation_menu, c["id"]}})
+    assert assigns(view).conversation_menu_id == c["id"]
+    assert find(view, :column, id: "conversation-menu-panel-#{c["id"]}")
+    assert find(view, :box, id: "conversation-menu-dismiss")
+    id = c["id"]
+
+    taps =
+      tree(view)
+      |> flatten()
+      |> Enum.map(& &1.props[:on_tap])
+      |> Enum.map(fn
+        {_, tag} -> tag
+        _ -> nil
+      end)
+
+    assert {:toggle_pin_conversation, id} in taps
+    assert {:rename_conversation, id} in taps
+    assert {:copy_conversation_id, id} in taps
+    assert {:archive_conversation, id} in taps
+    assert :close_conversation_menu in taps
+    refute {:page, :settings} in taps
+
+    view = info(view, {:tap, {:toggle_conversation_menu, c["id"]}})
+    assert assigns(view).conversation_menu_id == nil
+    refute find(view, :column, id: "conversation-menu-panel-#{c["id"]}")
+
+    view = info(view, {:tap, {:toggle_conversation_menu, c["id"]}})
+    assert assigns(view).conversation_menu_id == c["id"]
+    view = info(view, {:tap, :close_conversation_menu})
+    assert assigns(view).conversation_menu_id == nil
+    refute find(view, :column, id: "conversation-menu-panel-#{c["id"]}")
+  end
+
+  test "workspace chat shows agent changes files tabs on the conversation", %{view: view} do
+    workspace_id = assigns(view).workspace["id"]
+    {:ok, c} = Handbean.ConversationStore.create(workspace_id, title: "Panel tabs")
+    view = info(view, {:tap, {:conversation, c["id"]}})
+
+    assert find(view, :row, id: "chat-panel-tabs")
+    assert find(view, :row, id: "chat-tab-agent")
+    assert find(view, :row, id: "chat-tab-changes")
+    assert find(view, :row, id: "chat-tab-files")
+    assert assigns(view).chat_panel == :agent
+    assert find(view, :icon, id: "send")
+
+    view = info(view, {:tap, {:chat_panel, :changes}})
+    assert assigns(view).chat_panel == :changes
+    assert assigns(view).page == :chat
+    assert text(view) =~ "No file changes in this conversation."
+    refute find(view, :icon, id: "send")
+
+    view = info(view, {:tap, {:chat_panel, :files}})
+    assert assigns(view).chat_panel == :files
+    assert assigns(view).page == :chat
+    refute find(view, :icon, id: "send")
+
+    view = info(view, {:tap, {:chat_panel, :agent}})
+    assert assigns(view).chat_panel == :agent
+    assert find(view, :icon, id: "send")
+  end
+
+  test "free chat has no agent changes files tabs", %{view: view} do
+    view = info(view, {:tap, :new_free_chat})
+    refute find(view, :row, id: "chat-panel-tabs")
+    refute find(view, :row, id: "chat-tab-agent")
+  end
+
   test "app entries live in the history drawer, not the chat header", %{view: view} do
     refute find(view, :icon, id: "{:page, :settings}")
     refute find(view, :icon, id: "{:page, :about}")

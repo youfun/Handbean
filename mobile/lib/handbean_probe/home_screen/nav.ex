@@ -112,6 +112,10 @@ defmodule HandbeanProbe.HomeScreen.Nav do
     assign(socket, :conversation_menu_id, menu_id)
   end
 
+  def handle({:tap, :close_conversation_menu}, socket) do
+    assign(socket, :conversation_menu_id, nil)
+  end
+
   def handle({:tap, {:toggle_pin_conversation, id}}, socket) when is_binary(id) do
     socket = assign(socket, :conversation_menu_id, nil)
 

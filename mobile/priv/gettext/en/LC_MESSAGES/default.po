@@ -151,6 +151,11 @@ msgstr ""
 msgid "Default model"
 msgstr ""
 
+#: lib/handbean_probe/model_settings/render.ex
+#, elixir-autogen, elixir-format
+msgid "Default provider"
+msgstr ""
+
 #: lib/handbean_probe/native_approval.ex:299
 #, elixir-autogen, elixir-format
 msgid "Deny"
@@ -431,6 +436,11 @@ msgstr ""
 #: lib/handbean_probe/model_settings/providers.ex:354
 #, elixir-autogen, elixir-format
 msgid "Choose a replacement before deleting a referenced entry"
+msgstr ""
+
+#: lib/handbean_probe/model_settings/render_confirm.ex:76
+#, elixir-autogen, elixir-format
+msgid "Configured"
 msgstr ""
 
 #: lib/handbean_probe/model_settings/render_confirm.ex:76
@@ -1079,6 +1089,11 @@ msgstr ""
 #: lib/handbean_probe/home_screen/render.ex:256
 #, elixir-autogen, elixir-format
 msgid "Files"
+msgstr ""
+
+#: lib/handbean_probe/workspace_memory.ex
+#, elixir-autogen, elixir-format
+msgid "Filter"
 msgstr ""
 
 #: lib/handbean_probe/native_workspaces.ex:443
@@ -1909,6 +1924,11 @@ msgstr ""
 #: lib/handbean_probe/workspace_memory.ex:453
 #, elixir-autogen, elixir-format, fuzzy
 msgid "Delete"
+msgstr ""
+
+#: lib/handbean_probe/home_screen/settings_hub.ex
+#, elixir-autogen, elixir-format
+msgid "Device"
 msgstr ""
 
 #: lib/handbean_probe/git_settings.ex:169

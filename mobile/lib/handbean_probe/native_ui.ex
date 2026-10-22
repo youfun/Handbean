@@ -370,18 +370,36 @@ defmodule HandbeanProbe.NativeUI do
     )
   end
 
-  def settings_section(title) do
-    text(title,
+  def settings_section(title, props \\ []) do
+    text(
+      title,
+      Keyword.merge(
+        [
+          text_size: 12,
+          text_color: color(:muted),
+          padding_left: 16,
+          padding_top: 14,
+          padding_bottom: 6,
+          max_lines: 1
+        ],
+        props
+      )
+    )
+  end
+
+  def settings_caption(message) do
+    text(message,
       text_size: 12,
-      text_color: color(:muted),
+      text_color: color(:hint),
       padding_left: 16,
-      padding_top: 14,
-      padding_bottom: 6
+      padding_right: 16,
+      padding_bottom: 10
     )
   end
 
   def settings_group(children, props \\ []) do
     rows = children |> List.wrap() |> Enum.reject(&is_nil/1)
+    {padding_bottom, props} = Keyword.pop(props, :padding_bottom, 8)
 
     inner =
       Enum.intersperse(
@@ -389,7 +407,7 @@ defmodule HandbeanProbe.NativeUI do
         node(:box, height: 1, fill_width: true, background: color(:separator))
       )
 
-    node(:column, [fill_width: true, padding_bottom: 8], [
+    node(:column, [fill_width: true, padding_bottom: padding_bottom], [
       node(
         :column,
         Keyword.merge(
@@ -521,8 +539,15 @@ defmodule HandbeanProbe.NativeUI do
   @doc "Grouped settings row: title, current value, drill chevron."
   def settings_nav_row(name, value, tag, props \\ []) do
     quiet? = Keyword.get(props, :quiet, false)
-    props = Keyword.delete(props, :quiet)
-    name_color = if quiet?, do: color(:hint), else: color(:ink)
+    danger? = Keyword.get(props, :danger, false)
+    props = props |> Keyword.delete(:quiet) |> Keyword.delete(:danger)
+
+    name_color =
+      cond do
+        quiet? -> color(:hint)
+        danger? -> color(:danger)
+        true -> color(:ink)
+      end
 
     # Do not put `weight` or `text_align` on the label/value texts. Android
     # Text with text_align applies fillMaxWidth, which in a Row collapses the
@@ -664,6 +689,22 @@ defmodule HandbeanProbe.NativeUI do
       text_color: color(:muted),
       on_tap: {self(), tag},
       id: id(tag)
+    )
+  end
+
+  def glyph(name, props \\ []) do
+    node(
+      :icon,
+      Keyword.merge(
+        [
+          name: name,
+          text: "",
+          text_size: 18,
+          padding: 0,
+          text_color: color(:muted)
+        ],
+        props
+      )
     )
   end
 

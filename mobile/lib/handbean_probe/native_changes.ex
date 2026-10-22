@@ -66,13 +66,13 @@ defmodule HandbeanProbe.NativeChanges do
           Enum.map(changes, &change_node(&1, state, ui))
       end
 
-    NativeUI.scroll(
+    NativeUI.scroll([
       NativeUI.node(
         :column,
         [spacing: 6, padding: [top: 6, right: 8, bottom: 10, left: 8]],
         nodes
       )
-    )
+    ])
   end
 
   def changes(entries, status_overrides \\ %{}) when is_list(entries) do

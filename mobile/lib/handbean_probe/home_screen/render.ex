@@ -15,11 +15,13 @@ defmodule HandbeanProbe.HomeScreen.Render do
     MCPSettings,
     GitSettings,
     NativeApproval,
+    NativeChanges,
     NativeComposer,
     NativeSchedules,
     NativeTimeline,
     NativeWorkspaceOpen,
     NativeWorkspaces,
+    NativeWorkspaceTree,
     WorkspaceMemory
   }
 
@@ -63,14 +65,45 @@ defmodule HandbeanProbe.HomeScreen.Render do
 
   defp shell(a), do: render_page(a)
 
+  defp render_page(%{page: :chat} = a) do
+    back_target =
+      if (a.conversation_stack || []) != [],
+        do: inspect(:close_subagent_conversation),
+        else: nil
+
+    notice = Map.get(a, :notice)
+
+    page(
+      [
+        chat_title_bar(a),
+        node(:box, [fill_width: true, fill_height: true, weight: 1], [
+          node(:column, [fill_width: true, fill_height: true], [
+            chat_subchrome(a),
+            notice(if(a.stopping, do: gettext("Stopping…"), else: notice)),
+            content(a),
+            HandbeanProbe.NativeModelInputs.render(a.input_warning),
+            if(a.chat && a.chat.pending_approval && a.approval_open,
+              do:
+                NativeApproval.render(
+                  a.chat,
+                  Notice.error_text(notice),
+                  Map.get(a, :approval_snapshots, %{})
+                )
+            )
+          ]),
+          chat_overflow_layer(a)
+        ])
+      ],
+      back_target: back_target
+    )
+  end
+
   defp render_page(a) do
     back_target =
       cond do
         a.page == :settings -> inspect({:page, :chat})
         a.page in @settings_detail_pages -> inspect({:page, :settings})
-        a.page != :chat -> inspect({:page, :chat})
-        (a.conversation_stack || []) != [] -> inspect(:close_subagent_conversation)
-        true -> nil
+        true -> inspect({:page, :chat})
       end
 
     notice = Map.get(a, :notice)
@@ -80,34 +113,93 @@ defmodule HandbeanProbe.HomeScreen.Render do
         header(a),
         notice(if(a.stopping, do: gettext("Stopping…"), else: notice)),
         content(a),
-        if(a.page != :history, do: HandbeanProbe.NativeModelInputs.render(a.input_warning)),
-        if(a.page == :chat && a.chat && a.chat.pending_approval && a.approval_open,
-          do:
-            NativeApproval.render(
-              a.chat,
-              Notice.error_text(notice),
-              Map.get(a, :approval_snapshots, %{})
-            )
-        )
+        if(a.page != :history, do: HandbeanProbe.NativeModelInputs.render(a.input_warning))
       ],
       back_target: back_target
     )
   end
 
-  defp header(%{page: :chat, conversation_stack: [_ | _]} = a) do
+  defp chat_title_bar(%{conversation_stack: [_ | _]} = a) do
     row([
       icon("back", :close_subagent_conversation),
-      text(chat_title(a), text_size: 13, font_weight: "bold", weight: 1),
+      text(header_title(a),
+        text_size: 13,
+        font_weight: "bold",
+        weight: 1,
+        max_lines: 1,
+        ellipsize: "end"
+      ),
       text(gettext("Child conversation"), text_size: 10, text_color: color(:hint))
     ])
   end
 
-  defp header(%{page: :chat} = a) do
+  defp chat_title_bar(a) do
+    id = conversation_id(a)
+
     row([
       icon("menu", {:page, :history}),
-      text(gettext("Handbean"), text_size: 13, font_weight: "bold", padding_right: 8),
-      text(chat_title(a), text_size: 11, weight: 1)
+      text(header_title(a),
+        text_size: 16,
+        font_weight: "bold",
+        weight: 1,
+        max_lines: 1,
+        ellipsize: "end"
+      ),
+      if(is_binary(id), do: conversation_more_button(id))
     ])
+  end
+
+  defp chat_subchrome(%{conversation_stack: [_ | _]}), do: nil
+
+  defp chat_subchrome(a) do
+    tabs = chat_panel_tabs(a)
+    conversation = conversation(a)
+
+    node(
+      :column,
+      [fill_width: true],
+      [chrome_rule(), tabs] ++
+        if(tabs, do: [chrome_rule()], else: []) ++
+        if(conversation,
+          do:
+            HandbeanProbe.NativeConversationRow.rename_fields(
+              conversation,
+              Map.get(a, :rename_conversation)
+            ),
+          else: []
+        )
+    )
+  end
+
+  defp chat_overflow_layer(%{conversation_stack: [_ | _]}), do: nil
+
+  defp chat_overflow_layer(a) do
+    id = conversation_id(a)
+    conversation = conversation(a)
+
+    if is_binary(id) and Map.get(a, :conversation_menu_id) == id and is_map(conversation) do
+      # Clip the overlay so the menu card's 48dp touch expansion cannot steal
+      # taps from the title-bar ⋯. A full-size dismiss scrim sits behind the card.
+      node(
+        :box,
+        [
+          id: "chat-conversation-menu-layer",
+          fill_width: true,
+          fill_height: true,
+          align: "top_trailing",
+          corner_radius: 1
+        ],
+        [
+          node(:box,
+            id: "conversation-menu-dismiss",
+            fill_width: true,
+            fill_height: true,
+            on_tap: {self(), :close_conversation_menu}
+          ),
+          HandbeanProbe.NativeConversationRow.overflow_menu_card(conversation)
+        ]
+      )
+    end
   end
 
   defp header(%{page: :files} = a) do
@@ -134,48 +226,24 @@ defmodule HandbeanProbe.HomeScreen.Render do
     ])
   end
 
-  defp content(%{page: :chat} = a) do
-    entries = if a.chat, do: a.chat.entries, else: []
-    stream = if a.chat, do: a.chat.stream, else: ""
-    running = a.chat != nil and a.chat.running
+  defp chrome_rule do
+    node(:box, fill_width: true, height: 1, background: color(:border))
+  end
 
-    node(:column, [weight: 1, fill_width: true], [
-      Share.render_review(Map.get(a, :share_intakes, []), a),
-      NativeTimeline.render_sent_card(a.chat, Map.get(a, :timeline_open)),
-      if(a.chat && a.chat.pending_approval,
-        do:
-          button(gettext("Waiting for tool approval · Review"), :review_approval,
-            fill_width: true
-          )
-      ),
-      if(entries == [] and stream == "" and not running,
-        do: empty_chat(),
-        else:
-          NativeTimeline.render(
-            a.chat
-            |> Map.put(:expanded_handoffs, a.expanded_handoffs || MapSet.new())
-            |> Map.put(:current_conversation_id, Map.get(a.chat.conversation, "id")),
-            a.work_groups,
-            a.work_segments,
-            a.tool_outputs,
-            Map.get(a, :file_diffs, %{})
-          )
-          |> scroll(
-            [
-              id: "chat-timeline-#{a.chat.conversation["id"]}",
-              chat_navigation: true,
-              stick_to_bottom: true,
-              history_before: Map.get(a.chat, :history_before)
-            ] ++
-              if(Map.get(a.chat, :history_has_more?, false),
-                do: [on_top_reached: {self(), :load_older_history}],
-                else: []
-              )
-          )
-      ),
-      composer_controls(a),
-      NativeComposer.render_field(a, running)
-    ])
+  defp content(%{page: :chat} = a) do
+    case {chat_panel(a), Nav.free_chat?(a)} do
+      {:changes, false} ->
+        chat_side_panel(a, NativeChanges.render(a))
+
+      {:files, false} ->
+        chat_side_panel(
+          a,
+          NativeWorkspaceTree.render(Map.get(a, :workspace_tree) || NativeWorkspaceTree.idle())
+        )
+
+      _ ->
+        agent_chat_content(a)
+    end
   end
 
   defp content(%{page: :history} = a) do
@@ -247,6 +315,50 @@ defmodule HandbeanProbe.HomeScreen.Render do
         ),
         button(gettext("Back to chat"), {:page, :chat})
       ])
+
+  defp agent_chat_content(a) do
+    entries = if a.chat, do: a.chat.entries, else: []
+    stream = if a.chat, do: a.chat.stream, else: ""
+    running = a.chat != nil and a.chat.running
+
+    node(:column, [weight: 1, fill_width: true], [
+      Share.render_review(Map.get(a, :share_intakes, []), a),
+      NativeTimeline.render_sent_card(a.chat, Map.get(a, :timeline_open)),
+      if(a.chat && a.chat.pending_approval,
+        do:
+          button(gettext("Waiting for tool approval · Review"), :review_approval,
+            fill_width: true
+          )
+      ),
+      if(entries == [] and stream == "" and not running,
+        do: empty_chat(),
+        else:
+          NativeTimeline.render(
+            a.chat
+            |> Map.put(:expanded_handoffs, a.expanded_handoffs || MapSet.new())
+            |> Map.put(:current_conversation_id, Map.get(a.chat.conversation, "id")),
+            a.work_groups,
+            a.work_segments,
+            a.tool_outputs,
+            Map.get(a, :file_diffs, %{})
+          )
+          |> scroll(
+            [
+              id: "chat-timeline-#{a.chat.conversation["id"]}",
+              chat_navigation: true,
+              stick_to_bottom: true,
+              history_before: Map.get(a.chat, :history_before)
+            ] ++
+              if(Map.get(a.chat, :history_has_more?, false),
+                do: [on_top_reached: {self(), :load_older_history}],
+                else: []
+              )
+          )
+      ),
+      composer_controls(a),
+      NativeComposer.render_field(a, running)
+    ])
+  end
 
   # Drawer footer: app entries live here, not in the chat header.
   defp history_drawer_footer(a) do
@@ -348,6 +460,120 @@ defmodule HandbeanProbe.HomeScreen.Render do
     if Nav.free_chat?(a),
       do: gettext("自由对话"),
       else: (a.workspace && a.workspace["name"]) || gettext("Workspace")
+  end
+
+  defp header_title(a) do
+    case conversation(a) do
+      %{"title" => title} when is_binary(title) and title != "" -> display_title(title)
+      _ -> chat_title(a)
+    end
+  end
+
+  defp display_title(title) do
+    if String.starts_with?(title, "/") or String.starts_with?(title, "~/") do
+      Path.basename(title)
+    else
+      title
+    end
+  end
+
+  defp conversation_id(%{chat: %{conversation: %{"id" => id}}}) when is_binary(id), do: id
+  defp conversation_id(_), do: nil
+
+  defp conversation(%{chat: %{conversation: conversation}}) when is_map(conversation),
+    do: conversation
+
+  defp conversation(_), do: nil
+
+  defp chat_panel(a), do: Map.get(a, :chat_panel, :agent)
+
+  defp conversation_more_button(id) do
+    text("⋯",
+      id: "chat-conversation-menu",
+      on_tap: {self(), {:toggle_conversation_menu, id}},
+      text_size: 22,
+      padding: 6,
+      text_color: color(:muted)
+    )
+  end
+
+  defp chat_panel_tabs(a) do
+    if Nav.free_chat?(a) do
+      nil
+    else
+      panel = chat_panel(a)
+      count = change_count(a)
+
+      changes_label =
+        if count > 0, do: "#{gettext("Changes")} #{count}", else: gettext("Changes")
+
+      row(
+        [
+          chat_tab(
+            "chat",
+            gettext("Agent"),
+            {:chat_panel, :agent},
+            panel == :agent,
+            "chat-tab-agent"
+          ),
+          chat_tab(
+            "edit",
+            changes_label,
+            {:chat_panel, :changes},
+            panel == :changes,
+            "chat-tab-changes"
+          ),
+          chat_tab(
+            "folder",
+            gettext("Files"),
+            {:chat_panel, :files},
+            panel == :files,
+            "chat-tab-files"
+          )
+        ],
+        id: "chat-panel-tabs",
+        spacing: 6,
+        padding_top: 8,
+        padding_bottom: 8
+      )
+    end
+  end
+
+  defp chat_tab(icon_name, label, tag, selected?, id) do
+    ink = if(selected?, do: color(:ink), else: color(:muted))
+
+    row(
+      [
+        glyph(icon_name, text_size: 16, text_color: ink),
+        text(label, text_size: 13, max_lines: 1, text_color: ink)
+      ],
+      id: id,
+      on_tap: {self(), tag},
+      fill_width: false,
+      background: if(selected?, do: color(:active), else: color(:surface)),
+      corner_radius: 10,
+      padding_left: 10,
+      padding_right: 12,
+      padding_top: 6,
+      padding_bottom: 6
+    )
+  end
+
+  defp change_count(a) do
+    entries = if a.chat, do: a.chat.entries, else: []
+    length(NativeChanges.changes(entries))
+  end
+
+  defp chat_side_panel(a, body) do
+    node(:column, [weight: 1, fill_width: true], [
+      if(a.chat && a.chat.pending_approval,
+        do:
+          button(gettext("Waiting for tool approval · Review"), :review_approval,
+            fill_width: true
+          )
+      ),
+      body
+    ])
   end
 
   defp page_title(:history), do: gettext("Conversations")

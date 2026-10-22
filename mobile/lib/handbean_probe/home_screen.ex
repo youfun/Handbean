@@ -232,6 +232,25 @@ defmodule HandbeanProbe.HomeScreen do
     Mob.Socket.assign(socket, :workspace_panel_tab, tab)
   end
 
+  defp dispatch({:tap, {:chat_panel, panel}}, socket)
+       when panel in [:agent, :changes, :files] do
+    socket =
+      socket
+      |> Mob.Socket.assign(:chat_panel, panel)
+      |> Mob.Socket.assign(:conversation_menu_id, nil)
+
+    cond do
+      panel in [:changes, :files] and Nav.free_chat?(socket) ->
+        Mob.Socket.assign(socket, :chat_panel, :agent)
+
+      panel == :files ->
+        NativeWorkspaceTree.ensure(socket)
+
+      true ->
+        socket
+    end
+  end
+
   defp dispatch({:tap, {:toggle_change, change_id}}, socket) when is_binary(change_id) do
     state = NativeChanges.toggle(socket.assigns, change_id)
     Mob.Socket.assign(socket, :changes_ui, state.changes_ui)
@@ -300,6 +319,7 @@ defmodule HandbeanProbe.HomeScreen do
   defp dispatch({:tap, {:page, _}} = msg, socket), do: Nav.handle(msg, socket)
   defp dispatch({:tap, {:workspace, _}} = msg, socket), do: Nav.handle(msg, socket)
   defp dispatch({:tap, {:toggle_conversation_menu, _}} = msg, socket), do: Nav.handle(msg, socket)
+  defp dispatch({:tap, :close_conversation_menu} = msg, socket), do: Nav.handle(msg, socket)
   defp dispatch({:tap, {:toggle_pin_conversation, _}} = msg, socket), do: Nav.handle(msg, socket)
   defp dispatch({:tap, {:rename_conversation, _}} = msg, socket), do: Nav.handle(msg, socket)
   defp dispatch({:tap, {:archive_conversation, _}} = msg, socket), do: Nav.handle(msg, socket)

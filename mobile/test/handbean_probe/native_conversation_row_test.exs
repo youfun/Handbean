@@ -33,6 +33,11 @@ defmodule HandbeanProbe.NativeConversationRowTest do
 
     assert text?(pinned, gettext("Unpin"))
     refute text?(pinned, gettext("Pin"))
+
+    card = NativeConversationRow.overflow_menu_card(@conversation)
+    assert card.type == :column
+    assert card.props[:fill_width] == false
+    assert card.props[:id] == "conversation-menu-panel-conv-1"
   end
 
   test "rename field is shown only for the pending conversation" do

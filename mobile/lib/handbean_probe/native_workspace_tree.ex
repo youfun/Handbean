@@ -107,14 +107,20 @@ defmodule HandbeanProbe.NativeWorkspaceTree do
 
   def render(tree) do
     node(:column, [weight: 1, fill_width: true, spacing: 0], [
-      actions_row([
-        button(
+      row([
+        text(
           if(tree.show_hidden, do: gettext("Hide hidden"), else: gettext("Show hidden")),
-          event(tree, :toggle_hidden),
-          text_size: 10,
-          padding: 4
+          on_tap: {self(), event(tree, :toggle_hidden)},
+          text_size: 13,
+          text_color: color(:muted),
+          padding: 8
         ),
-        button(gettext("Refresh"), event(tree, :refresh), text_size: 10, padding: 4)
+        node(:box, weight: 1),
+        glyph("refresh",
+          on_tap: {self(), event(tree, :refresh)},
+          text_size: 18,
+          padding: 8
+        )
       ]),
       notice(tree.error),
       scroll(dir_nodes(tree, "", 0), id: scroll_id(tree), retain_scroll: true)

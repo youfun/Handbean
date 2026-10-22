@@ -66,11 +66,84 @@ defmodule HandbeanProbe.NativeConversationRow do
           padding_top: 2,
           padding_bottom: 2
         )
-        | menu_nodes(conversation, menu_open?) ++
-            rename_nodes(conversation, Keyword.get(opts, :rename))
+        | overflow_menu(conversation, menu_open?) ++
+            rename_fields(conversation, Keyword.get(opts, :rename))
       ])
     ]
   end
+
+  @doc "Pin / Rename / Copy ID / Archive card. Empty when the menu is closed."
+  @spec overflow_menu(map()) :: [map()]
+  def overflow_menu(conversation) when is_map(conversation), do: overflow_menu(conversation, true)
+
+  @spec overflow_menu(map(), boolean()) :: [map()]
+  def overflow_menu(_conversation, false), do: []
+
+  def overflow_menu(conversation, true) do
+    [
+      row(
+        [
+          node(:box, weight: 1),
+          overflow_menu_card(conversation)
+        ],
+        align: "top"
+      )
+    ]
+  end
+
+  @doc "Menu card only. Chat overlay positions this; history wraps it in a row."
+  @spec overflow_menu_card(map()) :: map()
+  def overflow_menu_card(conversation) when is_map(conversation) do
+    id = conversation["id"]
+
+    pin_label =
+      if ConversationStore.pinned_conversation?(conversation),
+        do: gettext("Unpin"),
+        else: gettext("Pin")
+
+    node(
+      :column,
+      [
+        id: "conversation-menu-panel-#{id}",
+        fill_width: false,
+        background: color(:card),
+        border_color: color(:border),
+        border_width: 1,
+        corner_radius: 12,
+        padding: 6
+      ],
+      [
+        menu_item(
+          "star",
+          pin_label,
+          {:toggle_pin_conversation, id},
+          "conversation-action-pin-#{id}"
+        ),
+        menu_item(
+          "edit",
+          gettext("Rename"),
+          {:rename_conversation, id},
+          "conversation-action-rename-#{id}"
+        ),
+        menu_item(
+          "copy",
+          gettext("Copy ID"),
+          {:copy_conversation_id, id},
+          "conversation-action-copy-id-#{id}"
+        ),
+        menu_item(
+          "remove",
+          gettext("Archive"),
+          {:archive_conversation, id},
+          "conversation-action-archive-#{id}"
+        )
+      ]
+    )
+  end
+
+  @doc "Rename field for the pending conversation, otherwise `[]`."
+  @spec rename_fields(map(), map() | nil) :: [map()]
+  def rename_fields(conversation, rename), do: rename_nodes(conversation, rename)
 
   defp conversation_title(conversation) do
     case conversation["title"] do
@@ -112,75 +185,22 @@ defmodule HandbeanProbe.NativeConversationRow do
     )
   end
 
-  defp menu_nodes(_conversation, false), do: []
-
-  defp menu_nodes(conversation, true) do
-    id = conversation["id"]
-
-    pin_label =
-      if ConversationStore.pinned_conversation?(conversation),
-        do: gettext("Unpin"),
-        else: gettext("Pin")
-
-    [
-      row(
-        [
-          node(:box, weight: 1),
-          node(
-            :column,
-            [
-              id: "conversation-menu-panel-#{id}",
-              fill_width: false,
-              background: color(:card),
-              border_color: color(:border),
-              border_width: 1,
-              corner_radius: 8,
-              padding: 4
-            ],
-            [
-              menu_item(
-                pin_label,
-                {:toggle_pin_conversation, id},
-                "conversation-action-pin-#{id}"
-              ),
-              menu_item(
-                gettext("Rename"),
-                {:rename_conversation, id},
-                "conversation-action-rename-#{id}"
-              ),
-              menu_item(
-                gettext("Copy ID"),
-                {:copy_conversation_id, id},
-                "conversation-action-copy-id-#{id}"
-              ),
-              menu_item(
-                gettext("Archive"),
-                {:archive_conversation, id},
-                "conversation-action-archive-#{id}"
-              )
-            ]
-          )
-        ],
-        align: "top"
-      )
-    ]
-  end
-
   # Hug the label. fill_width stretches the card to the drawer. A weighted
   # spacer in the parent row pushes the hugging card under the more button;
   # Column does not honor align: "end".
-  defp menu_item(label, tag, id) do
-    text(label,
+  defp menu_item(icon_name, label, tag, id) do
+    row(
+      [
+        glyph(icon_name, text_size: 18, text_color: color(:muted)),
+        text(label, text_size: 15, max_lines: 1)
+      ],
       id: id,
       on_tap: {self(), tag},
-      text_size: 13,
-      text_color: color(:ink),
-      text_align: "left",
       fill_width: false,
-      padding_left: 12,
-      padding_right: 12,
-      padding_top: 8,
-      padding_bottom: 8,
+      padding_left: 14,
+      padding_right: 28,
+      padding_top: 10,
+      padding_bottom: 10,
       background: color(:card)
     )
   end
