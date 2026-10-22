@@ -8,6 +8,8 @@ defmodule Handbean.ChangeSnapshot do
 
   @max_snapshot_bytes 1_000_000
   @diff_context_lines 3
+  @max_myers_lines 512
+  @max_myers_bytes 128_000
   @ref_prefix "change_snapshot:"
 
   @type snapshot :: map()
@@ -126,7 +128,7 @@ defmodule Handbean.ChangeSnapshot do
 
   def diff_lines(old, new) when is_binary(old) and is_binary(new) do
     old
-    |> diff(new)
+    |> line_diff(new)
     |> clip_diff_context()
     |> Enum.flat_map(fn
       {:eq, lines} -> Enum.map(lines, &%{"type" => "eq", "text" => &1})
@@ -225,11 +227,46 @@ defmodule Handbean.ChangeSnapshot do
   defp safe_id?(id) when is_binary(id), do: Regex.match?(~r/\A[A-Za-z0-9_.:-]+\z/, id)
   defp safe_id?(_id), do: false
 
-  defp diff(old, new) do
-    old_lines = String.split(old, "\n")
-    new_lines = String.split(new, "\n")
-    List.myers_difference(old_lines, new_lines)
+  @doc """
+  Builds a line edit script with bounded alignment work.
+
+  Common edges and single-sided changes are handled in linear time. Large
+  unmatched regions are represented as a replacement, which is exact but may
+  not be a minimal diff. Reversion always uses the full snapshot contents.
+  """
+  @spec line_diff(binary(), binary()) :: [{:eq | :del | :ins, [binary()]}]
+  def line_diff(old, new) when is_binary(old) and is_binary(new) do
+    {prefix, old_lines, new_lines} =
+      split_common(String.split(old, "\n"), String.split(new, "\n"), [])
+
+    {suffix, old_reversed, new_reversed} =
+      split_common(Enum.reverse(old_lines), Enum.reverse(new_lines), [])
+
+    chunks(:eq, Enum.reverse(prefix)) ++
+      diff_middle(Enum.reverse(old_reversed), Enum.reverse(new_reversed)) ++
+      chunks(:eq, suffix)
   end
+
+  defp split_common([line | old], [line | new], common),
+    do: split_common(old, new, [line | common])
+
+  defp split_common(old, new, common), do: {common, old, new}
+
+  defp diff_middle([], new), do: chunks(:ins, new)
+  defp diff_middle(old, []), do: chunks(:del, old)
+
+  defp diff_middle(old, new) do
+    if length(old) + length(new) <= @max_myers_lines and
+         line_bytes(old) + line_bytes(new) <= @max_myers_bytes do
+      List.myers_difference(old, new)
+    else
+      [del: old, ins: new]
+    end
+  end
+
+  defp line_bytes(lines), do: Enum.reduce(lines, 0, &(byte_size(&1) + &2))
+  defp chunks(_type, []), do: []
+  defp chunks(type, lines), do: [{type, lines}]
 
   defp clip_diff_context(diff) do
     change_indices =

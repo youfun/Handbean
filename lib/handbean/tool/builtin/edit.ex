@@ -450,7 +450,7 @@ defmodule Handbean.Tool.Builtin.Edit do
       |> Enum.find_index(fn {a, b} -> a != b end)
       |> Kernel.||(min(length(old_lines), length(new_lines)))
 
-    diff_list = List.myers_difference(old_lines, new_lines)
+    diff_list = Handbean.ChangeSnapshot.line_diff(old, new)
     %{content: diff_list, first_changed_line: first_changed + 1}
   end
 

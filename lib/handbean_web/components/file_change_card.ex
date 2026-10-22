@@ -11,6 +11,9 @@ defmodule HandbeanWeb.FileChangeCard do
   alias Handbean.TranscriptEntry
   alias HandbeanWeb.ChangeHelper
 
+  @max_preview_lines 500
+  @max_preview_bytes 64_000
+
   attr :entry, :map, required: true
   attr :open?, :boolean, default: false
   attr :id, :string, default: nil
@@ -24,11 +27,13 @@ defmodule HandbeanWeb.FileChangeCard do
     change = ChangeHelper.change_from_entry(assigns.entry)
     lines = ChangeHelper.normalize_diff_lines(Map.get(change, "diff_lines")) || []
     entry_id = entry_id(assigns.entry)
+    {preview, truncated?} = if assigns.open?, do: preview_lines(lines), else: {[], false}
 
     assigns =
       assigns
       |> assign(:change, change)
-      |> assign(:lines, numbered_lines(lines))
+      |> assign(:lines, numbered_lines(preview))
+      |> assign(:diff_truncated?, truncated?)
       |> assign(:entry_id, entry_id)
       |> assign(:card_id, assigns.id || "file-change-#{entry_id}")
       |> assign(:label, label(assigns.entry, lines))
@@ -153,7 +158,7 @@ defmodule HandbeanWeb.FileChangeCard do
             {Gettext.gettext(Handbean.Gettext, "Cancel")}
           </button>
         </div>
-        <p :if={@lines == []} class="file-change-note">
+        <p :if={@lines == [] and not @diff_truncated?} class="file-change-note">
           {Gettext.gettext(Handbean.Gettext, "No diff content is available for this change.")}
         </p>
         <div :for={line <- @lines} class={["diff-line", "diff-#{line.type}"]}>
@@ -161,6 +166,12 @@ defmodule HandbeanWeb.FileChangeCard do
           <span class="diff-op">{HandbeanWeb.WorkspaceHelper.diff_prefix(line.type)}</span>
           <span class="diff-text">{line.text}</span>
         </div>
+        <p :if={@diff_truncated?} class="file-change-note">
+          {Gettext.gettext(
+            Handbean.Gettext,
+            "Diff preview truncated. Open the file to review the full change."
+          )}
+        </p>
       </div>
     </article>
     """
@@ -203,6 +214,9 @@ defmodule HandbeanWeb.FileChangeCard do
     |> Enum.uniq_by(&effect_identity/1)
     |> Enum.reduce(%{}, &accumulate_net/2)
     |> Map.values()
+    |> Enum.map(fn %{source: source, baseline: baseline, current: current} ->
+      net_entry(source, baseline, current)
+    end)
     |> Enum.reject(&baseline_current?/1)
     |> Enum.sort_by(&net_order/1)
   end
@@ -274,20 +288,18 @@ defmodule HandbeanWeb.FileChangeCard do
 
     case Map.get(nets, path) do
       nil ->
-        Map.put(nets, path, net_entry(entry, current, current))
+        Map.put(nets, path, %{source: entry, baseline: current, current: current})
 
-      existing ->
-        baseline = Map.get(existing, "change")
-
+      %{source: source, baseline: baseline, current: previous} ->
         cond do
           baseline["existed_before"] == false and current["existed_after"] == false ->
             Map.delete(nets, path)
 
-          discontinuous?(baseline, current) ->
-            Map.put(nets, path, net_entry(entry, current, current))
+          discontinuous?(previous, current) ->
+            Map.put(nets, path, %{source: entry, baseline: current, current: current})
 
           true ->
-            Map.put(nets, path, net_entry(existing, baseline, current))
+            Map.put(nets, path, %{source: source, baseline: baseline, current: current})
         end
     end
   end
@@ -482,6 +494,21 @@ defmodule HandbeanWeb.FileChangeCard do
     |> ChangeHelper.normalize_diff_lines() || []
   end
 
+  defp preview_lines(lines) do
+    {preview, _count, _bytes, truncated?} =
+      Enum.reduce_while(lines, {[], 0, 0, false}, fn line, {acc, count, bytes, false} ->
+        next_bytes = bytes + byte_size(line["text"])
+
+        if count < @max_preview_lines and next_bytes <= @max_preview_bytes do
+          {:cont, {[line | acc], count + 1, next_bytes, false}}
+        else
+          {:halt, {acc, count, bytes, true}}
+        end
+      end)
+
+    {Enum.reverse(preview), truncated?}
+  end
+
   defp numbered_lines(lines) do
     {numbered, _old, _new} =
       Enum.reduce(lines, {[], 1, 1}, fn line, {acc, old, new} ->
@@ -508,10 +535,10 @@ defmodule HandbeanWeb.FileChangeCard do
               {new, old + 1, new + 1}
           end
 
-        {acc ++ [%{type: type, text: line["text"], number: number}], old, new}
+        {[%{type: type, text: line["text"], number: number} | acc], old, new}
       end)
 
-    numbered
+    Enum.reverse(numbered)
   end
 
   defp entry_id(%{"id" => id}) when is_binary(id), do: id
