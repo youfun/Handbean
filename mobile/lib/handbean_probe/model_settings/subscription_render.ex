@@ -14,15 +14,13 @@ defmodule HandbeanProbe.ModelSettings.SubscriptionRender do
 
   def section(_state) do
     [
-      row(
-        [
-          text(gettext("Subscription sign-in"), text_size: 16, weight: 1),
-          secondary_button(gettext("Sign in"), :open_subscription_login)
-        ],
-        align: "center",
-        padding_top: 8,
-        padding_bottom: 8
-      )
+      settings_group([
+        settings_nav_row(
+          gettext("Subscription sign-in"),
+          gettext("Sign in"),
+          :open_subscription_login
+        )
+      ])
     ]
   end
 

@@ -58,40 +58,23 @@ defmodule HandbeanProbe.AppSettings do
   @spec render(t()) :: Mob.Node.t()
   def render(%__MODULE__{} = state) do
     NativeUI.scroll([
-      NativeUI.card([
-        NativeUI.text(gettext("Client"), text_size: 16),
-        NativeUI.text(
-          gettext("Settings that belong to this app, not a workspace or model."),
-          text_size: 13,
-          text_color: NativeUI.color(:muted),
-          padding_top: 8
-        )
+      NativeUI.settings_caption(
+        gettext("Settings that belong to this app, not a workspace or model.")
+      ),
+      NativeUI.settings_section(gettext("Calendar")),
+      NativeUI.settings_group([
+        NativeUI.settings_value_row(gettext("Calendar"), calendar_grants(state)),
+        NativeUI.settings_nav_row(gettext("Allow calendar"), "", :request_calendar),
+        NativeUI.settings_nav_row(gettext("System settings"), "", :open_app_settings)
       ]),
-      NativeUI.card([
-        NativeUI.text(gettext("Calendar"), text_size: 16),
-        NativeUI.text(calendar_copy(state),
-          text_size: 13,
-          text_color: NativeUI.color(:muted),
-          padding_top: 8
-        ),
-        NativeUI.text(calendar_grants(state), text_size: 14, padding_top: 12),
-        NativeUI.actions_row([
-          NativeUI.secondary_button(gettext("Allow calendar"), :request_calendar),
-          NativeUI.quiet_button(gettext("System settings"), :open_app_settings)
-        ]),
-        notice_node(state.notice)
-      ]),
-      NativeUI.card([
-        NativeUI.text(gettext("Alarm"), text_size: 16),
-        NativeUI.text(
-          gettext(
-            "Clock alarms open the system clock with the time filled in. They do not need a permission, and many devices still ask you to save."
-          ),
-          text_size: 13,
-          text_color: NativeUI.color(:muted),
-          padding_top: 8
+      NativeUI.settings_caption(calendar_copy(state)),
+      notice_node(state.notice),
+      NativeUI.settings_section(gettext("Alarm")),
+      NativeUI.settings_caption(
+        gettext(
+          "Clock alarms open the system clock with the time filled in. They do not need a permission, and many devices still ask you to save."
         )
-      ])
+      )
     ])
   end
 
@@ -139,9 +122,7 @@ defmodule HandbeanProbe.AppSettings do
 
   defp notice_node(nil), do: nil
 
-  defp notice_node(text) do
-    NativeUI.text(text, text_size: 13, text_color: NativeUI.color(:muted), padding_top: 8)
-  end
+  defp notice_node(text), do: NativeUI.settings_caption(text)
 
   defp grant(value, _current) when is_boolean(value), do: value
   defp grant(_, current), do: current

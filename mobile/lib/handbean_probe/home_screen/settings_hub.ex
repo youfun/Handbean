@@ -10,61 +10,68 @@ defmodule HandbeanProbe.HomeScreen.SettingsHub do
   import HandbeanProbe.NativeUI
 
   alias HandbeanProbe.ModelSettings
-  alias HandbeanProbe.ModelSettings.{Labels, Render}
+  alias HandbeanProbe.ModelSettings.Labels
+
+  @row_pad [padding_top: 10, padding_bottom: 10]
 
   def render(a) do
     models = a.models || ModelSettings.empty()
 
     scroll(
       [
-        settings_group(workspace_rows(a)),
-        settings_group(ai_rows(a, models)),
-        settings_group(more_rows(a))
+        hub_group(gettext("Workspace"), workspace_rows(a)),
+        hub_group(gettext("Model"), ai_rows(a, models)),
+        hub_group(gettext("Device"), more_rows(a))
       ],
       id: "settings-hub"
     )
   end
+
+  defp hub_group(title, rows) do
+    node(:column, [fill_width: true], [
+      settings_section(title, padding_top: 0, padding_bottom: 6),
+      settings_group(rows, padding_bottom: 16)
+    ])
+  end
+
+  defp hub_nav(name, value, tag), do: settings_nav_row(name, value, tag, @row_pad)
+
+  defp hub_check(name, checked?, tag),
+    do: settings_check_row(name, checked?, tag, @row_pad)
+
+  defp hub_value(name, value), do: settings_value_row(name, value, @row_pad)
 
   defp workspace_rows(a) do
     current = (a.workspace && a.workspace["name"]) || gettext("Workspace")
     current_id = a.workspace && a.workspace["id"]
     items = (a.workspaces && a.workspaces.items) || []
 
-    options =
-      Enum.map(items, fn item ->
-        select_option(item.name, {:workspace, item.id}, item.id == current_id)
-      end)
-
-    switcher =
-      if options == [] do
-        settings_value_row(gettext("Workspace"), current)
+    switchers =
+      if items == [] do
+        [hub_value(gettext("Workspace"), current)]
       else
-        settings_control_row(
-          gettext("Workspace"),
-          Render.settings_select(current, options, "select-workspace", fill_width: false)
-        )
+        Enum.map(items, fn item ->
+          hub_check(item.name, item.id == current_id, {:workspace, item.id})
+        end)
       end
 
-    [
-      switcher,
-      settings_nav_row(gettext("Add workspace"), "", {:page, :workspace})
-    ]
+    switchers ++ [hub_nav(gettext("Add workspace"), "", {:page, :workspace})]
   end
 
   defp ai_rows(a, models) do
     [
-      settings_nav_row(gettext("Model / AI"), model_ai_value(models), {:page, :model_ai}),
-      settings_nav_row(
+      hub_nav(gettext("Model / AI"), model_ai_value(models), {:page, :model_ai}),
+      hub_nav(
         gettext("Workspace Models"),
         workspace_models_value(models),
         {:page, :workspace_models}
       ),
-      settings_nav_row(
+      hub_nav(
         gettext("Workspace Memory"),
         memory_value(a.workspace_memory),
         {:page, :memory}
       ),
-      settings_nav_row(
+      hub_nav(
         gettext("Available Models"),
         providers_value(models),
         {:page, :models}
@@ -74,10 +81,10 @@ defmodule HandbeanProbe.HomeScreen.SettingsHub do
 
   defp more_rows(a) do
     [
-      settings_nav_row(gettext("MCP"), mcp_value(a.mcp), {:page, :mcp}),
-      settings_nav_row(gettext("Git"), git_value(a.git), {:page, :git}),
-      settings_nav_row(gettext("App"), app_value(a.app_settings), {:page, :app}),
-      settings_nav_row(
+      hub_nav(gettext("MCP"), mcp_value(a.mcp), {:page, :mcp}),
+      hub_nav(gettext("Git"), git_value(a.git), {:page, :git}),
+      hub_nav(gettext("App"), app_value(a.app_settings), {:page, :app}),
+      hub_nav(
         gettext("UI"),
         HandbeanProbe.HomeScreen.UiSettings.language_label(HandbeanProbe.Gettext.locale()),
         {:page, :appearance}

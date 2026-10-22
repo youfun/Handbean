@@ -322,40 +322,19 @@ defmodule HandbeanProbe.NativeWorkspaces do
   defp list_form(state, _current) do
     scroll(
       [
-        text(
-          gettext("Switching projects keeps running work in the previous conversation."),
-          text_size: 12,
-          text_color: color(:hint),
-          padding_bottom: 12
+        settings_caption(
+          gettext("Switching projects keeps running work in the previous conversation.")
         ),
-        primary_button(gettext("Browse current workspace files"), {:page, :files},
-          fill_width: true
-        ),
-        card(
-          [
-            primary_button(gettext("Create empty workspace"), :open_create, fill_width: true),
-            text(
-              gettext("Start a private folder owned by the app."),
-              text_size: 12,
-              text_color: color(:hint),
-              padding_top: 6,
-              padding_bottom: 12
-            )
-          ] ++
-            spaced([
-              secondary_button(gettext("Add accessible folder"), :open_browse),
-              quiet_button(gettext("Import Android folder copy"), :start_import)
-            ]) ++
-            [
-              text(
-                gettext(
-                  "Import copies into the app workspace. Edits do not write back to the original folder."
-                ),
-                text_size: 12,
-                text_color: color(:hint),
-                padding_top: 8
-              )
-            ]
+        settings_group([
+          settings_nav_row(gettext("Browse current workspace files"), "", {:page, :files}),
+          settings_nav_row(gettext("Create empty workspace"), "", :open_create),
+          settings_nav_row(gettext("Add accessible folder"), "", :open_browse),
+          settings_nav_row(gettext("Import Android folder copy"), "", :start_import)
+        ]),
+        settings_caption(
+          gettext(
+            "Import copies into the app workspace. Edits do not write back to the original folder."
+          )
         )
       ] ++ Enum.map(state.items, &workspace_row(&1, state))
     )
@@ -364,49 +343,35 @@ defmodule HandbeanProbe.NativeWorkspaces do
   defp workspace_row(item, state) do
     expanded? = MapSet.member?(state.expanded_paths || MapSet.new(), item.id)
 
-    card([
-      row([
-        text(item.name, text_size: 15, weight: 1),
-        if(item.current?,
-          do: text(gettext("Current"), text_size: 12, text_color: color(:added))
-        )
-      ]),
-      text(item.source, text_size: 12, text_color: color(:hint), padding_top: 4),
-      text(if(expanded?, do: item.path, else: item.path_summary),
-        text_size: 11,
-        text_color: color(:muted),
-        padding_top: 4,
-        fill_width: true
+    settings_group([
+      settings_value_row(item.name, if(item.current?, do: gettext("Current"), else: "")),
+      settings_value_row(
+        item.source,
+        if(expanded?, do: item.path, else: item.path_summary)
       ),
-      quiet_button(
+      settings_nav_row(
         if(expanded?, do: gettext("Hide full path"), else: gettext("Show full path")),
-        {:toggle_path, item.id},
-        text_size: 12
+        "",
+        {:toggle_path, item.id}
       ),
       if(not item.current?,
-        do: primary_button(gettext("Switch"), {:workspace, item.id}, fill_width: true)
+        do: settings_nav_row(gettext("Switch"), "", {:workspace, item.id})
       )
     ])
   end
 
   defp create_form(state) do
     scroll([
-      card([
-        text(gettext("Create empty workspace"), text_size: 16, padding_bottom: 8),
-        text(
-          gettext("The display name is not a filesystem path. The app creates a private folder."),
-          text_size: 12,
-          text_color: color(:hint),
-          padding_bottom: 12
-        ),
-        field(gettext("Display name"), state.name, :workspace_name),
-        actions_row([
-          primary_button(gettext("Create and open"), :create_workspace,
-            weight: 1,
-            fill_width: true
-          ),
-          secondary_button(gettext("Back"), :workspace_list, weight: 1, fill_width: true)
-        ])
+      settings_section(gettext("Create empty workspace")),
+      settings_caption(
+        gettext("The display name is not a filesystem path. The app creates a private folder.")
+      ),
+      settings_group([
+        field(gettext("Display name"), state.name, :workspace_name)
+      ]),
+      settings_group([
+        settings_nav_row(gettext("Create and open"), "", :create_workspace),
+        settings_nav_row(gettext("Back"), "", :workspace_list, quiet: true)
       ])
     ])
   end
@@ -416,40 +381,28 @@ defmodule HandbeanProbe.NativeWorkspaces do
 
     scroll(
       [
-        card([
-          text(gettext("Add accessible folder"), text_size: 16, padding_bottom: 8),
-          text(
-            gettext(
-              "Only folders the app can already read. This is not the system Downloads picker."
-            ),
-            text_size: 12,
-            text_color: color(:hint),
-            padding_bottom: 8
-          ),
-          text(browser.path, text_size: 12, text_color: color(:muted), fill_width: true)
-        ]),
-        card(
-          spaced([
-            actions_row([
-              primary_button(gettext("Use this folder"), {:browse, :select},
-                weight: 1,
-                fill_width: true
-              ),
-              secondary_button(gettext("Up"), {:browse, :up}, weight: 1, fill_width: true)
-            ]),
-            quiet_button(gettext("Back"), :workspace_list)
-          ])
+        settings_section(gettext("Add accessible folder")),
+        settings_caption(
+          gettext(
+            "Only folders the app can already read. This is not the system Downloads picker."
+          )
         ),
-        text(gettext("Folders"), text_size: 14, padding_top: 4, padding_bottom: 8)
+        settings_caption(browser.path),
+        settings_group([
+          settings_nav_row(gettext("Use this folder"), "", {:browse, :select}),
+          settings_nav_row(gettext("Up"), "", {:browse, :up}),
+          settings_nav_row(gettext("Back"), "", :workspace_list, quiet: true)
+        ]),
+        settings_section(gettext("Folders"))
       ] ++
         Enum.map(browser.entries, fn entry ->
-          node(:column, [fill_width: true, padding_bottom: 8], [
-            list_row(entry.name, {:browse, {:enter, entry.name}})
+          settings_group([
+            settings_nav_row(entry.name, "", {:browse, {:enter, entry.name}})
           ])
         end) ++
         cond do
-          NativeFolderBrowser.loading?(browser) -> [text(gettext("Loading…"), padding_top: 8)]
-          browser.entries == [] -> [text(gettext("No subfolders"), padding_top: 8)]
+          NativeFolderBrowser.loading?(browser) -> [settings_caption(gettext("Loading…"))]
+          browser.entries == [] -> [settings_caption(gettext("No subfolders"))]
           true -> []
         end
     )
@@ -457,22 +410,14 @@ defmodule HandbeanProbe.NativeWorkspaces do
 
   defp import_form(state) do
     scroll([
-      card([
-        text(gettext("Import Android folder copy"), text_size: 16, padding_bottom: 8),
-        text(
-          gettext(
-            "Copying into the app workspace. Edits do not write back to the original folder."
-          ),
-          text_size: 12,
-          text_color: color(:hint),
-          padding_bottom: 12
-        ),
-        text(gettext("Importing…"), text_size: 14),
-        if(state.import.request_id,
-          do:
-            text(state.import.request_id, text_size: 11, text_color: color(:hint), padding_top: 8)
-        ),
-        danger_button(gettext("Cancel import"), :cancel_import)
+      settings_section(gettext("Import Android folder copy")),
+      settings_caption(
+        gettext("Copying into the app workspace. Edits do not write back to the original folder.")
+      ),
+      settings_caption(gettext("Importing…")),
+      if(state.import.request_id, do: settings_caption(state.import.request_id)),
+      settings_group([
+        settings_nav_row(gettext("Cancel import"), "", :cancel_import, danger: true)
       ])
     ])
   end

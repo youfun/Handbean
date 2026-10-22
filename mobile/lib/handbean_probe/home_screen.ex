@@ -398,7 +398,7 @@ defmodule HandbeanProbe.HomeScreen do
 
   # workspace memory settings
   defp dispatch({:change, field, _} = msg, %{assigns: %{page: :memory}} = socket)
-       when field in [:memory_query, :memory_edit_content],
+       when field in [:memory_query, :memory_edit_content, :memory_builtin],
        do: WorkspaceMemory.handle(msg, socket)
 
   defp dispatch({:dismiss, :memory_dismiss_confirm} = msg, %{assigns: %{page: :memory}} = socket),
@@ -419,6 +419,7 @@ defmodule HandbeanProbe.HomeScreen do
               :memory_scope,
               :memory_lifecycle,
               :memory_kind,
+              :toggle_select,
               :memory_related,
               :memory_edit_kind,
               :memory_promote,

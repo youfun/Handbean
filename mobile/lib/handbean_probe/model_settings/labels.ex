@@ -47,6 +47,10 @@ defmodule HandbeanProbe.ModelSettings.Labels do
   def key_status({:env, _var}), do: key_status(:configured)
   def key_status(_), do: gettext("API key: not configured")
 
+  def key_value(:configured), do: gettext("Configured")
+  def key_value({:env, _var}), do: key_value(:configured)
+  def key_value(_), do: gettext("Not configured")
+
   def default_model(nil, _state), do: gettext("None (use provider default)")
 
   def default_model(id, state) do

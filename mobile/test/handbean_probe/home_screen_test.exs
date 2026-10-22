@@ -233,7 +233,7 @@ defmodule HandbeanProbe.HomeScreenTest do
 
     assert Enum.any?(
              flatten(tree(view)),
-             &(&1.type == :settings_button && &1.props[:id] == "open_create")
+             &match?({_, :open_create}, &1.props[:on_tap])
            )
 
     view = info(view, {:tap, {:page, :settings}})

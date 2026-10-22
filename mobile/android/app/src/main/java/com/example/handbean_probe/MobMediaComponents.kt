@@ -20,8 +20,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -202,7 +204,9 @@ private fun materialIconFor(logical: String): androidx.compose.ui.graphics.vecto
         "add"             -> Icons.Filled.Add
         "remove"          -> Icons.Filled.Remove
         "edit"            -> Icons.Filled.Edit
+        "chat"            -> Icons.Filled.Chat
         "check"           -> Icons.Filled.Check
+        "copy"            -> Icons.Filled.ContentCopy
         "chevron_right"   -> Icons.Filled.ChevronRight
         "chevron_left"    -> Icons.Filled.ChevronLeft
         "chevron_up"      -> Icons.Filled.KeyboardArrowUp

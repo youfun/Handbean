@@ -83,14 +83,16 @@ defmodule HandbeanProbe.ModelSettings.Render do
   def help_block(state, key, summary, detail) do
     open? = Map.get(state.help_open || %{}, key, false)
 
-    node(:column, [fill_width: true, padding_bottom: 8], [
-      text(summary, text_size: 12, text_color: color(:muted)),
-      quiet_button(
-        if(open?, do: gettext("Hide details"), else: gettext("More details")),
-        {:toggle_help, key},
-        text_size: 12
-      ),
-      if(open?, do: text(detail, text_size: 12, text_color: color(:hint), padding_top: 4))
+    node(:column, [fill_width: true], [
+      settings_caption(summary),
+      if(open?, do: settings_caption(detail)),
+      settings_group([
+        settings_nav_row(
+          if(open?, do: gettext("Hide details"), else: gettext("More details")),
+          "",
+          {:toggle_help, key}
+        )
+      ])
     ])
   end
 
@@ -309,11 +311,7 @@ defmodule HandbeanProbe.ModelSettings.Render do
       end)
 
     save = [
-      node(:column, [fill_width: true, padding: 16], [
-        secondary_button(gettext("Save memory reflection settings"), :save_memory_details,
-          fill_width: true
-        )
-      ])
+      settings_nav_row(gettext("Save memory reflection settings"), "", :save_memory_details)
     ]
 
     [
@@ -367,9 +365,7 @@ defmodule HandbeanProbe.ModelSettings.Render do
           "select-policy-default"
         )
       ),
-      node(:column, [fill_width: true, padding: 16], [
-        secondary_button(gettext("Save"), :save_policy, fill_width: true)
-      ])
+      settings_nav_row(gettext("Save"), "", :save_policy)
     ]
 
     [
@@ -404,46 +400,28 @@ defmodule HandbeanProbe.ModelSettings.Render do
           selected = policy_provider_selected_count(state, provider_id)
           total = Enum.count(state.models, &(&1.provider_id == provider_id))
 
-          header =
-            row(
-              [
-                node(:column, [weight: 1, fill_width: true], [
-                  text(provider_label(state, provider_id), text_size: 15, max_lines: 1),
-                  text(gettext("%{selected} / %{total}", selected: selected, total: total),
-                    text_size: 12,
-                    text_color: color(:muted),
-                    padding_top: 2
-                  )
-                ]),
-                quiet_button(gettext("Select all"), {:policy_provider, provider_id, :all},
-                  text_size: 12
-                ),
-                quiet_button(gettext("Clear"), {:policy_provider, provider_id, :none},
-                  text_size: 12
-                )
-              ],
-              fill_width: true,
-              padding_left: 16,
-              padding_right: 16,
-              padding_top: 10,
-              padding_bottom: 6
-            )
-
-          [
-            header
-            | Enum.map(models, fn model ->
-                checked? =
-                  state.policy.allowed
-                  |> Map.get(model.provider_id, MapSet.new())
-                  |> MapSet.member?(model.model_id)
-
-                settings_check_row(
-                  model.name || model.model_id,
-                  checked?,
-                  {:toggle_policy_model, model.provider_id, model.model_id}
-                )
-              end)
+          header = [
+            settings_value_row(
+              provider_label(state, provider_id),
+              gettext("%{selected} / %{total}", selected: selected, total: total)
+            ),
+            settings_nav_row(gettext("Select all"), "", {:policy_provider, provider_id, :all}),
+            settings_nav_row(gettext("Clear"), "", {:policy_provider, provider_id, :none})
           ]
+
+          header ++
+            Enum.map(models, fn model ->
+              checked? =
+                state.policy.allowed
+                |> Map.get(model.provider_id, MapSet.new())
+                |> MapSet.member?(model.model_id)
+
+              settings_check_row(
+                model.name || model.model_id,
+                checked?,
+                {:toggle_policy_model, model.provider_id, model.model_id}
+              )
+            end)
         end)
       end
 
@@ -477,11 +455,7 @@ defmodule HandbeanProbe.ModelSettings.Render do
   defp access_mode_label(:invalid), do: gettext("Invalid")
   defp access_mode_label(_), do: gettext("Unrestricted")
 
-  defp inherit_row(true, label, tag) do
-    node(:column, [fill_width: true, padding_left: 16, padding_right: 16, padding_bottom: 12], [
-      quiet_button(label, tag, fill_width: true)
-    ])
-  end
+  defp inherit_row(true, label, tag), do: settings_nav_row(label, "", tag, quiet: true)
 
   defp inherit_row(_, _label, _tag), do: nil
 
@@ -495,30 +469,15 @@ defmodule HandbeanProbe.ModelSettings.Render do
 
   defp catalog_header(state) do
     [
-      row(
-        [
-          text(gettext("Available Models"), text_size: 16, weight: 1)
-          | spaced([
-              secondary_button(gettext("Add provider"), :add_provider),
-              secondary_button(gettext("Add model"), :add_model)
-            ])
-        ],
-        align: "center",
-        padding_top: 8,
-        padding_bottom: 8
-      )
+      settings_group([
+        settings_nav_row(gettext("Add provider"), "", :add_provider),
+        settings_nav_row(gettext("Add model"), "", :add_model)
+      ])
     ] ++ provider_picker(state)
   end
 
   defp provider_picker(%{providers: []}) do
-    [
-      card([
-        text(gettext("No providers yet. Add a provider, then add a model."),
-          text_size: 13,
-          text_color: color(:hint)
-        )
-      ])
-    ]
+    [settings_caption(gettext("No providers yet. Add a provider, then add a model."))]
   end
 
   defp provider_picker(state) do
@@ -526,15 +485,19 @@ defmodule HandbeanProbe.ModelSettings.Render do
     label = if selected, do: selected.name, else: gettext("Choose a provider")
 
     [
-      text(gettext("Provider"), text_size: 13, padding_top: 4, padding_bottom: 4),
-      settings_select(
-        label,
-        Enum.map(
-          state.providers,
-          &select_option(&1.name, {:select_provider, &1.id}, state.selected_provider == &1.id)
-        ),
-        "select-provider"
-      )
+      settings_group([
+        settings_form_field(
+          gettext("Provider"),
+          settings_select(
+            label,
+            Enum.map(
+              state.providers,
+              &select_option(&1.name, {:select_provider, &1.id}, state.selected_provider == &1.id)
+            ),
+            "select-provider"
+          )
+        )
+      ])
     ]
   end
 
@@ -543,126 +506,84 @@ defmodule HandbeanProbe.ModelSettings.Render do
   defp catalog_rows(state) do
     case Providers.selected_entry(state) do
       nil ->
-        [
-          text(gettext("Select a provider to see its models."),
-            text_size: 12,
-            text_color: color(:hint)
-          )
-        ]
+        [settings_caption(gettext("Select a provider to see its models."))]
 
       provider ->
         models = Enum.filter(state.models, &(&1.provider_id == provider.id))
-        [provider_row(provider, models)]
+        provider_groups(provider, models)
     end
   end
 
-  defp provider_row(provider, models) do
-    count_line =
+  defp provider_groups(provider, models) do
+    count =
       if models == [],
-        do: gettext("This provider has no models yet."),
-        else: gettext("%{count} models", count: length(models))
+        do: gettext("None"),
+        else: Integer.to_string(length(models))
 
-    card(
-      [
-        text(provider.name, text_size: 15),
-        text(Labels.key_status(provider.key_status),
-          text_size: 12,
-          text_color: color(:hint),
-          padding_top: 6
-        ),
-        text(count_line, text_size: 12, text_color: color(:hint), padding_bottom: 8),
-        node(:column, [fill_width: true], spaced(provider_actions(provider, models)))
-      ] ++ provider_models(models)
-    )
-  end
+    default_props = if provider.is_default, do: [disabled: true], else: []
 
-  defp provider_models([]) do
-    [
-      text(gettext("No models yet for this provider."),
-        text_size: 12,
-        text_color: color(:hint),
-        padding_top: 8
-      )
+    info = [
+      settings_value_row(gettext("API Key"), Labels.key_value(provider.key_status)),
+      settings_value_row(gettext("Models"), count)
     ]
-  end
 
-  defp provider_models(models) do
-    Enum.flat_map(models, fn model ->
-      [
-        node(:box, height: 1, fill_width: true, background: color(:separator)),
-        model_row(model)
-      ]
-    end)
-  end
-
-  defp provider_actions(provider, models) do
-    [
+    actions = [
       if(provider.fetchable,
-        do:
-          secondary_button(gettext("Fetch models"), {:fetch_models, provider.id},
-            fill_width: true
-          )
+        do: settings_nav_row(gettext("Fetch models"), "", {:fetch_models, provider.id})
       ),
-      secondary_button(gettext("Edit provider"), {:edit_provider, provider.id}, fill_width: true),
-      default_provider_button(provider),
+      settings_nav_row(gettext("Edit provider"), "", {:edit_provider, provider.id}),
+      settings_check_row(
+        gettext("Default provider"),
+        provider.is_default,
+        {:set_default_provider, provider.id},
+        default_props
+      ),
       if(Enum.any?(models, &Map.get(&1, :enabled, true)),
-        do:
-          quiet_button(gettext("Disable all"), {:disable_provider_models, provider.id},
-            fill_width: true
-          )
+        do: settings_nav_row(gettext("Disable all"), "", {:disable_provider_models, provider.id})
       ),
-      quiet_button(gettext("Delete provider"), {:ask_delete_provider, provider.id},
-        fill_width: true,
-        text_color: color(:danger)
+      settings_nav_row(gettext("Delete provider"), "", {:ask_delete_provider, provider.id},
+        danger: true
       )
+    ]
+
+    [settings_group(info), settings_group(actions)] ++ provider_model_group(models)
+  end
+
+  defp provider_model_group([]) do
+    [settings_caption(gettext("No models yet for this provider."))]
+  end
+
+  defp provider_model_group(models) do
+    [
+      settings_section(gettext("Models")),
+      settings_group(Enum.map(models, &catalog_model_row/1))
     ]
   end
 
-  defp default_provider_button(%{is_default: true} = provider) do
-    secondary_button(gettext("✓ Default provider"), {:set_default_provider, provider.id},
-      fill_width: true,
-      disabled: true,
-      background: color(:bubble)
-    )
-  end
-
-  defp default_provider_button(provider) do
-    secondary_button(gettext("Set as default provider"), {:set_default_provider, provider.id},
-      fill_width: true
-    )
-  end
-
-  defp model_row(model) do
+  defp catalog_model_row(model) do
     enabled? = Map.get(model, :enabled, true)
     edit = {:edit_model, model.provider_id, model.model_id}
+    name = model.name || model.model_id
 
-    node(
-      :row,
+    row(
       [
-        fill_width: true,
-        align: "center",
-        padding_top: 10,
-        padding_bottom: 4,
-        on_tap: {self(), edit},
-        id: "model-row-#{model.provider_id}-#{model.model_id}"
-      ],
-      [
-        node(
-          :column,
-          [weight: 1, fill_width: true, on_tap: {self(), edit}],
-          [
-            text(model.name, text_size: 15, weight: 1, max_lines: 1),
-            text(model.id, text_size: 12, text_color: color(:hint), max_lines: 1)
-          ]
-        ),
-        node(
-          :toggle,
+        text(name, text_size: 16, max_lines: 1),
+        node(:box, weight: 1),
+        node(:toggle,
+          id: "toggle-model-#{model.provider_id}-#{model.model_id}",
           value: enabled?,
+          color: color(:ink),
           on_change:
-            {self(), {:toggle_model_enabled, model.provider_id, model.model_id, not enabled?}},
-          id: "toggle-model-#{model.provider_id}-#{model.model_id}"
+            {self(), {:toggle_model_enabled, model.provider_id, model.model_id, not enabled?}}
         )
-      ]
+      ],
+      fill_width: true,
+      padding_top: 10,
+      padding_bottom: 10,
+      padding_left: 16,
+      padding_right: 16,
+      on_tap: {self(), edit},
+      id: "model-row-#{model.provider_id}-#{model.model_id}"
     )
   end
 

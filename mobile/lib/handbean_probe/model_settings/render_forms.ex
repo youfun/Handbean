@@ -14,31 +14,32 @@ defmodule HandbeanProbe.ModelSettings.RenderForms do
     f = state.form
 
     [
-      form_actions(gettext("Save model"), :save_model, :top),
-      card(
+      settings_section(gettext("Model")),
+      settings_group(
         [
-          text(gettext("Model"), text_size: 16, padding_bottom: 8),
-          text(gettext("Provider: %{provider}", provider: f.provider_name), padding_bottom: 8)
+          settings_value_row(gettext("Provider"), f.provider_name)
         ] ++
           catalog_model_picker(f) ++
           [
             if(state.editing == :new,
               do: field(gettext("Model name"), f.model, {:model_field, :model}),
-              else: text(gettext("Model: %{model}", model: f.model), padding_bottom: 8)
+              else: settings_value_row(gettext("Model"), f.model)
             ),
             if(state.editing == :new,
               do:
                 text(gettext("Example: gpt-4o or claude-sonnet-4"),
                   text_size: 12,
                   text_color: color(:hint),
+                  padding_left: 16,
+                  padding_right: 16,
                   padding_bottom: 8
                 )
             ),
             field(gettext("Display name"), f.name, {:model_field, :name})
           ]
       ),
-      card([
-        text(gettext("Model limits"), text_size: 16, padding_bottom: 8),
+      settings_section(gettext("Model limits")),
+      settings_group([
         field(gettext("Context window"), f.context_window, {:model_field, :context_window},
           keyboard: "number"
         ),
@@ -54,30 +55,34 @@ defmodule HandbeanProbe.ModelSettings.RenderForms do
         text(Labels.token_lines(state, f),
           text_size: 12,
           text_color: color(:hint),
+          padding_left: 16,
+          padding_right: 16,
           padding_bottom: 8
         ),
-        button(
-          if(f.reasoning, do: gettext("Reasoning: enabled"), else: gettext("Reasoning: off")),
-          :model_reasoning,
-          fill_width: true
+        settings_nav_row(
+          gettext("Reasoning"),
+          if(f.reasoning, do: gettext("On"), else: gettext("Off")),
+          :model_reasoning
         )
       ]),
-      form_actions(gettext("Save model"), :save_model, :bottom)
+      form_actions(gettext("Save model"), :save_model)
     ]
   end
 
   defp catalog_model_picker(%{catalog_models: models} = form)
        when is_list(models) and models != [] do
     [
-      text(gettext("Known models"), text_size: 13, padding_bottom: 4),
-      settings_select(
-        Forms.catalog_model_label(form),
-        [select_option(gettext("Custom name"), {:catalog_model, ""}, form.model == "")] ++
-          Enum.map(
-            models,
-            &select_option(&1.name, {:catalog_model, &1.id}, form.model == &1.id)
-          ),
-        "select-catalog-model"
+      settings_form_field(
+        gettext("Known models"),
+        settings_select(
+          Forms.catalog_model_label(form),
+          [select_option(gettext("Custom name"), {:catalog_model, ""}, form.model == "")] ++
+            Enum.map(
+              models,
+              &select_option(&1.name, {:catalog_model, &1.id}, form.model == &1.id)
+            ),
+          "select-catalog-model"
+        )
       )
     ]
   end
@@ -94,9 +99,8 @@ defmodule HandbeanProbe.ModelSettings.RenderForms do
       )
 
     [
-      form_actions(gettext("Save provider"), :save_provider, :top),
-      card([
-        text(title, text_size: 16, padding_bottom: 8),
+      settings_section(title),
+      settings_group([
         field(gettext("Display name"), f.name, {:model_field, :name}),
         field(gettext("Base URL (HTTPS)"), f.base_url, {:model_field, :base_url},
           keyboard: "url"
@@ -109,56 +113,28 @@ defmodule HandbeanProbe.ModelSettings.RenderForms do
           placeholder: f.key_preview || ""
         )
       ]),
-      card([
-        text(gettext("API protocol"), text_size: 16, padding_bottom: 8),
-        settings_select(
-          Labels.protocol(f.api),
-          Enum.map(
-            Forms.protocols(),
-            &select_option(Labels.protocol(&1), {:api, &1}, f.api == &1)
-          ),
-          "select-protocol"
+      settings_section(gettext("API protocol")),
+      settings_group([
+        settings_form_field(
+          gettext("API protocol"),
+          settings_select(
+            Labels.protocol(f.api),
+            Enum.map(
+              Forms.protocols(),
+              &select_option(Labels.protocol(&1), {:api, &1}, f.api == &1)
+            ),
+            "select-protocol"
+          )
         )
       ]),
-      form_actions(gettext("Save provider"), :save_provider, :bottom)
+      form_actions(gettext("Save provider"), :save_provider)
     ]
   end
 
-  defp form_actions(save_label, save_tag, :bottom) do
-    card(
-      [
-        actions_row([
-          primary_button(save_label, save_tag, weight: 1, fill_width: true, text_align: "center"),
-          secondary_button(gettext("Cancel"), :cancel_model,
-            weight: 1,
-            fill_width: true,
-            text_align: "center"
-          )
-        ])
-      ],
-      padding: 12
-    )
-  end
-
-  defp form_actions(save_label, save_tag, :top) do
-    card(
-      [
-        actions_row([
-          primary_button(save_label, save_tag,
-            id: "#{save_tag}-top",
-            weight: 1,
-            fill_width: true,
-            text_align: "center"
-          ),
-          secondary_button(gettext("Cancel"), :cancel_model,
-            id: "cancel_model-top",
-            weight: 1,
-            fill_width: true,
-            text_align: "center"
-          )
-        ])
-      ],
-      padding: 12
-    )
+  defp form_actions(save_label, save_tag) do
+    settings_group([
+      settings_nav_row(save_label, "", save_tag),
+      settings_nav_row(gettext("Cancel"), "", :cancel_model, quiet: true)
+    ])
   end
 end

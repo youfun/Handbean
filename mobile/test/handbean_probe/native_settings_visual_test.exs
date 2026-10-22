@@ -452,6 +452,10 @@ defmodule HandbeanProbe.NativeSettingsVisualTest do
       )
 
     blob = flatten_text(tree)
+    labels = texts(tree)
+    assert gettext("Workspace") in labels
+    assert gettext("Model") in labels
+    assert gettext("Device") in labels
     assert blob =~ gettext("Model / AI")
     assert blob =~ gettext("Workspace Models")
     assert blob =~ gettext("Available Models")
@@ -462,14 +466,21 @@ defmodule HandbeanProbe.NativeSettingsVisualTest do
     refute blob =~ gettext("Workspace model policy")
     refute find_type(tree, :settings_select, "select-provider")
     refute find_type(tree, :settings_select, "select-reasoning")
-    assert find_type(tree, :settings_select, "select-workspace")
+    refute find_type(tree, :settings_select, "select-workspace")
+    assert tap?(tree, {:workspace, "w"})
     assert tap?(tree, {:page, :model_ai})
     assert tap?(tree, {:page, :workspace_models})
 
     titles =
       walk(tree)
       |> Enum.filter(
-        &(&1.type == :text && &1.props[:text] in [gettext("Model / AI"), gettext("Workspace")])
+        &(&1.type == :text &&
+            &1.props[:text] in [
+              gettext("Model / AI"),
+              gettext("Workspace"),
+              gettext("Model"),
+              gettext("Device")
+            ])
       )
       |> Enum.map(& &1.props)
 
@@ -620,6 +631,59 @@ defmodule HandbeanProbe.NativeSettingsVisualTest do
     selected = ModelSettings.action({:policy_provider, "alpha", :all}, state, ws)
     assert MapSet.member?(selected.policy.allowed["alpha"], "one")
     assert MapSet.member?(selected.policy.allowed["alpha"], "two")
+  end
+
+  test "available models catalog uses system rows instead of capsules", %{workspace: ws} do
+    save_named(ws, "alpha", "one")
+    tree = ModelSettings.render_available_models(ModelSettings.load(ws))
+    blob = flatten_text(tree)
+
+    assert tap?(tree, :add_provider)
+    assert tap?(tree, :add_model)
+    assert tap?(tree, :open_subscription_login)
+    assert tap?(tree, {:edit_provider, "alpha"})
+    assert tap?(tree, {:ask_delete_provider, "alpha"})
+    assert find_type(tree, :settings_select, "select-provider")
+    assert find_type(tree, :toggle, "toggle-model-alpha-one")
+    assert blob =~ gettext("More details")
+    assert blob =~ gettext("Default provider")
+    refute blob =~ gettext("API key: configured")
+    assert blob =~ gettext("Configured")
+
+    capsule_labels = [
+      gettext("Add provider"),
+      gettext("Add model"),
+      gettext("Sign in"),
+      gettext("Edit provider"),
+      gettext("More details"),
+      gettext("Disable all"),
+      gettext("Delete provider")
+    ]
+
+    refute Enum.any?(walk(tree), fn
+             %{type: type, props: props} when type in [:settings_button, :button] ->
+               props[:text] in capsule_labels
+
+             _ ->
+               false
+           end)
+
+    titles =
+      walk(tree)
+      |> Enum.filter(
+        &(&1.type == :text &&
+            &1.props[:text] in [
+              gettext("Add provider"),
+              gettext("Subscription sign-in"),
+              gettext("Edit provider"),
+              gettext("Default provider")
+            ])
+      )
+      |> Enum.map(& &1.props)
+
+    assert titles != []
+    assert Enum.all?(titles, &(&1[:max_lines] == 1))
+    refute Enum.any?(titles, &(&1[:weight] || &1[:text_align]))
   end
 
   defp save_named(workspace, provider, model) do

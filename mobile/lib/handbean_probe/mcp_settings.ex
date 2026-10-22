@@ -67,7 +67,7 @@ defmodule HandbeanProbe.MCPSettings do
     children =
       cond do
         state.loading? -> [text(gettext("Loading MCP servers…"), padding_top: 24)]
-        state.form -> [editor(state, workspaces)]
+        state.form -> editor(state, workspaces)
         true -> list(state)
       end
 
@@ -75,31 +75,23 @@ defmodule HandbeanProbe.MCPSettings do
   end
 
   defp list(state) do
-    heading =
-      row([
-        text(gettext("MCP servers"), text_size: 16, font_weight: "bold", weight: 1),
-        primary_button(gettext("Add"), :mcp_add)
-      ])
-
     items =
       if state.items == [] do
         [
-          card([
-            text(gettext("No MCP servers configured")),
-            text(gettext("Add an HTTP server to make its tools available."),
-              text_color: color(:muted),
-              padding_top: 6
-            )
-          ])
+          settings_caption(gettext("No MCP servers configured")),
+          settings_caption(gettext("Add an HTTP server to make its tools available."))
         ]
       else
-        Enum.map(state.items, &server_card/1)
+        Enum.map(state.items, &server_rows/1)
       end
 
-    [heading, error_text(state.error) | items]
+    [
+      settings_group([settings_nav_row(gettext("Add"), "", :mcp_add)]),
+      error_text(state.error) | items
+    ]
   end
 
-  defp server_card(entry) do
+  defp server_rows(entry) do
     subtitle =
       case entry.transport do
         :stdio ->
@@ -112,19 +104,11 @@ defmodule HandbeanProbe.MCPSettings do
           )
       end
 
-    card([
-      row([
-        text(entry.name, weight: 1, font_weight: "bold"),
-        text(if(entry.disabled, do: gettext("Disabled"), else: ""), text_color: color(:muted))
-      ]),
-      text(subtitle, text_size: 12, text_color: color(:muted), padding_top: 4),
-      text(access_label(entry.workspace_access),
-        text_size: 12,
-        text_color: color(:muted),
-        padding_top: 4
-      ),
+    settings_group([
+      settings_value_row(entry.name, if(entry.disabled, do: gettext("Disabled"), else: "")),
+      settings_value_row(subtitle, access_label(entry.workspace_access)),
       if(entry.transport == :http,
-        do: actions_row([secondary_button(gettext("Edit"), {:mcp_edit, entry.id})])
+        do: settings_nav_row(gettext("Edit"), "", {:mcp_edit, entry.id})
       )
     ])
   end
@@ -135,70 +119,61 @@ defmodule HandbeanProbe.MCPSettings do
     auth = form["auth"]
 
     [
-      actions_row([
-        primary_button(gettext("Save"), :mcp_save),
-        secondary_button(gettext("Cancel"), :mcp_cancel)
-      ]),
-      text(if(editing?, do: gettext("Edit MCP server"), else: gettext("Add MCP server")),
-        text_size: 16,
-        font_weight: "bold"
+      settings_section(
+        if(editing?, do: gettext("Edit MCP server"), else: gettext("Add MCP server"))
       ),
       error_text(state.error),
-      field(gettext("Name"), form["name"], {:mcp_field, :name}),
-      field(gettext("URL"), form["url"], {:mcp_field, :url},
-        placeholder: "https://example.com/mcp"
-      ),
-      text(gettext("Authentication"),
-        text_size: 13,
-        text_color: color(:muted),
-        padding_bottom: 6
-      ),
-      segment_row(
+      settings_group([
+        field(gettext("Name"), form["name"], {:mcp_field, :name}),
+        field(gettext("URL"), form["url"], {:mcp_field, :url},
+          placeholder: "https://example.com/mcp"
+        )
+      ]),
+      settings_section(gettext("Authentication")),
+      settings_group(
         Enum.map(
           [
             {"none", gettext("None")},
             {"bearer", gettext("Bearer")},
             {"headers", gettext("Custom headers")}
           ],
-          fn {value, label} -> segment_button(label, {:mcp_auth, value}, auth == value) end
+          fn {value, label} ->
+            settings_check_row(label, auth == value, {:mcp_auth, value})
+          end
         )
       ),
-      credential_fields(form, auth),
-      text(gettext("Workspace access"),
-        text_size: 13,
-        text_color: color(:muted),
-        padding_top: 8,
-        padding_bottom: 6
-      ),
-      segment_row([
-        segment_button(
+      if(auth in ["bearer", "headers"], do: settings_group(credential_fields(form, auth))),
+      settings_section(gettext("Workspace access")),
+      settings_group([
+        settings_check_row(
           gettext("Selected"),
-          {:mcp_access, "selected"},
-          form["access_mode"] == "selected"
+          form["access_mode"] == "selected",
+          {:mcp_access, "selected"}
         ),
-        segment_button(
+        settings_check_row(
           gettext("All (including future)"),
-          {:mcp_access, "all"},
-          form["access_mode"] == "all"
+          form["access_mode"] == "all",
+          {:mcp_access, "all"}
         )
       ]),
-      if(form["access_mode"] == "selected", do: workspace_checks(form, workspaces)),
-      option_button(gettext("Disabled"), :mcp_toggle_disabled, form["disabled"] == true),
-      if(state.test_result,
-        do: text(state.test_result, text_color: color(:added), padding_top: 8)
+      if(form["access_mode"] == "selected",
+        do: settings_group(workspace_checks(form, workspaces))
       ),
-      actions_row([
-        secondary_button(
+      settings_group([
+        settings_check_row(gettext("Disabled"), form["disabled"] == true, :mcp_toggle_disabled)
+      ]),
+      if(state.test_result, do: settings_caption(state.test_result)),
+      settings_group([
+        settings_nav_row(
           if(state.testing?, do: gettext("Testing…"), else: gettext("Test connection")),
+          "",
           :mcp_test
         ),
-        primary_button(gettext("Save"), :mcp_save),
-        quiet_button(gettext("Cancel"), :mcp_cancel)
-      ]),
-      if(editing?, do: actions_row([danger_button(gettext("Delete"), :mcp_ask_delete)]))
+        settings_nav_row(gettext("Save"), "", :mcp_save),
+        settings_nav_row(gettext("Cancel"), "", :mcp_cancel, quiet: true),
+        if(editing?, do: settings_nav_row(gettext("Delete"), "", :mcp_ask_delete, danger: true))
+      ])
     ]
-    |> List.flatten()
-    |> card()
   end
 
   defp credential_fields(form, "bearer") do
@@ -228,11 +203,10 @@ defmodule HandbeanProbe.MCPSettings do
 
   defp workspace_checks(form, workspaces) do
     Enum.map(workspaces, fn workspace ->
-      option_button(
+      settings_check_row(
         workspace.name,
-        {:mcp_workspace, workspace.id},
         workspace.id in form["workspace_ids"],
-        padding_top: 8
+        {:mcp_workspace, workspace.id}
       )
     end)
   end

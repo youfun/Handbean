@@ -67,24 +67,48 @@ defmodule HandbeanProbe.WorkspaceMemoryTest do
       })
 
     blob = flatten_text(tree)
-    assert blob =~ "Workspace Memory"
     assert blob =~ "Use built-in memory"
-    assert tap?(tree, {:memory_builtin, true})
-    assert tap?(tree, {:memory_builtin, false})
-    assert blob =~ "Current workspace: Handbean"
+    refute blob =~ "/tmp/handbean"
+    refute blob =~ "Current workspace"
+    assert find_select(tree, "select-memory-filter-lifecycle")
+    assert find_select(tree, "select-memory-filter-scope")
+    assert find_select(tree, "select-memory-filter-kind")
+
+    filter_row =
+      Enum.find(walk(tree), &(&1.type == :row and &1.props[:id] == "memory-filter-row"))
+
+    assert filter_row
+
+    filter_ids =
+      filter_row
+      |> walk()
+      |> Enum.map(& &1.props[:id])
+      |> MapSet.new()
+
+    assert MapSet.subset?(
+             MapSet.new(~w(
+               select-memory-filter-lifecycle
+               select-memory-filter-scope
+               select-memory-filter-kind
+             )),
+             filter_ids
+           )
+
+    assert tap?(tree, {:memory_lifecycle, :active})
+    assert tap?(tree, {:memory_edit, 42})
     assert blob =~ "Active memory  1"
+    refute filter_check_row?(tree, {:memory_lifecycle, :active})
     assert blob =~ "#42"
-    assert blob =~ "preference · Preference"
+    assert blob =~ "Preference"
+    refute blob =~ "preference · Preference"
     assert blob =~ "Long-term · reinforced ×2"
     assert blob =~ "Remember the mobile memory browser"
-    assert blob =~ "Scope: Global · Source: Agent"
+    assert blob =~ "Agent"
     assert blob =~ "↳ context_for #20"
     assert tap?(tree, {:memory_related, 20})
-    assert tap?(tree, {:memory_edit, 42})
-    assert tap?(tree, {:memory_ask_delete, 42})
     refute tap?(tree, {:memory_promote, 42})
-    assert tap?(tree, {:memory_copy, :id, 42})
-    assert tap?(tree, {:memory_copy, :content, 42})
+    refute tap?(tree, {:memory_ask_delete, 42})
+    refute tap?(tree, {:memory_copy, :id, 42})
   end
 
   test "renders provenance events instead of stale metadata source labels" do
@@ -144,8 +168,9 @@ defmodule HandbeanProbe.WorkspaceMemoryTest do
       })
 
     blob = flatten_text(tree)
-    assert blob =~ "Source: Agent · available; inspect in Web"
-    assert blob =~ "Source: System · no exact source"
+    assert blob =~ "Agent · available"
+    assert blob =~ "System · no exact source"
+    refute blob =~ "inspect in Web"
     refute blob =~ "stale metadata"
   end
 
@@ -160,8 +185,9 @@ defmodule HandbeanProbe.WorkspaceMemoryTest do
       })
 
     blob = flatten_text(tree)
-    assert blob =~ "工作区记忆"
-    assert blob =~ "当前工作区：Handbean"
+    assert blob =~ "使用内置记忆"
+    refute blob =~ "当前工作区：Handbean"
+    refute blob =~ "/tmp/handbean"
     assert blob =~ "有效记忆  0"
     assert Enum.any?(walk(tree), &(&1.props[:placeholder] == "搜索内容或 #ID…"))
     assert blob =~ "没有符合筛选条件的记忆"
@@ -170,19 +196,20 @@ defmodule HandbeanProbe.WorkspaceMemoryTest do
   test "the shared memory tree renders with iOS-native controls" do
     HandbeanProbe.NativePlatform.put!(:ios)
 
-    tree =
-      WorkspaceMemory.render(WorkspaceMemory.new(), %{
-        "id" => "workspace-a",
-        "name" => "Handbean",
-        "path" => "/tmp/handbean"
-      })
+    workspace = %{
+      "id" => "workspace-a",
+      "name" => "Handbean",
+      "path" => "/tmp/handbean"
+    }
 
-    memory_tab =
-      Enum.find(walk(tree), &match?(%{props: %{on_tap: {_, {:memory_scope, :both}}}}, &1))
+    tree = WorkspaceMemory.render(WorkspaceMemory.new(), workspace)
+    assert Enum.any?(walk(tree), &(&1.props[:accessibility_role] == "dropdown"))
 
-    assert memory_tab.type == :button
-    assert tap?(tree, {:memory_lifecycle, :active})
-    assert tap?(tree, {:memory_kind, :preference})
+    opened =
+      WorkspaceMemory.toggle_select(WorkspaceMemory.new(), "select-memory-filter-scope")
+
+    open_tree = WorkspaceMemory.render(opened, workspace)
+    assert tap?(open_tree, {:memory_scope, :both})
   end
 
   test "HomeScreen persists the workspace-local built-in memory setting" do
@@ -308,7 +335,7 @@ defmodule HandbeanProbe.WorkspaceMemoryTest do
     view = socket |> event({:tap, {:page, :memory}}) |> settle()
 
     tree = HomeScreen.render(view.socket.assigns)
-    assert flatten_text(tree) =~ "Scope: Workspace · Source: System · no exact source"
+    assert flatten_text(tree) =~ "System · no exact source"
     assert tap?(tree, {:memory_promote, memory.id})
 
     view = view |> event({:tap, {:memory_promote, other.id}}) |> settle()
@@ -322,7 +349,11 @@ defmodule HandbeanProbe.WorkspaceMemoryTest do
 
     view = event(view, {:tap, {:memory_edit, memory.id}})
     assert view.socket.assigns.workspace_memory.editing.id == memory.id
-    assert flatten_text(HomeScreen.render(view.socket.assigns)) =~ "Edit memory ##{memory.id}"
+
+    assert Enum.any?(
+             walk(HomeScreen.render(view.socket.assigns)),
+             &(&1.type == :text_field and &1.props[:value] == memory.content)
+           )
 
     view = event(view, {:change, :memory_edit_content, ""})
     view = view |> event({:tap, :memory_save_edit}) |> settle()
@@ -449,7 +480,7 @@ defmodule HandbeanProbe.WorkspaceMemoryTest do
 
     tree = HomeScreen.render(view.socket.assigns)
     assert flatten_text(tree) =~ "Workspace Memory"
-    assert tap?(tree, {:page, :memory})
+    assert tap?(tree, {:page, :settings})
   end
 
   defp event(%{socket: socket} = view, message) do
@@ -464,6 +495,17 @@ defmodule HandbeanProbe.WorkspaceMemoryTest do
 
   defp tap?(node, tag),
     do: Enum.any?(walk(node), &match?(%{props: %{on_tap: {_, ^tag}}}, &1))
+
+  defp find_select(tree, id) do
+    Enum.find(walk(tree), &(&1.props[:id] == id and &1.props[:accessibility_role] == "dropdown"))
+  end
+
+  defp filter_check_row?(tree, tag) do
+    Enum.any?(walk(tree), fn
+      %{type: :row, props: %{on_tap: {_, ^tag}}} -> true
+      _ -> false
+    end)
+  end
 
   defp flatten_text(node) do
     node

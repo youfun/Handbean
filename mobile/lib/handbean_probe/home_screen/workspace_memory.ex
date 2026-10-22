@@ -37,6 +37,10 @@ defmodule HandbeanProbe.HomeScreen.WorkspaceMemory do
     reload(socket, WorkspaceMemory.set_query(socket.assigns.workspace_memory, query))
   end
 
+  def handle({:change, :memory_builtin, enabled}, socket) when is_boolean(enabled) do
+    handle({:tap, {:memory_builtin, enabled}}, socket)
+  end
+
   def handle({:tap, {:memory_builtin, enabled}}, socket) when is_boolean(enabled) do
     path = socket.assigns.workspace["path"]
 
@@ -51,6 +55,10 @@ defmodule HandbeanProbe.HomeScreen.WorkspaceMemory do
       {:error, _reason} ->
         Notice.put_error(socket, gettext("Could not save workspace memory setting"))
     end
+  end
+
+  def handle({:tap, {:toggle_select, id}}, socket) when is_binary(id) do
+    put(socket, WorkspaceMemory.toggle_select(socket.assigns.workspace_memory, id))
   end
 
   def handle({:tap, {:memory_scope, scope}}, socket) do

@@ -24,6 +24,7 @@ defmodule HandbeanProbe.WorkspaceMemory do
             lifecycle: :active,
             kind: :all,
             query: "",
+            select_open: nil,
             builtin_memory_enabled: true,
             privacy_mode: :standard,
             editing: nil,
@@ -110,22 +111,30 @@ defmodule HandbeanProbe.WorkspaceMemory do
   def set_query(%__MODULE__{} = state, _query), do: state
 
   def set_scope(%__MODULE__{privacy_mode: :local_only} = state, _scope),
-    do: %{state | scope: :workspace}
+    do: %{state | scope: :workspace, select_open: nil}
 
   def set_scope(%__MODULE__{} = state, scope) when scope in @scopes,
-    do: %{state | scope: scope}
+    do: %{state | scope: scope, select_open: nil}
 
   def set_scope(%__MODULE__{} = state, _scope), do: state
 
   def set_lifecycle(%__MODULE__{} = state, lifecycle) when lifecycle in @lifecycles,
-    do: %{state | lifecycle: lifecycle}
+    do: %{state | lifecycle: lifecycle, select_open: nil}
 
   def set_lifecycle(%__MODULE__{} = state, _lifecycle), do: state
 
   def set_kind(%__MODULE__{} = state, kind) when kind in [:all | @kinds],
-    do: %{state | kind: kind}
+    do: %{state | kind: kind, select_open: nil}
 
   def set_kind(%__MODULE__{} = state, _kind), do: state
+
+  def toggle_select(%__MODULE__{select_open: id} = state, id) when is_binary(id),
+    do: %{state | select_open: nil}
+
+  def toggle_select(%__MODULE__{} = state, id) when is_binary(id),
+    do: %{state | select_open: id}
+
+  def toggle_select(%__MODULE__{} = state, _id), do: state
 
   def load_builtin_memory(%__MODULE__{} = state, workspace_path) do
     %{
@@ -219,76 +228,136 @@ defmodule HandbeanProbe.WorkspaceMemory do
   def copy_value(%__MODULE__{}, _id, _field), do: :error
 
   @spec render(t(), map()) :: Mob.Node.t()
-  def render(%__MODULE__{} = state, workspace) do
+  def render(%__MODULE__{} = state, _workspace) do
     content =
       if state.editing do
-        [workspace_card(workspace), edit_card(state), status_node(state)]
+        [edit_form(state), status_node(state)]
       else
         [
-          workspace_card(workspace),
-          builtin_memory_card(state),
-          lifecycle_grid(state),
-          filters(state),
-          status_node(state)
-          | memory_cards(state)
+          builtin_group(state),
+          filter_group(state),
+          status_node(state),
+          settings_section(gettext("Memories")),
+          memories_group(state)
         ]
       end
 
     scroll(content ++ [delete_sheet(state)], id: "workspace-memory")
   end
 
-  defp workspace_card(workspace) do
-    name = (workspace && workspace["name"]) || gettext("Workspace")
-    path = (workspace && workspace["path"]) || ""
-
-    card([
-      text(gettext("Workspace Memory"), text_size: 17, font_weight: "bold"),
-      text(gettext("Current workspace: %{name}", name: name),
-        text_size: 13,
-        text_color: color(:muted),
-        padding_top: 8
-      ),
-      text(path, text_size: 12, text_color: color(:hint), padding_top: 4)
+  defp builtin_group(state) do
+    node(:column, [fill_width: true], [
+      settings_group([
+        settings_toggle_row(
+          gettext("Use built-in memory"),
+          state.builtin_memory_enabled,
+          :memory_builtin
+        )
+      ]),
+      settings_caption(
+        gettext("External memory tools remain available when built-in memory is off.")
+      )
     ])
   end
 
-  defp builtin_memory_card(state) do
-    card([
-      text(gettext("Use built-in memory"), text_size: 15, font_weight: "bold"),
-      text(
-        gettext("External memory tools remain available when built-in memory is off."),
-        text_size: 12,
-        text_color: color(:muted),
-        padding_top: 6,
-        padding_bottom: 8
-      ),
-      segment_row([
-        segment_button(
-          gettext("On"),
-          {:memory_builtin, true},
-          state.builtin_memory_enabled
+  defp filter_group(state) do
+    node(:column, [fill_width: true], [
+      settings_section(gettext("Filter")),
+      settings_group([
+        settings_form_field(
+          gettext("Search"),
+          node(:text_field,
+            id: "memory_query",
+            value: state.query,
+            placeholder: gettext("Search content or #ID…"),
+            plain: true,
+            background: color(:card),
+            fill_width: true,
+            on_change: {self(), :memory_query}
+          )
         ),
-        segment_button(
-          gettext("Off"),
-          {:memory_builtin, false},
-          not state.builtin_memory_enabled
+        row(
+          [
+            compact_filter(gettext("Status"), lifecycle_select(state)),
+            gap(8),
+            compact_filter(gettext("Scope"), scope_select(state)),
+            gap(8),
+            compact_filter(gettext("Type"), kind_select(state))
+          ],
+          id: "memory-filter-row",
+          fill_width: true,
+          align: "top",
+          padding_left: 12,
+          padding_right: 12,
+          padding_top: 8,
+          padding_bottom: 12
         )
       ])
     ])
   end
 
-  defp lifecycle_grid(state) do
-    [first, second, third, fourth] = lifecycle_cards(state.summary)
-
-    card([
-      segment_row(Enum.map([first, second], &lifecycle_button(&1, state.lifecycle))),
-      segment_row(Enum.map([third, fourth], &lifecycle_button(&1, state.lifecycle)),
-        padding_top: 8
-      )
+  defp compact_filter(label, control) do
+    node(:column, [weight: 1, fill_width: true], [
+      text(label, text_size: 12, text_color: color(:muted), max_lines: 1, padding_bottom: 4),
+      control
     ])
   end
 
-  defp lifecycle_cards(summary) do
+  defp lifecycle_select(state) do
+    choices = lifecycle_choices(state.summary)
+
+    filter_select(
+      choice_label(choices, state.lifecycle) || gettext("All"),
+      Enum.map(choices, fn {id, label, count} ->
+        select_option(counted(label, count), {:memory_lifecycle, id}, state.lifecycle == id)
+      end),
+      "select-memory-filter-lifecycle",
+      state
+    )
+  end
+
+  defp scope_select(state) do
+    scopes = available_scopes(state)
+
+    filter_select(
+      scope_label(state.scope),
+      Enum.map(scopes, fn scope ->
+        select_option(scope_label(scope), {:memory_scope, scope}, state.scope == scope)
+      end),
+      "select-memory-filter-scope",
+      state
+    )
+  end
+
+  defp kind_select(state) do
+    kinds = [:all | @kinds]
+
+    filter_select(
+      kind_label(state.kind),
+      Enum.map(kinds, fn kind ->
+        select_option(
+          counted(kind_label(kind), kind_count(state.summary, kind)),
+          {:memory_kind, kind},
+          state.kind == kind
+        )
+      end),
+      "select-memory-filter-kind",
+      state
+    )
+  end
+
+  defp filter_select(value, options, id, state) do
+    select(
+      value,
+      options,
+      id: id,
+      icon_content_description: gettext("Open menu"),
+      open: state.select_open == id,
+      on_toggle: {:toggle_select, id}
+    )
+  end
+
+  defp lifecycle_choices(summary) do
     [
       {:active, gettext("Active memory"), summary.active},
       {:long_term, gettext("Long-term memory"), summary.long_term},
@@ -297,39 +366,14 @@ defmodule HandbeanProbe.WorkspaceMemory do
     ]
   end
 
-  defp lifecycle_button({lifecycle, label, count}, selected) do
-    segment_button("#{label}  #{count}", {:memory_lifecycle, lifecycle}, lifecycle == selected)
+  defp choice_label(choices, id) do
+    case Enum.find(choices, fn {choice_id, _, _} -> choice_id == id end) do
+      {_, label, _count} -> label
+      nil -> nil
+    end
   end
 
-  defp filters(state) do
-    kinds = [:all | @kinds]
-    {first, second} = Enum.split(kinds, 3)
-
-    card([
-      field(gettext("Search"), state.query, :memory_query,
-        placeholder: gettext("Search content or #ID…")
-      ),
-      text(gettext("Scope"), text_size: 13, text_color: color(:muted), padding_bottom: 6),
-      segment_row(
-        Enum.map(available_scopes(state), fn scope ->
-          segment_button(scope_label(scope), {:memory_scope, scope}, state.scope == scope)
-        end)
-      ),
-      text(gettext("Type"),
-        text_size: 13,
-        text_color: color(:muted),
-        padding_top: 12,
-        padding_bottom: 6
-      ),
-      segment_row(Enum.map(first, &kind_button(&1, state))),
-      segment_row(Enum.map(second, &kind_button(&1, state)), padding_top: 8)
-    ])
-  end
-
-  defp kind_button(kind, state) do
-    count = kind_count(state.summary, kind)
-    segment_button("#{kind_label(kind)}  #{count}", {:memory_kind, kind}, state.kind == kind)
-  end
+  defp counted(label, count), do: "#{label}  #{count}"
 
   defp kind_count(summary, :all), do: Enum.sum(Map.values(summary.by_kind))
   defp kind_count(summary, kind), do: Map.get(summary.by_kind, kind, 0)
@@ -345,97 +389,107 @@ defmodule HandbeanProbe.WorkspaceMemory do
 
   defp status_node(_state), do: nil
 
-  defp memory_cards(%{items: [], loading?: false, error: nil}) do
-    [
-      card([
-        text(gettext("No memories match these filters"), text_size: 15),
-        text(gettext("Try another scope, lifecycle, type, or search."),
-          text_size: 13,
-          text_color: color(:muted),
-          padding_top: 8
-        )
-      ])
-    ]
-  end
-
-  defp memory_cards(state),
-    do: Enum.map(state.items, &memory_card(&1, state.now, state.provenance_by_id))
-
-  defp memory_card(engram, now, provenance_by_id) do
-    expired = expired?(engram, now)
-    ink = if(expired, do: color(:hint), else: color(:ink))
-
-    card(
-      [
-        row([
-          text("##{engram.id}", font_weight: "bold", text_color: ink),
-          gap(8),
-          text(kind_badge(engram.kind), text_size: 12, text_color: ink),
-          text(format_date(engram.updated_at || engram.inserted_at),
-            weight: 1,
-            text_align: "right",
-            text_size: 12,
-            text_color: color(:hint)
-          )
-        ]),
-        text(lifecycle_text(engram, now),
-          text_size: 12,
-          text_color: if(expired, do: color(:danger), else: color(:muted)),
-          padding_top: 6
-        ),
-        text(memory_projection(engram, provenance_by_id),
-          text_size: 12,
-          text_color: color(:muted),
-          padding_top: 4
-        ),
-        text(engram.content, text_color: ink, padding_top: 12),
-        association_nodes(engram),
-        actions_row(
-          [
-            if(engram.short_term,
-              do: primary_button(gettext("Promote"), {:memory_promote, engram.id})
-            ),
-            secondary_button(gettext("Edit"), {:memory_edit, engram.id}),
-            danger_button(gettext("Delete"), {:memory_ask_delete, engram.id})
-          ]
-          |> Enum.reject(&is_nil/1)
-        ),
-        actions_row(
-          [
-            secondary_button(gettext("Copy #ID"), {:memory_copy, :id, engram.id}),
-            secondary_button(gettext("Copy content"), {:memory_copy, :content, engram.id})
-          ],
-          padding_top: 4
-        )
-      ]
-      |> List.flatten(),
-      background: if(expired, do: color(:control), else: color(:card))
-    )
-  end
-
-  defp edit_card(state) do
-    editing = state.editing
-
-    card([
-      text(gettext("Edit memory #%{id}", id: editing.id),
-        text_size: 17,
-        font_weight: "bold",
-        padding_bottom: 12
+  defp memories_group(%{items: [], loading?: false, error: nil}) do
+    settings_group([
+      text(gettext("No memories match these filters"),
+        text_size: 15,
+        padding_left: 16,
+        padding_right: 16,
+        padding_top: 14,
+        padding_bottom: 6
       ),
-      field(gettext("Content"), editing.content, :memory_edit_content, multiline: true),
-      text(gettext("Type"), text_size: 13, text_color: color(:muted), padding_bottom: 6),
-      segment_row(Enum.map(Enum.take(@kinds, 3), &edit_kind_button(&1, editing))),
-      segment_row(Enum.map(Enum.drop(@kinds, 3), &edit_kind_button(&1, editing)), padding_top: 8),
-      actions_row([
-        primary_button(gettext("Save"), :memory_save_edit),
-        quiet_button(gettext("Cancel"), :memory_cancel_edit),
-        danger_button(gettext("Delete"), {:memory_ask_delete, editing.id})
-      ])
+      text(gettext("Try another scope, lifecycle, type, or search."),
+        text_size: 13,
+        text_color: color(:muted),
+        padding_left: 16,
+        padding_right: 16,
+        padding_bottom: 14
+      )
     ])
   end
 
-  defp edit_kind_button(kind, editing) do
-    segment_button(kind_label(kind), {:memory_edit_kind, kind}, editing.kind == kind)
+  defp memories_group(state) do
+    node(
+      :column,
+      [fill_width: true],
+      Enum.map(state.items, &memory_group(&1, state.now, state.provenance_by_id))
+    )
+  end
+
+  defp memory_group(engram, now, provenance_by_id) do
+    rows = [
+      settings_nav_row(
+        preview(engram.content),
+        kind_label(engram.kind),
+        {:memory_edit, engram.id}
+      ),
+      settings_value_row("##{engram.id}", lifecycle_text(engram, now)),
+      settings_value_row(
+        projection_scope_label(memory_scope(engram)),
+        provenance_summary(Map.get(provenance_by_id, engram.id, []), engram)
+      )
+      | association_rows(engram)
+    ]
+
+    rows =
+      if engram.short_term do
+        rows ++ [settings_nav_row(gettext("Promote"), "", {:memory_promote, engram.id})]
+      else
+        rows
+      end
+
+    settings_group(rows)
+  end
+
+  defp preview(content) when is_binary(content) do
+    compact = content |> String.trim() |> String.replace(~r/\s+/u, " ")
+
+    if String.length(compact) > 36 do
+      String.slice(compact, 0, 36) <> "…"
+    else
+      compact
+    end
+  end
+
+  defp preview(_content), do: gettext("Memory")
+
+  defp edit_form(state) do
+    editing = state.editing
+    item = Enum.find(state.items, &(&1.id == editing.id))
+
+    settings_group(
+      [
+        settings_form_field(
+          gettext("Content"),
+          node(:text_field,
+            id: "memory_edit_content",
+            value: editing.content,
+            multiline: true,
+            plain: true,
+            fill_width: true,
+            on_change: {self(), :memory_edit_content}
+          )
+        )
+      ] ++
+        Enum.map(@kinds, fn kind ->
+          settings_check_row(kind_label(kind), editing.kind == kind, {:memory_edit_kind, kind})
+        end) ++
+        edit_actions(item, editing)
+    )
+  end
+
+  defp edit_actions(item, editing) do
+    [
+      if(item && item.short_term,
+        do: settings_nav_row(gettext("Promote"), "", {:memory_promote, editing.id})
+      ),
+      settings_nav_row(gettext("Copy #ID"), "", {:memory_copy, :id, editing.id}),
+      settings_nav_row(gettext("Copy content"), "", {:memory_copy, :content, editing.id}),
+      settings_nav_row(gettext("Save"), "", :memory_save_edit),
+      settings_nav_row(gettext("Cancel"), "", :memory_cancel_edit, quiet: true),
+      settings_nav_row(gettext("Delete"), "", {:memory_ask_delete, editing.id})
+    ]
+    |> Enum.reject(&is_nil/1)
   end
 
   defp delete_sheet(%{confirming_delete: nil}), do: nil
@@ -459,29 +513,14 @@ defmodule HandbeanProbe.WorkspaceMemory do
     )
   end
 
-  defp association_nodes(engram) do
-    case associations(engram) do
-      [] ->
-        []
-
-      associations ->
-        [
-          text(gettext("Connections"),
-            text_size: 12,
-            text_color: color(:muted),
-            padding_top: 12,
-            padding_bottom: 4
-          )
-          | Enum.map(associations, fn association ->
-              list_row(
-                "#{association.direction} #{association.kind} ##{association.id}",
-                {:memory_related, association.id},
-                text_size: 12,
-                padding: 8
-              )
-            end)
-        ]
-    end
+  defp association_rows(engram) do
+    Enum.map(associations(engram), fn association ->
+      settings_nav_row(
+        "#{association.direction} #{association.kind} ##{association.id}",
+        "",
+        {:memory_related, association.id}
+      )
+    end)
   end
 
   def associations(engram) do
@@ -550,15 +589,6 @@ defmodule HandbeanProbe.WorkspaceMemory do
     end
   end
 
-  defp memory_projection(engram, provenance_by_id) do
-    source = provenance_summary(Map.get(provenance_by_id, engram.id, []), engram)
-
-    gettext("Scope: %{scope} · Source: %{source}",
-      scope: projection_scope_label(memory_scope(engram)),
-      source: source
-    )
-  end
-
   defp provenance_summary([], engram), do: memory_source(engram)
 
   defp provenance_summary(events, _engram) do
@@ -576,8 +606,8 @@ defmodule HandbeanProbe.WorkspaceMemory do
 
     status =
       case source && source.status do
-        :available -> gettext("available; inspect in Web")
-        :changed -> gettext("changed; inspect in Web")
+        :available -> gettext("available")
+        :changed -> gettext("changed")
         :deleted -> gettext("deleted")
         :inaccessible -> gettext("unavailable")
         :unresolved_legacy -> gettext("legacy source unresolved")
@@ -586,10 +616,6 @@ defmodule HandbeanProbe.WorkspaceMemory do
 
     "#{actor} · #{status}"
   end
-
-  defp format_date(%DateTime{} = datetime), do: Calendar.strftime(datetime, "%Y-%m-%d")
-  defp format_date(%NaiveDateTime{} = datetime), do: Calendar.strftime(datetime, "%Y-%m-%d")
-  defp format_date(_datetime), do: ""
 
   defp scope_label(:workspace), do: gettext("Workspace")
   defp scope_label(:both), do: gettext("Include global")
@@ -604,8 +630,6 @@ defmodule HandbeanProbe.WorkspaceMemory do
   defp kind_label(:pattern), do: gettext("Pattern")
   defp kind_label(:fact), do: gettext("Fact")
   defp kind_label(:context), do: gettext("Context")
-
-  defp kind_badge(kind), do: "#{kind} · #{kind_label(kind)}"
 
   defp maybe_put_kind(opts, :all), do: opts
   defp maybe_put_kind(opts, kind), do: Keyword.put(opts, :kind, kind)
