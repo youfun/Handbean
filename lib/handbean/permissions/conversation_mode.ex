@@ -22,6 +22,35 @@ defmodule Handbean.Permissions.ConversationMode do
   def default, do: @default
   def modes, do: @modes
 
+  @doc """
+  Permission mode written when a conversation is created.
+
+  An explicit `permission_mode` wins. Otherwise a new workspace conversation
+  inherits the previous conversation in the same workspace: `inherit_from`,
+  then `parent_conversation_id`, then the latest user-visible conversation.
+  The first conversation in a workspace still starts at smart approval.
+  Free chat stays `prompt`.
+  """
+  def mode_for_create(scope, workspace_id, opts \\ [])
+
+  def mode_for_create("free", _workspace_id, opts) do
+    with {:ok, mode} <- normalize(Keyword.get(opts, :permission_mode, :prompt)),
+         true <- mode == :prompt do
+      {:ok, "prompt"}
+    else
+      _ -> {:error, :invalid_mode}
+    end
+  end
+
+  def mode_for_create(_scope, workspace_id, opts) do
+    default = inherited_mode(workspace_id, opts) || @default
+
+    case normalize(Keyword.get(opts, :permission_mode, default)) do
+      {:ok, mode} -> {:ok, to_string(mode)}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   def subscribe do
     Phoenix.PubSub.subscribe(Handbean.PubSub, @topic)
   end
@@ -295,6 +324,51 @@ defmodule Handbean.Permissions.ConversationMode do
         limit: 1,
         select: change.changed_at
     )
+  end
+
+  defp inherited_mode(workspace_id, opts) when is_binary(workspace_id) do
+    from_ids =
+      [Keyword.get(opts, :inherit_from), Keyword.get(opts, :parent_conversation_id)]
+      |> Enum.find_value(&mode_in_workspace(workspace_id, &1))
+
+    cond do
+      from_ids -> from_ids
+      Keyword.get(opts, :visibility, "user") == "internal" -> nil
+      true -> latest_user_mode(workspace_id)
+    end
+  end
+
+  defp inherited_mode(_workspace_id, _opts), do: nil
+
+  defp mode_in_workspace(_workspace_id, id) when not is_binary(id) or id == "", do: nil
+
+  defp mode_in_workspace(workspace_id, id) do
+    case Repo.get(Conversation, id) do
+      %Conversation{workspace_id: ^workspace_id, status: "active", scope: "workspace"} =
+          conversation ->
+        get(conversation)
+
+      _missing_or_foreign ->
+        nil
+    end
+  end
+
+  defp latest_user_mode(workspace_id) do
+    Repo.one(
+      from conversation in Conversation,
+        where:
+          conversation.workspace_id == ^workspace_id and
+            conversation.status == "active" and
+            conversation.scope == "workspace" and
+            conversation.visibility != "internal" and
+            is_nil(conversation.archived_at),
+        order_by: [desc: conversation.updated_at, desc: conversation.id],
+        limit: 1
+    )
+    |> case do
+      %Conversation{} = conversation -> get(conversation)
+      nil -> nil
+    end
   end
 
   defp scope_default(conversation) do

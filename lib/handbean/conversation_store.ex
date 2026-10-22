@@ -476,7 +476,7 @@ defmodule Handbean.ConversationStore do
 
   defp create_conversation(scope, workspace_id, opts) do
     with {:ok, checkout_path} <- checkout_path_for_create(scope, workspace_id, opts),
-         {:ok, permission_mode} <- permission_mode_for_create(scope, opts) do
+         {:ok, permission_mode} <- permission_mode_for_create(scope, workspace_id, opts) do
       id = Keyword.get(opts, :id, Ecto.UUID.generate())
       timestamp = now()
 
@@ -547,18 +547,8 @@ defmodule Handbean.ConversationStore do
     _error in Exqlite.Error -> {:error, :constraint}
   end
 
-  defp permission_mode_for_create(scope, opts) do
-    default = if scope == "free", do: :prompt, else: :auto_review
-
-    with {:ok, mode} <-
-           Handbean.Permissions.ConversationMode.normalize(
-             Keyword.get(opts, :permission_mode, default)
-           ),
-         true <- scope != "free" or mode == :prompt do
-      {:ok, to_string(mode)}
-    else
-      _ -> {:error, :invalid_mode}
-    end
+  defp permission_mode_for_create(scope, workspace_id, opts) do
+    Handbean.Permissions.ConversationMode.mode_for_create(scope, workspace_id, opts)
   end
 
   defp checkout_path_for_create("free", _workspace_id, _opts), do: {:ok, nil}

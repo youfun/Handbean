@@ -22,6 +22,47 @@ defmodule Handbean.Permissions.ConversationModeTest do
     assert ConversationMode.get(second["id"]) == :auto_review
   end
 
+  test "new workspace conversations inherit the previous conversation mode" do
+    {:ok, first} = ConversationStore.create("permission-workspace", id: "inherit-first")
+    assert ConversationMode.get(first) == :auto_review
+
+    assert {:ok, _} = ConversationMode.update(first["id"], :yolo, source: :test)
+
+    {:ok, second} = ConversationStore.create("permission-workspace", id: "inherit-second")
+    assert ConversationMode.get(second) == :yolo
+
+    {:ok, explicit} =
+      ConversationStore.create("permission-workspace",
+        id: "inherit-explicit",
+        permission_mode: "prompt"
+      )
+
+    assert ConversationMode.get(explicit) == :prompt
+
+    {:ok, other_workspace} = ConversationStore.create("other-workspace", id: "inherit-other")
+    assert ConversationMode.get(other_workspace) == :auto_review
+  end
+
+  test "inherit_from copies that conversation even when a later one changed" do
+    {:ok, first} =
+      ConversationStore.create("permission-workspace",
+        id: "inherit-source",
+        permission_mode: "prompt"
+      )
+
+    {:ok, later} = ConversationStore.create("permission-workspace", id: "inherit-later")
+    assert ConversationMode.get(later) == :prompt
+    assert {:ok, _} = ConversationMode.update(later["id"], :yolo, source: :test)
+
+    {:ok, copied} =
+      ConversationStore.create("permission-workspace",
+        id: "inherit-copied",
+        inherit_from: first["id"]
+      )
+
+    assert ConversationMode.get(copied) == :prompt
+  end
+
   test "a live change atomically updates the preference, run projection, and audit event" do
     {:ok, conversation} =
       ConversationStore.create("permission-workspace",

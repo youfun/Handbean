@@ -72,12 +72,14 @@ defmodule HandbeanProbe.HomeScreen.Chat do
   def handle({:tap, :stop}, socket), do: socket
 
   def handle({:tap, :new_chat}, socket) do
+    inherit_from = Nav.current_conversation_id(socket)
     socket = socket |> Nav.reset_composer() |> Nav.blank()
     a = socket.assigns
 
     assign(socket,
       draft: NativeWorkspaces.get_draft(a.drafts, a.workspace, nil),
-      free_draft: false
+      free_draft: false,
+      permission_inherit_from: inherit_from
     )
   end
 

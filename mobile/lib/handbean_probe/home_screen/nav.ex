@@ -207,7 +207,10 @@ defmodule HandbeanProbe.HomeScreen.Nav do
 
   def handle({:tap, {:new_workspace_conversation, workspace_id}}, socket)
       when is_binary(workspace_id) do
-    case ConversationStore.create(workspace_id, title: gettext("New conversation")) do
+    case ConversationStore.create(workspace_id,
+           title: gettext("New conversation"),
+           inherit_from: inherit_from(socket, workspace_id)
+         ) do
       {:ok, conversation} ->
         socket
         |> reload_history()
@@ -567,11 +570,17 @@ defmodule HandbeanProbe.HomeScreen.Nav do
   end
 
   def ensure_conversation(%{assigns: %{chat: nil}} = socket) do
-    case ConversationStore.create(socket.assigns.workspace["id"],
-           title: conversation_title(socket)
+    workspace_id = socket.assigns.workspace["id"]
+
+    case ConversationStore.create(workspace_id,
+           title: conversation_title(socket),
+           inherit_from: socket.assigns[:permission_inherit_from]
          ) do
-      {:ok, conversation} -> {:ok, open(socket, conversation, true)}
-      error -> error
+      {:ok, conversation} ->
+        {:ok, open(assign(socket, :permission_inherit_from, nil), conversation, true)}
+
+      error ->
+        error
     end
   end
 
@@ -581,6 +590,13 @@ defmodule HandbeanProbe.HomeScreen.Nav do
     case socket.assigns.chat do
       %{conversation: %{"id" => id}} -> id
       _ -> nil
+    end
+  end
+
+  defp inherit_from(socket, workspace_id) do
+    case socket.assigns.chat do
+      %{conversation: %{"id" => id, "workspace_id" => ^workspace_id}} -> id
+      _ -> socket.assigns[:permission_inherit_from]
     end
   end
 

@@ -57,6 +57,7 @@ defmodule HandbeanProbe.HomeScreen.State do
     workspace_command_intent: nil,
     stopping: false,
     permission_mode: :prompt,
+    permission_inherit_from: nil,
     deliver_mode: :steer,
     composer_mode: :chat,
     review_place: "",

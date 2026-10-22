@@ -620,7 +620,15 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
 
     conversations = Map.get(socket.assigns.conversations_by_workspace, workspace_id, [])
     checkout_path = Keyword.get(opts, :checkout_path) || inherited_checkout_path(socket, ws)
-    conversation = build_conversation(workspace_id, length(conversations) + 1, checkout_path)
+
+    inherit_from =
+      if socket.assigns[:current_workspace_id] == workspace_id,
+        do: socket.assigns[:current_conversation_id]
+
+    conversation =
+      build_conversation(workspace_id, length(conversations) + 1, checkout_path,
+        inherit_from: inherit_from
+      )
 
     conversations_by_ws =
       Map.put(
@@ -763,18 +771,27 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
 
   defdelegate initial_conversation_id(conversations_by_ws, ws_id), to: ListProjection
 
-  def build_conversation(workspace_id, num, checkout_path \\ nil) do
+  def build_conversation(workspace_id, num, checkout_path \\ nil, opts \\ []) do
     title = conversation_title(num)
 
-    opts =
+    create_opts =
       [title: title]
-      |> then(fn opts ->
+      |> then(fn create_opts ->
         if is_binary(checkout_path),
-          do: Keyword.put(opts, :checkout_path, checkout_path),
-          else: opts
+          do: Keyword.put(create_opts, :checkout_path, checkout_path),
+          else: create_opts
+      end)
+      |> then(fn create_opts ->
+        case Keyword.get(opts, :inherit_from) do
+          id when is_binary(id) and id != "" ->
+            Keyword.put(create_opts, :inherit_from, id)
+
+          _missing ->
+            create_opts
+        end
       end)
 
-    {:ok, conversation} = Handbean.ConversationStore.create(workspace_id, opts)
+    {:ok, conversation} = Handbean.ConversationStore.create(workspace_id, create_opts)
     conversation
   end
 
