@@ -109,7 +109,7 @@ defmodule Handbean.TestSupport.E2EHarness do
   end
 
   def stop_runtime! do
-    for id <- registered_ids(Handbean.AgentRunSupervisorRegistry) do
+    for id when is_binary(id) <- registered_ids(Handbean.AgentRunSupervisorRegistry) do
       Handbean.AgentRunSupervisor.stop_run(id)
     end
 

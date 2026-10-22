@@ -6,6 +6,7 @@ defmodule Handbean.MediaTest do
   alias Handbean.Media
   alias Handbean.Media.Backends.Local
   alias Handbean.Repo
+  alias Handbean.Security.PathValidator
   alias Handbean.Storage.ConversationMedia
 
   defmodule RedirectBackend do
@@ -56,8 +57,12 @@ defmodule Handbean.MediaTest do
     assert :ok = Local.put(key, bytes, metadata)
     assert {:ok, {:send_file, path}} = Local.delivery(key, metadata)
 
-    assert path ==
-             Path.join([data_dir, ".handbean", "media", "conversation-local", "media-local.png"])
+    expected_path =
+      data_dir
+      |> Path.join(".handbean/media/conversation-local/media-local.png")
+      |> PathValidator.resolve_symlink()
+
+    assert path == expected_path
 
     assert File.read!(path) == bytes
 

@@ -2,6 +2,7 @@ defmodule Handbean.RepoIdentityTest do
   use ExUnit.Case, async: false
 
   alias Handbean.RepoIdentity
+  alias Handbean.Security.PathValidator
 
   setup do
     root =
@@ -15,9 +16,10 @@ defmodule Handbean.RepoIdentityTest do
   test "plain directory uses one canonical identity", %{root: root} do
     assert {:ok, identity} = RepoIdentity.resolve(root)
     assert identity.kind == :directory
-    assert identity.repo_key == root
-    assert identity.workspace_path == root
-    assert identity.checkout_path == root
+    canonical_root = PathValidator.resolve_symlink(root)
+    assert identity.repo_key == canonical_root
+    assert identity.workspace_path == canonical_root
+    assert identity.checkout_path == canonical_root
   end
 
   test "nested Git paths resolve to the checkout root", %{root: root} do
@@ -27,9 +29,10 @@ defmodule Handbean.RepoIdentityTest do
 
     assert {:ok, identity} = RepoIdentity.resolve(nested)
     assert identity.kind == :git
-    assert identity.workspace_path == root
-    assert identity.checkout_path == root
-    assert identity.repo_key == Path.join(root, ".git")
+    canonical_root = PathValidator.resolve_symlink(root)
+    assert identity.workspace_path == canonical_root
+    assert identity.checkout_path == canonical_root
+    assert identity.repo_key == Path.join(canonical_root, ".git")
   end
 
   test "main checkout and linked worktree share repo identity", %{root: root} do

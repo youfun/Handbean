@@ -1,5 +1,5 @@
 defmodule Handbean.Agent.SkillsIntegrationTest do
-  use ExUnit.Case, async: false
+  use Handbean.DataCase, async: false
 
   import ExUnit.CaptureLog, only: [with_log: 1]
 

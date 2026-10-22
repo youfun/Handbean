@@ -130,8 +130,7 @@ defmodule HandbeanWeb.WorkspaceLive.EditorProjection do
        when is_binary(file_path) do
     active = socket.assigns.active_file
 
-    if is_binary(active) and
-         Path.expand(active, workspace_root) == Path.expand(file_path, workspace_root) do
+    if is_binary(active) and same_file?(active, file_path, workspace_root) do
       ConversationState.refresh_file_preview(socket, workspace_root, true)
     else
       socket
@@ -139,4 +138,15 @@ defmodule HandbeanWeb.WorkspaceLive.EditorProjection do
   end
 
   defp refresh_active_file_preview(socket, _file_path, _workspace_root), do: socket
+
+  defp same_file?(left, right, workspace_root) do
+    with {:ok, canonical_left} <-
+           Handbean.Security.PathValidator.canonicalize(Path.expand(left, workspace_root)),
+         {:ok, canonical_right} <-
+           Handbean.Security.PathValidator.canonicalize(Path.expand(right, workspace_root)) do
+      canonical_left == canonical_right
+    else
+      _ -> false
+    end
+  end
 end

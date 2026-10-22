@@ -196,8 +196,23 @@ defmodule Handbean.ScheduleTest do
   end
 
   test "a scheduled run halts instead of waiting for approval" do
+    workspace =
+      Path.join(System.tmp_dir!(), "handbean_schedule_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(Path.join(workspace, ".handbean"))
+    on_exit(fn -> File.rm_rf!(workspace) end)
+
+    File.write!(
+      Path.join(workspace, ".handbean/settings.jsonc"),
+      Handbean.JSON.encode!(%{
+        "tools" => %{"default_mode" => "auto", "per_tool" => %{"read" => "prompt"}}
+      })
+    )
+
+    assert %ToolPolicy{per_tool: %{"read" => :prompt}} = ToolPolicy.from_workspace(workspace)
+
     config = %Config{
-      working_directory: System.tmp_dir!(),
+      working_directory: workspace,
       model: "fake",
       middleware: [],
       source: :schedule
@@ -206,12 +221,14 @@ defmodule Handbean.ScheduleTest do
     state =
       %State{State.init(config, "hi") | tool_guard_overrides: %{}}
       |> State.append_messages([
-        Message.tool_use([%{type: "tool_use", id: "c1", name: "computer", input: %{}}])
+        Message.tool_use([
+          %{type: "tool_use", id: "c1", name: "read", input: %{"file_path" => "fixture.txt"}}
+        ])
       ])
 
     assert {:tool_guard_denied, halted} = ToolGuard.call(:after_tool_request, state)
     assert halted.status == :halted
-    assert halted.error =~ "computer"
+    assert halted.error =~ "read"
   end
 
   # Invariant: a terminal run_end may arrive while the SQL sandbox owner is

@@ -59,7 +59,9 @@ defmodule HandbeanWeb.WorkspaceLive.PreviewAndFilesTest do
       System.put_env("HANDBEAN_WORKSPACE", Path.join(Handbean.Home.path(), "inherited-project"))
       isolate_conversation_home!()
       {:ok, workspace} = Handbean.WorkspaceStore.ensure_default!()
-      assert Handbean.Workspace.root() == workspace["path"]
+
+      assert Handbean.Security.PathValidator.resolve_symlink(Handbean.Workspace.root()) ==
+               workspace["path"]
 
       path = Path.join(Handbean.Workspace.ensure_root!(), "isolated-preview.txt")
       File.write!(path, "isolated preview fixture")

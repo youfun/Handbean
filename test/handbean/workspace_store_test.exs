@@ -16,6 +16,7 @@ defmodule Handbean.WorkspaceStoreTest do
 
   use ExUnit.Case, async: false
 
+  alias Handbean.Security.PathValidator
   alias Handbean.{WorkspaceSettings, WorkspaceStore}
 
   setup do
@@ -102,11 +103,11 @@ defmodule Handbean.WorkspaceStoreTest do
     test "test config isolates workspace metadata from the user's home" do
       System.delete_env("HANDBEAN_WORKSPACES_FILE")
       configured_path = Application.fetch_env!(:handbean, :workspaces_file)
+      expected_path = Handbean.Home.expand(configured_path)
 
-      assert WorkspaceStore.storage_path() == configured_path
-      refute configured_path == Path.expand("~/.handbean/workspaces.json")
-      test_home = configured_path |> Path.dirname() |> Path.dirname()
-      assert String.starts_with?(Path.basename(test_home), "handbean_test_")
+      assert configured_path == "~/.handbean/workspaces.json"
+      assert WorkspaceStore.storage_path() == expected_path
+      refute expected_path == Path.expand("~/.handbean/workspaces.json")
     end
 
     test "empty environment override uses application config", %{storage_path: storage_path} do
@@ -228,12 +229,14 @@ defmodule Handbean.WorkspaceStoreTest do
 
       assert {:ok, repaired} = WorkspaceStore.ensure_default!()
 
+      default_root = PathValidator.resolve_symlink(Handbean.Workspace.default_root())
+
       assert repaired ==
                existing
                |> Map.put("kind", "directory")
-               |> Map.put("repo_key", Handbean.Workspace.default_root())
-               |> Map.put("path", Handbean.Workspace.default_root())
-               |> Map.put("default_checkout_path", Handbean.Workspace.default_root())
+               |> Map.put("repo_key", default_root)
+               |> Map.put("path", default_root)
+               |> Map.put("default_checkout_path", default_root)
 
       assert {:ok, ^repaired} = WorkspaceStore.get("default")
       assert {:ok, ^other} = WorkspaceStore.get("project")
@@ -307,7 +310,7 @@ defmodule Handbean.WorkspaceStoreTest do
       try do
         {:ok, ws} = WorkspaceStore.add(tmp_dir)
         assert ws["name"] == Path.basename(tmp_dir)
-        assert ws["path"] == Path.expand(tmp_dir)
+        assert ws["path"] == PathValidator.resolve_symlink(tmp_dir)
         assert ws["default"] == false
         assert ws["id"] != "default"
         assert length(WorkspaceStore.list()) == 2
@@ -503,7 +506,7 @@ defmodule Handbean.WorkspaceStoreTest do
 
       try do
         {:ok, ws} = WorkspaceStore.add(tmp_dir)
-        assert ws["path"] == Path.expand(tmp_dir)
+        assert ws["path"] == PathValidator.resolve_symlink(tmp_dir)
       after
         if File.exists?(tmp_dir), do: File.rm_rf!(tmp_dir)
       end
@@ -610,7 +613,7 @@ defmodule Handbean.WorkspaceStoreTest do
       {:ok, ws} = WorkspaceStore.add(dir, name: "Old Name")
       assert {:ok, renamed} = WorkspaceStore.rename(ws["id"], "  New   Name  ")
       assert renamed["name"] == "New Name"
-      assert renamed["path"] == Path.expand(dir)
+      assert renamed["path"] == PathValidator.resolve_symlink(dir)
       assert {:error, :empty} = WorkspaceStore.rename(ws["id"], "   ")
       assert {:error, :not_found} = WorkspaceStore.rename("missing", "Name")
     end
@@ -647,8 +650,9 @@ defmodule Handbean.WorkspaceStoreTest do
       Enum.each(task_pids, &send(&1, {:go, gate}))
       assert Enum.all?(tasks, &match?({:ok, _workspace}, Task.await(&1, 5_000)))
 
+      expected_paths = paths |> Enum.map(&PathValidator.resolve_symlink/1) |> MapSet.new()
       stored_paths = WorkspaceStore.list() |> Enum.map(& &1["path"]) |> MapSet.new()
-      assert MapSet.subset?(MapSet.new(paths), stored_paths)
+      assert MapSet.subset?(expected_paths, stored_paths)
     end
   end
 

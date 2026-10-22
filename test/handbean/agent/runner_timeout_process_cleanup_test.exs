@@ -167,6 +167,10 @@ defmodule Handbean.Agent.RunnerTimeoutProcessCleanupTest do
     sid = "runner-approval-deadline-#{System.unique_integer([:positive])}"
     workspace = approval_workspace()
     {:ok, _} = Handbean.ConversationStore.create("default", id: sid)
+
+    assert {:ok, _metadata} =
+             Handbean.Permissions.ConversationMode.update(sid, :prompt, source: :test)
+
     :ok = Session.subscribe(sid)
 
     assert {:ok, %{run_pid: runner}} =
@@ -197,6 +201,10 @@ defmodule Handbean.Agent.RunnerTimeoutProcessCleanupTest do
     sid = "runner-resume-budget-#{System.unique_integer([:positive])}"
     workspace = approval_workspace()
     {:ok, _} = Handbean.ConversationStore.create("default", id: sid)
+
+    assert {:ok, _metadata} =
+             Handbean.Permissions.ConversationMode.update(sid, :prompt, source: :test)
+
     :ok = Session.subscribe(sid)
     parent = self()
 

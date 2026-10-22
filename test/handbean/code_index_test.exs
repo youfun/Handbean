@@ -5,6 +5,7 @@ defmodule Handbean.CodeIndexTest do
   alias Handbean.CodeIndex
   alias Handbean.CodeIndex.{Chunk, Location, Scan, Search, Store, Sync}
   alias Handbean.Host
+  alias Handbean.Security.PathValidator
   alias Handbean.Tool.Builtin.CodeSearch
 
   setup do
@@ -170,7 +171,7 @@ defmodule Handbean.CodeIndexTest do
 
     assert {:ok, store} = Store.open(dir, root, "ws-new")
     assert Store.meta(store, "workspace_id") == "ws-new"
-    assert Store.meta(store, "workspace_root") == Path.expand(root)
+    assert Store.meta(store, "workspace_root") == PathValidator.resolve_symlink(root)
     Store.close(store)
   end
 

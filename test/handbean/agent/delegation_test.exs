@@ -521,7 +521,17 @@ defmodule Handbean.Agent.DelegationTest do
   test "approval is blocked and cleaned rather than left awaiting a user", %{context: context} do
     path = Handbean.WorkspaceSettings.path(context.working_directory)
     File.mkdir_p!(Path.dirname(path))
-    File.write!(path, Handbean.JSON.encode!(%{"tools" => %{"per_tool" => %{"read" => "prompt"}}}))
+
+    File.write!(
+      path,
+      Handbean.JSON.encode!(%{"tools" => %{"per_tool" => %{"read" => "prompt"}}})
+    )
+
+    assert {:ok, _metadata} =
+             Handbean.Permissions.ConversationMode.update(context.conversation_id, :prompt,
+               source: :test
+             )
+
     task = delegate(context)
     assert_receive {:provider, :child, child, _, _, _}, 2_000
     send(child, :approval)

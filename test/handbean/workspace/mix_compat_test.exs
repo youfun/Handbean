@@ -1,5 +1,5 @@
 defmodule Handbean.Workspace.MixCompatTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Handbean.Workspace.MixCompat
 

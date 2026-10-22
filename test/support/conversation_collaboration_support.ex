@@ -32,9 +32,37 @@ defmodule Handbean.ConversationCollaborationSupport do
   end
 
   defmodule SearchBackend do
+    @behaviour Handbean.Search.Backend
+
     # These tests exercise collaboration, not workspace indexing. Avoid starting
     # file watchers and Git workers that outlive the fixture's temporary checkout.
+    @impl true
     def ensure_started(_workspace), do: {:ok, :unused}
+
+    @impl true
+    def await(_index, _timeout), do: :ok
+
+    @impl true
+    def search(_index, query, _opts),
+      do: {:ok, %{paths: [], query: query, duration_ms: 0, status: :ready}}
+
+    @impl true
+    def files(_index, _opts), do: {:ok, %{paths: [], status: :ready}}
+
+    @impl true
+    def touch(_index, _path), do: :ok
+
+    @impl true
+    def update_paths(_index, _paths), do: :ok
+
+    @impl true
+    def set_git_status(_index, _entries), do: :ok
+
+    @impl true
+    def ignored_path?(_workspace, _path), do: false
+
+    @impl true
+    def refresh(_index), do: :ok
   end
 
   def setup do

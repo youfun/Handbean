@@ -1,5 +1,5 @@
 defmodule HandbeanWeb.FileChangeCardTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   require Phoenix.LiveViewTest
 
@@ -11,7 +11,18 @@ defmodule HandbeanWeb.FileChangeCardTest do
       Path.join(System.tmp_dir!(), "handbean_net_change_#{System.unique_integer([:positive])}")
 
     File.mkdir_p!(tmp)
-    on_exit(fn -> File.rm_rf!(tmp) end)
+    previous_root = Application.fetch_env(:handbean, :conversation_artifact_root)
+    Application.put_env(:handbean, :conversation_artifact_root, tmp)
+
+    on_exit(fn ->
+      case previous_root do
+        {:ok, root} -> Application.put_env(:handbean, :conversation_artifact_root, root)
+        :error -> Application.delete_env(:handbean, :conversation_artifact_root)
+      end
+
+      File.rm_rf!(tmp)
+    end)
+
     {:ok, tmp: tmp}
   end
 

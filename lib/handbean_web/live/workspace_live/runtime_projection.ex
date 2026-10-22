@@ -7,6 +7,7 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
   require Logger
 
   alias Handbean.PubSub.{AgentEvent, Projection}
+  alias Handbean.Security.PathValidator
   alias HandbeanWeb.WorkspaceLive.CliSelection
   alias HandbeanWeb.WorkspaceLive.RuntimeProjection.Timeline
 
@@ -479,22 +480,32 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
     %{entry: entry, status: status, file_path: file_path, diff_lines: diff_lines} = projection
     tools_active = Map.put(socket.assigns.tools_active, projection.tool_name, status)
 
+    checkout_path = ConversationState.current_checkout_path(socket)
+
     updated =
       socket
       |> assign(:tools_active, tools_active)
       |> project_timeline(entry, persist?: false, trailing_open?: socket.assigns.running)
       |> maybe_project_published_media(payload, status)
-      |> EditorProjection.maybe_add_diff_file(
-        file_path,
-        diff_lines,
-        ConversationState.current_checkout_path(socket)
-      )
+      |> EditorProjection.maybe_add_diff_file(file_path, diff_lines, checkout_path)
 
     if updated.assigns.editor_files != socket.assigns.editor_files do
-      assign(updated, :refresh_tree_parent, Path.expand(file_path))
+      assign(updated, :refresh_tree_parent, canonical_refresh_path(file_path, checkout_path))
     else
       updated
     end
+  end
+
+  defp canonical_refresh_path(path, root) when is_binary(root) do
+    path
+    |> Path.expand(root)
+    |> PathValidator.resolve_symlink()
+  end
+
+  defp canonical_refresh_path(path, _root) do
+    path
+    |> Path.expand()
+    |> PathValidator.resolve_symlink()
   end
 
   defp maybe_project_published_media(socket, payload, :done) do

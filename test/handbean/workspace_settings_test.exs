@@ -1,6 +1,7 @@
 defmodule Handbean.WorkspaceSettingsTest do
   use ExUnit.Case, async: true
 
+  alias Handbean.Security.PathValidator
   alias Handbean.WorkspaceSettings
 
   defp tmp_workspace do
@@ -130,7 +131,13 @@ defmodule Handbean.WorkspaceSettingsTest do
 
   test "path points at workspace .handbean/settings.jsonc" do
     workspace = tmp_workspace()
-    assert WorkspaceSettings.path(workspace) == Path.join(workspace, ".handbean/settings.jsonc")
+
+    expected =
+      workspace
+      |> Path.join(".handbean/settings.jsonc")
+      |> PathValidator.resolve_symlink()
+
+    assert WorkspaceSettings.path(workspace) == expected
   end
 
   test "missing settings file loads as empty unrestricted settings" do

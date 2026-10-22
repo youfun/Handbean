@@ -70,13 +70,16 @@ defmodule Handbean.Agent.TurnPermissionResumeTest do
   describe "resume_after_tool_approval/3" do
     alias Handbean.Agent.Message
 
-    # Build an interrupted state simulating a tool_guard deny scenario.
-    # This mirrors the state produced when a deny policy intercepts a tool call.
+    # Build an interrupted state for a tool that remains prompt-gated when the
+    # approval is resumed and the current workspace policy is revalidated.
     defp build_interrupted_state do
+      workspace = tmp_workspace(%{"tools" => %{"per_tool" => %{"bash" => "prompt"}}})
+
       config = %Config{
         provider: TouchProvider,
         model: "fake",
         max_turns: 5,
+        working_directory: workspace,
         provider_config: %{}
       }
 

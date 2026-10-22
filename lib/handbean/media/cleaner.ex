@@ -26,7 +26,14 @@ defmodule Handbean.Media.Cleaner do
 
   @doc false
   def schedule_pending_delete do
-    Process.send_after(__MODULE__, :cleanup_once, (@default_pending_ttl_seconds + 1) * 1_000)
+    if Keyword.get(
+         Application.get_env(:handbean, __MODULE__, []),
+         :schedule_pending_delete?,
+         true
+       ) do
+      Process.send_after(__MODULE__, :cleanup_once, (@default_pending_ttl_seconds + 1) * 1_000)
+    end
+
     :ok
   end
 

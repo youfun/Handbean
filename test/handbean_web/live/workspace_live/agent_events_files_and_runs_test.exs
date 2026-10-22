@@ -205,7 +205,10 @@ defmodule HandbeanWeb.WorkspaceLive.AgentEventsFilesAndRunsTest do
     end
 
     test "declared macOS file manager reveals only validated workspace entries", %{conn: conn} do
-      ws = Handbean.Workspace.ensure_root!()
+      ws =
+        Handbean.Workspace.ensure_root!()
+        |> Handbean.Security.PathValidator.resolve_symlink()
+
       directory = Path.join(ws, "reveal-dir")
       file = Path.join(ws, "reveal-file.txt")
       symlink = Path.join(ws, "reveal-link")

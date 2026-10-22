@@ -1,5 +1,5 @@
 defmodule Handbean.TestSupport.E2EHarnessTest do
-  use ExUnit.Case, async: false
+  use Handbean.DataCase, async: false
 
   alias Handbean.TestSupport.E2EHarness
 
@@ -17,7 +17,7 @@ defmodule Handbean.TestSupport.E2EHarnessTest do
     def stream(messages, tools, config, _on_chunk), do: complete(messages, tools, config)
   end
 
-  test "runtime cleanup stops unlinked providers before an isolated home is removed" do
+  test "runtime cleanup stops run-scoped providers before an isolated home is removed" do
     %{home: home, workspace: workspace} = E2EHarness.isolate_home!("harness-cleanup")
     E2EHarness.with_host!(%{data_dir: home})
     {:ok, conversation} = Handbean.ConversationStore.create("default")
@@ -36,7 +36,6 @@ defmodule Handbean.TestSupport.E2EHarnessTest do
 
     assert_receive {:provider_waiting, task}, 1_000
     ref = Process.monitor(task)
-    :ok = Handbean.AgentRunSupervisor.stop_run(id)
     assert Process.alive?(task)
 
     assert :ok = E2EHarness.stop_runtime!()
@@ -45,11 +44,6 @@ defmodule Handbean.TestSupport.E2EHarnessTest do
 
     File.rm_rf!(home)
     GenServer.call(Handbean.Runtime.TaskTracker, :snapshot)
-
-    :ok =
-      Handbean.ConversationTranscriptStore.Journal.invalidate(
-        Handbean.ConversationStore.index_path()
-      )
 
     refute File.exists?(home)
   end

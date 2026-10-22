@@ -835,6 +835,8 @@ defmodule Handbean.Agent.TurnTest do
         model: "fake",
         max_turns: 50,
         max_tokens: 10_000,
+        system_prompt: "isolated",
+        allowed_tools: [],
         compaction: %{fallback: :truncate, reserve_tokens: 10, keep_recent_tokens: 5},
         provider_config: %{
           scenario: :prompt_too_long_once,
@@ -865,6 +867,8 @@ defmodule Handbean.Agent.TurnTest do
         model: "fake",
         max_turns: 50,
         max_tokens: 10_000,
+        system_prompt: "isolated",
+        allowed_tools: [],
         compaction: %{fallback: :truncate, reserve_tokens: 1_000, keep_recent_tokens: 20},
         provider_config: %{error: error, notify: self(), max_retries: 3}
       }

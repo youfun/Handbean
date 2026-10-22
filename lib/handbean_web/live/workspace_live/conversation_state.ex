@@ -6,6 +6,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationState do
 
   require Logger
 
+  alias Handbean.Security.PathValidator
   alias HandbeanWeb.WorkspaceLive.ConversationSwitching
   alias HandbeanWeb.WorkspaceLive.ModelSelection
 
@@ -605,18 +606,47 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationState do
   end
 
   defp relative_editor_path(path, root) when is_binary(path) and is_binary(root) do
-    absolute = Path.expand(path, root)
-    relative = Path.relative_to(absolute, Path.expand(root))
-
-    if path != "" and not String.contains?(path, <<0>>) and
-         ".." not in Path.split(path) and Path.type(relative) == :relative and relative != "." do
+    with true <- path != "" and not String.contains?(path, <<0>>),
+         false <- ".." in Path.split(path),
+         {:ok, canonical_root} <- PathValidator.canonicalize(root),
+         {:ok, relative} <- relative_from_workspace(Path.expand(path, root), canonical_root),
+         false <- ".." in Path.split(relative),
+         :relative <- Path.type(relative),
+         false <- relative == "." do
       {:ok, relative}
     else
-      {:error, :invalid_path}
+      _ -> {:error, :invalid_path}
     end
   end
 
   defp relative_editor_path(_, _), do: {:error, :invalid_path}
+
+  defp relative_from_workspace(absolute, canonical_root),
+    do: relative_from_workspace(Path.expand(absolute), canonical_root, [])
+
+  defp relative_from_workspace(absolute, canonical_root, parts) do
+    parent = Path.dirname(absolute)
+
+    if parent == absolute do
+      {:error, :outside_workspace}
+    else
+      parts = [Path.basename(absolute) | parts]
+
+      case PathValidator.canonicalize(parent) do
+        {:ok, ^canonical_root} ->
+          case File.lstat(parent) do
+            {:ok, %File.Stat{type: :directory}} -> {:ok, Path.join(parts)}
+            _ -> {:error, :invalid_workspace_alias}
+          end
+
+        {:ok, _other} ->
+          relative_from_workspace(parent, canonical_root, parts)
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
 
   defp resolve_editor_file(path, root) do
     with {:ok, relative} <- relative_editor_path(path, root),

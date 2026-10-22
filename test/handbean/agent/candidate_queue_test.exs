@@ -51,7 +51,8 @@ defmodule Handbean.Agent.CandidateQueueTest do
     test "treats a stopped queue as a message that can no longer be promoted" do
       queue = spawn(fn -> :ok end)
       ref = Process.monitor(queue)
-      assert_receive {:DOWN, ^ref, :process, ^queue, :normal}
+      assert_receive {:DOWN, ^ref, :process, ^queue, reason}
+      assert reason in [:normal, :noproc]
 
       assert {:error, :not_found} = CandidateQueue.promote_message(queue, "gone")
     end

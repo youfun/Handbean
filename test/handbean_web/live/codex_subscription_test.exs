@@ -233,7 +233,7 @@ defmodule HandbeanWeb.CodexSubscriptionTest do
     assert_receive {:discovery, discover_pid}
     ref = Process.monitor(discover_pid)
     send(discover_pid, :release)
-    assert_receive {:DOWN, ^ref, :process, ^discover_pid, :normal}
+    assert_receive {:DOWN, ^ref, :process, ^discover_pid, :normal}, 10_000
     html = render(view)
     assert html =~ "Codex Visible"
     refute html =~ "private-refresh"

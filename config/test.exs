@@ -35,6 +35,8 @@ config :phoenix,
 # The app Clock must not claim rows while tests drive time themselves.
 config :handbean, :schedule_clock, enabled: false
 config :handbean, :schedule_dispatch, :sync
+config :handbean, Handbean.Media.Cleaner, schedule_pending_delete?: false
+config :handbean, Handbean.WorkspaceCommand, response_recovery?: false
 config :error_tracker, enabled: false
 
 # Fix the test environment to use its own paths — never fall back to dev ~/.handbean/... paths.
@@ -49,14 +51,15 @@ test_data_dir =
   )
 
 test_workspace_path = Path.join(test_data_dir, ".handbean/workspace")
+test_workspaces_file = "~/.handbean/workspaces.json"
 System.put_env("HOME", test_data_dir)
 System.put_env("HANDBEAN_MODELS_FILE", fixture_models_path)
-System.put_env("HANDBEAN_WORKSPACES_FILE", Path.join(test_data_dir, ".handbean/workspaces.json"))
+System.put_env("HANDBEAN_WORKSPACES_FILE", test_workspaces_file)
 File.mkdir_p!(test_workspace_path)
 
 config :handbean,
   models_file: fixture_models_path,
-  workspaces_file: Path.join(test_data_dir, ".handbean/workspaces.json"),
+  workspaces_file: test_workspaces_file,
   workspace_root: test_workspace_path
 
 config :phoenix_test, :endpoint, HandbeanWeb.Endpoint

@@ -27,7 +27,7 @@ defmodule Handbean.Agent.Provider.ModelCatalogTest do
       File.rm_rf!(dir)
     end)
 
-    :ok
+    %{dir: dir}
   end
 
   test "responses base without /v1 requests /v1/models" do
@@ -508,7 +508,7 @@ defmodule Handbean.Agent.Provider.ModelCatalogTest do
            })
   end
 
-  test "xAI subscription discover pulls /v1/models and refreshes vendor fields" do
+  test "xAI subscription discover pulls /v1/models and refreshes vendor fields", %{dir: dir} do
     :ok =
       ModelConfig.add_provider("xai", %{
         "name" => "xAI",
@@ -528,8 +528,7 @@ defmodule Handbean.Agent.Provider.ModelCatalogTest do
         ]
       })
 
-    auth_path =
-      Path.join(System.tmp_dir!(), "xai_models_auth_#{System.unique_integer([:positive])}.json")
+    auth_path = Path.join(dir, "auth.json")
 
     previous_auth = System.get_env("HANDBEAN_AUTH_FILE")
     System.put_env("HANDBEAN_AUTH_FILE", auth_path)

@@ -151,6 +151,10 @@ defmodule Handbean.Agent.RunnerPermissionIdentityTest do
     assert_receive {:agent_event, %{kind: :run_end, payload: %{status: status}}}
                    when status in [:completed, "completed"],
                    1_000
+
+    assert_eventually(fn ->
+      assert {:ok, %{running?: false, run_pid: nil}} = Coordinator.status(sid)
+    end)
   end
 
   test "yolo does not reconcile a per-tool prompt" do

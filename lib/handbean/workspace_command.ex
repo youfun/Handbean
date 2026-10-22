@@ -755,7 +755,9 @@ defmodule Handbean.WorkspaceCommand do
   end
 
   defp schedule_agent_response_recovery do
-    Process.send_after(self(), :recover_agent_responses, @response_retry_ms)
+    if Keyword.get(Application.get_env(:handbean, __MODULE__, []), :response_recovery?, true) do
+      Process.send_after(self(), :recover_agent_responses, @response_retry_ms)
+    end
   end
 
   defp error_text(reason) when is_binary(reason), do: reason
