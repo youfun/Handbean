@@ -153,7 +153,7 @@ defmodule HandbeanWeb.WorkspaceLive.WorkspaceConversationsTest do
         initial_id = render(view) |> session_id_from_html()
 
         view
-        |> element("form")
+        |> element("#composer")
         |> render_submit(%{"message" => "你好", "model" => "sui2api/gpt-5.5"})
 
         rendered = render(view)

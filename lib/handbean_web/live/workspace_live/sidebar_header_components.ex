@@ -82,6 +82,27 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarHeaderComponents do
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </button>
+      <button
+        :if={not @show_schedules}
+        id="mobile-open-conversation-search"
+        type="button"
+        phx-click="open_conversation_search"
+        class="mobile-header-panel-btn"
+        title={gettext("Search conversations")}
+        aria-label={gettext("Search conversations")}
+        aria-haspopup="dialog"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          aria-hidden="true"
+        >
+          <circle cx="10.5" cy="10.5" r="6.5" />
+          <path d="m15.5 15.5 4.5 4.5" />
+        </svg>
+      </button>
       <span
         :if={@show_schedules}
         id="mobile-workspace-count"

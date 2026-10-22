@@ -53,6 +53,28 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarListComponents do
         </h2>
         <div class="projects-panel-new-conversation">
           <button
+            id="open-conversation-search"
+            type="button"
+            phx-click="open_conversation_search"
+            class="conversation-search-trigger"
+            title={gettext("Search conversations")}
+            aria-label={gettext("Search conversations")}
+            aria-haspopup="dialog"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              aria-hidden="true"
+            >
+              <circle cx="10.5" cy="10.5" r="6.5" />
+              <path d="m15.5 15.5 4.5 4.5" />
+            </svg>
+          </button>
+          <button
             id="new-conversation-picker-toggle"
             type="button"
             phx-click="toggle_new_conversation_picker"
@@ -181,6 +203,7 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarListComponents do
               :for={conv <- pinned_conversations(@workspaces, @conversations_by_workspace)}
               id={"pinned-conversation-#{conv.id}"}
               class="conversation-row is-pinned"
+              data-conversation-menu-row
               data-conversation-id={conv.id}
               data-conversation-title={conv.title}
               data-conversation-age={conv.age}
@@ -320,6 +343,7 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarListComponents do
               :for={conv <- free_slice.rows}
               id={"free-conversation-#{conv.id}"}
               class="conversation-row"
+              data-conversation-menu-row
               data-conversation-id={conv.id}
               data-conversation-title={conv.title}
               data-conversation-age={conv.age}
@@ -485,6 +509,7 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarListComponents do
                 "conversation-row",
                 conv.tree_depth > 0 && "conversation-row-child"
               ]}
+              data-conversation-menu-row
               data-conversation-id={conv.id}
               data-parent-conversation-id={conv.parent_id}
               data-thread-depth={conv.tree_depth}
@@ -646,6 +671,7 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarListComponents do
               :for={conv <- archived_conversations(@workspaces, @conversations_by_workspace)}
               id={"archived-conversation-#{conv.id}"}
               class="conversation-row archived"
+              data-conversation-menu-row
               data-conversation-id={conv.id}
               data-conversation-title={conv.title}
               data-conversation-age={conv.age}

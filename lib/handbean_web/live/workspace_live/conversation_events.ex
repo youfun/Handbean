@@ -59,8 +59,36 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationEvents do
     {:noreply, push_patch(socket, to: "/w/#{ws_id}/c/#{conv_id}")}
   end
 
+  def handle("load_history_around", %{"entry_id" => entry_id}, socket)
+      when is_binary(entry_id) and byte_size(entry_id) <= 512 do
+    conversation_id = socket.assigns.current_conversation_id
+
+    case Handbean.ConversationTranscriptStore.page(conversation_id,
+           around: entry_id,
+           before_limit: 40,
+           after_limit: 40
+         ) do
+      {:ok, page} ->
+        {:noreply, ConversationState.load_around_history(socket, page, entry_id)}
+
+      {:error, _reason} ->
+        {:noreply,
+         put_flash(socket, :error, gettext("The linked message is no longer available."))}
+    end
+  end
+
+  def handle("load_history_around", _params, socket), do: {:noreply, socket}
+
   def handle("load_older_history", _params, socket) do
     {:noreply, ConversationState.load_older_history(socket)}
+  end
+
+  def handle("load_newer_history", _params, socket) do
+    {:noreply, ConversationState.load_newer_history(socket)}
+  end
+
+  def handle("return_to_latest_history", _params, socket) do
+    {:noreply, ConversationState.return_to_latest_history(socket)}
   end
 
   def handle("select_conversation", %{"id" => conv_id, "ws_id" => ws_id}, socket) do

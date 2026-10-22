@@ -25,7 +25,7 @@ export const ChatScroll = {
     this._touching = false;
     this._pointing = false;
     this._focusEntryId = this.focusEntryId();
-    this._focusCursor = null;
+    this._requestedFocusEntryId = null;
 
     requestAnimationFrame(() => {
       if (this._focusEntryId) this.focusEntry();
@@ -88,6 +88,22 @@ export const ChatScroll = {
       this.scrollToBottom();
     });
 
+    this.handleEvent("set-conversation-entry-hash", ({ id }) => {
+      if (!id || !globalThis.history?.replaceState) return;
+      const url = new URL(globalThis.location.href);
+      url.hash = encodeURIComponent(id);
+      globalThis.history.replaceState(globalThis.history.state, "", url);
+    });
+
+    this.handleEvent("focus-conversation-entry", ({ id }) => {
+      if (!id) return;
+      this._focusEntryId = id;
+      this._requestedFocusEntryId = id;
+      this.pinned = false;
+      this._userIntent = true;
+      requestAnimationFrame(() => this.focusEntry());
+    });
+
     this.onUnpin = () => {
       this.pinned = false;
       this._userIntent = true;
@@ -142,27 +158,14 @@ export const ChatScroll = {
       this.pinned = false;
       target.scrollIntoView?.({ behavior: "smooth", block: "center" });
       this._focusEntryId = null;
-      this._focusCursor = null;
       this._loadingOlder = false;
       return;
     }
 
-    const cursor = this.historyCursor();
-    if (!this.el || this._loadingOlder || this.el.dataset.historyHasMore !== "true") return;
-    if (this._focusCursor === cursor) return;
-
-    this.pinned = false;
-    this._loadingOlder = true;
-    this._focusCursor = cursor;
-    this.pushEvent("load_older_history", {}, () => {
-      requestAnimationFrame(() => {
-        this._loadingOlder = false;
-        if (!this._focusEntryId) return;
-
-        if (this.historyCursor() === cursor) this._focusCursor = null;
-        this.focusEntry();
-      });
-    });
+    if (id && this._requestedFocusEntryId !== id) {
+      this._requestedFocusEntryId = id;
+      this.pushEvent("load_history_around", { entry_id: id });
+    }
   },
 
   maybeLoadOlder() {

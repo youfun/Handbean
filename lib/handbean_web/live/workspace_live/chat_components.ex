@@ -40,6 +40,9 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
   attr :file_browser_path, :any, required: true
   attr :history_before, :any, required: true
   attr :history_has_more?, :any, required: true
+  attr :history_after, :any, default: nil
+  attr :history_has_newer?, :boolean, default: false
+  attr :history_window, :any, default: :latest
   attr :input_value, :any, required: true
   attr :mobile_right_panel_open, :any, required: true
   attr :pending_approval, :any, required: true
@@ -98,6 +101,9 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
         current_workspace_id={@current_workspace_id}
         history_before={@history_before}
         history_has_more?={@history_has_more?}
+        history_after={@history_after}
+        history_has_newer?={@history_has_newer?}
+        history_window={@history_window}
         pending_approval={@pending_approval}
         pending_messages={@pending_messages}
         revert_confirm_change_id={@revert_confirm_change_id}

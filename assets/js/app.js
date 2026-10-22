@@ -3,6 +3,7 @@ import { LiveSocket } from "phoenix_live_view";
 import { StreamingMarkdown } from "./hooks/streaming_markdown.js";
 import { ChatScroll } from "./hooks/chat_scroll.js";
 import { ConversationNav } from "./hooks/conversation_nav.js";
+import { ConversationSearch } from "./hooks/conversation_search.js";
 import { ComposerPasteUpload } from "./hooks/composer_paste_upload.js";
 import { ComposerSpeech } from "./hooks/composer_speech.js";
 import { WorkspacePanel } from "./hooks/workspace_panel.js";
@@ -80,7 +81,7 @@ const MobHook = {
 }
 
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content");
-let Hooks = { StreamingMarkdown, ChatScroll, ConversationNav, ComposerPasteUpload, ComposerSpeech, WorkspacePanel, FilePreview, FileTabs, FileImage, CopyText, ConversationContextMenu, ConversationActivity, ConversationSidebar, LocalWebGPUProbe, GhosttyTerminal, ThemeBridge, MobHook, BrowserSurface, ScheduleCountdown, ModelPicker, BoundSelect, SettingsNav };
+let Hooks = { StreamingMarkdown, ChatScroll, ConversationNav, ConversationSearch, ComposerPasteUpload, ComposerSpeech, WorkspacePanel, FilePreview, FileTabs, FileImage, CopyText, ConversationContextMenu, ConversationActivity, ConversationSidebar, LocalWebGPUProbe, GhosttyTerminal, ThemeBridge, MobHook, BrowserSurface, ScheduleCountdown, ModelPicker, BoundSelect, SettingsNav };
 
 try {
   let liveSocket = new LiveSocket("/live", Socket, {

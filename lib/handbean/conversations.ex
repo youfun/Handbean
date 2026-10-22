@@ -8,6 +8,7 @@ defmodule Handbean.Conversations do
   Each page has at most 16,000 codepoints and 50 message fragments.
   """
   alias Handbean.{ConversationStore, ConversationTranscriptStore}
+  alias Handbean.Conversations.UserSearch
   alias Handbean.Permissions.Boundary
 
   def identity(%{conversation_id: id, workspace_id: workspace}) when is_binary(workspace) do
@@ -74,6 +75,14 @@ defmodule Handbean.Conversations do
   5,000 candidates; callers should add a conversation, run, kind, tool or time filter.
   """
   def search_entries(input, context), do: Handbean.Conversations.Search.search(input, context)
+
+  @doc "Search user-visible conversations inside a server-generated visibility scope."
+  def search_user_visible(input, %UserSearch.Scope{} = scope),
+    do: UserSearch.search(input, scope)
+
+  @doc "Recheck a user-search target immediately before reading or opening it."
+  def authorize_user_search_hit(%UserSearch.Scope{} = scope, conversation_id, entry_id \\ nil),
+    do: UserSearch.authorize_hit(scope, conversation_id, entry_id)
 
   defp discover(source, context, input, kind, query, archived, after_time, limit) do
     entries =

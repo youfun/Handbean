@@ -103,22 +103,25 @@ globalThis.document = {
   },
 };
 
+const focusHandlers = new Map();
 const focusHook = {
   ...ChatScroll,
   el: focusedElement,
-  handleEvent() {},
+  handleEvent(event, callback) {
+    focusHandlers.set(event, callback);
+  },
   pushEvent(event, payload, callback) {
     focusPushes.push({ event, payload, callback });
   },
 };
 
 focusHook.mounted();
-assert.equal(focusPushes[0].event, "load_older_history");
+assert.equal(focusPushes.length, 1, "a missing hash target requests one bounded around window");
+assert.equal(focusPushes[0].event, "load_history_around");
+assert.deepEqual(focusPushes[0].payload, { entry_id: "source-entry" });
+focusHook.updated();
+assert.equal(focusPushes.length, 1, "a missing target never loops through older pages");
 assert.equal(focusedElement.scrollTop, 0, "a source link does not jump to the newest message");
-
-focusedElement.dataset.historyBefore = "cursor-1";
-focusPushes[0].callback();
-assert.equal(focusPushes.length, 2, "a source link keeps paging until the entry is loaded");
 
 focusedTarget = {
   inside: true,
@@ -129,6 +132,10 @@ focusedTarget = {
 focusHook.updated();
 assert.deepEqual(focusedTarget.options, { behavior: "smooth", block: "center" });
 assert.equal(focusHook._focusEntryId, null);
+
+focusedTarget = null;
+focusHandlers.get("focus-conversation-entry")({ id: "server-loaded-entry" });
+assert.equal(focusPushes.length, 1, "server-bounded focus does not request older pages");
 focusHook.destroyed();
 
 delete globalThis.location;

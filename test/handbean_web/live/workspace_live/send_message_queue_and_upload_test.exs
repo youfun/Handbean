@@ -35,7 +35,7 @@ defmodule HandbeanWeb.WorkspaceLive.SendMessageQueueAndUploadTest do
         send(view.pid, {:agent_event, agent_event(:run_end, %{status: "completed"}, 4, topic)})
 
         view
-        |> element("form")
+        |> element("#composer")
         |> render_submit(%{"message" => "New message", "model" => "stepfun/step-router-v1"})
 
         assert has_element?(view, "#tool-event-read")
@@ -67,7 +67,7 @@ defmodule HandbeanWeb.WorkspaceLive.SendMessageQueueAndUploadTest do
       assert has_element?(view, "#tool-event-read")
 
       view
-      |> element("form")
+      |> element("#composer")
       |> render_submit(%{"message" => "please adjust", "model" => "stepfun/step-router-v1"})
 
       assert has_element?(view, "#tool-event-read")
@@ -311,7 +311,7 @@ defmodule HandbeanWeb.WorkspaceLive.SendMessageQueueAndUploadTest do
       :ok = Handbean.PubSub.Session.broadcast_event(sid, :run_start, %{model: "step-router-v1"})
 
       view
-      |> element("form")
+      |> element("#composer")
       |> render_submit(%{"message" => "steer pending", "model" => "stepfun/step-router-v1"})
 
       assert render(view) =~ "Waiting to insert"
@@ -326,7 +326,7 @@ defmodule HandbeanWeb.WorkspaceLive.SendMessageQueueAndUploadTest do
       assert Handbean.Agent.CandidateQueue.get_messages(queue) == []
 
       view
-      |> element("form")
+      |> element("#composer")
       |> render_submit(%{"message" => "left behind", "model" => "stepfun/step-router-v1"})
 
       :ok = Handbean.PubSub.Session.broadcast_event(sid, :run_end, %{status: "cancelled"})
@@ -351,7 +351,7 @@ defmodule HandbeanWeb.WorkspaceLive.SendMessageQueueAndUploadTest do
       :ok = Handbean.PubSub.Session.broadcast_event(sid, :run_start, %{model: "step-router-v1"})
 
       view
-      |> element("form")
+      |> element("#composer")
       |> render_submit(%{"message" => "retry later", "model" => "stepfun/step-router-v1"})
 
       :ok = Handbean.PubSub.Session.broadcast_event(sid, :run_end, %{status: "cancelled"})
@@ -401,7 +401,7 @@ defmodule HandbeanWeb.WorkspaceLive.SendMessageQueueAndUploadTest do
       :ok = Handbean.PubSub.Session.broadcast_event(sid, :run_start, %{model: "step-router-v1"})
 
       view
-      |> element("form")
+      |> element("#composer")
       |> render_submit(%{"message" => "delete me", "model" => "stepfun/step-router-v1"})
 
       :ok = Handbean.PubSub.Session.broadcast_event(sid, :run_end, %{status: "cancelled"})
@@ -438,7 +438,7 @@ defmodule HandbeanWeb.WorkspaceLive.SendMessageQueueAndUploadTest do
       :ok = Handbean.PubSub.Session.broadcast_event(sid, :run_start, %{model: "step-router-v1"})
 
       view
-      |> element("form")
+      |> element("#composer")
       |> render_submit(%{"message" => "cannot resend", "model" => "stepfun/step-router-v1"})
 
       :ok = Handbean.PubSub.Session.broadcast_event(sid, :run_end, %{status: "cancelled"})
@@ -543,7 +543,7 @@ defmodule HandbeanWeb.WorkspaceLive.SendMessageQueueAndUploadTest do
       assert has_element?(view, "#status-label", "running")
 
       view
-      |> element("form")
+      |> element("#composer")
       |> render_submit(%{
         "message" => "please adjust by click",
         "model" => "stepfun/step-router-v1"
@@ -592,7 +592,7 @@ defmodule HandbeanWeb.WorkspaceLive.SendMessageQueueAndUploadTest do
       assert has_element?(view, "#status-label", "running")
 
       view
-      |> element("form")
+      |> element("#composer")
       |> render_submit(%{"message" => "start again", "model" => "stepfun/step-router-v1"})
 
       rendered = render(view)
@@ -651,13 +651,13 @@ defmodule HandbeanWeb.WorkspaceLive.SendMessageQueueAndUploadTest do
       File.write!(png_path, <<0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0>>)
 
       upload =
-        file_input(view, "form", :images, [
+        file_input(view, "#composer", :images, [
           %{path: png_path, name: "x.png", type: "image/png", content: File.read!(png_path)}
         ])
 
       render_upload(upload, "x.png")
 
-      view |> element("form") |> render_submit(%{"message" => "see image"})
+      view |> element("#composer") |> render_submit(%{"message" => "see image"})
       rendered = render(view)
 
       assert rendered =~ "see image"
@@ -677,7 +677,7 @@ defmodule HandbeanWeb.WorkspaceLive.SendMessageQueueAndUploadTest do
       File.write!(png_path, <<0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0>>)
 
       upload =
-        file_input(view, "form", :images, [
+        file_input(view, "#composer", :images, [
           %{path: png_path, name: "preview.png", type: "image/png", content: File.read!(png_path)}
         ])
 
@@ -729,7 +729,7 @@ defmodule HandbeanWeb.WorkspaceLive.SendMessageQueueAndUploadTest do
       File.write!(png_path, <<0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0>>)
 
       upload =
-        file_input(view, "form", :images, [
+        file_input(view, "#composer", :images, [
           %{
             path: png_path,
             name: "string-key.png",
@@ -739,7 +739,7 @@ defmodule HandbeanWeb.WorkspaceLive.SendMessageQueueAndUploadTest do
         ])
 
       render_upload(upload, "string-key.png")
-      view |> element("form") |> render_submit(%{"message" => "string keys"})
+      view |> element("#composer") |> render_submit(%{"message" => "string keys"})
       html = render(view)
       assert html =~ "string keys"
       assert html =~ "/uploads/"

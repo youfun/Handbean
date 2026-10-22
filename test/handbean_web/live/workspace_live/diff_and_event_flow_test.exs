@@ -587,7 +587,7 @@ defmodule HandbeanWeb.WorkspaceLive.DiffAndEventFlowTest do
           {:agent_event, agent_event(:run_start, %{model: "step-router-v1"}, 1, topic)}
         )
 
-        view |> element("form") |> render_submit(%{"message" => "Read the config"})
+        view |> element("#composer") |> render_submit(%{"message" => "Read the config"})
         assert render(view) =~ "Read the config"
 
         # 2. Agent starts
@@ -696,7 +696,7 @@ defmodule HandbeanWeb.WorkspaceLive.DiffAndEventFlowTest do
         {:ok, view, _html} = live(conn, "/")
 
         # Send a message first
-        view |> element("form") |> render_submit(%{"message" => "Hello"})
+        view |> element("#composer") |> render_submit(%{"message" => "Hello"})
         assert render(view) =~ "Hello"
 
         # Create from the global new-conversation project picker.

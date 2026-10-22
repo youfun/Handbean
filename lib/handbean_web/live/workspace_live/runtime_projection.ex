@@ -67,18 +67,29 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
            Map.get(socket.assigns, :session_epoch)
          ) do
       :apply ->
-        if event.kind == :message_delta and
-             Projection.text_patch(socket.assigns.timeline, event.payload) == :recover and
-             (Map.has_key?(event.payload, :transcript_id) or
-                Map.has_key?(event.payload, "transcript_id")) do
-          restore_active_session_snapshot(socket)
-        else
-          socket =
+        cond do
+          outside_around_message_delta?(event, socket) ->
+            transcript_id = payload_value(event.payload, :transcript_id)
+
             socket
             |> assign(:session_seq, event.seq)
             |> assign(:session_epoch, event.epoch || Map.get(socket.assigns, :session_epoch))
+            |> assign(:current_assistant_entry_id, transcript_id)
+            |> assign(:history_has_newer?, true)
 
-          handle_agent_event(event, socket)
+          event.kind == :message_delta and
+            Projection.text_patch(socket.assigns.timeline, event.payload) == :recover and
+              (Map.has_key?(event.payload, :transcript_id) or
+                 Map.has_key?(event.payload, "transcript_id")) ->
+            restore_active_session_snapshot(socket)
+
+          true ->
+            socket =
+              socket
+              |> assign(:session_seq, event.seq)
+              |> assign(:session_epoch, event.epoch || Map.get(socket.assigns, :session_epoch))
+
+            handle_agent_event(event, socket)
         end
 
       :recover ->
@@ -94,6 +105,15 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
   end
 
   def handle_current_agent_event(event, socket), do: handle_agent_event(event, socket)
+
+  defp outside_around_message_delta?(%AgentEvent{kind: :message_delta, payload: payload}, socket) do
+    transcript_id = payload_value(payload, :transcript_id)
+
+    Map.get(socket.assigns, :history_window) == :around and is_binary(transcript_id) and
+      is_nil(Timeline.find_entry(socket.assigns.timeline, transcript_id))
+  end
+
+  defp outside_around_message_delta?(_event, _socket), do: false
 
   def handle_agent_event(%{kind: :run_start, payload: payload}, socket) do
     Logger.debug(

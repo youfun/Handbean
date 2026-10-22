@@ -5,6 +5,14 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection.Timeline do
   import Phoenix.LiveView, only: [stream_insert: 3, stream_insert: 4]
 
   def timeline_insert(socket, entry, opts \\ []) do
+    if outside_around_window?(socket, entry) do
+      mark_newer_history(socket, entry)
+    else
+      do_timeline_insert(socket, entry, opts)
+    end
+  end
+
+  defp do_timeline_insert(socket, entry, opts) do
     expanded = Map.get(socket.assigns, :expanded_tool_groups, MapSet.new())
     previous_timeline = socket.assigns.timeline
     pending_ids = pending_id_set(socket)
@@ -52,9 +60,14 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection.Timeline do
 
   defp reconcile_entries(entries, socket) do
     entries
-    |> Enum.filter(&entry_in_loaded_window?(socket, &1))
     |> Enum.reject(&timeline_entry_unchanged?(socket.assigns.timeline, &1))
-    |> Enum.reduce(socket, fn entry, acc -> timeline_insert(acc, entry) end)
+    |> Enum.reduce(socket, fn entry, acc ->
+      if entry_in_loaded_window?(acc, entry) do
+        timeline_insert(acc, entry)
+      else
+        mark_newer_history(acc, entry)
+      end
+    end)
   end
 
   def mark_revert_confirm(socket, change_id) do
@@ -260,6 +273,17 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection.Timeline do
   defp update_assistant(socket, chunk) do
     id = socket.assigns.current_assistant_entry_id || unique_id("msg-assistant")
 
+    if Map.get(socket.assigns, :history_window) == :around and
+         is_nil(find_entry(socket.assigns.timeline, id)) do
+      socket
+      |> assign(:current_assistant_entry_id, id)
+      |> assign(:history_has_newer?, true)
+    else
+      do_update_assistant(socket, id, chunk)
+    end
+  end
+
+  defp do_update_assistant(socket, id, chunk) do
     {socket, entry} =
       case find_entry(socket.assigns.timeline, id) do
         nil ->
@@ -519,24 +543,59 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection.Timeline do
   defp timeline_entry_unchanged?(timeline, entry), do: Enum.any?(timeline, &(&1 == entry))
 
   defp entry_in_loaded_window?(socket, entry) do
+    not outside_loaded_window?(socket, entry)
+  end
+
+  defp outside_around_window?(socket, entry) do
+    Map.get(socket.assigns, :history_window) == :around and
+      outside_loaded_window?(socket, entry)
+  end
+
+  defp outside_loaded_window?(socket, entry) do
     timeline = socket.assigns.timeline
     id = Map.get(entry, "id")
 
     cond do
       Enum.any?(timeline, &(Map.get(&1, "id") == id)) ->
-        true
+        false
+
+      Map.get(socket.assigns, :history_window) == :around ->
+        with sequence when is_integer(sequence) <- Map.get(entry, "sequence"),
+             oldest when is_integer(oldest) <- oldest_loaded_sequence(timeline),
+             newest when is_integer(newest) <- newest_loaded_sequence(timeline) do
+          sequence < oldest or sequence > newest
+        else
+          _ -> true
+        end
 
       not Map.get(socket.assigns, :history_has_more?, false) ->
-        true
+        false
 
       true ->
         with sequence when is_integer(sequence) <- Map.get(entry, "sequence"),
              oldest when is_integer(oldest) <- oldest_loaded_sequence(timeline) do
-          sequence >= oldest
+          sequence < oldest
         else
-          _ -> false
+          _ -> true
         end
     end
+  end
+
+  defp mark_newer_history(socket, entry) do
+    with sequence when is_integer(sequence) <- Map.get(entry, "sequence"),
+         newest when is_integer(newest) <- newest_loaded_sequence(socket.assigns.timeline),
+         true <- sequence <= newest do
+      socket
+    else
+      _ -> assign(socket, :history_has_newer?, true)
+    end
+  end
+
+  defp newest_loaded_sequence(timeline) do
+    timeline
+    |> Enum.map(&Map.get(&1, "sequence"))
+    |> Enum.filter(&is_integer/1)
+    |> Enum.max(fn -> nil end)
   end
 
   defp oldest_loaded_sequence(timeline) do

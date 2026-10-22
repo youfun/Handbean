@@ -46,9 +46,12 @@ defmodule Handbean.ConversationTranscriptStore do
   Read a bounded history page in chronological order, newest page by default.
 
   `:limit` is 1..200 (default 100). Pass the returned `:before` entry ID to
-  load the preceding page. A deleted cursor returns `:invalid_cursor`; restart
-  from the newest page rather than silently skipping history. Full `list/2`
-  remains available for runtime context/recovery and legacy adapters.
+  load the preceding page, or `:after` to load a following page. `:around`
+  reads a bounded window around one stable entry ID with optional
+  `:before_limit`/`:after_limit` values from 0..100. A deleted normal cursor
+  returns `:invalid_cursor`; a missing around target returns
+  `:entry_unavailable`. Full `list/2` remains available for runtime
+  context/recovery and legacy adapters.
   """
   def page(conversation_id, opts \\ []) when is_binary(conversation_id) do
     store = impl(opts)

@@ -25,6 +25,7 @@ defmodule HandbeanWeb.WorkspaceLive do
   alias HandbeanWeb.WorkspaceLive.RuntimeProjection
   alias HandbeanWeb.WorkspaceLive.Skills
   alias HandbeanWeb.WorkspaceLive.ChatComponents
+  alias HandbeanWeb.WorkspaceLive.ConversationSearchComponents
   alias HandbeanWeb.WorkspaceLive.OverlayComponents
   alias HandbeanWeb.WorkspaceLive.SidebarComponents
   alias HandbeanWeb.WorkspaceLive.ViewComponents
@@ -36,6 +37,7 @@ defmodule HandbeanWeb.WorkspaceLive do
     only: [mobile_header: 1, projects_sidebar: 1, checkout_picker_dialog: 1]
 
   import ChatComponents, only: [chat_panel: 1]
+  import ConversationSearchComponents, only: [conversation_search_palette: 1]
   import WorkspaceComponents, only: [workspace_panel: 1]
 
   import OverlayComponents,
@@ -50,6 +52,7 @@ defmodule HandbeanWeb.WorkspaceLive do
   alias HandbeanWeb.WorkspaceLive.Bootstrap
   alias HandbeanWeb.WorkspaceLive.ConversationEvents
   alias HandbeanWeb.WorkspaceLive.ConversationRouting
+  alias HandbeanWeb.WorkspaceLive.ConversationSearch
   alias HandbeanWeb.WorkspaceLive.InfoEvents
   alias HandbeanWeb.WorkspaceLive.InputEvents
   alias HandbeanWeb.WorkspaceLive.ScheduleEvents
@@ -58,6 +61,14 @@ defmodule HandbeanWeb.WorkspaceLive do
   def mount(params, _session, socket), do: Bootstrap.mount(params, socket, &handle_progress/3)
 
   @impl true
+  def handle_async({:conversation_search, revision, append?}, {:ok, result}, socket) do
+    {:noreply, ConversationSearch.finish(socket, revision, append?, result)}
+  end
+
+  def handle_async({:conversation_search, revision, append?}, {:exit, reason}, socket) do
+    {:noreply, ConversationSearch.finish(socket, revision, append?, {:error, reason})}
+  end
+
   def handle_async(:conversation_list, {:ok, {revision, result}}, socket) do
     if revision != socket.assigns.conversation_list_revision do
       {:noreply, ConversationSwitching.load_conversation_list(socket)}
@@ -329,6 +340,24 @@ defmodule HandbeanWeb.WorkspaceLive do
   end
 
   @impl true
+  def handle_event("open_conversation_search", params, socket),
+    do: ConversationSearch.handle("open_conversation_search", params, socket)
+
+  def handle_event("close_conversation_search", params, socket),
+    do: ConversationSearch.handle("close_conversation_search", params, socket)
+
+  def handle_event("conversation_search", params, socket),
+    do: ConversationSearch.handle("conversation_search", params, socket)
+
+  def handle_event("conversation_search_content", params, socket),
+    do: ConversationSearch.handle("conversation_search_content", params, socket)
+
+  def handle_event("load_more_conversation_search", params, socket),
+    do: ConversationSearch.handle("load_more_conversation_search", params, socket)
+
+  def handle_event("open_conversation_search_hit", params, socket),
+    do: ConversationSearch.handle("open_conversation_search_hit", params, socket)
+
   def handle_event("remove_attachment", params, socket),
     do: InputEvents.handle("remove_attachment", params, socket)
 
@@ -488,8 +517,17 @@ defmodule HandbeanWeb.WorkspaceLive do
   def handle_event("select_workspace", params, socket),
     do: ConversationEvents.handle("select_workspace", params, socket)
 
+  def handle_event("load_history_around", params, socket),
+    do: ConversationEvents.handle("load_history_around", params, socket)
+
   def handle_event("load_older_history", params, socket),
     do: ConversationEvents.handle("load_older_history", params, socket)
+
+  def handle_event("load_newer_history", params, socket),
+    do: ConversationEvents.handle("load_newer_history", params, socket)
+
+  def handle_event("return_to_latest_history", params, socket),
+    do: ConversationEvents.handle("return_to_latest_history", params, socket)
 
   def handle_event("select_conversation", params, socket),
     do: ConversationEvents.handle("select_conversation", params, socket)

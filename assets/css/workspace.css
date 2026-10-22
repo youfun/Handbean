@@ -1,6 +1,7 @@
 /* Workspace stylesheet entry point. Keep imports ordered to preserve the cascade. */
 @import "./workspace/foundation.css";
 @import "./workspace/conversation.css";
+@import "./workspace/conversation-search.css";
 @import "./workspace/workbench.css";
 @import "./workspace/navigation.css";
 @import "./workspace/conversation-actions.css";

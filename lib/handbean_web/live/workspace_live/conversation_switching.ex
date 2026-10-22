@@ -58,6 +58,10 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
     |> assign(:pending_messages, %{})
     |> assign(:history_before, nil)
     |> assign(:history_has_more?, false)
+    |> assign(:history_after, nil)
+    |> assign(:history_has_newer?, false)
+    |> assign(:history_window, :latest)
+    |> assign(:history_anchor_entry_id, nil)
     |> SessionMemory.remember()
   end
 
@@ -480,6 +484,10 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
     |> assign(:pending_messages, %{})
     |> assign(:history_before, nil)
     |> assign(:history_has_more?, false)
+    |> assign(:history_after, nil)
+    |> assign(:history_has_newer?, false)
+    |> assign(:history_window, :latest)
+    |> assign(:history_anchor_entry_id, nil)
     |> SessionMemory.remember()
   end
 

@@ -55,6 +55,12 @@ defmodule HandbeanWeb.Access do
   end
 
   @doc false
+  def conversation_search_scope do
+    workspace_ids = Enum.map(Handbean.WorkspaceStore.list(), & &1["id"])
+    Handbean.Conversations.UserSearch.Scope.new(workspace_ids, true)
+  end
+
+  @doc false
   def mode, do: Application.get_env(:handbean, :access, []) |> Keyword.get(:mode, :local)
 
   defp authenticate(conn) do

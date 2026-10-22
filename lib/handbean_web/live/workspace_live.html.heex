@@ -70,6 +70,9 @@
         file_browser_path={@file_browser_path}
         history_before={@history_before}
         history_has_more?={@history_has_more?}
+        history_after={@history_after}
+        history_has_newer?={@history_has_newer?}
+        history_window={@history_window}
         input_value={@input_value}
         mobile_right_panel_open={@mobile_right_panel_open}
         pending_approval={@pending_approval}
@@ -156,6 +159,7 @@
       workspaces={@workspaces}
     />
   </div>
+  <.conversation_search_palette search={@conversation_search} workspaces={@workspaces} />
   <.checkout_picker_dialog picker={@checkout_picker} />
   <.archive_conversation_dialog archive_conversation={@archive_conversation} />
   <.delete_conversation_dialog delete_conversation={@delete_conversation} />

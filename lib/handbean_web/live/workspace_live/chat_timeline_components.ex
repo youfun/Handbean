@@ -199,6 +199,9 @@ defmodule HandbeanWeb.WorkspaceLive.ChatTimelineComponents do
   attr :current_workspace_id, :any, required: true
   attr :history_before, :any, required: true
   attr :history_has_more?, :boolean, required: true
+  attr :history_after, :any, default: nil
+  attr :history_has_newer?, :boolean, default: false
+  attr :history_window, :any, default: :latest
   attr :pending_approval, :any, required: true
   attr :pending_messages, :any, required: true
   attr :revert_confirm_change_id, :any, required: true
@@ -222,6 +225,15 @@ defmodule HandbeanWeb.WorkspaceLive.ChatTimelineComponents do
         data-history-before={@history_before || ""}
         data-history-has-more={to_string(@history_has_more?)}
       >
+        <div :if={@history_window == :around} class="history-window-banner" role="status">
+          <span>{gettext("Viewing a search result in conversation history")}</span>
+          <button type="button" phx-click="return_to_latest_history">
+            {gettext("Back to latest")}
+          </button>
+        </div>
+        <div :if={@history_has_more?} class="history-window-more">
+          <button type="button" phx-click="load_older_history">{gettext("Load older messages")}</button>
+        </div>
         <div :if={length(@timeline) > 1} id="turn-header" class="turn-header">
           <span class="turn-summary">
             {timeline_summary(@timeline)}
@@ -585,6 +597,10 @@ defmodule HandbeanWeb.WorkspaceLive.ChatTimelineComponents do
               />
             </div>
           </div>
+        </div>
+
+        <div :if={@history_has_newer?} class="history-window-more">
+          <button type="button" phx-click="load_newer_history">{gettext("Load newer messages")}</button>
         </div>
 
         <!-- Agent working indicator -->

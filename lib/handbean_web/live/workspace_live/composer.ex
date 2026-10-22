@@ -272,7 +272,11 @@ defmodule HandbeanWeb.WorkspaceLive.Composer do
 
   def assign_pending(socket, pending) do
     timeline =
-      Handbean.Agent.PendingMessages.pin_pending(socket.assigns.timeline || [], pending || %{})
+      if Map.get(socket.assigns, :history_window) == :around do
+        socket.assigns.timeline || []
+      else
+        Handbean.Agent.PendingMessages.pin_pending(socket.assigns.timeline || [], pending || %{})
+      end
 
     socket
     |> assign(:pending_messages, pending)

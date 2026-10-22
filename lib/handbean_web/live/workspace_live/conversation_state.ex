@@ -35,33 +35,45 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationState do
 
     expanded = Map.get(socket.assigns, :expanded_tool_groups, MapSet.new())
 
-    {timeline, history_before, history_has_more?} =
-      if running_for_conversation?(socket, conv_id) and current_timeline != [] and
-           not Keyword.get(opts, :force_transcript?, false) do
-        {current_timeline, Map.get(socket.assigns, :history_before),
-         Map.get(socket.assigns, :history_has_more?, false)}
-      else
-        page = Keyword.get(opts, :transcript_page)
+    around_window? =
+      Map.get(socket.assigns, :history_window) == :around and
+        socket.assigns.current_conversation_id == conv_id and current_timeline != []
 
-        history =
-          if page do
-            {page.entries, page.before, page.has_more?}
-          else
-            load_transcript_page(
-              conv_id,
-              fallback,
-              if(Keyword.get(opts, :force_transcript?, false),
-                do: length(current_timeline),
-                else: 100
+    {timeline, history_before, history_has_more?, history_after, history_has_newer?} =
+      cond do
+        around_window? ->
+          {current_timeline, Map.get(socket.assigns, :history_before),
+           Map.get(socket.assigns, :history_has_more?, false),
+           Map.get(socket.assigns, :history_after),
+           Map.get(socket.assigns, :history_has_newer?, false)}
+
+        running_for_conversation?(socket, conv_id) and current_timeline != [] and
+            not Keyword.get(opts, :force_transcript?, false) ->
+          {current_timeline, Map.get(socket.assigns, :history_before),
+           Map.get(socket.assigns, :history_has_more?, false), nil, false}
+
+        true ->
+          page = Keyword.get(opts, :transcript_page)
+
+          history =
+            if page do
+              {page.entries, page.before, page.has_more?}
+            else
+              load_transcript_page(
+                conv_id,
+                fallback,
+                if(Keyword.get(opts, :force_transcript?, false),
+                  do: length(current_timeline),
+                  else: 100
+                )
               )
-            )
-          end
+            end
 
-        history
-        |> then(fn {entries, before, has_more?} ->
-          {HandbeanWeb.WorkspaceHelper.apply_tool_work_collapse(entries, expanded), before,
-           has_more?}
-        end)
+          history
+          |> then(fn {entries, before, has_more?} ->
+            timeline = HandbeanWeb.WorkspaceHelper.apply_tool_work_collapse(entries, expanded)
+            {timeline, before, has_more?, nil, false}
+          end)
       end
 
     available_models = Map.get(socket.assigns, :available_models, [])
@@ -94,6 +106,9 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationState do
       |> assign(:timeline, timeline)
       |> assign(:history_before, history_before)
       |> assign(:history_has_more?, history_has_more?)
+      |> assign(:history_after, history_after)
+      |> assign(:history_has_newer?, history_has_newer?)
+      |> assign(:history_window, if(around_window?, do: :around, else: :latest))
       |> maybe_reset_timeline_stream(
         timeline,
         running_for_conversation?,
@@ -332,7 +347,10 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationState do
           timeline
         )
 
-      timeline = Handbean.Agent.PendingMessages.pin_pending(timeline, pending)
+      timeline =
+        if Map.get(socket.assigns, :history_window) == :around,
+          do: timeline,
+          else: Handbean.Agent.PendingMessages.pin_pending(timeline, pending)
 
       socket
       |> assign(:timeline, timeline)
@@ -343,6 +361,76 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationState do
     else
       _ -> socket
     end
+  end
+
+  def load_around_history(socket, page, anchor_id)
+      when is_map(page) and is_binary(anchor_id) do
+    entries = Handbean.PubSub.Projection.visible_entries(page.entries)
+
+    timeline =
+      HandbeanWeb.WorkspaceHelper.apply_tool_work_collapse(
+        entries,
+        Map.get(socket.assigns, :expanded_tool_groups, MapSet.new())
+      )
+
+    pending =
+      Handbean.Agent.PendingMessages.reconcile(
+        socket.assigns.pending_messages,
+        HandbeanWeb.WorkspaceLive.RuntimeProjection.session_pending_messages(
+          socket.assigns.current_conversation_id
+        ),
+        socket.assigns.running,
+        timeline
+      )
+
+    socket
+    |> assign(:timeline, timeline)
+    |> assign(:pending_messages, pending)
+    |> assign(:history_before, page.before)
+    |> assign(:history_has_more?, page.has_more_before?)
+    |> assign(:history_after, page.after)
+    |> assign(:history_has_newer?, page.has_more_after?)
+    |> assign(:history_window, :around)
+    |> assign(:history_anchor_entry_id, anchor_id)
+    |> stream(:timeline, timeline, reset: true)
+    |> Phoenix.LiveView.push_event("focus-conversation-entry", %{id: anchor_id})
+  end
+
+  def load_newer_history(socket) do
+    conv_id = socket.assigns.current_conversation_id
+    after_cursor = Map.get(socket.assigns, :history_after)
+
+    with true <- is_binary(conv_id) and is_binary(after_cursor),
+         {:ok, %{entries: entries, after: next_after, has_more?: has_more?}} <-
+           Handbean.ConversationTranscriptStore.page(conv_id, limit: 100, after: after_cursor) do
+      entries = Handbean.PubSub.Projection.visible_entries(entries)
+      loaded_ids = MapSet.new(socket.assigns.timeline, &conv_value(&1, "id", nil))
+      entries = Enum.reject(entries, &MapSet.member?(loaded_ids, conv_value(&1, "id", nil)))
+
+      timeline =
+        socket.assigns.timeline
+        |> Kernel.++(entries)
+        |> deduplicate_entries()
+        |> HandbeanWeb.WorkspaceHelper.apply_tool_work_collapse(
+          Map.get(socket.assigns, :expanded_tool_groups, MapSet.new())
+        )
+
+      socket
+      |> assign(:timeline, timeline)
+      |> assign(:history_after, next_after)
+      |> assign(:history_has_newer?, has_more?)
+      |> stream(:timeline, timeline, reset: true)
+    else
+      _ -> socket
+    end
+  end
+
+  def return_to_latest_history(socket) do
+    socket
+    |> assign(:history_window, :latest)
+    |> assign(:history_anchor_entry_id, nil)
+    |> sync_conv_state(force_transcript?: true)
+    |> Phoenix.LiveView.push_event("scroll_chat_to_bottom", %{})
   end
 
   def maybe_replace_current_conversation(socket, conv) do

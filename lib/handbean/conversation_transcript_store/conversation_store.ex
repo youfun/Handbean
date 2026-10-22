@@ -52,8 +52,17 @@ defmodule Handbean.ConversationTranscriptStore.ConversationStore do
 
   @impl true
   def page(conversation_id, opts) do
-    with :ok <- authorize_read(conversation_id, opts),
-         {:ok, limit} <- page_limit(opts),
+    with :ok <- authorize_read(conversation_id, opts) do
+      cond do
+        Keyword.has_key?(opts, :around) -> around_page(conversation_id, opts)
+        Keyword.has_key?(opts, :after) -> after_page(conversation_id, opts)
+        true -> before_page(conversation_id, opts)
+      end
+    end
+  end
+
+  defp before_page(conversation_id, opts) do
+    with {:ok, limit} <- page_limit(opts),
          {:ok, before_sequence} <- before_sequence(conversation_id, Keyword.get(opts, :before)) do
       query =
         from entry in ConversationEntry,
@@ -71,6 +80,84 @@ defmodule Handbean.ConversationTranscriptStore.ConversationStore do
       entries = rows |> Enum.take(limit) |> Enum.reverse() |> Enum.map(&public_entry/1)
       before = if has_more?, do: entries |> hd() |> Map.fetch!("id"), else: nil
       {:ok, %{entries: entries, before: before, has_more?: has_more?}}
+    end
+  end
+
+  defp after_page(conversation_id, opts) do
+    with {:ok, limit} <- page_limit(opts),
+         {:ok, after_sequence} <- cursor_sequence(conversation_id, Keyword.get(opts, :after)) do
+      rows =
+        from(entry in ConversationEntry,
+          where: entry.conversation_id == ^conversation_id and entry.sequence > ^after_sequence,
+          order_by: [asc: entry.sequence],
+          limit: ^(limit + 1)
+        )
+        |> Repo.all()
+
+      has_more? = length(rows) > limit
+      entries = rows |> Enum.take(limit) |> Enum.map(&public_entry/1)
+
+      after_cursor =
+        case List.last(entries) do
+          %{} = entry -> Map.fetch!(entry, "id")
+          nil -> Keyword.get(opts, :after)
+        end
+
+      {:ok, %{entries: entries, after: after_cursor, has_more?: has_more?}}
+    end
+  end
+
+  defp around_page(conversation_id, opts) do
+    with anchor_id when is_binary(anchor_id) <- Keyword.get(opts, :around),
+         {:ok, before_limit} <- bounded_page_limit(opts, :before_limit, 50),
+         {:ok, after_limit} <- bounded_page_limit(opts, :after_limit, 50) do
+      Repo.transaction(fn ->
+        anchor =
+          Repo.one(
+            from entry in ConversationEntry,
+              where: entry.conversation_id == ^conversation_id and entry.entry_id == ^anchor_id
+          )
+
+        if is_nil(anchor), do: Repo.rollback(:entry_unavailable)
+        anchor_sequence = anchor.sequence
+
+        older =
+          from(entry in ConversationEntry,
+            where:
+              entry.conversation_id == ^conversation_id and entry.sequence < ^anchor_sequence,
+            order_by: [desc: entry.sequence],
+            limit: ^(before_limit + 1)
+          )
+          |> Repo.all()
+
+        newer =
+          from(entry in ConversationEntry,
+            where:
+              entry.conversation_id == ^conversation_id and entry.sequence > ^anchor_sequence,
+            order_by: [asc: entry.sequence],
+            limit: ^(after_limit + 1)
+          )
+          |> Repo.all()
+
+        has_more_before? = length(older) > before_limit
+        has_more_after? = length(newer) > after_limit
+        older = older |> Enum.take(before_limit) |> Enum.reverse()
+        newer = Enum.take(newer, after_limit)
+        rows = older ++ [anchor] ++ newer
+        entries = Enum.map(rows, &public_entry/1)
+
+        %{
+          entries: entries,
+          anchor: anchor.entry_id,
+          before: if(has_more_before?, do: hd(entries)["id"]),
+          after: entries |> List.last() |> Map.fetch!("id"),
+          has_more_before?: has_more_before?,
+          has_more_after?: has_more_after?
+        }
+      end)
+    else
+      nil -> {:error, :entry_unavailable}
+      error -> error
     end
   end
 
@@ -883,6 +970,22 @@ defmodule Handbean.ConversationTranscriptStore.ConversationStore do
   end
 
   defp before_sequence(_conversation_id, _cursor), do: {:error, :invalid_cursor}
+
+  defp cursor_sequence(conversation_id, cursor) when is_binary(cursor) do
+    case before_sequence(conversation_id, cursor) do
+      {:ok, sequence} when is_integer(sequence) -> {:ok, sequence}
+      _error -> {:error, :invalid_cursor}
+    end
+  end
+
+  defp cursor_sequence(_conversation_id, _cursor), do: {:error, :invalid_cursor}
+
+  defp bounded_page_limit(opts, key, default) do
+    case Keyword.get(opts, key, default) do
+      limit when is_integer(limit) and limit >= 0 and limit <= 100 -> {:ok, limit}
+      _value -> {:error, :invalid_limit}
+    end
+  end
 
   defp duplicate_entry_ids?(rows) do
     ids = Enum.map(rows, & &1.entry_id)

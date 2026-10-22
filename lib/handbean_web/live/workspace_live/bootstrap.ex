@@ -10,6 +10,7 @@ defmodule HandbeanWeb.WorkspaceLive.Bootstrap do
   alias Handbean.Platform.FileManager
   alias HandbeanWeb.WorkspaceLive.CliSelection
   alias HandbeanWeb.WorkspaceLive.ConversationRouting
+  alias HandbeanWeb.WorkspaceLive.ConversationSearch
   alias HandbeanWeb.WorkspaceLive.ConversationState
   alias HandbeanWeb.WorkspaceLive.ConversationSwitching
   alias HandbeanWeb.WorkspaceLive.ModelSelection
@@ -198,6 +199,7 @@ defmodule HandbeanWeb.WorkspaceLive.Bootstrap do
       |> assign(:remove_workspace, nil)
       |> assign(:rename_workspace, nil)
       |> assign(:conversation_menu_id, nil)
+      |> ConversationSearch.defaults()
       |> assign(:checkout_picker, nil)
       |> assign(:rename_conversation, nil)
       |> assign(:archive_conversation, nil)

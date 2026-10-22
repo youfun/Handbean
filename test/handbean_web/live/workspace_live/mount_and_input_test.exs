@@ -380,7 +380,7 @@ defmodule HandbeanWeb.WorkspaceLive.MountAndInputTest do
       {:ok, view, _html} = live(conn, "/")
 
       view
-      |> element("form")
+      |> element("#composer")
       |> render_submit(%{"message" => "   "})
 
       # No new user message with whitespace-only content should appear
@@ -391,7 +391,7 @@ defmodule HandbeanWeb.WorkspaceLive.MountAndInputTest do
       {:ok, view, _html} = live(conn, "/")
 
       view
-      |> element("form")
+      |> element("#composer")
       |> render_submit(%{"message" => ""})
 
       refute render(view) =~ ~s(class="msg-bubble msg-user")

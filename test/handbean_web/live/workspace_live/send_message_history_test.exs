@@ -5,7 +5,7 @@ defmodule HandbeanWeb.WorkspaceLive.SendMessageHistoryTest do
     test "adding a user message appears in the message list", %{conn: conn} do
       with_log(fn ->
         {:ok, view, _html} = live(conn, "/")
-        view |> element("form") |> render_submit(%{"message" => "Read sample.txt"})
+        view |> element("#composer") |> render_submit(%{"message" => "Read sample.txt"})
         assert render(view) =~ "Read sample.txt"
       end)
     end
@@ -13,7 +13,7 @@ defmodule HandbeanWeb.WorkspaceLive.SendMessageHistoryTest do
     test "input clears after sending a message", %{conn: conn} do
       with_log(fn ->
         {:ok, view, _html} = live(conn, "/")
-        view |> element("form") |> render_submit(%{"message" => "Read config"})
+        view |> element("#composer") |> render_submit(%{"message" => "Read config"})
         assert has_element?(view, "textarea#ai-input", "")
       end)
     end
@@ -28,7 +28,7 @@ defmodule HandbeanWeb.WorkspaceLive.SendMessageHistoryTest do
 
       {:ok, view, _html} = live(conn, "/")
       conversation_id = create_default_conversation(view)
-      view |> element("form") |> render_submit(%{"message" => "durable before run_end"})
+      view |> element("#composer") |> render_submit(%{"message" => "durable before run_end"})
       _ = render(view)
 
       assert Enum.any?(
@@ -75,7 +75,7 @@ defmodule HandbeanWeb.WorkspaceLive.SendMessageHistoryTest do
       assert rendered_before =~ "Earlier context"
       assert rendered_before =~ "Previous reply"
 
-      view |> element("form") |> render_submit(%{"message" => "New question"})
+      view |> element("#composer") |> render_submit(%{"message" => "New question"})
 
       rendered_after = render(view)
       assert rendered_after =~ "Earlier context"
@@ -549,7 +549,7 @@ defmodule HandbeanWeb.WorkspaceLive.SendMessageHistoryTest do
       File.write!(png_path, <<0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0>>)
 
       upload =
-        file_input(view, "form", :images, [
+        file_input(view, "#composer", :images, [
           %{
             path: png_path,
             name: "from-a.png",
@@ -593,7 +593,7 @@ defmodule HandbeanWeb.WorkspaceLive.SendMessageHistoryTest do
       operation_id = Ecto.UUID.generate()
 
       view
-      |> element("form")
+      |> element("#composer")
       |> render_submit(%{
         "message" => "!printf handbean-direct",
         "workspace_command_operation_id" => operation_id
@@ -649,12 +649,12 @@ defmodule HandbeanWeb.WorkspaceLive.SendMessageHistoryTest do
       render_hook(view, "update_input", %{"value" => "!pwd"})
       operation_id = :sys.get_state(view.pid).socket.assigns.workspace_command_intent.operation_id
 
-      view |> element("form") |> render_submit(%{"message" => "!pwd"})
+      view |> element("#composer") |> render_submit(%{"message" => "!pwd"})
 
       assert :sys.get_state(view.pid).socket.assigns.workspace_command_intent.operation_id ==
                operation_id
 
-      view |> element("form") |> render_submit(%{"message" => "!pwd"})
+      view |> element("#composer") |> render_submit(%{"message" => "!pwd"})
 
       assert :sys.get_state(view.pid).socket.assigns.workspace_command_intent.operation_id ==
                operation_id

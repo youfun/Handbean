@@ -184,7 +184,7 @@ defmodule HandbeanWeb.WorkspaceLive.AgentEventsAndSchedulesTest do
     test "message_delta after user message creates new assistant block", %{conn: conn} do
       with_log(fn ->
         {:ok, view, _html} = live(conn, "/")
-        view |> element("form") |> render_submit(%{"message" => "Hello"})
+        view |> element("#composer") |> render_submit(%{"message" => "Hello"})
         send(view.pid, {:agent_event, agent_event(:message_delta, %{chunk: "Hi there!"})})
         assert render(view) =~ "Hello"
         assert render(view) =~ "Hi there!"
