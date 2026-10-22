@@ -6,15 +6,12 @@ defmodule Handbean.Agent.Coordinator do
   express intent here instead of directly starting `Handbean.Agent.run/2`.
   """
 
-  require Logger
-
+  alias Handbean.Agent.Coordinator.RunOptions
   alias Handbean.PubSub.Session
 
   @type source :: :live_view | :sns | :webhook | :cli | :mcp | atom()
   @type action :: :started | :enqueued
   @type ack :: %{action: action(), run_id: String.t() | nil, run_pid: pid() | nil}
-
-  @required_opts [:model, :provider_config, :tools, :source]
 
   @spec add_message(String.t(), String.t() | Handbean.Agent.Message.t(), keyword()) ::
           {:ok, ack()} | {:error, term()}
@@ -25,9 +22,7 @@ defmodule Handbean.Agent.Coordinator do
     {content, opts} = stamp_message_ids(content, opts)
 
     with :ok <- Handbean.Storage.Health.check_write(),
-         :ok <- validate_required_opts(opts),
-         :ok <- validate_model_policy(opts),
-         :ok <- validate_advisor_policy(opts),
+         :ok <- RunOptions.validate(opts),
          :ok <- validate_conversation_access(conversation_id, opts),
          :ok <- reserve_operation(conversation_id, content, opts) do
       opts = ensure_run_id(opts)
@@ -242,15 +237,13 @@ defmodule Handbean.Agent.Coordinator do
              is_list(opts) do
     with :ok <- Handbean.Storage.Health.check_write(),
          :ok <- validate_conversation_access(conversation_id, opts),
-         :ok <- validate_required_opts(opts),
-         :ok <- validate_model_policy(opts),
-         :ok <- validate_advisor_policy(opts),
+         :ok <- RunOptions.validate(opts),
          opts <- ensure_run_id(opts),
          {:ok, _pid} <- Session.start_or_get(session_id: conversation_id, model: opts[:model]) do
       {content, opts} = stamp_message_ids(content, opts)
-      run_opts = agent_run_opts(conversation_id, opts)
+      run_opts = RunOptions.build(conversation_id, opts)
 
-      with :ok <- runtime_checkout_available(run_opts) do
+      with :ok <- RunOptions.validate_checkout(run_opts) do
         case Handbean.Agent.Runner.start_run(conversation_id, content, run_opts) do
           {:ok, pid} ->
             runner_pid = wait_until_registered(conversation_id)
@@ -626,46 +619,6 @@ defmodule Handbean.Agent.Coordinator do
 
   defp pending_tool_ids(_info), do: []
 
-  defp runtime_checkout_available(opts) do
-    if free_chat?(opts) do
-      :ok
-    else
-      case Keyword.get(opts, :working_directory) do
-        path when is_binary(path) and path != "" ->
-          if File.dir?(path), do: :ok, else: {:error, :checkout_unavailable}
-
-        _ ->
-          {:error, :checkout_unavailable}
-      end
-    end
-  end
-
-  defp validate_required_opts(opts) do
-    missing = Enum.reject(@required_opts, &Keyword.has_key?(opts, &1))
-
-    missing =
-      if free_chat?(opts) or present_workspace_path?(opts) do
-        missing
-      else
-        [:workspace_path | missing]
-      end
-
-    if missing == [] do
-      :ok
-    else
-      {:error, {:missing_opts, missing}}
-    end
-  end
-
-  defp free_chat?(opts), do: Keyword.get(opts, :chat_scope) == :free
-
-  defp present_workspace_path?(opts) do
-    case Keyword.get(opts, :workspace_path) do
-      path when is_binary(path) and path != "" -> true
-      _ -> false
-    end
-  end
-
   defp validate_conversation_access(id, opts) do
     case Handbean.ConversationStore.lifecycle_status(id) do
       :pending_delete ->
@@ -685,91 +638,6 @@ defmodule Handbean.Agent.Coordinator do
     end
   end
 
-  defp validate_model_policy(opts) do
-    cond do
-      explicit_provider_with_raw_model?(opts) -> :ok
-      free_chat?(opts) -> :ok
-      true -> validate_workspace_model_policy(opts)
-    end
-  end
-
-  defp explicit_provider_with_raw_model?(opts) do
-    Keyword.has_key?(opts, :provider) and
-      opts
-      |> Keyword.fetch!(:model)
-      |> String.contains?("/")
-      |> Kernel.not()
-  end
-
-  defp validate_workspace_model_policy(opts) do
-    workspace_path = Keyword.fetch!(opts, :workspace_path)
-    model = Keyword.fetch!(opts, :model)
-
-    if Handbean.Agent.ModelConfig.model_allowed_for_workspace?(workspace_path, model) do
-      validate_om_model_policy(opts)
-    else
-      {:error,
-       Gettext.dgettext(
-         Handbean.Gettext,
-         "errors",
-         "Model %{model} is not allowed in this workspace. Check Settings → Model / AI → Default model.",
-         model: model
-       )}
-    end
-  end
-
-  defp validate_om_model_policy(opts) do
-    workspace_path = Keyword.fetch!(opts, :workspace_path)
-
-    if Handbean.WorkspaceSettings.builtin_memory_enabled(workspace_path) do
-      om = Keyword.get(opts, :om, %{})
-      memory_model_allowed(workspace_path, om[:model] || om["model"])
-    else
-      :ok
-    end
-  end
-
-  # A removed catalog entry is not a workspace restriction. "Unrestricted" and
-  # an allowlist that simply does not name the model both mean "do not use it
-  # for memory", so the chat model can still start. An explicit allowlist that
-  # excludes a model still present in the catalog remains a hard error.
-  defp memory_model_allowed(_workspace_path, model)
-       when model in [nil, ""],
-       do: :ok
-
-  defp memory_model_allowed(workspace_path, model) do
-    cond do
-      Handbean.Agent.ModelConfig.model_allowed_for_workspace?(workspace_path, model) ->
-        :ok
-
-      Handbean.Agent.ModelConfig.model_in_catalog?(model) ->
-        {:error, memory_model_rejected(model)}
-
-      true ->
-        :ok
-    end
-  end
-
-  defp memory_model_rejected(model) do
-    Gettext.dgettext(
-      Handbean.Gettext,
-      "errors",
-      "Observational Memory model (%{model}) is not allowed in this workspace. Check Settings → Model / AI → Observational Memory → Memory model.",
-      model: model
-    )
-  end
-
-  defp validate_advisor_policy(opts) do
-    if free_chat?(opts) do
-      :ok
-    else
-      {:ok, _pin} =
-        Handbean.Agent.Advisor.validate_start(Keyword.fetch!(opts, :workspace_path), opts)
-
-      :ok
-    end
-  end
-
   defp maybe_resume_stall(conversation_id) do
     case status(conversation_id) do
       {:ok, %{running?: true, interrupt_type: :stall_check}} ->
@@ -777,161 +645,6 @@ defmodule Handbean.Agent.Coordinator do
 
       _ ->
         :ok
-    end
-  end
-
-  defp agent_run_opts(conversation_id, opts) do
-    opts =
-      case Handbean.ConversationStore.get_metadata(conversation_id) do
-        {:ok, meta} ->
-          opts =
-            opts
-            |> Keyword.put_new(:workspace_id, meta["workspace_id"])
-            |> put_created_by(meta)
-            |> put_checkout_path(meta)
-            |> put_permission_mode(meta)
-
-          if get_in(meta, ["collaboration", "read_only"]) == true,
-            do: Keyword.put(opts, :delegated_read_only, true),
-            else: opts
-
-        _ ->
-          opts
-      end
-
-    opts
-    |> Keyword.put(:session_id, conversation_id)
-    |> Keyword.put(:conversation_id, conversation_id)
-    |> ensure_run_id()
-    |> put_saved_provider()
-    |> put_transcript_history(conversation_id)
-    |> put_working_directory()
-    |> put_builtin_memory()
-    |> put_skills()
-    |> put_advisor_pin()
-  end
-
-  defp put_permission_mode(opts, meta) do
-    resolved =
-      meta
-      |> Handbean.Permissions.ConversationMode.get()
-      |> Handbean.Permissions.ConversationMode.resolve(Keyword.get(opts, :delegated_approval))
-
-    opts
-    |> Keyword.put(:permission_mode, resolved.permission_mode)
-    |> Keyword.put(:permission_revision, meta["permission_revision"] || 0)
-    |> Keyword.put(:approval_mode, resolved.approval_mode)
-    |> Keyword.put(:approvals_reviewer, resolved.reviewer)
-    |> Keyword.put(:permission_source, :conversation)
-  end
-
-  defp put_checkout_path(opts, meta) do
-    if Keyword.has_key?(opts, :working_directory) do
-      opts
-    else
-      case meta["checkout_path"] do
-        path when is_binary(path) and path != "" ->
-          case Handbean.ConversationStore.effective_checkout_path(meta) do
-            {:ok, checkout_path} -> Keyword.put(opts, :working_directory, checkout_path)
-            {:error, _reason} -> Keyword.put(opts, :working_directory, nil)
-          end
-
-        _missing ->
-          opts
-      end
-    end
-  end
-
-  defp put_created_by(opts, meta) do
-    case Handbean.ConversationStore.parent_conversation_id(meta) do
-      parent_id when is_binary(parent_id) ->
-        Keyword.put(opts, :created_by_conversation_id, parent_id)
-
-      _ ->
-        opts
-    end
-  end
-
-  # A composite model id is the saved catalog entry. Load that provider so a
-  # subscription adapter is selected from models.json, not from a caller that
-  # only forwarded transport options such as a test plug.
-  defp put_saved_provider(opts) do
-    model = Keyword.get(opts, :model)
-
-    with true <- is_binary(model) and String.contains?(model, "/"),
-         {:ok, saved, model_id} <- saved_provider_config(opts, model) do
-      caller = Keyword.get(opts, :provider_config, %{})
-
-      opts
-      |> Keyword.put(:model, model_id)
-      |> Keyword.put(:provider_config, Map.merge(saved, caller))
-    else
-      _ -> opts
-    end
-  end
-
-  defp saved_provider_config(opts, model) do
-    cond do
-      free_chat?(opts) ->
-        Handbean.Agent.ModelConfig.resolve_global_model(model)
-
-      match?({:ok, _}, Keyword.fetch(opts, :workspace_path)) ->
-        Handbean.Agent.ModelConfig.resolve_model_for_workspace(opts[:workspace_path], model)
-
-      true ->
-        :error
-    end
-  end
-
-  defp put_working_directory(opts) do
-    cond do
-      free_chat?(opts) ->
-        Keyword.delete(opts, :working_directory)
-
-      true ->
-        case Keyword.fetch(opts, :working_directory) do
-          {:ok, _value} -> opts
-          :error -> Keyword.put(opts, :working_directory, Keyword.fetch!(opts, :workspace_path))
-        end
-    end
-  end
-
-  defp put_builtin_memory(opts) do
-    enabled =
-      if free_chat?(opts) do
-        true
-      else
-        opts
-        |> Keyword.fetch!(:workspace_path)
-        |> Handbean.WorkspaceSettings.builtin_memory_enabled()
-      end
-
-    om =
-      opts
-      |> Keyword.get(:om, %{})
-      |> then(&if(is_map(&1), do: &1, else: %{}))
-      |> Map.delete("enabled")
-      |> Map.put(:enabled, enabled)
-
-    opts
-    |> Keyword.put(:builtin_memory_enabled, enabled)
-    |> Keyword.put(:om, om)
-  end
-
-  defp put_skills(opts) do
-    if free_chat?(opts),
-      do: Keyword.put(opts, :skills, false),
-      else: Keyword.put(opts, :skills, true)
-  end
-
-  defp put_advisor_pin(opts) do
-    if free_chat?(opts) do
-      Keyword.put(opts, :advisor, Handbean.Agent.Advisor.unavailable())
-    else
-      {:ok, pin} =
-        Handbean.Agent.Advisor.validate_start(Keyword.fetch!(opts, :workspace_path), opts)
-
-      Keyword.put(opts, :advisor, pin)
     end
   end
 
@@ -983,46 +696,6 @@ defmodule Handbean.Agent.Coordinator do
 
   defp message_id(%Handbean.Agent.Message{id: id}) when is_binary(id) and id != "", do: id
   defp message_id(_), do: nil
-
-  defp put_transcript_history(opts, conversation_id) do
-    Keyword.put_new_lazy(opts, :history_messages, fn ->
-      transcript_history_messages(
-        conversation_id,
-        Keyword.get(opts, :run_id),
-        Keyword.get(opts, :transcript_id),
-        history_workspace_path(opts)
-      )
-    end)
-  end
-
-  defp history_workspace_path(opts) do
-    if free_chat?(opts), do: nil, else: opts[:working_directory]
-  end
-
-  defp transcript_history_messages(
-         conversation_id,
-         current_run_id,
-         current_transcript_id,
-         workspace_path
-       ) do
-    case Handbean.ConversationTranscriptStore.list(conversation_id) do
-      {:ok, entries} ->
-        entries
-        |> Enum.reject(fn entry ->
-          (current_run_id && Map.get(entry, "run_id") == current_run_id) or
-            (current_transcript_id && Map.get(entry, "id") == current_transcript_id)
-        end)
-        |> Handbean.Attachments.History.to_messages(workspace_path, conversation_id)
-
-      {:error, reason} ->
-        Logger.warning(fn ->
-          "[Coordinator] failed to load transcript history conversation=#{conversation_id} " <>
-            "reason=#{inspect(reason)}"
-        end)
-
-        []
-    end
-  end
 
   defp session_status(conversation_id) do
     case Session.whereis(conversation_id) do
