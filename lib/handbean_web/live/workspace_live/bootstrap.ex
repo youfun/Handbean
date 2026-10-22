@@ -200,6 +200,7 @@ defmodule HandbeanWeb.WorkspaceLive.Bootstrap do
       |> assign(:conversation_menu_id, nil)
       |> assign(:checkout_picker, nil)
       |> assign(:rename_conversation, nil)
+      |> assign(:archive_conversation, nil)
       |> assign(:delete_conversation, nil)
       |> assign(:pending_approval, nil)
       |> Schedules.defaults()

@@ -153,12 +153,34 @@ defmodule HandbeanProbe.HomeScreen.Nav do
   end
 
   def handle({:tap, {:archive_conversation, id}}, socket) when is_binary(id) do
-    socket = assign(socket, conversation_menu_id: nil, rename_conversation: nil)
+    socket =
+      assign(socket,
+        conversation_menu_id: nil,
+        rename_conversation: nil,
+        archive_conversation: nil
+      )
 
-    case ConversationStore.archive(id) do
-      {:ok, _} -> reload_history(socket)
-      _ -> Notice.put_error(socket, gettext("Conversation not found"))
+    case ConversationStore.archive_preview(id) do
+      {:ok, %{descendant_count: count} = preview} when count > 0 ->
+        assign(socket, :archive_conversation, preview)
+
+      {:ok, preview} ->
+        archive_without_confirmation(socket, preview)
+
+      {:error, _reason} ->
+        Notice.put_error(socket, gettext("Conversation not found"))
     end
+  end
+
+  def handle({:tap, :confirm_archive_conversation}, socket) do
+    case socket.assigns.archive_conversation do
+      %{id: id} when is_binary(id) -> archive_confirmed(socket, id)
+      _ -> socket
+    end
+  end
+
+  def handle({kind, :cancel_archive_conversation}, socket) when kind in [:tap, :dismiss] do
+    assign(socket, :archive_conversation, nil)
   end
 
   def handle({:tap, {:copy_conversation_id, id}}, socket) when is_binary(id) do
@@ -262,6 +284,71 @@ defmodule HandbeanProbe.HomeScreen.Nav do
     |> MCPSettings.load()
     |> GitSettings.load()
     |> AppSettings.load()
+  end
+
+  defp archive_without_confirmation(socket, preview) do
+    case ConversationStore.archive_subtree_if_leaf(preview.id) do
+      {:ok, _conversation, archived_ids} ->
+        finish_archive(socket, archived_ids)
+
+      {:error, :confirmation_required} ->
+        case ConversationStore.archive_preview(preview.id) do
+          {:ok, refreshed} -> assign(socket, :archive_conversation, refreshed)
+          {:error, _reason} -> Notice.put_error(socket, gettext("Conversation not found"))
+        end
+
+      {:error, _reason} ->
+        Notice.put_error(socket, gettext("Conversation not found"))
+    end
+  end
+
+  defp archive_confirmed(socket, id) do
+    case ConversationStore.archive_subtree(id) do
+      {:ok, _conversation, archived_ids} ->
+        finish_archive(socket, archived_ids)
+
+      {:error, _reason} ->
+        socket
+        |> assign(:archive_conversation, nil)
+        |> Notice.put_error(gettext("Conversation not found"))
+    end
+  end
+
+  defp finish_archive(socket, archived_ids) do
+    current = socket.assigns.chat && socket.assigns.chat.conversation
+
+    socket =
+      socket
+      |> assign(:archive_conversation, nil)
+      |> reload_history()
+
+    if is_map(current) and current["id"] in archived_ids do
+      switch_after_archive(socket, current)
+    else
+      socket
+    end
+  end
+
+  defp switch_after_archive(socket, current) do
+    if ConversationStore.free?(current) do
+      case List.first(ConversationStore.list_free(include_timeline?: false)) do
+        nil ->
+          socket
+          |> reset_composer()
+          |> blank()
+          |> assign(
+            free_draft: true,
+            page: :chat,
+            workspace_tree: NativeWorkspaceTree.idle()
+          )
+
+        conversation ->
+          open_free(socket, conversation)
+      end
+    else
+      workspace = socket.assigns.workspace
+      apply_workspace(socket, workspace, NativeWorkspaces.resolve_conversation(workspace))
+    end
   end
 
   defp confirm_rename(socket, title) do

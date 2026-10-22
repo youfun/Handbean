@@ -525,6 +525,68 @@ defmodule HandbeanWeb.WorkspaceLive.OverlayComponents do
     """
   end
 
+  attr :archive_conversation, :any, required: true
+
+  def archive_conversation_dialog(assigns) do
+    ~H"""
+    <div
+      :if={@archive_conversation}
+      id="archive-conversation-overlay"
+      class="absolute inset-0 z-50 flex items-center justify-center"
+      phx-window-keydown="cancel_archive_conversation"
+      phx-key="Escape"
+    >
+      <button
+        type="button"
+        class="absolute inset-0 bg-transparent border-0"
+        phx-click="cancel_archive_conversation"
+        aria-label={gettext("取消")}
+      ></button>
+      <div
+        id="archive-conversation-dialog"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="archive-conversation-title"
+        class="relative add-project-dialog bg-surface border rounded-xl shadow-2xl w-[420px] p-5"
+      >
+        <h3 id="archive-conversation-title" class="text-base font-semibold text-primary mb-2">
+          {gettext("归档对话")}
+        </h3>
+        <p id="archive-conversation-descendants" class="text-xs text-secondary mb-2">
+          {ngettext(
+            "“%{title}”及其 1 个子线程将移入已归档。",
+            "“%{title}”及其 %{count} 个子线程将移入已归档。",
+            @archive_conversation.descendant_count,
+            title: @archive_conversation.title,
+            count: @archive_conversation.descendant_count
+          )}
+        </p>
+        <p class="text-xs text-secondary mb-4">
+          {gettext("确认后，这些对话不会再显示在当前列表中。")}
+        </p>
+        <div class="flex justify-end gap-3">
+          <button
+            type="button"
+            id="cancel-archive-conversation"
+            phx-click="cancel_archive_conversation"
+            class="text-xs text-secondary border rounded px-3 py-1.5 transition-colors hover:text-primary hover:border-hover"
+          >
+            {gettext("取消")}
+          </button>
+          <button
+            type="button"
+            id="confirm-archive-conversation"
+            phx-click="confirm_archive_conversation"
+            class="text-xs bg-user text-white rounded px-4 py-1.5 transition-colors hover:bg-user-hover"
+          >
+            {gettext("归档")}
+          </button>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
   attr :delete_conversation, :any, required: true
 
   def delete_conversation_dialog(assigns) do

@@ -45,6 +45,7 @@ defmodule HandbeanProbe.HomeScreen.State do
     conversation_menu_id: nil,
     chat_panel: :agent,
     rename_conversation: nil,
+    archive_conversation: nil,
     conversation_activity: %{},
     bean_frame: 0,
     bean_timer: nil,

@@ -41,6 +41,7 @@ defmodule HandbeanWeb.WorkspaceLive do
   import OverlayComponents,
     only: [
       mobile_sheets: 1,
+      archive_conversation_dialog: 1,
       delete_conversation_dialog: 1,
       approval_overlay: 1,
       status_bar: 1
@@ -528,6 +529,12 @@ defmodule HandbeanWeb.WorkspaceLive do
 
   def handle_event("archive_conversation", params, socket),
     do: ConversationEvents.handle("archive_conversation", params, socket)
+
+  def handle_event("cancel_archive_conversation", params, socket),
+    do: ConversationEvents.handle("cancel_archive_conversation", params, socket)
+
+  def handle_event("confirm_archive_conversation", params, socket),
+    do: ConversationEvents.handle("confirm_archive_conversation", params, socket)
 
   def handle_event("unarchive_conversation", params, socket),
     do: ConversationEvents.handle("unarchive_conversation", params, socket)

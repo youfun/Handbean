@@ -58,12 +58,49 @@ defmodule HandbeanProbe.HomeScreen.Render do
       ],
       [
         render_page(%{a | page: :chat, approval_open: a.approval_open and page_name == :chat}),
-        if(page_name == :history, do: render_page(a))
+        if(page_name == :history, do: render_page(a)),
+        archive_conversation_sheet(a)
       ]
     )
   end
 
   defp shell(a), do: render_page(a)
+
+  defp archive_conversation_sheet(%{archive_conversation: nil}), do: nil
+
+  defp archive_conversation_sheet(%{archive_conversation: pending}) do
+    count = pending.descendant_count
+
+    sheet(
+      [
+        text(gettext("Archive conversation"), text_size: 16, font_weight: "bold"),
+        text(
+          ngettext(
+            "“%{title}” and its %{count} child thread will move to Archived.",
+            "“%{title}” and its %{count} child threads will move to Archived.",
+            count,
+            title: pending.title,
+            count: count
+          ),
+          text_color: color(:muted),
+          padding_top: 8
+        ),
+        text(
+          gettext(
+            "After confirmation, these conversations will no longer appear in the current list."
+          ),
+          text_color: color(:muted),
+          padding_top: 8
+        ),
+        actions_row([
+          primary_button(gettext("Archive"), :confirm_archive_conversation),
+          quiet_button(gettext("Cancel"), :cancel_archive_conversation)
+        ])
+      ],
+      dismiss: :cancel_archive_conversation,
+      id: "archive-conversation-confirm"
+    )
+  end
 
   defp render_page(%{page: :chat} = a) do
     back_target =

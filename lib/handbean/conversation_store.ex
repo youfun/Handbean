@@ -7,7 +7,7 @@ defmodule Handbean.ConversationStore do
   """
 
   alias Ecto.Changeset
-  alias Handbean.ConversationStore.{Codec, Projection, Usage}
+  alias Handbean.ConversationStore.{Archive, Codec, Projection, Usage}
   alias Handbean.Repo
   alias Handbean.Storage.{Conversation, ConversationEditorState}
 
@@ -192,6 +192,8 @@ defmodule Handbean.ConversationStore do
   def delete_preview(id), do: Handbean.ConversationStore.Deletion.preview(id)
   def request_delete(id), do: Handbean.ConversationStore.Deletion.request(id)
 
+  def archive_preview(id), do: Archive.preview(id)
+
   def create(workspace_id, opts \\ []) when is_binary(workspace_id) do
     create_conversation("workspace", workspace_id, opts)
   end
@@ -228,7 +230,23 @@ defmodule Handbean.ConversationStore do
 
   def free?(_value), do: false
 
-  def archive(id) when is_binary(id), do: update_and_get(id, archived_at: now(), touch: true)
+  def archive(id) when is_binary(id) do
+    with {:ok, _ids} <- Archive.request(id), do: get(id)
+  end
+
+  def archive_subtree_if_leaf(id) when is_binary(id) do
+    with {:ok, ids} <- Archive.request_if_leaf(id),
+         {:ok, conversation} <- get(id) do
+      {:ok, conversation, ids}
+    end
+  end
+
+  def archive_subtree(id) when is_binary(id) do
+    with {:ok, ids} <- Archive.request(id),
+         {:ok, conversation} <- get(id) do
+      {:ok, conversation, ids}
+    end
+  end
 
   def archive_for_workspace(workspace_id) when is_binary(workspace_id) do
     workspace_id

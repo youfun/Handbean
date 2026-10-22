@@ -224,17 +224,11 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
     |> ConversationState.sync_conv_state(opts)
   end
 
-  def archive_conversation(socket, conv_id, ws_id, opts \\ []) do
-    case Handbean.ConversationStore.get(conv_id, include_timeline?: false) do
-      {:ok, conv} ->
-        if Handbean.ConversationStore.free?(conv) do
-          archive_free_conversation(socket, conv_id, opts)
-        else
-          archive_workspace_conversation(socket, conv_id, ws_id || conv["workspace_id"], opts)
-        end
-
-      _ ->
-        {socket, nil}
+  def refresh_after_archive(socket, archived_ids, free?, ws_id, opts \\ []) do
+    if free? do
+      refresh_free_after_archive(socket, archived_ids, opts)
+    else
+      refresh_workspace_after_archive(socket, archived_ids, ws_id, opts)
     end
   end
 
@@ -336,9 +330,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
     end
   end
 
-  defp archive_free_conversation(socket, conv_id, opts) do
-    _ = Handbean.ConversationStore.archive(conv_id)
-
+  defp refresh_free_after_archive(socket, archived_ids, opts) do
     conversations_by_ws =
       Map.put(
         socket.assigns.conversations_by_workspace,
@@ -351,7 +343,8 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
       |> assign(:conversations_by_workspace, conversations_by_ws)
       |> reload_conversation_stream()
 
-    if socket.assigns.chat_scope == :free and socket.assigns.current_conversation_id == conv_id do
+    if socket.assigns.chat_scope == :free and
+         socket.assigns.current_conversation_id in archived_ids do
       {socket, next} = ensure_active_free_conversation(socket)
       next_id = ConversationState.conversation_id(next)
 
@@ -368,15 +361,13 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
     end
   end
 
-  defp archive_workspace_conversation(socket, conv_id, ws_id, opts) do
-    _ = Handbean.ConversationStore.archive(conv_id)
-
+  defp refresh_workspace_after_archive(socket, archived_ids, ws_id, opts) do
     socket =
       socket
       |> assign(:conversations_by_workspace, reload_workspace_conversations(socket))
       |> reload_conversation_stream()
 
-    if socket.assigns.current_conversation_id == conv_id do
+    if socket.assigns.current_conversation_id in archived_ids do
       {socket, next} = ensure_active_conversation(socket, ws_id)
       next_id = ConversationState.conversation_id(next)
       {:ok, workspace} = refreshed_workspace(ws_id)

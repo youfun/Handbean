@@ -332,6 +332,60 @@ defmodule HandbeanProbe.HomeScreenNavigationHistoryTest do
     refute text(view) =~ gettext("Conversation not found")
   end
 
+  test "native history confirms cascading archive and switches away from an archived child", %{
+    view: view
+  } do
+    {:ok, fallback} = Handbean.ConversationStore.create("default", title: "Archive fallback")
+    {:ok, parent} = Handbean.ConversationStore.create("default", title: "Archive parent")
+
+    {:ok, child} =
+      Handbean.ConversationStore.create("default",
+        title: "Archive child",
+        parent_conversation_id: parent["id"]
+      )
+
+    view = info(view, {:tap, {:conversation, child["id"]}})
+    view = info(view, {:tap, {:page, :history}})
+    view = info(view, {:tap, {:archive_conversation, parent["id"]}})
+
+    assert assigns(view).conversation_menu_id == nil
+    assert %{id: id, descendant_count: 1} = assigns(view).archive_conversation
+    assert id == parent["id"]
+    assert find(view, :sheet, id: "archive-conversation-confirm")
+
+    assert text(view) =~
+             ngettext(
+               "“%{title}” and its %{count} child thread will move to Archived.",
+               "“%{title}” and its %{count} child threads will move to Archived.",
+               1,
+               title: parent["title"],
+               count: 1
+             )
+
+    for conversation <- [parent, child] do
+      assert {:ok, %{"archived_at" => nil}} =
+               Handbean.ConversationStore.get_metadata(conversation["id"])
+    end
+
+    view = info(view, {:tap, :cancel_archive_conversation})
+    assert assigns(view).archive_conversation == nil
+    refute find(view, :sheet, id: "archive-conversation-confirm")
+
+    view = info(view, {:tap, {:archive_conversation, parent["id"]}})
+    view = info(view, {:tap, :confirm_archive_conversation})
+
+    assert assigns(view).archive_conversation == nil
+    assert assigns(view).page == :chat
+    assert assigns(view).chat.conversation["id"] == fallback["id"]
+
+    for conversation <- [parent, child] do
+      assert {:ok, %{"archived_at" => archived_at}} =
+               Handbean.ConversationStore.get_metadata(conversation["id"])
+
+      assert is_binary(archived_at)
+    end
+  end
+
   test "conversation menu copies the conversation ID and closes the menu", %{view: view} do
     on_exit(fn -> Application.delete_env(:handbean_probe, :clipboard_put) end)
     {:ok, c} = Handbean.ConversationStore.create("default", title: "Copy fixture")

@@ -303,39 +303,37 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationEvents do
       |> assign(:conversation_menu_id, nil)
       |> assign(:rename_conversation, nil)
 
-    with {:ok, conv} <- Handbean.ConversationStore.get(conv_id, include_timeline?: false) do
-      free? = Handbean.ConversationStore.free?(conv)
-      ws_id = conv["workspace_id"] || params["ws_id"] || socket.assigns.current_workspace_id
+    case Handbean.ConversationStore.archive_preview(conv_id) do
+      {:ok, preview} ->
+        ws_id = preview.workspace_id || params["ws_id"] || socket.assigns.current_workspace_id
 
-      {socket, next_conv_id} =
-        ConversationSwitching.archive_conversation(
-          socket,
-          conv_id,
-          ws_id,
-          ModelSelection.state_opts()
-        )
-
-      socket =
-        cond do
-          next_conv_id && free? ->
-            socket
-            |> WorkspaceNavigation.enter_free_chat()
-            |> RuntimeProjection.subscribe_session()
-            |> push_patch(to: "/c/#{next_conv_id}")
-
-          next_conv_id && is_binary(ws_id) ->
-            socket
-            |> WorkspaceNavigation.after_switch()
-            |> RuntimeProjection.subscribe_session()
-            |> push_patch(to: "/w/#{ws_id}/c/#{next_conv_id}")
-
-          true ->
-            socket
+        if archive_workspace_matches?(preview, params, socket) do
+          if preview.descendant_count > 0 do
+            {:noreply, assign(socket, :archive_conversation, preview)}
+          else
+            archive_now(socket, preview.id, preview.scope == "free", ws_id, false)
+          end
+        else
+          {:noreply, socket}
         end
 
-      {:noreply, socket}
-    else
-      _ -> {:noreply, socket}
+      {:error, _reason} ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle("cancel_archive_conversation", _params, socket) do
+    {:noreply, assign(socket, :archive_conversation, nil)}
+  end
+
+  def handle("confirm_archive_conversation", _params, socket) do
+    case socket.assigns.archive_conversation do
+      %{id: conv_id, scope: scope, workspace_id: workspace_id} ->
+        socket = assign(socket, :archive_conversation, nil)
+        archive_now(socket, conv_id, scope == "free", workspace_id, true)
+
+      _ ->
+        {:noreply, socket}
     end
   end
 
@@ -650,5 +648,62 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationEvents do
 
   def handle("scroll_to_bottom", _params, socket) do
     {:noreply, push_event(socket, "scroll_chat_to_bottom", %{})}
+  end
+
+  defp archive_workspace_matches?(preview, params, socket) do
+    preview.scope == "free" or preview.workspace_id == params["ws_id"] or
+      preview.workspace_id == socket.assigns.current_workspace_id
+  end
+
+  defp archive_now(socket, conv_id, free?, ws_id, confirmed?) do
+    result =
+      if confirmed?,
+        do: Handbean.ConversationStore.archive_subtree(conv_id),
+        else: Handbean.ConversationStore.archive_subtree_if_leaf(conv_id)
+
+    case result do
+      {:ok, _conversation, archived_ids} ->
+        archive_and_switch(socket, archived_ids, free?, ws_id)
+
+      {:error, :confirmation_required} ->
+        case Handbean.ConversationStore.archive_preview(conv_id) do
+          {:ok, preview} -> {:noreply, assign(socket, :archive_conversation, preview)}
+          {:error, _reason} -> {:noreply, socket}
+        end
+
+      {:error, _reason} ->
+        {:noreply, socket}
+    end
+  end
+
+  defp archive_and_switch(socket, archived_ids, free?, ws_id) do
+    {socket, next_conv_id} =
+      ConversationSwitching.refresh_after_archive(
+        socket,
+        archived_ids,
+        free?,
+        ws_id,
+        ModelSelection.state_opts()
+      )
+
+    socket =
+      cond do
+        next_conv_id && free? ->
+          socket
+          |> WorkspaceNavigation.enter_free_chat()
+          |> RuntimeProjection.subscribe_session()
+          |> push_patch(to: "/c/#{next_conv_id}")
+
+        next_conv_id && is_binary(ws_id) ->
+          socket
+          |> WorkspaceNavigation.after_switch()
+          |> RuntimeProjection.subscribe_session()
+          |> push_patch(to: "/w/#{ws_id}/c/#{next_conv_id}")
+
+        true ->
+          socket
+      end
+
+    {:noreply, socket}
   end
 end

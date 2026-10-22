@@ -2765,9 +2765,27 @@ msgid "Agent"
 msgstr ""
 
 #: lib/handbean_probe/native_conversation_row.ex:157
+#: lib/handbean_probe/home_screen/render.ex:96
 #, elixir-autogen, elixir-format
 msgid "Archive"
 msgstr ""
+
+#: lib/handbean_probe/home_screen/render.ex:76
+#, elixir-autogen, elixir-format
+msgid "Archive conversation"
+msgstr "Archive conversation"
+
+#: lib/handbean_probe/home_screen/render.ex:89
+#, elixir-autogen, elixir-format
+msgid "After confirmation, these conversations will no longer appear in the current list."
+msgstr "After confirmation, these conversations will no longer appear in the current list."
+
+#: lib/handbean_probe/home_screen/render.ex:78
+#, elixir-autogen, elixir-format
+msgid "“%{title}” and its %{count} child thread will move to Archived."
+msgid_plural "“%{title}” and its %{count} child threads will move to Archived."
+msgstr[0] "“%{title}” and its %{count} child thread will move to Archived."
+msgstr[1] "“%{title}” and its %{count} child threads will move to Archived."
 
 #: lib/handbean_probe/home_screen/settings_hub.ex:139
 #, elixir-autogen, elixir-format, fuzzy

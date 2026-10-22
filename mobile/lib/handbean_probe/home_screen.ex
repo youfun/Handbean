@@ -323,6 +323,12 @@ defmodule HandbeanProbe.HomeScreen do
   defp dispatch({:tap, {:toggle_pin_conversation, _}} = msg, socket), do: Nav.handle(msg, socket)
   defp dispatch({:tap, {:rename_conversation, _}} = msg, socket), do: Nav.handle(msg, socket)
   defp dispatch({:tap, {:archive_conversation, _}} = msg, socket), do: Nav.handle(msg, socket)
+  defp dispatch({:tap, :confirm_archive_conversation} = msg, socket), do: Nav.handle(msg, socket)
+
+  defp dispatch({kind, :cancel_archive_conversation} = msg, socket)
+       when kind in [:tap, :dismiss],
+       do: Nav.handle(msg, socket)
+
   defp dispatch({:tap, {:copy_conversation_id, _}} = msg, socket), do: Nav.handle(msg, socket)
   defp dispatch({:tap, {:toggle_history_group, _}} = msg, socket), do: Nav.handle(msg, socket)
 

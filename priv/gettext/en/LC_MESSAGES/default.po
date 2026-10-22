@@ -2069,6 +2069,23 @@ msgstr ""
 msgid "归档"
 msgstr "Archive"
 
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:552
+#, elixir-autogen, elixir-format
+msgid "归档对话"
+msgstr "Archive conversation"
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:556
+#, elixir-autogen, elixir-format
+msgid "“%{title}”及其 1 个子线程将移入已归档。"
+msgid_plural "“%{title}”及其 %{count} 个子线程将移入已归档。"
+msgstr[0] "“%{title}” and its 1 child thread will move to Archived."
+msgstr[1] "“%{title}” and its %{count} child threads will move to Archived."
+
+#: lib/handbean_web/live/workspace_live/overlay_components.ex:562
+#, elixir-autogen, elixir-format
+msgid "确认后，这些对话不会再显示在当前列表中。"
+msgstr "After confirmation, these conversations will no longer appear in the current list."
+
 #: lib/handbean_web/live/workspace_live/chat_components.ex:457
 #, elixir-autogen, elixir-format
 msgid "手机不能直接把系统下载目录当工作区。系统授权后会把所选文件夹复制进应用私有目录。Downloads 根目录在部分 Android 版本上不可选，请选其中的项目子文件夹。"

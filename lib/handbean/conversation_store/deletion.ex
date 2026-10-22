@@ -3,6 +3,7 @@ defmodule Handbean.ConversationStore.Deletion do
 
   import Ecto.Query
 
+  alias Handbean.ConversationStore.Tree
   alias Handbean.Repo
   alias Handbean.Schedule.Entry, as: Schedule
   alias Handbean.Storage.{Conversation, ConversationMedia, OperationReceipt}
@@ -245,36 +246,9 @@ defmodule Handbean.ConversationStore.Deletion do
   end
 
   defp subtree(id) do
-    sql = """
-    WITH RECURSIVE subtree(id, visibility, status, parent_conversation_id, depth) AS (
-      SELECT id, visibility, status, parent_conversation_id, 0
-      FROM conversations
-      WHERE id = ?
-      UNION ALL
-      SELECT child.id, child.visibility, child.status, child.parent_conversation_id,
-             subtree.depth + 1
-      FROM conversations AS child
-      JOIN subtree ON child.parent_conversation_id = subtree.id
-    )
-    SELECT id, visibility, status, parent_conversation_id, depth
-    FROM subtree
-    ORDER BY depth ASC, id ASC
-    """
-
-    case Repo.query(sql, [id]) do
-      {:ok, %{rows: rows}} ->
-        Enum.map(rows, fn [row_id, visibility, status, parent_conversation_id, depth] ->
-          %{
-            id: row_id,
-            visibility: visibility,
-            status: status,
-            parent_conversation_id: parent_conversation_id,
-            depth: depth
-          }
-        end)
-
-      {:error, reason} ->
-        Repo.rollback(reason)
+    case Tree.subtree(id) do
+      {:ok, rows} -> rows
+      {:error, reason} -> Repo.rollback(reason)
     end
   end
 
