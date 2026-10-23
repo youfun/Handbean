@@ -1,0 +1,948 @@
+<div id="plugins-settings" class="plugins-settings-scroll h-full overflow-y-auto">
+  <div class="plugins-wrap">
+    <header class="plugins-content-head">
+      <div>
+        <h1>{gettext("插件")}</h1>
+        <p>{gettext("管理扩展、MCP 服务器与技能。")}</p>
+      </div>
+      <div class="plugins-head-actions">
+        <button
+          id="plugins-import-dir"
+          type="button"
+          phx-click="open_import_modal"
+          class="plugins-soft-btn"
+        >
+          {gettext("从目录导入")}
+        </button>
+        <button
+          id="mcp-add"
+          type="button"
+          phx-click="new"
+          class="plugins-dark-btn"
+        >
+          {gettext("添加 MCP")}
+        </button>
+      </div>
+    </header>
+
+    <div :if={@load_error} id="mcp-load-error" class="plugins-alert plugins-alert-error">
+      {@load_error}
+    </div>
+
+    <div :if={@notice} id="plugins-notice" class="plugins-alert">
+      {@notice}
+    </div>
+
+    <div class="plugins-toolbar">
+      <div class="plugins-seg" role="tablist" aria-label={gettext("视图模式")}>
+        <button
+          id="plugins-mode-installed"
+          type="button"
+          role="tab"
+          aria-selected={@mode == "installed"}
+          phx-click="switch_mode"
+          phx-value-mode="installed"
+          class={if(@mode == "installed", do: "active")}
+        >
+          {gettext("已安装")}
+        </button>
+        <button
+          id="plugins-mode-discover"
+          type="button"
+          role="tab"
+          aria-selected={@mode == "discover"}
+          phx-click="switch_mode"
+          phx-value-mode="discover"
+          class={if(@mode == "discover", do: "active")}
+        >
+          {gettext("发现")}
+        </button>
+      </div>
+
+      <div class="plugins-toolbar-right">
+        <button
+          id="plugins-filter-all"
+          type="button"
+          phx-click="filter_mech"
+          phx-value-mech="all"
+          class={["plugins-chip", if(@mech_filter == "all", do: "active")]}
+        >
+          {gettext("全部")}
+          <b>{length(@extensions) + length(@servers) + length(@skills)}</b>
+        </button>
+        <button
+          id="plugins-filter-ext"
+          type="button"
+          phx-click="filter_mech"
+          phx-value-mech="ext"
+          class={["plugins-chip", if(@mech_filter == "ext", do: "active")]}
+        >
+          {gettext("扩展")} <b>{length(@extensions)}</b>
+        </button>
+        <button
+          id="plugins-filter-mcp"
+          type="button"
+          phx-click="filter_mech"
+          phx-value-mech="mcp"
+          class={["plugins-chip", if(@mech_filter == "mcp", do: "active")]}
+        >
+          MCP <b>{length(@servers)}</b>
+        </button>
+        <button
+          id="plugins-filter-skill"
+          type="button"
+          phx-click="filter_mech"
+          phx-value-mech="skill"
+          class={["plugins-chip", if(@mech_filter == "skill", do: "active")]}
+        >
+          Skill <b>{length(@skills)}</b>
+        </button>
+
+        <form id="plugins-search-form" phx-change="search" onsubmit="return false;">
+          <input
+            id="plugins-search-input"
+            type="search"
+            name="query"
+            value={@search_query}
+            placeholder={gettext("搜索插件…")}
+            phx-debounce="150"
+            class="plugins-search"
+          />
+        </form>
+      </div>
+    </div>
+
+    <!-- ── 已安装视图 ── -->
+    <div :if={@mode == "installed"} id="plugins-view-installed">
+      <% exts = filtered_extensions(@extensions, @search_query) %>
+      <% mcp_list = filtered_servers(@servers, @search_query) %>
+      <% skill_list = filtered_skills(@skills, @search_query) %>
+      <% filtering? = filter_active?(@mech_filter, @search_query) %>
+      <!-- 扩展 -->
+      <section
+        :if={section_visible?(@mech_filter, "ext", exts, filtering?)}
+        id="plugins-section-ext"
+        class="plugins-section"
+      >
+        <div class="plugins-section-head">{gettext("扩展")}</div>
+        <div :if={exts == []} id="ext-empty" class="plugins-empty-card">
+          {gettext("暂无已安装的扩展。")}
+        </div>
+        <div :if={exts != []} class="plugins-card-grid">
+          <article
+            :for={ext <- exts}
+            id={"ext-card-#{ext.name}"}
+            class={["plugin-card", if(!ext.enabled, do: "is-disabled")]}
+          >
+            <div>
+              <div class="plugin-card-top">
+                <div class="plugin-card-title">
+                  <span>{ext.name}</span>
+                  <span class="plugin-card-version">{ext.version}</span>
+                </div>
+              </div>
+              <% {badge_cls, badge_text} = ext_status_badge(ext) %>
+              <div class="plugin-card-badges">
+                <span class="plugin-badge">{ext_source_label(ext.source)}</span>
+                <span class={["plugin-badge", badge_cls]}>
+                  <i class="plugin-dot"></i>{badge_text}
+                </span>
+              </div>
+              <p class="plugin-card-desc">
+                {if ext.description != "", do: ext.description, else: ext.root}
+              </p>
+            </div>
+            <div class="plugin-card-foot">
+              <span class="plugin-foot-meta">{ext_meta_label(ext)}</span>
+              <div class="plugin-foot-actions">
+                <button
+                  type="button"
+                  phx-click="inspect_ext"
+                  phx-value-name={ext.name}
+                  class={[
+                    "plugin-text-action",
+                    if(ext.status == :error, do: "delete", else: "primary")
+                  ]}
+                >
+                  {if ext.status == :error, do: gettext("诊断"), else: gettext("详情")}
+                </button>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={to_string(ext.enabled)}
+                  aria-label={ext.name}
+                  phx-click="toggle_ext"
+                  phx-value-name={ext.name}
+                  class={["plugin-switch", if(ext.enabled, do: "on")]}
+                ></button>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <!-- MCP -->
+      <section
+        :if={section_visible?(@mech_filter, "mcp", mcp_list, filtering?)}
+        id="plugins-section-mcp"
+        class="plugins-section"
+      >
+        <div class="plugins-section-head">MCP</div>
+        <div
+          :if={!@load_error && @servers == []}
+          id="mcp-empty"
+          class="plugins-empty-card"
+        >
+          {gettext("No MCP servers configured.")}
+        </div>
+        <div :if={mcp_list != []} id="mcp-server-list" class="plugins-card-grid">
+          <article
+            :for={server <- mcp_list}
+            id={"mcp-server-#{server.id}"}
+            class={["plugin-card", if(server.disabled, do: "is-disabled")]}
+          >
+            <div>
+              <div class="plugin-card-top">
+                <div class="plugin-card-title">
+                  <span>{server.name}</span>
+                  <span class="plugin-card-version">
+                    {if server.transport == :http, do: "HTTP", else: "stdio"}
+                  </span>
+                </div>
+              </div>
+              <% {mcp_cls, mcp_text} = mcp_status_badge(server) %>
+              <div class="plugin-card-badges">
+                <span class="plugin-badge">
+                  {mcp_scope_label(server, @workspace_id, @workspace_name)}
+                </span>
+                <span class={["plugin-badge", mcp_cls]}>
+                  <i class="plugin-dot"></i>{mcp_text}
+                </span>
+              </div>
+              <p class="plugin-card-desc">
+                {server.description || server.url || server.source}
+              </p>
+            </div>
+            <div>
+              <div class="plugin-card-foot">
+                <span class="plugin-foot-meta">
+                  {gettext("%{count} 个工具", count: server.tool_count)}
+                </span>
+                <div class="plugin-foot-actions">
+                  <button
+                    :if={server.transport != :stdio}
+                    type="button"
+                    phx-click="edit"
+                    phx-value-id={server.id}
+                    class="plugin-text-action primary"
+                  >
+                    {gettext("编辑")}
+                  </button>
+                  <button
+                    type="button"
+                    phx-click="confirm_delete"
+                    phx-value-id={server.id}
+                    class="plugin-text-action delete"
+                  >
+                    {gettext("删除")}
+                  </button>
+                  <button
+                    :if={server.transport != :stdio}
+                    type="button"
+                    role="switch"
+                    aria-checked={to_string(!server.disabled)}
+                    aria-label={server.name}
+                    phx-click="toggle_mcp"
+                    phx-value-id={server.id}
+                    class={["plugin-switch", if(!server.disabled, do: "on")]}
+                  ></button>
+                </div>
+              </div>
+
+              <div
+                :if={server.oauth_status != :not_configured}
+                id={"mcp-oauth-#{server.id}"}
+                class="plugin-card-foot"
+              >
+                <span class="plugin-foot-meta">
+                  <%= case server.oauth_status do %>
+                    <% :authorized -> %>
+                      {gettext("OAuth 已授权")}
+                    <% :authorization_required -> %>
+                      {gettext("OAuth 需要授权")}
+                    <% :host_unavailable -> %>
+                      {gettext("当前宿主未启用 MCP")}
+                    <% _ -> %>
+                      {gettext("OAuth 在当前工作区不可用")}
+                  <% end %>
+                </span>
+                <.form
+                  :if={
+                    !server.disabled &&
+                      server.oauth_status in [:authorized, :authorization_required]
+                  }
+                  for={%{}}
+                  action={~p"/mcp/oauth/#{@workspace_id}/#{server.id}/start"}
+                  method="post"
+                >
+                  <button type="submit" class="plugin-text-action primary">
+                    {if server.oauth_status == :authorized,
+                      do: gettext("重新授权"),
+                      else: gettext("授权")}
+                  </button>
+                </.form>
+                <.form
+                  for={%{}}
+                  action={~p"/mcp/oauth/#{@workspace_id}/#{server.id}/disconnect"}
+                  method="post"
+                >
+                  <button type="submit" class="plugin-text-action delete">
+                    {gettext("断开授权")}
+                  </button>
+                </.form>
+              </div>
+
+              <div
+                :if={@delete_target == server.id}
+                id={"mcp-delete-confirm-#{server.id}"}
+                class="plugin-delete-confirm"
+              >
+                <span>{gettext("Delete this server?")}</span>
+                <div class="plugin-foot-actions">
+                  <button
+                    type="button"
+                    phx-click="delete"
+                    phx-value-id={server.id}
+                    class="plugin-text-action delete"
+                  >
+                    {gettext("Delete")}
+                  </button>
+                  <button
+                    type="button"
+                    phx-click="cancel_delete"
+                    class="plugin-text-action"
+                  >
+                    {gettext("Cancel")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <!-- Skill -->
+      <section
+        :if={section_visible?(@mech_filter, "skill", skill_list, filtering?)}
+        id="plugins-section-skill"
+        class="plugins-section"
+      >
+        <div class="plugins-section-head">Skill</div>
+        <div :if={skill_list == []} id="skill-empty" class="plugins-empty-card">
+          {gettext("暂无可用 Skill。")}
+        </div>
+        <div :if={skill_list != []} class="plugins-card-grid">
+          <article
+            :for={skill <- skill_list}
+            id={"skill-card-#{skill.name}"}
+            class={["plugin-card", if(!skill.enabled, do: "is-disabled")]}
+          >
+            <div>
+              <div class="plugin-card-top">
+                <div class="plugin-card-title">
+                  <span>{skill.name}</span>
+                </div>
+              </div>
+              <% {sk_cls, sk_text} = skill_status_badge(skill) %>
+              <div class="plugin-card-badges">
+                <span class="plugin-badge">{skill_source_label(skill.source)}</span>
+                <span class={["plugin-badge", sk_cls]}>
+                  <i class="plugin-dot"></i>{sk_text}
+                </span>
+              </div>
+              <p class="plugin-card-desc">{skill.description}</p>
+            </div>
+            <div class="plugin-card-foot">
+              <span class="plugin-foot-meta">/skill:{skill.name}</span>
+              <div class="plugin-foot-actions">
+                <button
+                  type="button"
+                  phx-click="inspect_skill"
+                  phx-value-name={skill.name}
+                  class="plugin-text-action primary"
+                >
+                  {gettext("查看")}
+                </button>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={to_string(skill.enabled)}
+                  aria-label={skill.name}
+                  phx-click="toggle_skill"
+                  phx-value-name={skill.name}
+                  class={["plugin-switch", if(skill.enabled, do: "on")]}
+                ></button>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <div
+        :if={filtering? and exts == [] and mcp_list == [] and skill_list == []}
+        id="plugins-no-results"
+        class="plugins-empty-card"
+      >
+        {gettext("没有匹配的插件。")}
+      </div>
+    </div>
+
+    <!-- ── 发现视图 ── -->
+    <div :if={@mode == "discover"} id="plugins-view-discover">
+      <% cat_mcp = filtered_catalog(@catalog, :mcp, @search_query) %>
+      <% cat_skill = filtered_catalog(@catalog, :skill, @search_query) %>
+      <% cat_ext = filtered_catalog(@catalog, :ext, @search_query) %>
+      <% discover_filtering? = filter_active?(@mech_filter, @search_query) %>
+      <form
+        id="plugins-agent-builder-form"
+        phx-submit="agent_builder_submit"
+        class="plugins-create-bar"
+      >
+        <input
+          id="plugins-agent-builder-input"
+          type="text"
+          name="prompt"
+          value={@agent_prompt}
+          placeholder={gettext("描述你想添加的工具、钩子或技能，例如：查询本地 SQLite 慢查询…")}
+        />
+        <button type="submit" class="plugins-dark-btn">
+          {gettext("交给 Agent")}
+        </button>
+      </form>
+
+      <!-- Discover MCP -->
+      <section
+        :if={section_visible?(@mech_filter, "mcp", cat_mcp, discover_filtering?)}
+        id="discover-section-mcp"
+        class="plugins-section"
+      >
+        <div class="plugins-section-head">MCP</div>
+        <div class="plugins-card-grid">
+          <article
+            :for={cat <- cat_mcp}
+            id={"catalog-card-#{cat.id}"}
+            class="plugin-card"
+          >
+            <div>
+              <div class="plugin-card-top">
+                <div class="plugin-card-title">
+                  <span>{cat.name}</span>
+                  <span :if={cat.version} class="plugin-card-version">{cat.version}</span>
+                </div>
+              </div>
+              <p class="plugin-card-desc">{cat.description}</p>
+            </div>
+            <div class="plugin-card-foot">
+              <span class="plugin-foot-meta">{cat.source_label}</span>
+              <div class="plugin-foot-actions">
+                <%= if cat.installed do %>
+                  <span class="plugin-badge ok"><i class="plugin-dot"></i>{gettext("已安装")}</span>
+                <% else %>
+                  <button
+                    type="button"
+                    phx-click="open_mcp_preset"
+                    phx-value-id={cat.id}
+                    class="plugins-soft-btn plugins-btn-sm"
+                  >
+                    {gettext("添加")}
+                  </button>
+                <% end %>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <!-- Discover Skill -->
+      <section
+        :if={section_visible?(@mech_filter, "skill", cat_skill, discover_filtering?)}
+        id="discover-section-skill"
+        class="plugins-section"
+      >
+        <div class="plugins-section-head">Skill</div>
+        <div class="plugins-card-grid">
+          <article
+            :for={cat <- cat_skill}
+            id={"catalog-card-#{cat.id}"}
+            class="plugin-card"
+          >
+            <div>
+              <div class="plugin-card-top">
+                <div class="plugin-card-title">
+                  <span>{cat.name}</span>
+                </div>
+              </div>
+              <p class="plugin-card-desc">{cat.description}</p>
+            </div>
+            <div class="plugin-card-foot">
+              <span class="plugin-foot-meta">{cat.source_label}</span>
+              <div class="plugin-foot-actions">
+                <%= if cat.installed do %>
+                  <span class="plugin-badge ok"><i class="plugin-dot"></i>{gettext("已安装")}</span>
+                <% else %>
+                  <button
+                    type="button"
+                    phx-click="open_catalog_install"
+                    phx-value-id={cat.id}
+                    class="plugins-soft-btn plugins-btn-sm"
+                  >
+                    {gettext("安装")}
+                  </button>
+                <% end %>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <!-- Discover Extension -->
+      <section
+        :if={section_visible?(@mech_filter, "ext", cat_ext, discover_filtering?)}
+        id="discover-section-ext"
+        class="plugins-section"
+      >
+        <div class="plugins-section-head">{gettext("扩展")}</div>
+        <div class="plugins-card-grid">
+          <article
+            :for={cat <- cat_ext}
+            id={"catalog-card-#{cat.id}"}
+            class="plugin-card"
+          >
+            <div>
+              <div class="plugin-card-top">
+                <div class="plugin-card-title">
+                  <span>{cat.name}</span>
+                  <span :if={cat.version} class="plugin-card-version">{cat.version}</span>
+                </div>
+              </div>
+              <p class="plugin-card-desc">{cat.description}</p>
+            </div>
+            <div class="plugin-card-foot">
+              <span class="plugin-foot-meta">{cat.source_label}</span>
+              <div class="plugin-foot-actions">
+                <%= if cat.installed do %>
+                  <span class="plugin-badge ok"><i class="plugin-dot"></i>{gettext("已安装")}</span>
+                <% else %>
+                  <button
+                    type="button"
+                    phx-click="open_catalog_install"
+                    phx-value-id={cat.id}
+                    class="plugins-soft-btn plugins-btn-sm"
+                  >
+                    {gettext("安装")}
+                  </button>
+                <% end %>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <div
+        :if={discover_filtering? and cat_mcp == [] and cat_skill == [] and cat_ext == []}
+        id="discover-no-results"
+        class="plugins-empty-card"
+      >
+        {gettext("没有匹配的插件。")}
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Add / Edit MCP Server Modal ── -->
+  <div :if={@form} class="settings-overlay">
+    <div
+      class="settings-dialog settings-dialog-md"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="plugins-mcp-dialog-title"
+      phx-click-away="cancel"
+    >
+      <div class="flex items-center justify-between mb-4">
+        <h2 id="plugins-mcp-dialog-title" class="settings-dialog-title" style="margin: 0;">
+          <%= if @form["id"] in [nil, ""] do %>
+            {gettext("Add MCP Server")}
+          <% else %>
+            {gettext("Edit MCP Server")}
+          <% end %>
+        </h2>
+        <button
+          type="button"
+          phx-click="cancel"
+          class="text-secondary hover:text-primary p-1 text-sm leading-none cursor-pointer"
+          title={gettext("Cancel")}
+        >
+          ✕
+        </button>
+      </div>
+
+      <form
+        id="mcp-server-form"
+        phx-change="change"
+        phx-submit="save"
+        class="space-y-4"
+      >
+        <input type="hidden" name="server[id]" value={@form["id"] || ""} />
+        <%= if @editing_transport == :stdio do %>
+          <div class="settings-help-text text-xs">
+            {gettext(
+              "stdio servers are read-only here. Edit the source configuration to change the launcher."
+            )}
+          </div>
+          <div class="settings-dialog-actions pt-2">
+            <button type="button" phx-click="cancel" class="settings-btn">
+              {gettext("Cancel")}
+            </button>
+          </div>
+        <% else %>
+          <div class="settings-form-group">
+            <label class="settings-form-label">{gettext("Name")}</label>
+            <input
+              class="settings-input"
+              name="server[name]"
+              value={@form["name"]}
+              required
+              placeholder={gettext("e.g. My MCP Server")}
+            />
+          </div>
+
+          <div class="settings-form-group">
+            <label class="settings-form-label">{gettext("URL")}</label>
+            <input
+              class="settings-input"
+              name="server[url]"
+              value={@form["url"]}
+              type="url"
+              required
+              placeholder="https://..."
+            />
+          </div>
+
+          <div class="settings-form-group">
+            <label class="settings-form-label">{gettext("Authentication")}</label>
+            <select class="settings-input" name="server[auth]">
+              <option value="none" selected={@form["auth"] == "none"}>{gettext("None")}</option>
+              <option value="bearer" selected={@form["auth"] == "bearer"}>
+                {gettext("Bearer token")}
+              </option>
+              <option
+                value="oauth"
+                selected={@form["auth"] == "oauth"}
+                disabled={!Handbean.Host.mcp?()}
+              >
+                {gettext("OAuth 登录")}
+              </option>
+              <option value="headers" selected={@form["auth"] == "headers"}>
+                {gettext("Custom headers")}
+              </option>
+            </select>
+          </div>
+
+          <div :if={@form["auth"] == "oauth"} class="space-y-4">
+            <div class="settings-form-group">
+              <label for="mcp-oauth-client-id" class="settings-form-label">Client ID</label>
+              <input
+                id="mcp-oauth-client-id"
+                class="settings-input"
+                name="server[oauth_client_id]"
+                value={@form["oauth_client_id"]}
+                required
+              />
+            </div>
+            <div class="settings-form-group">
+              <label for="mcp-oauth-issuer" class="settings-form-label">
+                {gettext("授权服务器（可选）")}
+              </label>
+              <input
+                id="mcp-oauth-issuer"
+                class="settings-input"
+                name="server[oauth_issuer]"
+                value={@form["oauth_issuer"]}
+                type="url"
+                placeholder="https://..."
+              />
+            </div>
+            <div class="settings-form-group">
+              <label for="mcp-oauth-scopes" class="settings-form-label">
+                {gettext("授权范围（空格分隔，可选）")}
+              </label>
+              <input
+                id="mcp-oauth-scopes"
+                class="settings-input"
+                name="server[oauth_scopes]"
+                value={@form["oauth_scopes"]}
+              />
+            </div>
+            <p class="settings-help-text text-xs break-all">
+              {gettext("使用已注册的公开客户端，保存后点击授权。向服务商登记的回调地址：")}
+              {HandbeanWeb.Endpoint.url() <> "/mcp/oauth/callback"}
+              {gettext("授权服务器须支持 PKCE S256 和授权响应中的 iss 参数。")}
+            </p>
+          </div>
+
+          <div :if={@form["auth"] == "bearer"} class="settings-form-group">
+            <label class="settings-form-label">{gettext("Token")}</label>
+            <input
+              class="settings-input"
+              name="server[token]"
+              value={@form["token"]}
+              type="password"
+              placeholder={
+                if @form["has_credentials"],
+                  do: gettext("Leave blank to keep saved token"),
+                  else: ""
+              }
+            />
+          </div>
+
+          <div :if={@form["auth"] == "headers"} class="settings-form-group">
+            <label class="settings-form-label">{gettext("Headers (JSON)")}</label>
+            <textarea
+              class="settings-input"
+              rows="3"
+              name="server[headers_json]"
+              placeholder={
+                if @form["has_credentials"],
+                  do: gettext("Leave blank to keep saved headers"),
+                  else: ~s({"Authorization": "Bearer ..."})
+              }
+            >{@form["headers_json"]}</textarea>
+          </div>
+
+          <div class="settings-form-group">
+            <label class="flex items-center gap-2 text-xs text-secondary cursor-pointer">
+              <input
+                type="checkbox"
+                name="server[disabled]"
+                value="true"
+                checked={@form["disabled"]}
+              />
+              <span>{gettext("Disabled")}</span>
+            </label>
+          </div>
+
+          <div class="settings-form-group">
+            <label class="settings-form-label">{gettext("Workspace access")}</label>
+            <div class="space-y-1.5 mt-1">
+              <label class="flex items-center gap-2 text-xs text-secondary cursor-pointer">
+                <input
+                  type="radio"
+                  name="server[access_mode]"
+                  value="all"
+                  checked={@form["access_mode"] == "all"}
+                />
+                <span>{gettext("All workspaces, including future workspaces")}</span>
+              </label>
+              <div>
+                <label class="flex items-center gap-2 text-xs text-secondary cursor-pointer">
+                  <input
+                    type="radio"
+                    name="server[access_mode]"
+                    value="selected"
+                    checked={@form["access_mode"] != "all"}
+                  />
+                  <span>{gettext("Selected workspaces")}</span>
+                </label>
+                <div
+                  :if={@form["access_mode"] != "all"}
+                  class="mt-1.5 ml-6 space-y-1.5"
+                >
+                  <label
+                    :for={workspace <- @workspaces}
+                    class="flex items-center gap-2 text-xs text-secondary cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      name="server[workspace_ids][]"
+                      value={workspace["id"]}
+                      checked={workspace["id"] in @form["workspace_ids"]}
+                    />
+                    <span>{workspace["name"]}</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div
+            :if={@form_error}
+            id="mcp-form-error"
+            class="p-2.5 rounded-lg text-xs text-red-600 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50"
+          >
+            {@form_error}
+          </div>
+
+          <div :if={@test_result} id="mcp-test-result" class="text-xs">
+            <%= case @test_result do %>
+              <% {:ok, %{tool_count: count}} -> %>
+                <span class="text-green-600 font-medium">
+                  ✓ {gettext("Connected. %{count} tools found.", count: count)}
+                </span>
+              <% {:error, reason} -> %>
+                <span class="text-red-600 font-medium">⚠ {reason}</span>
+            <% end %>
+          </div>
+
+          <div class="settings-dialog-actions pt-2">
+            <button
+              type="button"
+              phx-click="test_connection"
+              disabled={@testing}
+              class="settings-btn mr-auto"
+            >
+              {if @testing, do: gettext("Testing..."), else: gettext("Test connection")}
+            </button>
+            <button type="button" phx-click="cancel" class="settings-btn">
+              {gettext("Cancel")}
+            </button>
+            <button type="submit" class="settings-btn settings-btn-primary">
+              {gettext("Save")}
+            </button>
+          </div>
+        <% end %>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── Inspect / Install Catalog Modal ── -->
+  <div :if={@inspect_modal} id="plugins-inspect-modal" class="settings-overlay">
+    <div
+      class="settings-dialog settings-dialog-md"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="plugins-inspect-dialog-title"
+      phx-click-away="close_inspect"
+    >
+      <div class="flex items-center justify-between mb-3">
+        <h2 id="plugins-inspect-dialog-title" class="settings-dialog-title" style="margin: 0;">
+          {@inspect_modal.title}
+        </h2>
+        <button
+          type="button"
+          phx-click="close_inspect"
+          class="text-secondary hover:text-primary p-1 text-sm leading-none cursor-pointer"
+        >
+          ✕
+        </button>
+      </div>
+
+      <%= if @inspect_modal.kind == :install_catalog do %>
+        <form
+          id="plugins-catalog-install-form"
+          phx-submit="confirm_catalog_install"
+          class="space-y-3"
+        >
+          <input type="hidden" name="catalog_id" value={@inspect_modal.id} />
+          <div class="settings-form-group">
+            <label class="settings-form-label">{gettext("安装位置")}</label>
+            <select name="scope" class="settings-input">
+              <option value="workspace">
+                {gettext("当前工作区 (%{name})", name: @workspace_name)}
+              </option>
+              <option value="user">{gettext("用户级 (~/.handbean)")}</option>
+            </select>
+          </div>
+          <pre class="plugins-code-preview">{@inspect_modal.code}</pre>
+          <div class="settings-dialog-actions pt-2">
+            <button type="button" phx-click="close_inspect" class="settings-btn">
+              {gettext("取消")}
+            </button>
+            <button type="submit" class="settings-btn settings-btn-primary">
+              {gettext("安装")}
+            </button>
+          </div>
+        </form>
+      <% else %>
+        <div class="space-y-3">
+          <div
+            :if={@inspect_modal.diagnostic}
+            id="plugins-inspect-diagnostic"
+            class="plugins-diagnostic-box"
+          >
+            {@inspect_modal.diagnostic}
+          </div>
+          <pre class="plugins-code-preview">{@inspect_modal.code}</pre>
+          <div class="settings-dialog-actions pt-2">
+            <button
+              id="plugins-inspect-close"
+              type="button"
+              phx-click="close_inspect"
+              class="settings-btn settings-btn-primary"
+            >
+              {gettext("关闭")}
+            </button>
+          </div>
+        </div>
+      <% end %>
+    </div>
+  </div>
+
+  <!-- ── Import Local Directory Modal ── -->
+  <div :if={@import_modal} id="plugins-import-modal" class="settings-overlay">
+    <div
+      class="settings-dialog settings-dialog-md"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="plugins-import-dialog-title"
+      phx-click-away="close_import_modal"
+    >
+      <div class="flex items-center justify-between mb-3">
+        <h2 id="plugins-import-dialog-title" class="settings-dialog-title" style="margin: 0;">
+          {gettext("从目录导入")}
+        </h2>
+        <button
+          type="button"
+          phx-click="close_import_modal"
+          class="text-secondary hover:text-primary p-1 text-sm leading-none cursor-pointer"
+        >
+          ✕
+        </button>
+      </div>
+
+      <form id="plugins-import-form" phx-submit="submit_import_dir" class="space-y-3">
+        <div class="settings-form-group">
+          <label class="settings-form-label">{gettext("目录路径")}</label>
+          <input
+            type="text"
+            name="import[path]"
+            value={@import_modal.path}
+            required
+            placeholder="/path/to/plugin-or-skill"
+            class="settings-input"
+          />
+        </div>
+        <div class="settings-form-group">
+          <label class="settings-form-label">{gettext("安装位置")}</label>
+          <select name="import[scope]" class="settings-input">
+            <option value="workspace" selected={@import_modal.scope == "workspace"}>
+              {gettext("当前工作区 (%{name})", name: @workspace_name)}
+            </option>
+            <option value="user" selected={@import_modal.scope == "user"}>
+              {gettext("用户级 (~/.handbean)")}
+            </option>
+          </select>
+        </div>
+        <div :if={@import_modal.error} id="plugins-import-error" class="plugins-diagnostic-box">
+          {@import_modal.error}
+        </div>
+        <div class="settings-dialog-actions pt-2">
+          <button type="button" phx-click="close_import_modal" class="settings-btn">
+            {gettext("取消")}
+          </button>
+          <button type="submit" class="settings-btn settings-btn-primary">
+            {gettext("导入")}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>

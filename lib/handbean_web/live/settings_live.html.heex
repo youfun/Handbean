@@ -757,10 +757,14 @@
         </div>
       </div>
 
-      <div :if={@active_tab == :mcp} class="flex-1 overflow-hidden">
-        {live_render(@socket, HandbeanWeb.MCPSettingsLive,
+      <div :if={@active_tab == :plugins} class="flex-1 overflow-hidden">
+        {live_render(@socket, HandbeanWeb.PluginsSettingsLive,
           id: "settings-mcp",
-          session: %{"workspace_id" => @workspace["id"]}
+          session: %{
+            "workspace_id" => @workspace["id"],
+            "workspace_name" => @workspace["name"],
+            "workspace_root" => @workspace_root
+          }
         )}
       </div>
 

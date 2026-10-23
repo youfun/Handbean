@@ -32,7 +32,7 @@ defmodule HandbeanWeb.SettingsLive do
     %{id: :available_models, label_key: "Available Models"},
     %{id: :local_webgpu, label_key: "Local WebGPU"},
     %{id: :computer_use, label_key: "Computer Control"},
-    %{id: :mcp, label_key: "MCP"},
+    %{id: :plugins, label_key: "插件"},
     %{id: :git, label_key: "Git"},
     %{id: :ui, label_key: "UI"}
   ]
@@ -576,7 +576,8 @@ defmodule HandbeanWeb.SettingsLive do
   def tab_label(:available_models), do: gettext("Available Models")
   def tab_label(:local_webgpu), do: gettext("Advanced")
   def tab_label(:computer_use), do: gettext("Computer Control")
-  def tab_label(:mcp), do: gettext("MCP")
+  def tab_label(:plugins), do: gettext("插件")
+  def tab_label(:mcp), do: gettext("插件")
   def tab_label(:git), do: gettext("Git")
   def tab_label(:ui), do: gettext("UI")
   def tab_label(:sns), do: gettext("SNS")
@@ -669,6 +670,9 @@ defmodule HandbeanWeb.SettingsLive do
     JS.set_attribute({"data-theme", theme}, to: "html")
     |> JS.push("set_theme", value: %{theme: theme})
   end
+
+  defp tab_from_params(%{"tab" => "mcp"}), do: :plugins
+  defp tab_from_params(%{"tab" => "plugins"}), do: :plugins
 
   defp tab_from_params(%{"tab" => tab_str}) do
     Enum.find_value(@tabs, :model_ai, fn tab ->
