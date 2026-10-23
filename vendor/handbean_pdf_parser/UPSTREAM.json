@@ -1,0 +1,27 @@
+{
+  "upstream": "https://github.com/Cees-Kettenis/native_elixir_pdf_utilities",
+  "version": "1.0.0",
+  "source_archive": "https://repo.hex.pm/tarballs/native_elixir_pdf_utilities-1.0.0.tar",
+  "archive_sha256": "c72055741ec185601344ed4ed557ccf35070492ba4055d4e92a564ff529b861a",
+  "hex_release_checksum": "c72055741ec185601344ed4ed557ccf35070492ba4055d4e92a564ff529b861a",
+  "licenses": [
+    "MIT",
+    "BSD-3-Clause (Adobe glyph data)"
+  ],
+  "policy": "Extraction-only upstream source files are byte-for-byte unmodified. Handbean owns update review. No generator, font discovery, SVG renderer, external executable, or NIF dependency. Re-import this closure and run document regression tests when updating. Local mix.exs and application module install stricter limits; any future upstream patches must be separately identified.",
+  "files": {
+    "lib/utilities/text.ex": "da49de9c9b87a9d04cfb22bb4c76a7a371d500a791e6ac247c981efc733eef0a",
+    "lib/pdf/reader.ex": "1e7a9cca22cbc9d096c32779aee29ae22bc9bc83f9bda8b54a7282eae3509d0c",
+    "lib/pdf/glyph_name.ex": "539f743d5eda7f80fa154ff79834a4ab76435ca2c94e537f1cb9466160db8bc6",
+    "lib/pdf/text_encoding.ex": "96d24a987fd35483fba8f9ba72688d36daa77b2b9501831b09337ba4cfbeef14",
+    "lib/tokenizer/native_elixir_pdf_tokenizer.ex": "c3eefb22aee74df27c8a329191937187a934de12199023acd7eb0a6528196c84",
+    "lib/limits.ex": "84ba5411512d295faf953a02415f6793037c1eebf31b9cf30bf0348fd8dfbf24",
+    "lib/validators/text_validator.ex": "c096ce9c9f6e5ee7af3a9d935a07098f1e1282dd6665a08143a7aee22bebeeae",
+    "lib/validators/text_resource_validator.ex": "ef45d13048c37ef0cb7258532856565c240e93e4e81fd9c92167771e68bab435",
+    "lib/validators/pdf_validator.ex": "9606a229108df98f3cf358a867f3a4d69b234fcf325eede93dca757a21a4f5c6",
+    "lib/diagnostics.ex": "e85a89224628edf21bf164455f589cddb4d57a9c880feb49723f24c3ee0dccda",
+    "lib/file_reader.ex": "eed503378a80be80b6d672375ec8554551c301bc3aac29b3b6d10f3dd2586bea",
+    "lib/validators/file_validator.ex": "4850f4fa92716f2f814b4b1eec00d2353ce112a4a91d36019ac888efcd147115",
+    "lib/validators/limits_validator.ex": "bc63e534dd8d8328f7ef94e808c9fab39e632ce57cf4fdb19a33bef87beeb3d7"
+  }
+}
