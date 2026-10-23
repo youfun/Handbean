@@ -4,15 +4,17 @@ defmodule Handbean.WorkspaceCommand.AgentResponse do
   alias Handbean.Agent.{Coordinator, Message, ModelConfig, RunOpts}
   alias Handbean.Agent.CliAgent.Binding
   alias Handbean.PubSub.Session
+  alias Handbean.WorkspaceCommand
 
   @spec deliver(String.t(), map()) :: {:ok, map()} | {:error, term()}
   def deliver(conversation_id, entry)
       when is_binary(conversation_id) and is_map(entry) do
-    with {:ok, conversation} <- Handbean.ConversationStore.get_metadata(conversation_id),
-         true <- conversation["scope"] == "workspace" and conversation["visibility"] == "user",
-         {:ok, checkout_path} <- Handbean.ConversationStore.effective_checkout_path(conversation),
-         {:ok, workspace} <- Handbean.WorkspaceStore.get(conversation["workspace_id"]),
+    with {:ok, binding} <- WorkspaceCommand.workspace_binding(conversation_id),
          {:ok, _session} <- Session.start_or_get(session_id: conversation_id) do
+      conversation = binding.conversation
+      workspace = binding.workspace
+      checkout_path = binding.checkout_path
+
       case Binding.get(conversation_id) do
         %{backend: backend} = binding ->
           deliver_to_cli(conversation_id, entry, workspace, checkout_path, backend, binding)
@@ -21,7 +23,6 @@ defmodule Handbean.WorkspaceCommand.AgentResponse do
           deliver_to_handbean(conversation_id, entry, conversation, workspace, checkout_path)
       end
     else
-      false -> {:error, :conversation_unavailable}
       {:error, reason} -> {:error, reason}
     end
   end

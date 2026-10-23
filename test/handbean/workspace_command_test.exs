@@ -108,6 +108,23 @@ defmodule Handbean.WorkspaceCommandTest do
     assert {:error, :empty_command} = WorkspaceCommand.parse("!   \n")
   end
 
+  test "response recovery rejects a checkout owned by another workspace", context do
+    other_path = Path.join(Path.dirname(context.workspace_path), "other-workspace")
+    File.mkdir_p!(other_path)
+    {:ok, _other_workspace} = Handbean.WorkspaceStore.add(other_path, name: "Other")
+
+    {:ok, mismatched} =
+      ConversationStore.create(context.conversation["workspace_id"],
+        title: "Mismatched checkout",
+        checkout_path: other_path
+      )
+
+    assert {:error, :not_workspace_conversation} =
+             AgentResponse.deliver(mismatched["id"], %{"id" => "delayed-response"})
+
+    assert Elixir.Registry.lookup(Handbean.AgentRunRegistry, mismatched["id"]) == []
+  end
+
   test "persists both entries before executing in the conversation checkout", context do
     owner = self()
 

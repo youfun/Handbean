@@ -310,7 +310,8 @@ defmodule Handbean.WorkspaceCommand do
     end
   end
 
-  defp workspace_binding(conversation_id) do
+  @spec workspace_binding(String.t()) :: {:ok, map()} | {:error, term()}
+  def workspace_binding(conversation_id) do
     with {:ok, conversation} <- Handbean.ConversationStore.get_metadata(conversation_id),
          true <- conversation["scope"] == "workspace" and conversation["visibility"] == "user",
          {:ok, checkout_path} <- Handbean.ConversationStore.effective_checkout_path(conversation),
@@ -319,7 +320,9 @@ defmodule Handbean.WorkspaceCommand do
       {:ok,
        %{
          conversation_id: conversation_id,
+         conversation: conversation,
          workspace_id: workspace["id"],
+         workspace: workspace,
          workspace_path: workspace["path"],
          checkout_path: checkout_path
        }}
