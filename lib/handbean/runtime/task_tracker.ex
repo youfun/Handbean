@@ -53,6 +53,7 @@ defmodule Handbean.Runtime.TaskTracker do
      %{
        tasks: %{},
        viewers: %{},
+       viewer_monitors: %{},
        run_monitors: %{}
      }}
   end
@@ -64,12 +65,19 @@ defmodule Handbean.Runtime.TaskTracker do
 
   def handle_call(:reset, _from, state) do
     Enum.each(Map.values(state.run_monitors), &Process.demonitor(&1.ref, [:flush]))
-    {:reply, :ok, %{state | tasks: %{}, run_monitors: %{}}}
+    Enum.each(Map.values(state.viewer_monitors), &Process.demonitor(&1, [:flush]))
+    {:reply, :ok, %{state | tasks: %{}, viewers: %{}, viewer_monitors: %{}, run_monitors: %{}}}
   end
 
   @impl true
   def handle_cast({:viewing, pid, conversation_id}, state) do
-    Process.monitor(pid)
+    state =
+      if Map.has_key?(state.viewer_monitors, pid) do
+        state
+      else
+        put_in(state, [:viewer_monitors, pid], Process.monitor(pid))
+      end
+
     {:noreply, put_in(state, [:viewers, pid], conversation_id)}
   end
 
@@ -89,11 +97,31 @@ defmodule Handbean.Runtime.TaskTracker do
         end
 
       nil ->
-        {:noreply, update_in(state.viewers, &Map.delete(&1, pid))}
+        state =
+          case Map.get(state.viewer_monitors, pid) do
+            ^ref ->
+              %{
+                state
+                | viewers: Map.delete(state.viewers, pid),
+                  viewer_monitors: Map.delete(state.viewer_monitors, pid)
+              }
+
+            _ ->
+              update_in(state.viewers, &Map.delete(&1, pid))
+          end
+
+        {:noreply, state}
     end
   end
 
-  def handle_info({:run_lifecycle, conversation_id, _kind, _payload} = event, state) do
+  def handle_info({:run_lifecycle, conversation_id, kind, _payload} = event, state)
+      when kind in [
+             :run_start,
+             :tool_approval_requested,
+             :stall_check_requested,
+             :run_end,
+             :run_resumed
+           ] do
     case conversation_summary(conversation_id) do
       {:ok, %{"visibility" => "internal"}} -> {:noreply, state}
       {:ok, summary} -> handle_lifecycle(event, state, summary)
@@ -157,8 +185,6 @@ defmodule Handbean.Runtime.TaskTracker do
         {:noreply, state}
     end
   end
-
-  defp handle_lifecycle(_message, state, _summary), do: {:noreply, state}
 
   defp dispatch(state, event) do
     Handbean.WebPush.Dispatcher.broadcast(event)

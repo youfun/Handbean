@@ -263,6 +263,42 @@ defmodule Handbean.Runtime.TaskTrackerTest do
     refute_received {:notify_action, {:in_app_ended, _, _}}
   end
 
+  test "switching viewed conversations reuses a single viewer monitor and cleans up on exit" do
+    tracker = Process.whereis(TaskTracker)
+    parent = self()
+
+    viewer =
+      spawn(fn ->
+        for index <- 1..5 do
+          TaskTracker.viewing(self(), "conv-#{index}")
+        end
+
+        send(parent, :viewer_switched)
+
+        receive do
+          :stop -> :ok
+        end
+      end)
+
+    assert_receive :viewer_switched, 500
+    _ = TaskTracker.snapshot()
+
+    state = :sys.get_state(tracker)
+    assert state.viewers[viewer] == "conv-5"
+    assert is_reference(state.viewer_monitors[viewer])
+    assert {:monitors, monitors} = Process.info(tracker, :monitors)
+    assert Enum.count(monitors, fn {:process, pid} -> pid == viewer end) == 1
+
+    send(viewer, :stop)
+    ref = Process.monitor(viewer)
+    assert_receive {:DOWN, ^ref, :process, ^viewer, :normal}, 500
+    _ = TaskTracker.snapshot()
+
+    state = :sys.get_state(tracker)
+    refute Map.has_key?(state.viewers, viewer)
+    refute Map.has_key?(state.viewer_monitors, viewer)
+  end
+
   defmodule SystemAdapter do
     @behaviour NotifyAdapter
 
