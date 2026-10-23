@@ -703,10 +703,9 @@ defmodule HandbeanWeb.WorkspaceLive.DiffAndEventFlowTest do
         choose_new_conversation_project(view, "default")
 
         rendered = render(view)
-        assert has_element?(view, "#no-messages")
+        assert has_element?(view, "#timeline-stream .msg-user", "Start conversation")
         refute has_element?(view, "#timeline-stream .msg-user", "Hello")
-        assert rendered =~ "No messages yet"
-        assert rendered =~ "idle"
+        refute has_element?(view, "#no-messages")
         assert rendered =~ "step-router-v1"
       end)
     end

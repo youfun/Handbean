@@ -12,6 +12,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationEvents do
   alias HandbeanWeb.WorkspaceLive.ConversationState
   alias HandbeanWeb.WorkspaceLive.ConversationSwitching
   alias HandbeanWeb.WorkspaceLive.ModelSelection
+  alias HandbeanWeb.WorkspaceLive.NewConversationDraft
   alias HandbeanWeb.WorkspaceLive.RuntimeProjection
   alias HandbeanWeb.WorkspaceLive.ViewComponents
   alias HandbeanWeb.WorkspaceLive.WorkspaceNavigation
@@ -555,15 +556,28 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationEvents do
     )
   end
 
-  def handle("new_conversation_on_checkout", %{"ws_id" => ws_id, "path" => path}, socket) do
-    ConversationRouting.begin_conversation_in_workspace(socket, ws_id,
-      checkout_path: path,
-      close_sheets?: get_in(socket.assigns, [:checkout_picker, :source]) == :mobile
-    )
+  def handle("select_new_conversation_project", %{"ws_id" => ws_id}, socket) do
+    {:noreply, NewConversationDraft.select_workspace(socket, ws_id)}
   end
 
-  def handle("close_checkout_picker", _params, socket) do
-    {:noreply, ConversationSwitching.close_checkout_picker(socket)}
+  def handle("toggle_new_conversation_projects", _params, socket) do
+    {:noreply, NewConversationDraft.toggle_projects(socket)}
+  end
+
+  def handle("select_new_conversation_checkout", %{"checkout_path" => path}, socket) do
+    {:noreply, NewConversationDraft.select_checkout(socket, path)}
+  end
+
+  def handle("update_new_conversation_draft", params, socket) do
+    {:noreply, NewConversationDraft.update(socket, params)}
+  end
+
+  def handle("submit_new_conversation", params, socket) do
+    ConversationRouting.submit_new_conversation(socket, params)
+  end
+
+  def handle("close_new_conversation", _params, socket) do
+    {:noreply, NewConversationDraft.close(socket)}
   end
 
   def handle("open_settings", _, socket) do

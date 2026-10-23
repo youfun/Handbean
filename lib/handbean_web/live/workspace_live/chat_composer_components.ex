@@ -11,6 +11,7 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComposerComponents do
   attr :available_models, :list, required: true
   attr :available_reasoning_levels, :list, required: true
   attr :chat_scope, :any, required: true
+  attr :channel_binding, :any, default: nil
   attr :cli_models_error, :any, required: true
   attr :cli_models_loading, :boolean, required: true
   attr :composer_error, :any, required: true
@@ -53,6 +54,17 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComposerComponents do
 
         <div class="composer-turn-controls">
           <div class="composer-turn-pickers">
+            <span
+              :if={channel_name(@channel_binding)}
+              id="conversation-channel-binding"
+              class="pill channel-binding-pill"
+              data-channel={channel_name(@channel_binding)}
+              aria-label={channel_binding_title(@channel_binding)}
+              title={channel_binding_title(@channel_binding)}
+            >
+              <span aria-hidden="true">●</span>
+              {channel_label(@channel_binding)}
+            </span>
             <div :if={@available_clis != []} class="model-control">
               <select
                 id="cli-picker"
@@ -391,6 +403,23 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComposerComponents do
       </form>
     </div>
     """
+  end
+
+  defp channel_name(binding) when is_map(binding),
+    do: Handbean.Utils.SafeMap.get(binding, "channel")
+
+  defp channel_name(_binding), do: nil
+
+  defp channel_label(binding) when is_map(binding),
+    do: Handbean.Utils.SafeMap.get(binding, "label", channel_name(binding))
+
+  defp channel_label(_binding), do: nil
+
+  defp channel_binding_title(binding) do
+    gettext(
+      "This conversation is linked to the %{channel} channel. Only turns received from that channel are routed back to it.",
+      channel: channel_label(binding)
+    )
   end
 
   defp composer_model_options(models) do

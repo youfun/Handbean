@@ -701,7 +701,9 @@
 }
 
 .model-picker:not([data-enhanced="true"]) #model-picker,
-#reasoning-picker {
+#reasoning-picker,
+#new-conversation-reasoning,
+#new-conversation-permission {
   padding: 2px 4px 2px 6px;
   border-radius: var(--sig-radius-md);
   font-size: 12px;
@@ -724,18 +726,23 @@
   padding-right: 16px;
 }
 
-#reasoning-picker {
+#reasoning-picker,
+#new-conversation-reasoning {
   max-width: 4.5rem;
 }
 
 .model-picker:not([data-enhanced="true"]) #model-picker:hover,
-#reasoning-picker:hover {
+#reasoning-picker:hover,
+#new-conversation-reasoning:hover,
+#new-conversation-permission:hover {
   background-color: var(--sig-bg-surface-hover);
   color: var(--sig-text-secondary);
 }
 
 .model-picker:not([data-enhanced="true"]) #model-picker:focus,
-#reasoning-picker:focus {
+#reasoning-picker:focus,
+#new-conversation-reasoning:focus,
+#new-conversation-permission:focus {
   border-color: transparent;
   box-shadow: none;
   color: var(--sig-text-primary);
@@ -976,5 +983,9 @@
 
   .pill {
     display: none;
+  }
+
+  .pill.channel-binding-pill {
+    display: inline-flex;
   }
 }

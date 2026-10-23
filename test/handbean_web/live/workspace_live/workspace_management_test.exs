@@ -101,26 +101,36 @@ defmodule HandbeanWeb.WorkspaceLive.WorkspaceManagementTest do
         |> element("#new-conversation-picker-toggle")
         |> render_click()
 
+        view
+        |> element(".new-conversation-chip[aria-controls='new-conversation-projects']")
+        |> render_click()
+
+        view
+        |> element("#new-conversation-project-#{main_workspace["id"]}")
+        |> render_click()
+
         html = render(view)
-        assert html =~ ~s(id="new-conversation-picker")
-        assert has_element?(view, "#new-conversation-picker[role='dialog']")
+        assert html =~ ~s(id="new-conversation-page")
+        assert has_element?(view, "#new-conversation-page")
         assert html =~ Path.basename(repo)
         assert html =~ Path.basename(linked)
         assert html =~ "feature"
-
-        refute has_element?(
-                 view,
-                 "#new-conversation-project-#{main_workspace["id"]}"
-               )
 
         linked_path = Handbean.Security.PathValidator.resolve_symlink(linked)
         before = Handbean.ConversationStore.list_for_workspace(main_workspace["id"])
 
         view
-        |> element(
-          "#new-conversation-picker button[phx-click='new_conversation_on_checkout'][phx-value-path='#{linked_path}']"
-        )
-        |> render_click()
+        |> element("#new-conversation-checkout")
+        |> render_change(%{"checkout_path" => linked_path})
+
+        assert Handbean.ConversationStore.list_for_workspace(main_workspace["id"]) == before
+
+        view
+        |> form("#new-conversation-composer", %{
+          "message" => "Inspect the linked checkout",
+          "checkout_path" => linked_path
+        })
+        |> render_submit()
 
         conversations = Handbean.ConversationStore.list_for_workspace(main_workspace["id"])
 
@@ -129,7 +139,7 @@ defmodule HandbeanWeb.WorkspaceLive.WorkspaceManagementTest do
 
         assert length(Enum.reject(Handbean.WorkspaceStore.list(), & &1["default"])) == 1
         html = render(view)
-        refute html =~ ~s(id="new-conversation-picker")
+        refute html =~ ~s(id="new-conversation-page")
         assert html =~ ~s(data-checkout-path="#{linked_path}")
       after
         File.rm_rf!(base)
@@ -164,16 +174,18 @@ defmodule HandbeanWeb.WorkspaceLive.WorkspaceManagementTest do
         )
         |> render_click()
 
-        html = render(view)
         linked_path = Handbean.Security.PathValidator.resolve_symlink(linked)
 
         assert has_element?(
                  view,
-                 "#checkout-picker-sidebar-#{workspace["id"]}[role='dialog']"
+                 "#new-conversation-page"
                )
 
-        assert html =~ branch
-        assert html =~ linked_path
+        assert has_element?(
+                 view,
+                 "#new-conversation-checkout option[value='#{linked_path}']",
+                 branch
+               )
       after
         File.rm_rf!(base)
       end
@@ -188,17 +200,30 @@ defmodule HandbeanWeb.WorkspaceLive.WorkspaceManagementTest do
              )
     end
 
-    test "new conversation in a single-checkout workspace still creates immediately", %{
+    test "new conversation draft does not create until a non-empty message is sent", %{
       conn: conn
     } do
       {:ok, view, _html} = live(conn, "/")
       before = Handbean.ConversationStore.list_for_workspace("default")
 
-      choose_new_conversation_project(view, "default")
+      view |> element("#new-conversation-picker-toggle") |> render_click()
 
-      refute render(view) =~ ~s(id="new-conversation-picker")
+      assert has_element?(view, "#new-conversation-composer")
+      assert has_element?(view, ".new-conversation-heading", "Start with a message")
+      assert Handbean.ConversationStore.list_for_workspace("default") == before
+
+      view |> element("#new-conversation-composer") |> render_submit(%{"message" => ""})
+
+      assert has_element?(view, ".composer-error", "请输入消息")
+      assert Handbean.ConversationStore.list_for_workspace("default") == before
+
+      view
+      |> form("#new-conversation-composer", %{"message" => "Start only when sent"})
+      |> render_submit()
+
       after_list = Handbean.ConversationStore.list_for_workspace("default")
       assert length(after_list) == length(before) + 1
+      refute has_element?(view, "#new-conversation-page")
     end
 
     test "adding a workspace creates a checkout-bound first conversation", %{conn: conn} do
@@ -510,14 +535,14 @@ defmodule HandbeanWeb.WorkspaceLive.WorkspaceManagementTest do
         configure_test_models!()
         :ok = Handbean.Settings.save_global(%{"default_model" => "sui2api/gpt-5.5"})
         {:ok, view, _html} = live(conn, "/")
-        first_id = create_default_conversation(view)
+        first_id = choose_new_conversation_project(view, "default")
         render_change(view, "select_model", %{"model" => "sui2api/gpt-5.5"})
 
         # Read the workspace setting afresh, rather than the mounted socket's cached settings.
         :ok =
           Handbean.Settings.save_workspace_model_ai(ws_dir, %{"default_model" => @default_model})
 
-        second_id = create_default_conversation(view)
+        second_id = choose_new_conversation_project(view, "default")
 
         assert second_id != first_id
         assert has_element?(view, "#model-picker option[value='#{@expected_model}'][selected]")

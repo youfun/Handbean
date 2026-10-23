@@ -45,6 +45,13 @@ defmodule HandbeanWeb.Feature.WorkspaceFeatureTest do
     end
   end
 
+  defp start_conversation(session, message \\ "Start conversation") do
+    session
+    |> click_button("#new-conversation-picker-toggle", "")
+    |> fill_in("#new-conversation-message", "Message", with: message, exact: false)
+    |> click_button("#new-conversation-send", "")
+  end
+
   setup do
     isolate_conversation_home!()
     old_provider = Application.get_env(:handbean, :test_provider)
@@ -150,26 +157,45 @@ defmodule HandbeanWeb.Feature.WorkspaceFeatureTest do
       |> assert_has("#add-workspace[title='Add workspace']")
     end
 
-    test "clicking new conversation clears messages and resets UI", %{conn: conn} do
+    test "clicking new conversation opens a blank page without creating a conversation", %{
+      conn: conn
+    } do
+      session = visit(conn, "/")
+      before = Handbean.ConversationStore.list(include_timeline?: false)
+
+      session
+      |> click_button("#new-conversation-picker-toggle", "")
+      |> assert_has("#new-conversation-page")
+      |> assert_has("#new-conversation-composer")
+      |> refute_has("textarea#ai-input")
+
+      assert Handbean.ConversationStore.list(include_timeline?: false) == before
+    end
+
+    test "sending from the blank page creates the conversation", %{conn: conn} do
       conn
       |> visit("/")
       |> click_button("#new-conversation-picker-toggle", "")
-      |> click_button("#new-conversation-project-default", "")
-      |> assert_has("#no-messages", "No messages yet")
-      |> assert_has("#status-label", "idle")
+      |> fill_in("#new-conversation-message", "Message", with: "Hello from draft", exact: false)
+      |> click_button("#new-conversation-send", "")
+      |> refute_has("#new-conversation-page")
+      |> assert_has(".msg-bubble.msg-user", "Hello from draft")
       |> assert_path("/w/default/c/*")
     end
 
-    test "new conversation after sending a message clears the chat", %{conn: conn} do
+    test "new conversation after sending a message hides previous messages", %{conn: conn} do
       conn
       |> visit("/")
       |> fill_in("#ai-input", "Message", with: "Previous message", exact: false)
       |> click_button("#send-button", "")
       |> assert_has(".msg-bubble.msg-user", "Previous message")
       |> click_button("#new-conversation-picker-toggle", "")
-      |> click_button("#new-conversation-project-default", "")
-      |> assert_has("#no-messages", "No messages yet")
+      |> assert_has("#new-conversation-page")
       |> refute_has(".msg-bubble.msg-user", "Previous message")
+      |> fill_in("#new-conversation-message", "Message", with: "New draft", exact: false)
+      |> click_button("#new-conversation-send", "")
+      |> refute_has(".msg-bubble.msg-user", "Previous message")
+      |> assert_has(".msg-bubble.msg-user", "New draft")
     end
   end
 
@@ -204,8 +230,7 @@ defmodule HandbeanWeb.Feature.WorkspaceFeatureTest do
     test "archive button exists on conversation list", %{conn: conn} do
       conn
       |> visit("/")
-      |> click_button("#new-conversation-picker-toggle", "")
-      |> click_button("#new-conversation-project-default", "")
+      |> start_conversation()
       |> assert_has("button[phx-click='toggle_conversation_menu']", "More actions")
       |> click_button("button[phx-click='toggle_conversation_menu']", "More actions")
       |> assert_has(".conversation-menu-item[phx-click='archive_conversation']", "Archive")
@@ -215,11 +240,12 @@ defmodule HandbeanWeb.Feature.WorkspaceFeatureTest do
       session =
         conn
         |> visit("/")
-        |> click_button("#new-conversation-picker-toggle", "")
-        |> click_button("#new-conversation-project-default", "")
+        |> start_conversation()
         |> click_button("button[phx-click='toggle_conversation_menu']", "More actions")
 
-      [conv] = Handbean.ConversationStore.list(include_timeline?: false)
+      conv =
+        Handbean.ConversationStore.list(include_timeline?: false)
+        |> Enum.max_by(& &1["updated_at"])
 
       assert_has(session, ".conversation-menu-item[data-copy='#{conv["id"]}']", "Copy ID")
     end
@@ -227,9 +253,8 @@ defmodule HandbeanWeb.Feature.WorkspaceFeatureTest do
     test "archive conversation removes it from active list", %{conn: conn} do
       conn
       |> visit("/")
-      |> click_button("#new-conversation-picker-toggle", "")
-      |> click_button("#new-conversation-project-default", "")
-      |> assert_has("button", "New chat")
+      |> start_conversation()
+      |> assert_has("button[phx-click='toggle_conversation_menu']", "More actions")
       |> click_button("button[phx-click='toggle_conversation_menu']", "More actions")
       |> click_button(".conversation-menu-item[phx-click='archive_conversation']", "Archive")
       |> assert_has("#no-messages", "No messages yet")
@@ -239,10 +264,7 @@ defmodule HandbeanWeb.Feature.WorkspaceFeatureTest do
       session =
         conn
         |> visit("/")
-        |> click_button("#new-conversation-picker-toggle", "")
-        |> click_button("#new-conversation-project-default", "")
-        |> fill_in("#ai-input", "Message", with: "Archive this conversation", exact: false)
-        |> click_button("#send-button", "")
+        |> start_conversation("Archive this conversation")
         |> assert_has(".msg-bubble.msg-assistant", "Hello! I am a fake provider response.",
           timeout: 5_000
         )
@@ -278,14 +300,13 @@ defmodule HandbeanWeb.Feature.WorkspaceFeatureTest do
     test "pin and unpin from the conversation menu", %{conn: conn} do
       conn
       |> visit("/")
-      |> click_button("#new-conversation-picker-toggle", "")
-      |> click_button("#new-conversation-project-default", "")
+      |> start_conversation()
       |> within("#workspace-conversations-default", fn session ->
         session
         |> click_button("button[phx-click='toggle_conversation_menu']", "More actions")
         |> click_button(".conversation-menu-item[phx-click='toggle_pin_conversation']", "Pin")
       end)
-      |> assert_has("#pinned-conversations", "New chat")
+      |> assert_has("#pinned-conversations")
       |> within("#pinned-conversations", fn session ->
         session
         |> click_button("button[phx-click='toggle_conversation_menu']", "More actions")
@@ -295,7 +316,7 @@ defmodule HandbeanWeb.Feature.WorkspaceFeatureTest do
         )
       end)
       |> refute_has("#pinned-conversations")
-      |> assert_has("#workspace-conversations-default", "New chat")
+      |> assert_has("#workspace-conversations-default")
     end
   end
 
@@ -308,10 +329,7 @@ defmodule HandbeanWeb.Feature.WorkspaceFeatureTest do
     test "rename from the conversation menu updates the sidebar", %{conn: conn} do
       conn
       |> visit("/")
-      |> click_button("#new-conversation-picker-toggle", "")
-      |> click_button("#new-conversation-project-default", "")
-      |> fill_in("#ai-input", "Message", with: "Need a title", exact: false)
-      |> click_button("#send-button", "")
+      |> start_conversation("Need a title")
       |> within("#workspace-conversations-default", fn s ->
         s
         |> click_button("button[phx-click='toggle_conversation_menu']", "More actions")
@@ -335,10 +353,7 @@ defmodule HandbeanWeb.Feature.WorkspaceFeatureTest do
       session =
         conn
         |> visit("/")
-        |> click_button("#new-conversation-picker-toggle", "")
-        |> click_button("#new-conversation-project-default", "")
-        |> fill_in("#ai-input", "Message", with: "Restore this conversation", exact: false)
-        |> click_button("#send-button", "")
+        |> start_conversation("Restore this conversation")
         |> assert_has(".msg-bubble.msg-assistant", "Hello! I am a fake provider response.",
           timeout: 5_000
         )

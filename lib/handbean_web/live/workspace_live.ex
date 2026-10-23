@@ -34,7 +34,7 @@ defmodule HandbeanWeb.WorkspaceLive do
   alias HandbeanWeb.WorkspaceLive.SessionMemory
 
   import SidebarComponents,
-    only: [mobile_header: 1, projects_sidebar: 1, checkout_picker_dialog: 1]
+    only: [mobile_header: 1, projects_sidebar: 1]
 
   import ChatComponents, only: [chat_panel: 1]
   import ConversationSearchComponents, only: [conversation_search_palette: 1]
@@ -258,13 +258,14 @@ defmodule HandbeanWeb.WorkspaceLive do
           |> RuntimeProjection.subscribe_session()
           |> ConversationRouting.restore_session()
           |> WorkspaceNavigation.close_mobile_sheets()
+          |> ConversationRouting.flush_pending_new_conversation_message()
 
         {:noreply, socket}
       else
         _ -> {:noreply, socket}
       end
     else
-      {:noreply, socket}
+      {:noreply, ConversationRouting.flush_pending_new_conversation_message(socket)}
     end
   end
 
@@ -628,11 +629,23 @@ defmodule HandbeanWeb.WorkspaceLive do
   def handle_event("mobile_new_conversation_in_workspace", params, socket),
     do: ConversationEvents.handle("mobile_new_conversation_in_workspace", params, socket)
 
-  def handle_event("new_conversation_on_checkout", params, socket),
-    do: ConversationEvents.handle("new_conversation_on_checkout", params, socket)
+  def handle_event("select_new_conversation_project", params, socket),
+    do: ConversationEvents.handle("select_new_conversation_project", params, socket)
 
-  def handle_event("close_checkout_picker", params, socket),
-    do: ConversationEvents.handle("close_checkout_picker", params, socket)
+  def handle_event("toggle_new_conversation_projects", params, socket),
+    do: ConversationEvents.handle("toggle_new_conversation_projects", params, socket)
+
+  def handle_event("select_new_conversation_checkout", params, socket),
+    do: ConversationEvents.handle("select_new_conversation_checkout", params, socket)
+
+  def handle_event("update_new_conversation_draft", params, socket),
+    do: ConversationEvents.handle("update_new_conversation_draft", params, socket)
+
+  def handle_event("submit_new_conversation", params, socket),
+    do: ConversationEvents.handle("submit_new_conversation", params, socket)
+
+  def handle_event("close_new_conversation", params, socket),
+    do: ConversationEvents.handle("close_new_conversation", params, socket)
 
   def handle_event("open_settings", params, socket),
     do: ConversationEvents.handle("open_settings", params, socket)

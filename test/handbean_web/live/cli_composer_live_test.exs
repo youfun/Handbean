@@ -11,7 +11,7 @@ defmodule HandbeanWeb.CliComposerLiveTest do
 
   import Phoenix.LiveViewTest
 
-  alias Handbean.Agent.CliAgent.Registry
+  alias Handbean.Agent.CliAgent.{Binding, Registry}
   alias Handbean.PubSub.Session
   alias Handbean.TestSupport.E2EHarness
   alias HandbeanWeb.WorkspaceLive.CliSelection
@@ -37,18 +37,55 @@ defmodule HandbeanWeb.CliComposerLiveTest do
   end
 
   defp create_default_conversation(view) do
-    view
-    |> element("#new-conversation-picker-toggle")
-    |> render_click()
+    {:ok, conversation} = Handbean.ConversationStore.create("default")
 
     view
-    |> element("#new-conversation-project-default")
-    |> render_click()
+    |> render_click("select_conversation", %{
+      "id" => conversation["id"],
+      "ws_id" => "default"
+    })
+
+    conversation["id"]
   end
 
   test "CLI picker labels capitalize the first letter of the backend id" do
     assert CliSelection.display_name("droid") == "Droid"
     assert CliSelection.display_name("grok") == "Grok"
+  end
+
+  test "composer omits the CLI picker when only hidden built-in backends are present", %{
+    conn: conn
+  } do
+    {:ok, view, html} = live(conn, "/")
+
+    refute html =~ ~s(id="cli-picker")
+    assert has_element?(view, "#model-picker")
+  end
+
+  test "a conversation with an old CLI binding continues through Handbean", %{conn: conn} do
+    {:ok, workspace} = Handbean.WorkspaceStore.ensure_default!()
+
+    {:ok, conversation} =
+      Handbean.ConversationStore.create(workspace["id"], title: "Former CLI conversation")
+
+    Binding.put(conversation["id"], %{
+      backend: "droid",
+      session_id: "old-droid-session",
+      cwd: workspace["path"],
+      model: "droid-model"
+    })
+
+    {:ok, view, html} = live(conn, "/")
+
+    refute html =~ ~s(id="cli-picker")
+    assert :sys.get_state(view.pid).socket.assigns.selected_cli == nil
+
+    view
+    |> form("#composer", %{message: "continue with handbean"})
+    |> render_submit()
+
+    refute_received {:fake_cli_turn, _, _}
+    assert render(view) =~ "continue with handbean"
   end
 
   test "default send keeps the Handbean model picker and does not call a CLI", %{conn: conn} do
@@ -72,6 +109,31 @@ defmodule HandbeanWeb.CliComposerLiveTest do
     assert render(view) =~ "hello handbean"
     assert has_element?(view, "#model-picker")
     refute has_element?(view, "#cli-model-picker")
+  end
+
+  test "new conversation always starts with Handbean and does not call the selected CLI", %{
+    conn: conn
+  } do
+    Registry.register(Handbean.Agent.CliAgentTest.FakeBackend)
+    Application.put_env(:handbean, :fake_cli_notify, self())
+    {:ok, view, _html} = live(conn, "/")
+
+    select_cli(view, "fake-cli")
+
+    view
+    |> element("#new-conversation-picker-toggle")
+    |> render_click()
+
+    assert has_element?(view, "#new-conversation-page")
+    refute has_element?(view, "#new-conversation-page #cli-picker")
+
+    view
+    |> form("#new-conversation-composer", %{message: "hello from a new conversation"})
+    |> render_submit()
+
+    refute_received {:fake_cli_turn, _, _}
+    assert :sys.get_state(view.pid).socket.assigns.selected_cli == nil
+    assert has_element?(view, "#timeline-stream .msg-user", "hello from a new conversation")
   end
 
   test "selecting a CLI swaps the model list and send uses the CLI run path", %{conn: conn} do

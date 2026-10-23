@@ -3,18 +3,21 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarCheckoutComponents do
 
   use HandbeanWeb, :html
 
-  alias HandbeanWeb.WorkspaceLive.ConversationSwitching
+  alias HandbeanWeb.Components.ModelPicker
+  alias HandbeanWeb.WorkspaceLive.ModelSelection
+
+  import HandbeanWeb.WorkspaceLive.ViewComponents
 
   attr :workspace_id, :string, required: true
-  attr :picker, :any, default: nil
+  attr :draft, :any, default: nil
   attr :source, :atom, default: :sidebar
 
   def checkout_picker(assigns) do
     open? =
-      ConversationSwitching.checkout_picker_open?(
-        assigns.picker,
-        assigns.workspace_id,
-        assigns.source
+      match?(
+        %{workspace_id: workspace_id, source: source}
+        when workspace_id == assigns.workspace_id and source == assigns.source,
+        assigns.draft
       )
 
     click =
@@ -57,147 +60,270 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarCheckoutComponents do
     """
   end
 
-  attr :picker, :any, default: nil
+  attr :draft, :any, default: nil
 
-  def checkout_picker_dialog(assigns) do
-    picker = assigns.picker
-
-    assigns =
-      assigns
-      |> assign(:header?, match?(%{source: :header}, picker))
-      |> assign(:dialog_id, picker_dialog_id(picker))
-      |> assign(:title, picker_dialog_title(picker))
-      |> assign(:projects, picker_projects(picker))
-      |> assign(:checkouts, picker_checkouts(picker))
-      |> assign(:workspace_id, picker_workspace_id(picker))
-
+  def new_conversation_page(assigns) do
     ~H"""
     <div
-      :if={@picker}
-      id="checkout-picker-overlay"
-      class="checkout-picker-overlay"
-      phx-window-keydown="close_checkout_picker"
+      :if={@draft}
+      id="new-conversation-page"
+      class="new-conversation-page"
+      phx-window-keydown="close_new_conversation"
       phx-key="Escape"
+      aria-label={gettext("新建对话")}
     >
-      <button
-        type="button"
-        class="checkout-picker-backdrop"
-        phx-click="close_checkout_picker"
-        aria-label={gettext("Close")}
-      ></button>
-      <div
-        id={@dialog_id}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="checkout-picker-title"
-        class="checkout-picker-dialog"
-      >
-        <div class="checkout-picker-header">
-          <h3 id="checkout-picker-title" class="checkout-picker-title">{@title}</h3>
-          <button
-            type="button"
-            class="checkout-picker-close"
-            phx-click="close_checkout_picker"
-            aria-label={gettext("Close")}
+      <div class="new-conversation-stage">
+        <h1 class="new-conversation-heading">{gettext("从一条消息开始")}</h1>
+        <div class="composer-dock">
+          <form
+            id="new-conversation-composer"
+            phx-submit="submit_new_conversation"
+            phx-change="update_new_conversation_draft"
+            class="composer"
           >
-            <span aria-hidden="true">×</span>
-          </button>
-        </div>
-        <div class="checkout-picker-list">
-          <%= if @header? do %>
-            <%= for project <- @projects do %>
-              <%= if length(project.checkouts) > 1 do %>
-                <div class="workspace-checkout-heading workspace-checkout-project">
-                  {project.name}
+            <input type="hidden" name="draft_id" value={@draft.id} />
+
+            <div :if={@draft.error} class="composer-error" role="alert">
+              <span class="truncate">{@draft.error}</span>
+            </div>
+
+            <div class="composer-turn-controls">
+              <div class="composer-turn-pickers">
+                <div :if={@draft.models != []} class="model-control">
+                  <ModelPicker.render
+                    id="new-conversation-model-picker"
+                    name="model"
+                    value={@draft.model}
+                    options={model_options(@draft.models)}
+                    label={gettext("模型")}
+                    title={gettext("选择新对话使用的模型")}
+                    change="update_new_conversation_draft"
+                    compact
+                  />
                 </div>
-                <.checkout_choice
-                  :for={checkout <- project.checkouts}
-                  checkout={checkout}
-                  workspace_id={project.id}
-                />
-              <% else %>
-                <button
-                  id={"new-conversation-project-#{project.id}"}
-                  type="button"
-                  phx-click="new_conversation_in_workspace"
-                  phx-value-ws_id={project.id}
-                  phx-value-source="header"
-                  class="workspace-checkout-item"
-                  title={project.path}
+                <div :if={@draft.reasoning_levels != []} class="model-control">
+                  <select
+                    id="new-conversation-reasoning"
+                    name="reasoning"
+                    value={@draft.reasoning}
+                    phx-hook="BoundSelect"
+                    data-value={@draft.reasoning || ""}
+                    phx-change="update_new_conversation_draft"
+                    aria-label={gettext("推理等级")}
+                    title={gettext("推理等级")}
+                  >
+                    <option
+                      :for={level <- @draft.reasoning_levels}
+                      value={level}
+                      selected={level == @draft.reasoning}
+                    >
+                      {reasoning_label(level)}
+                    </option>
+                  </select>
+                </div>
+              </div>
+              <div class="permission-menu-container">
+                <select
+                  id="new-conversation-permission"
+                  name="permission_mode"
+                  value={@draft.permission_mode}
+                  phx-hook="BoundSelect"
+                  data-value={to_string(@draft.permission_mode)}
+                  phx-change="update_new_conversation_draft"
+                  aria-label={gettext("权限")}
+                  title={permission_title(@draft.permission_mode)}
+                  class="pill new-conversation-permission"
                 >
-                  <span class="workspace-checkout-ref">{project.name}</span>
-                  <span :if={project.path} class="workspace-checkout-path">{project.path}</span>
-                </button>
-              <% end %>
-            <% end %>
-          <% else %>
-            <.checkout_choice
-              :for={checkout <- @checkouts}
-              checkout={checkout}
-              workspace_id={@workspace_id}
-            />
-          <% end %>
+                  <option
+                    :for={mode <- [:prompt, :auto_review, :yolo]}
+                    value={mode}
+                    selected={mode == @draft.permission_mode}
+                  >
+                    {permission_label(mode)}
+                  </option>
+                </select>
+              </div>
+            </div>
+
+            <div class="composer-bar">
+              <div class="textarea-wrap">
+                <label class="sr-only" for="new-conversation-message">{gettext("消息")}</label>
+                <textarea
+                  id="new-conversation-message"
+                  name="message"
+                  rows="1"
+                  value={@draft.message}
+                  placeholder={gettext("输入消息")}
+                  phx-debounce="120"
+                  autofocus
+                >{Phoenix.HTML.Form.normalize_value("textarea", @draft.message)}</textarea>
+              </div>
+              <div class="composer-toolbar">
+                <div class="composer-toolbar-actions">
+                  <button
+                    id="new-conversation-send"
+                    type="submit"
+                    phx-disable-with="…"
+                    class="composer-send-btn primary"
+                    disabled={@draft.models == []}
+                    title={gettext("Send")}
+                    aria-label={gettext("Send")}
+                  >
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2.4"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M5 12h14" />
+                      <path d="M13 6l6 6-6 6" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </form>
+
+          <div class="new-conversation-chips">
+            <button
+              type="button"
+              class="new-conversation-chip"
+              phx-click="toggle_new_conversation_projects"
+              aria-expanded={to_string(@draft.project_menu_open?)}
+              aria-controls="new-conversation-projects"
+            >
+              <.folder_icon />
+              <span>{@draft.workspace_name}</span>
+            </button>
+
+            <label :if={length(@draft.checkouts) > 1} class="new-conversation-chip">
+              <span class="sr-only">{gettext("Choose a checkout")}</span>
+              <.branch_icon />
+              <select
+                id="new-conversation-checkout"
+                name="checkout_path"
+                form="new-conversation-composer"
+                value={@draft.checkout_path}
+                phx-change="select_new_conversation_checkout"
+                aria-label={gettext("Choose a checkout")}
+              >
+                <option
+                  :for={checkout <- @draft.checkouts}
+                  value={checkout.path}
+                  selected={checkout.path == @draft.checkout_path}
+                >
+                  {checkout_label(checkout)}
+                </option>
+              </select>
+            </label>
+
+            <div
+              :if={@draft.project_menu_open?}
+              id="new-conversation-projects"
+              class="new-conversation-projects"
+            >
+              <div class="new-conversation-projects-label">{gettext("选择项目")}</div>
+              <button
+                :for={project <- @draft.projects}
+                id={"new-conversation-project-#{project.id}"}
+                type="button"
+                phx-click="select_new_conversation_project"
+                phx-value-ws_id={project.id}
+                class={[
+                  "new-conversation-project",
+                  project.id == @draft.workspace_id && "is-selected"
+                ]}
+                title={project.path}
+              >
+                <span class="new-conversation-project-name">{project.name}</span>
+                <span class="new-conversation-project-path">{short_path(project.path)}</span>
+                <span :if={project.id == @draft.workspace_id} class="new-conversation-project-check">
+                  ✓
+                </span>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
     """
   end
 
-  attr :checkout, :map, required: true
-  attr :workspace_id, :string, required: true
+  defp model_options(models) do
+    models
+    |> ModelSelection.models_by_provider()
+    |> Enum.flat_map(fn {provider_id, provider_models} ->
+      group = ModelSelection.provider_display_name(provider_id)
 
-  defp checkout_choice(assigns) do
-    ref = checkout_ref(assigns.checkout)
-    name = Path.basename(assigns.checkout.path)
+      Enum.map(provider_models, fn model ->
+        ModelPicker.option(
+          model.id,
+          ModelSelection.model_option_label(model, provider_models),
+          group
+        )
+      end)
+    end)
+  end
 
-    assigns =
-      assigns
-      |> assign(:ref, ref)
-      |> assign(:name, name)
+  defp checkout_label(%{branch: branch, path: path}) when is_binary(branch) and branch != "",
+    do: "#{branch} · #{Path.basename(path)}"
 
+  defp checkout_label(%{detached?: true, path: path}), do: "detached · #{Path.basename(path)}"
+  defp checkout_label(%{path: path}), do: Path.basename(path)
+
+  defp short_path(path) when is_binary(path) do
+    home = System.user_home!()
+
+    if String.starts_with?(path, home <> "/") do
+      "~/" <> String.replace_prefix(path, home <> "/", "")
+    else
+      path
+    end
+  end
+
+  defp short_path(_path), do: ""
+
+  defp folder_icon(assigns) do
     ~H"""
-    <button
-      type="button"
-      phx-click="new_conversation_on_checkout"
-      phx-value-ws_id={@workspace_id}
-      phx-value-path={@checkout.path}
-      class="workspace-checkout-item is-checkout"
-      title={@checkout.path}
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.8"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
     >
-      <span class="workspace-checkout-ref">{@ref || @name}</span>
-      <span :if={@ref && @ref != @name} class="workspace-checkout-name">{@name}</span>
-      <span class="workspace-checkout-path">{@checkout.path}</span>
-    </button>
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+    </svg>
     """
   end
 
-  defp picker_dialog_id(%{source: :header}), do: "new-conversation-picker"
-
-  defp picker_dialog_id(%{source: source, workspace_id: workspace_id})
-       when is_atom(source) and is_binary(workspace_id) do
-    "checkout-picker-#{source}-#{workspace_id}"
+  defp branch_icon(assigns) do
+    ~H"""
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.8"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <line x1="6" y1="3" x2="6" y2="15" />
+      <circle cx="18" cy="6" r="3" />
+      <circle cx="6" cy="18" r="3" />
+      <path d="M18 9a9 9 0 0 1-9 9" />
+    </svg>
+    """
   end
-
-  defp picker_dialog_id(_picker), do: "checkout-picker"
-
-  defp picker_dialog_title(%{source: :header}), do: gettext("新建对话")
-  defp picker_dialog_title(_picker), do: gettext("Choose a checkout")
-
-  defp picker_projects(%{source: :header, projects: projects}) when is_list(projects),
-    do: projects
-
-  defp picker_projects(_picker), do: []
-
-  defp picker_checkouts(%{source: :header}), do: []
-  defp picker_checkouts(%{checkouts: checkouts}) when is_list(checkouts), do: checkouts
-  defp picker_checkouts(_picker), do: []
-
-  defp picker_workspace_id(%{workspace_id: workspace_id}) when is_binary(workspace_id),
-    do: workspace_id
-
-  defp picker_workspace_id(_picker), do: ""
-
-  defp checkout_ref(%{branch: branch}) when is_binary(branch) and branch != "", do: branch
-  defp checkout_ref(%{detached?: true}), do: "detached"
-  defp checkout_ref(_checkout), do: nil
 end

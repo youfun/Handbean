@@ -35,6 +35,55 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRenderingTest do
   end
 
   describe "conversation stream" do
+    test "channel-bound conversations identify their external channel", %{conn: conn} do
+      assert {:ok, conversation} =
+               Handbean.ConversationStore.create("default",
+                 title: "微信会话",
+                 channel_binding: %{channel: "weixin", label: "微信"}
+               )
+
+      assert {:ok, unbound} =
+               Handbean.ConversationStore.create("default", title: "普通会话")
+
+      {:ok, view, _html} = live(conn, "/w/default/c/#{conversation["id"]}")
+
+      assert has_element?(
+               view,
+               "#conversation-channel-binding[data-channel='weixin'][aria-label*='微信']",
+               "微信"
+             )
+
+      assert has_element?(
+               view,
+               "[data-conversation-id='#{conversation["id"]}'] [data-channel='weixin']",
+               "微信"
+             )
+
+      view
+      |> element(
+        "[data-conversation-id='#{unbound["id"]}'] button[phx-click='select_conversation']"
+      )
+      |> render_click()
+
+      refute has_element?(view, "#conversation-channel-binding")
+
+      assert {:ok, _metadata} =
+               Handbean.ConversationStore.bind_channel(unbound["id"],
+                 channel: "weixin",
+                 label: ~s(<微信 "安全">)
+               )
+
+      assert has_element?(
+               view,
+               "#conversation-channel-binding[data-channel='weixin'][aria-label*='微信']",
+               ~s(<微信 "安全">)
+             )
+
+      html = render(view)
+      assert html =~ "&lt;微信 &quot;安全&quot;&gt;"
+      refute html =~ ~s(<微信 "安全">)
+    end
+
     test "renders conversations under workspace groups", %{conn: conn} do
       {:ok, view, html} = live(conn, "/")
 
@@ -99,7 +148,12 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRenderingTest do
 
       html = render(view)
       assert html =~ ~s(id="workspace-sheet")
-      assert has_element?(view, "#workspace-sheet.left-drawer.open[aria-hidden='false']:not([inert])")
+
+      assert has_element?(
+               view,
+               "#workspace-sheet.left-drawer.open[aria-hidden='false']:not([inert])"
+             )
+
       assert html =~ "sheet-new-conv-btn"
       refute html =~ "sheet-ws-row"
       assert has_element?(view, "#workspace-sheet #mobile-schedule-nav")
@@ -127,9 +181,15 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRenderingTest do
       )
       |> render_click()
 
-      html = render(view)
-      assert html =~ "conversation-row"
+      assert has_element?(view, "#new-conversation-page")
       refute has_element?(view, "#workspace-sheet.open")
+      refute render(view) =~ "conversation-row"
+
+      view
+      |> form("#new-conversation-composer", %{"message" => "Start from mobile"})
+      |> render_submit()
+
+      assert render(view) =~ "conversation-row"
     end
 
     test "archive toggle shows archived conversations in stream", %{conn: conn} do

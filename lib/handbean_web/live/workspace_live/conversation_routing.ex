@@ -10,6 +10,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRouting do
   alias HandbeanWeb.WorkspaceLive.ConversationSwitching
   alias HandbeanWeb.WorkspaceLive.MessageSubmission
   alias HandbeanWeb.WorkspaceLive.ModelSelection
+  alias HandbeanWeb.WorkspaceLive.NewConversationDraft
   alias HandbeanWeb.WorkspaceLive.RuntimeProjection
   alias HandbeanWeb.WorkspaceLive.Schedules
   alias HandbeanWeb.WorkspaceLive.WorkspaceNavigation
@@ -108,35 +109,64 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRouting do
   defp workspace_by_id(_socket, _ws_id), do: nil
 
   def begin_conversation_in_workspace(socket, ws_id, opts) do
-    close_sheets? = Keyword.get(opts, :close_sheets?, false)
+    source = Keyword.get(opts, :source, :sidebar)
 
-    socket = CliSelection.prepare_switch(socket)
+    socket =
+      if Keyword.get(opts, :close_sheets?, false),
+        do: WorkspaceNavigation.close_mobile_sheets(socket),
+        else: socket
 
-    case ConversationSwitching.begin_new_conversation(
-           socket,
-           ws_id,
-           ModelSelection.switching_opts()
-           |> Keyword.merge(Keyword.take(opts, [:checkout_path, :source]))
-         ) do
-      {:picker, socket} ->
-        {:noreply, CliSelection.restore_current(socket)}
+    socket =
+      NewConversationDraft.open(socket,
+        workspace_id: ws_id,
+        source: source
+      )
 
-      {:created, socket, conv_id} ->
-        socket = attach_created_conversation(socket, ws_id)
+    {:noreply, socket}
+  end
+
+  def submit_new_conversation(socket, params) do
+    case NewConversationDraft.prepare_submit(socket, params) do
+      {:error, socket} ->
+        {:noreply, socket}
+
+      {:ok, socket, draft} ->
+        socket = drop_composer_for_switch(socket)
+
+        initialize_model = fn new_socket ->
+          NewConversationDraft.apply_model_selection(new_socket, draft)
+        end
+
+        {socket, conv_id} =
+          ConversationSwitching.new_conversation(socket, draft.workspace_id,
+            checkout_path: draft.checkout_path,
+            permission_mode: draft.permission_mode,
+            selected_model: draft.model,
+            selected_reasoning_level: draft.reasoning,
+            initialize_model: initialize_model,
+            model_display_name: &ModelSelection.model_display_name/2
+          )
 
         socket =
-          if close_sheets?,
-            do: WorkspaceNavigation.close_mobile_sheets(socket),
-            else: socket
+          socket
+          |> attach_created_conversation(draft.workspace_id, drop_composer?: false)
+          |> assign(:new_conversation_draft, nil)
+          |> assign(:input_value, "")
+          |> assign(:permission_mode, draft.permission_mode)
+          |> assign(:pending_new_conversation_message, draft.message)
 
-        {:noreply, push_patch(socket, to: "/w/#{ws_id}/c/#{conv_id}")}
+        {:noreply, push_patch(socket, to: "/w/#{draft.workspace_id}/c/#{conv_id}")}
     end
   end
 
-  defp attach_created_conversation(socket, ws_id) do
+  defp attach_created_conversation(socket, ws_id, opts \\ []) do
+    socket =
+      if Keyword.get(opts, :drop_composer?, true),
+        do: drop_composer_for_switch(socket),
+        else: socket
+
     socket
-    |> drop_composer_for_switch()
-    |> ConversationSwitching.close_checkout_picker()
+    |> NewConversationDraft.close()
     |> WorkspaceNavigation.expand_group(ws_id)
     |> WorkspaceNavigation.after_switch()
     |> RuntimeProjection.subscribe_session()
@@ -206,5 +236,17 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRouting do
     |> RuntimeProjection.restore_active_session()
     |> CliSelection.restore_current()
     |> WorkspaceNavigation.finish_runtime()
+  end
+
+  def flush_pending_new_conversation_message(socket) do
+    case socket.assigns[:pending_new_conversation_message] do
+      message when is_binary(message) and message != "" ->
+        socket = assign(socket, :pending_new_conversation_message, nil)
+        {:noreply, socket} = MessageSubmission.send_conversation_message(socket, message)
+        socket
+
+      _missing ->
+        socket
+    end
   end
 end

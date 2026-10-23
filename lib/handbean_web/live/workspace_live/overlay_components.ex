@@ -12,7 +12,7 @@ defmodule HandbeanWeb.WorkspaceLive.OverlayComponents do
   attr :chat_scope, :any, required: true
   attr :collapsed_workspace_ids, :any, required: true
   attr :collapsed_thread_ids, :any, default: MapSet.new()
-  attr :checkout_picker, :any, default: nil
+  attr :new_conversation_draft, :any, default: nil
   attr :conversations_by_workspace, :any, required: true
   attr :current_conversation_id, :any, required: true
   attr :current_workspace_id, :any, required: true
@@ -245,7 +245,7 @@ defmodule HandbeanWeb.WorkspaceLive.OverlayComponents do
             </button>
             <SidebarComponents.checkout_picker
               workspace_id={ws["id"]}
-              picker={@checkout_picker}
+              draft={@new_conversation_draft}
               source={:mobile}
             />
           </div>

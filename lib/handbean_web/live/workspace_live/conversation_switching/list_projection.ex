@@ -302,7 +302,8 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching.ListProjection do
       workspace_id: workspace_id,
       workspace_label: label,
       scope: scope,
-      updated_at: ConversationState.conv_value(conv, "updated_at", "")
+      updated_at: ConversationState.conv_value(conv, "updated_at", ""),
+      channel_binding: ConversationState.conv_value(conv, "channel_binding", nil)
     }
 
     Map.put(row, :age, HandbeanWeb.WorkspaceLive.ViewComponents.short_relative_time(row))
@@ -359,7 +360,8 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching.ListProjection do
       pinned_at: ConversationState.conv_value(conv, "pinned_at", nil),
       updated_at: ConversationState.conv_value(conv, "updated_at", nil),
       created_at: ConversationState.conv_value(conv, "created_at", nil),
-      checkout_path: ConversationState.conv_value(conv, "checkout_path", nil)
+      checkout_path: ConversationState.conv_value(conv, "checkout_path", nil),
+      channel_binding: ConversationState.conv_value(conv, "channel_binding", nil)
     }
 
     Map.put(row, :age, HandbeanWeb.WorkspaceLive.ViewComponents.short_relative_time(row))

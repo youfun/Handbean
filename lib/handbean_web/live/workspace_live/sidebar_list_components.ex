@@ -17,7 +17,7 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarListComponents do
   attr :collapsed_workspace_ids, :any, required: true
   attr :collapsed_thread_ids, :any, default: MapSet.new()
   attr :conversation_menu_id, :any, required: true
-  attr :checkout_picker, :any, default: nil
+  attr :new_conversation_draft, :any, default: nil
   attr :conversations_by_workspace, :any, required: true
   attr :current_conversation_id, :any, required: true
   attr :current_workspace_id, :any, required: true
@@ -82,7 +82,7 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarListComponents do
             title={gettext("新建对话")}
             aria-label={gettext("新建对话")}
             aria-haspopup="dialog"
-            aria-expanded={to_string(match?(%{source: :header}, @checkout_picker))}
+            aria-expanded={to_string(match?(%{source: :header}, @new_conversation_draft))}
           >
             +
           </button>
@@ -233,6 +233,7 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarListComponents do
                   id={conv.id}
                   state={Map.get(@run_states, conv.id)}
                 />
+                <.channel_badge binding={conv.channel_binding} />
                 <span class="truncate flex-1">{conv.title}</span>
               </button>
               <.conversation_menu conv={conv} conversation_menu_id={@conversation_menu_id} />
@@ -364,6 +365,7 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarListComponents do
                   id={conv.id}
                   state={Map.get(@run_states, conv.id)}
                 />
+                <.channel_badge binding={conv.channel_binding} />
                 <span class="truncate flex-1">{conv.title}</span>
               </button>
               <.conversation_menu conv={conv} conversation_menu_id={@conversation_menu_id} />
@@ -436,7 +438,7 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarListComponents do
             <div class="workspace-row-actions">
               <.checkout_picker
                 workspace_id={ws["id"]}
-                picker={@checkout_picker}
+                draft={@new_conversation_draft}
                 source={:sidebar}
               />
             </div>
@@ -545,6 +547,7 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarListComponents do
                   id={conv.id}
                   state={Map.get(@run_states, conv.id)}
                 />
+                <.channel_badge binding={conv.channel_binding} />
                 <span class="truncate flex-1">{conv.title}</span>
               </button>
               <button
@@ -708,6 +711,7 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarListComponents do
                     else: ""
                   )
                 ]}></span>
+                <.channel_badge binding={conv.channel_binding} />
                 <span class="truncate flex-1">{conv.title}</span>
                 <span class="conversation-badge">
                   {if(conv.scope == "free", do: gettext("自由对话"), else: conv.workspace_label)}
@@ -764,6 +768,32 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarListComponents do
         else: current_workspace_id == conv.workspace_id and chat_scope != :free
       )
   end
+
+  attr :binding, :any, default: nil
+
+  defp channel_badge(assigns) do
+    assigns =
+      assigns
+      |> assign(:channel, channel_value(assigns.binding, "channel"))
+      |> assign(:label, channel_value(assigns.binding, "label"))
+
+    ~H"""
+    <span
+      :if={@channel && @label}
+      class="shrink-0 rounded px-1 text-[10px] leading-4 text-tertiary"
+      data-channel={@channel}
+      title={gettext("%{channel} channel", channel: @label)}
+      aria-label={gettext("%{channel} channel", channel: @label)}
+    >
+      {@label}
+    </span>
+    """
+  end
+
+  defp channel_value(binding, key) when is_map(binding),
+    do: Handbean.Utils.SafeMap.get(binding, key)
+
+  defp channel_value(_binding, _key), do: nil
 
   defp clock_icon(assigns) do
     ~H"""

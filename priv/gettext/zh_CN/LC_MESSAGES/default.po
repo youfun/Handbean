@@ -2534,6 +2534,11 @@ msgstr "当前 worktree 列表"
 msgid "新建对话"
 msgstr "新建对话"
 
+#: lib/handbean_web/live/workspace_live/sidebar_checkout_components.ex:76
+#, elixir-autogen
+msgid "从一条消息开始"
+msgstr "从一条消息开始"
+
 #: lib/handbean_web/live/workspace_live/sidebar_list_components.ex:611
 #: lib/handbean_web/live/workspace_live/sidebar_list_components.ex:627
 #, elixir-autogen

@@ -18,15 +18,6 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching.CheckoutMetadata do
 
   def new_conversation_projects(_workspaces), do: []
 
-  def checkout_picker_open?(picker, workspace_id, source \\ :sidebar)
-
-  def checkout_picker_open?(nil, _workspace_id, _source), do: false
-
-  def checkout_picker_open?(%{workspace_id: open_id, source: open_source}, workspace_id, source),
-    do: open_id == workspace_id and open_source == source
-
-  def checkout_picker_open?(_picker, _workspace_id, _source), do: false
-
   def checkouts_for(ws) do
     root = ws["path"] || ws["default_checkout_path"]
 

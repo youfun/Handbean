@@ -15,11 +15,15 @@ defmodule HandbeanWeb.WorkspaceLive.CliSelection do
 
   @handbean ""
 
+  # Temporarily hide these external loop owners from the composer entry point.
+  @hidden_cli_ids ~w(droid grok)
+
   @doc "Assignable CLI backends. A missing executable is omitted, not installed."
   @spec selectable() :: [%{id: String.t(), capabilities: map()}]
   def selectable do
     if Host.shell?() do
       Registry.selectable()
+      |> Enum.reject(&(&1.id in @hidden_cli_ids))
       |> Enum.filter(& &1.available)
       |> Enum.map(&%{id: &1.id, capabilities: &1.capabilities})
     else

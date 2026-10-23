@@ -117,6 +117,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationState do
 
     socket
     |> assign(:selected_model, selected_model)
+    |> assign(:channel_binding, conv_value(conv, "channel_binding", nil))
     |> sync_reasoning_for_conversation(conv, selected_model, opts)
     |> maybe_update_status(status_overrides, opts)
     |> assign(:revert_confirm_change_id, nil)

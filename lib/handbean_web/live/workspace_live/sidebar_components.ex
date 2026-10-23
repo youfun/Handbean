@@ -24,7 +24,7 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarComponents do
   attr :collapsed_workspace_ids, :any, required: true
   attr :collapsed_thread_ids, :any, default: MapSet.new()
   attr :conversation_menu_id, :any, required: true
-  attr :checkout_picker, :any, default: nil
+  attr :new_conversation_draft, :any, default: nil
   attr :conversations_by_workspace, :any, required: true
   attr :current_conversation_id, :any, required: true
   attr :current_workspace_id, :any, required: true
@@ -46,15 +46,15 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarComponents do
   def run_indicator(assigns), do: SidebarConversationComponents.run_indicator(assigns)
 
   attr :workspace_id, :string, required: true
-  attr :picker, :any, default: nil
+  attr :draft, :any, default: nil
   attr :source, :atom, default: :sidebar
 
   def checkout_picker(assigns), do: SidebarCheckoutComponents.checkout_picker(assigns)
 
-  attr :picker, :any, default: nil
+  attr :draft, :any, default: nil
 
-  def checkout_picker_dialog(assigns),
-    do: SidebarCheckoutComponents.checkout_picker_dialog(assigns)
+  def new_conversation_page(assigns),
+    do: SidebarCheckoutComponents.new_conversation_page(assigns)
 
   attr :conv, :map, required: true
   attr :conversation_menu_id, :any, required: true

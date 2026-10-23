@@ -25,7 +25,7 @@
       collapsed_workspace_ids={@collapsed_workspace_ids}
       collapsed_thread_ids={@collapsed_thread_ids}
       conversation_menu_id={@conversation_menu_id}
-      checkout_picker={@checkout_picker}
+      new_conversation_draft={@new_conversation_draft}
       conversations_by_workspace={@conversations_by_workspace}
       current_conversation_id={@current_conversation_id}
       current_workspace_id={@current_workspace_id}
@@ -63,6 +63,7 @@
         available_models={@available_models}
         available_reasoning_levels={@available_reasoning_levels}
         chat_scope={@chat_scope}
+        channel_binding={@channel_binding}
         composer_error={@composer_error}
         current_assistant_entry_id={@current_assistant_entry_id}
         current_conversation_id={@current_conversation_id}
@@ -105,6 +106,7 @@
         user_time_zone={@user_time_zone}
         workspace_path={@workspace_path}
         workspace_root={@workspace_root}
+        new_conversation_draft={@new_conversation_draft}
       />
       <.workspace_panel
         active_file={@active_file}
@@ -138,7 +140,7 @@
       chat_scope={@chat_scope}
       collapsed_workspace_ids={@collapsed_workspace_ids}
       collapsed_thread_ids={@collapsed_thread_ids}
-      checkout_picker={@checkout_picker}
+      new_conversation_draft={@new_conversation_draft}
       conversations_by_workspace={@conversations_by_workspace}
       current_conversation_id={@current_conversation_id}
       current_workspace_id={@current_workspace_id}
@@ -160,7 +162,6 @@
     />
   </div>
   <.conversation_search_palette search={@conversation_search} workspaces={@workspaces} />
-  <.checkout_picker_dialog picker={@checkout_picker} />
   <.archive_conversation_dialog archive_conversation={@archive_conversation} />
   <.delete_conversation_dialog delete_conversation={@delete_conversation} />
   <.approval_overlay pending_approval={@pending_approval} />

@@ -193,20 +193,57 @@ defmodule HandbeanWeb.WorkspaceLiveCase do
       raise "no data-session-id in html"
   end
 
-  def choose_new_conversation_project(view, workspace_id) do
+  def choose_new_conversation_project(view, workspace_id, message \\ "Start conversation") do
+    before =
+      Handbean.ConversationStore.list_for_workspace(workspace_id)
+      |> MapSet.new(& &1["id"])
+
     view
     |> element("#new-conversation-picker-toggle")
     |> render_click()
 
+    if not has_element?(view, "#new-conversation-composer") do
+      view
+      |> element("#new-conversation-picker-toggle")
+      |> render_click()
+    end
+
+    if not has_element?(view, "#new-conversation-project-#{workspace_id}") do
+      view
+      |> element(".new-conversation-chip[aria-controls='new-conversation-projects']")
+      |> render_click()
+    end
+
+    if has_element?(view, "#new-conversation-project-#{workspace_id}") do
+      view
+      |> element("#new-conversation-project-#{workspace_id}")
+      |> render_click()
+    end
+
+    [draft_id] =
+      view
+      |> render()
+      |> then(&Regex.run(~r/name="draft_id" value="([^"]+)"/, &1, capture: :all_but_first))
+
     view
-    |> element("#new-conversation-project-#{workspace_id}")
-    |> render_click()
+    |> form("#new-conversation-composer", %{"draft_id" => draft_id, "message" => message})
+    |> render_submit()
+
+    Handbean.ConversationStore.list_for_workspace(workspace_id)
+    |> Enum.find_value(fn conversation ->
+      if MapSet.member?(before, conversation["id"]), do: nil, else: conversation["id"]
+    end)
   end
 
   def create_default_conversation(view) do
-    choose_new_conversation_project(view, "default")
+    {:ok, conversation} = Handbean.ConversationStore.create("default", title: "New chat")
 
-    view |> render() |> session_id_from_html()
+    render_click(view, "select_conversation", %{
+      "id" => conversation["id"],
+      "ws_id" => "default"
+    })
+
+    conversation["id"]
   end
 
   def isolate_conversation_home! do

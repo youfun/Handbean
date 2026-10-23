@@ -6,6 +6,7 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
   alias HandbeanWeb.WorkspaceLive.ChatComposerComponents
   alias HandbeanWeb.WorkspaceLive.ChatDialogComponents
   alias HandbeanWeb.WorkspaceLive.ChatTimelineComponents
+  alias HandbeanWeb.WorkspaceLive.SidebarCheckoutComponents
 
   attr :attachments, :any, default: []
   attr :entry_id, :any, required: true
@@ -33,6 +34,7 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
   attr :available_models, :any, required: true
   attr :available_reasoning_levels, :any, required: true
   attr :chat_scope, :any, required: true
+  attr :channel_binding, :any, default: nil
   attr :composer_error, :any, required: true
   attr :current_assistant_entry_id, :any, required: true
   attr :current_conversation_id, :any, required: true
@@ -75,6 +77,7 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
   attr :uploads, :any, required: true
   attr :workspace_path, :any, required: true
   attr :workspace_root, :any, required: true
+  attr :new_conversation_draft, :any, default: nil
 
   def chat_panel(assigns) do
     ~H"""
@@ -95,49 +98,54 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
         show_add_project={@show_add_project}
         show_file_browser={@show_file_browser}
       />
-      <ChatTimelineComponents.timeline
-        current_assistant_entry_id={@current_assistant_entry_id}
-        current_conversation_id={@current_conversation_id}
-        current_workspace_id={@current_workspace_id}
-        history_before={@history_before}
-        history_has_more?={@history_has_more?}
-        history_after={@history_after}
-        history_has_newer?={@history_has_newer?}
-        history_window={@history_window}
-        pending_approval={@pending_approval}
-        pending_messages={@pending_messages}
-        revert_confirm_change_id={@revert_confirm_change_id}
-        revert_message={@revert_message}
-        running={@running}
-        status_info={@status_info}
-        streams={@streams}
-        timeline={@timeline}
-        user_time_zone={@user_time_zone}
-        workspace_root={@workspace_root}
-      />
-      <ChatComposerComponents.composer
-        available_clis={@available_clis}
-        available_models={@available_models}
-        available_reasoning_levels={@available_reasoning_levels}
-        chat_scope={@chat_scope}
-        cli_models_error={@cli_models_error}
-        cli_models_loading={@cli_models_loading}
-        composer_error={@composer_error}
-        current_conversation_id={@current_conversation_id}
-        input_value={@input_value}
-        pending_attachments={@pending_attachments}
-        permission_mode={@permission_mode}
-        running={@running}
-        selected_cli={@selected_cli}
-        selected_model={@selected_model}
-        selected_reasoning_level={@selected_reasoning_level}
-        show_permission_menu={@show_permission_menu}
-        skill_suggestions={@skill_suggestions}
-        speech_available?={@speech_available?}
-        speech_state={@speech_state}
-        uploads={@uploads}
-        workspace_path={@workspace_path}
-      />
+      <%= if @new_conversation_draft do %>
+        <SidebarCheckoutComponents.new_conversation_page draft={@new_conversation_draft} />
+      <% else %>
+        <ChatTimelineComponents.timeline
+          current_assistant_entry_id={@current_assistant_entry_id}
+          current_conversation_id={@current_conversation_id}
+          current_workspace_id={@current_workspace_id}
+          history_before={@history_before}
+          history_has_more?={@history_has_more?}
+          history_after={@history_after}
+          history_has_newer?={@history_has_newer?}
+          history_window={@history_window}
+          pending_approval={@pending_approval}
+          pending_messages={@pending_messages}
+          revert_confirm_change_id={@revert_confirm_change_id}
+          revert_message={@revert_message}
+          running={@running}
+          status_info={@status_info}
+          streams={@streams}
+          timeline={@timeline}
+          user_time_zone={@user_time_zone}
+          workspace_root={@workspace_root}
+        />
+        <ChatComposerComponents.composer
+          available_clis={@available_clis}
+          available_models={@available_models}
+          available_reasoning_levels={@available_reasoning_levels}
+          chat_scope={@chat_scope}
+          channel_binding={@channel_binding}
+          cli_models_error={@cli_models_error}
+          cli_models_loading={@cli_models_loading}
+          composer_error={@composer_error}
+          current_conversation_id={@current_conversation_id}
+          input_value={@input_value}
+          pending_attachments={@pending_attachments}
+          permission_mode={@permission_mode}
+          running={@running}
+          selected_cli={@selected_cli}
+          selected_model={@selected_model}
+          selected_reasoning_level={@selected_reasoning_level}
+          show_permission_menu={@show_permission_menu}
+          skill_suggestions={@skill_suggestions}
+          speech_available?={@speech_available?}
+          speech_state={@speech_state}
+          uploads={@uploads}
+          workspace_path={@workspace_path}
+        />
+      <% end %>
     </div>
 
     <button

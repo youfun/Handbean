@@ -9,6 +9,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
   alias HandbeanWeb.WorkspaceLive.ConversationState
   alias HandbeanWeb.WorkspaceLive.ConversationSwitching.CheckoutMetadata
   alias HandbeanWeb.WorkspaceLive.ConversationSwitching.ListProjection
+  alias HandbeanWeb.WorkspaceLive.NewConversationDraft
   alias HandbeanWeb.WorkspaceLive.SessionMemory
   alias HandbeanWeb.WorkspaceLive.Schedules
 
@@ -508,49 +509,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
     end)
   end
 
-  def begin_new_conversation(socket, workspace_id, opts \\ []) do
-    {:ok, ws} = refreshed_workspace(workspace_id)
-    checkouts = checkouts_for(ws)
-    requested = Keyword.get(opts, :checkout_path)
-
-    cond do
-      is_binary(requested) and requested != "" ->
-        {socket, conv_id} = new_conversation(socket, workspace_id, opts)
-        {:created, socket, conv_id}
-
-      match?(%{workspace_id: ^workspace_id}, socket.assigns[:checkout_picker]) ->
-        {:picker, close_checkout_picker(socket)}
-
-      length(checkouts) > 1 ->
-        {:picker,
-         assign(socket, :checkout_picker, %{
-           workspace_id: workspace_id,
-           checkouts: checkouts,
-           source: Keyword.get(opts, :source, :sidebar)
-         })}
-
-      true ->
-        {socket, conv_id} = new_conversation(socket, workspace_id, opts)
-        {:created, socket, conv_id}
-    end
-  end
-
-  def toggle_new_conversation_picker(socket) do
-    case socket.assigns[:checkout_picker] do
-      %{source: :header} ->
-        close_checkout_picker(socket)
-
-      _other ->
-        assign(socket, :checkout_picker, %{
-          workspace_id: nil,
-          checkouts: [],
-          source: :header,
-          projects: new_conversation_projects(socket.assigns.workspaces)
-        })
-    end
-  end
-
-  defdelegate new_conversation_projects(workspaces), to: CheckoutMetadata
+  def toggle_new_conversation_picker(socket), do: NewConversationDraft.toggle(socket)
 
   def toggle_thread(socket, conversation_id) when is_binary(conversation_id) do
     socket
@@ -606,12 +565,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
     )
   end
 
-  def close_checkout_picker(socket), do: assign(socket, :checkout_picker, nil)
-
-  defdelegate checkout_picker_open?(picker, workspace_id, source \\ :sidebar),
-    to: CheckoutMetadata
-
-  defp checkouts_for(ws), do: CheckoutMetadata.checkouts_for(ws)
+  def close_new_conversation(socket), do: NewConversationDraft.close(socket)
 
   def new_conversation(socket, workspace_id, opts \\ []) do
     {:ok, ws} = refreshed_workspace(workspace_id)
@@ -697,6 +651,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
 
         socket
         |> assign(:conversations_by_workspace, Map.put(convs, bucket, updated_convs))
+        |> maybe_assign_channel_binding(updated_conv, conv_id)
         |> reload_conversation_stream()
 
       {:error, :not_found} ->
@@ -731,6 +686,18 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
     Enum.find_value(convs, fn {bucket, list} ->
       if Enum.any?(list, &(ConversationState.conversation_id(&1) == conv_id)), do: bucket
     end)
+  end
+
+  defp maybe_assign_channel_binding(socket, conversation, conversation_id) do
+    if socket.assigns.current_conversation_id == conversation_id do
+      assign(
+        socket,
+        :channel_binding,
+        ConversationState.conv_value(conversation, "channel_binding", nil)
+      )
+    else
+      socket
+    end
   end
 
   # A store read can still show "New chat" if it races the title write. Do not
@@ -788,6 +755,18 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
           _missing ->
             create_opts
         end
+      end)
+      |> then(fn create_opts ->
+        Enum.reduce(
+          [:permission_mode, :selected_model, :selected_reasoning_level],
+          create_opts,
+          fn key, acc ->
+            case Keyword.fetch(opts, key) do
+              {:ok, value} -> Keyword.put(acc, key, value)
+              :error -> acc
+            end
+          end
+        )
       end)
 
     {:ok, conversation} = Handbean.ConversationStore.create(workspace_id, create_opts)

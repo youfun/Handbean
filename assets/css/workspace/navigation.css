@@ -1005,31 +1005,127 @@
   color: var(--color-text-primary);
 }
 
-.checkout-picker-list {
+.new-conversation-page {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
-  gap: 0.2rem;
+  align-items: center;
+  justify-content: flex-start;
+  box-sizing: border-box;
+  width: 100%;
   min-height: 0;
-  padding: 0.55rem;
-  overflow: auto;
+  height: 100%;
+  padding: 18vh 1.5rem 8vh;
 }
 
-.workspace-checkout-heading {
-  padding: 0.45rem 0.6rem 0.25rem;
+.new-conversation-stage {
+  width: min(42rem, 100%);
+}
+
+.new-conversation-heading {
+  margin: 0 0 1.75rem;
+  color: var(--sig-text-primary);
+  font-size: clamp(1.75rem, 3vw, 2.375rem);
+  font-weight: 550;
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.new-conversation-page .composer-dock {
+  position: relative;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border-top: 0;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.new-conversation-permission {
+  max-width: 8.5rem;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.new-conversation-chips {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.15rem 0.75rem;
+  min-height: 1.5rem;
+  padding: 2px 6px 0;
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+}
+
+.new-conversation-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0.15rem 0.25rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+
+.new-conversation-chip:hover,
+.new-conversation-chip[aria-expanded="true"] {
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+}
+
+.new-conversation-chip select {
+  min-width: 0;
+  max-width: 16rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+
+.new-conversation-projects {
+  position: absolute;
+  left: 6px;
+  top: calc(100% + 6px);
+  bottom: auto;
+  z-index: 5;
+  width: min(28rem, calc(100% - 12px));
+  max-height: 16rem;
+  padding: 0.3rem;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--sig-bg-elevated);
+  box-shadow: var(--sig-pop-shadow, 0 12px 32px rgba(26, 24, 21, 0.12));
+}
+
+.new-conversation-projects-label {
+  padding: 0.3rem 0.5rem 0.35rem;
   color: var(--color-text-tertiary);
   font-size: 0.7rem;
-  letter-spacing: 0.02em;
+  font-weight: 600;
 }
 
-.workspace-checkout-item {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0.15rem;
+.new-conversation-project {
+  display: grid;
+  grid-template-columns: minmax(6rem, 0.7fr) minmax(0, 1.5fr) 1rem;
+  align-items: center;
+  gap: 0.65rem;
   width: 100%;
-  min-height: 2.75rem;
-  padding: 0.55rem 0.7rem;
-  border: none;
+  min-height: 2.1rem;
+  padding: 0.4rem 0.5rem;
+  border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-text-secondary);
@@ -1037,36 +1133,35 @@
   cursor: pointer;
 }
 
-.workspace-checkout-item:hover {
+.new-conversation-project:hover,
+.new-conversation-project.is-selected {
   background: var(--color-surface-hover);
   color: var(--color-text-primary);
 }
 
-.workspace-checkout-ref {
+.new-conversation-project-name,
+.new-conversation-project-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.new-conversation-project-name {
   color: var(--color-text-primary);
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: 0.8125rem;
-  font-weight: 600;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  font-weight: 550;
 }
 
-.workspace-checkout-name {
-  color: var(--color-text-secondary);
-  font-size: 0.75rem;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-.workspace-checkout-path {
+.new-conversation-project-path {
   color: var(--color-text-tertiary);
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: 0.7rem;
-  line-height: 1.4;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+}
+
+.new-conversation-project-check {
+  color: var(--sig-accent);
+  font-size: 0.75rem;
 }
 
 /* ── Conversation badge (workspace label in trash) ── */

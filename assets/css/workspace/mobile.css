@@ -405,10 +405,30 @@
     max-height: calc(100dvh - 48px);
   }
 
-  .workspace-checkout-item,
-  .checkout-picker-close {
+  .new-conversation-page {
+    padding: 12vh 0.75rem 8vh;
+  }
+
+  .new-conversation-heading {
+    margin-bottom: 1.25rem;
+    font-size: 1.625rem;
+  }
+
+  .new-conversation-project,
+  .new-conversation-chip {
     min-height: 44px;
-    min-width: 44px;
+  }
+
+  .new-conversation-project {
+    grid-template-columns: minmax(0, 1fr) 1rem;
+  }
+
+  .new-conversation-project-path {
+    display: none;
+  }
+
+  .new-conversation-projects {
+    width: calc(100% - 12px);
   }
 }
 
