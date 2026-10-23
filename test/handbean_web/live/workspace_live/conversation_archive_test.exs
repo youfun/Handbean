@@ -24,6 +24,14 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationArchiveTest do
         parent_conversation_id: child["id"]
       )
 
+    {:ok, internal} =
+      Handbean.ConversationStore.create(workspace["id"],
+        id: "archive-thread-internal",
+        title: "Hidden subagent",
+        visibility: "internal",
+        parent_conversation_id: parent["id"]
+      )
+
     {:ok, view, _html} = live(conn, "/w/#{workspace["id"]}/c/#{child["id"]}")
     render_async(view, 5_000)
 
@@ -51,7 +59,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationArchiveTest do
     refute has_element?(view, "#conversation-#{child["id"]}")
     refute has_element?(view, "#conversation-#{grandchild["id"]}")
 
-    for conversation <- [parent, child, grandchild] do
+    for conversation <- [parent, child, grandchild, internal] do
       assert {:ok, %{"archived_at" => archived_at}} =
                Handbean.ConversationStore.get_metadata(conversation["id"])
 

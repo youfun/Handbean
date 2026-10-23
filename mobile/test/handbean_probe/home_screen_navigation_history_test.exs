@@ -344,6 +344,13 @@ defmodule HandbeanProbe.HomeScreenNavigationHistoryTest do
         parent_conversation_id: parent["id"]
       )
 
+    {:ok, internal} =
+      Handbean.ConversationStore.create("default",
+        title: "Hidden subagent",
+        visibility: "internal",
+        parent_conversation_id: parent["id"]
+      )
+
     view = info(view, {:tap, {:conversation, child["id"]}})
     view = info(view, {:tap, {:page, :history}})
     view = info(view, {:tap, {:archive_conversation, parent["id"]}})
@@ -362,7 +369,7 @@ defmodule HandbeanProbe.HomeScreenNavigationHistoryTest do
                count: 1
              )
 
-    for conversation <- [parent, child] do
+    for conversation <- [parent, child, internal] do
       assert {:ok, %{"archived_at" => nil}} =
                Handbean.ConversationStore.get_metadata(conversation["id"])
     end
@@ -378,7 +385,7 @@ defmodule HandbeanProbe.HomeScreenNavigationHistoryTest do
     assert assigns(view).page == :chat
     assert assigns(view).chat.conversation["id"] == fallback["id"]
 
-    for conversation <- [parent, child] do
+    for conversation <- [parent, child, internal] do
       assert {:ok, %{"archived_at" => archived_at}} =
                Handbean.ConversationStore.get_metadata(conversation["id"])
 

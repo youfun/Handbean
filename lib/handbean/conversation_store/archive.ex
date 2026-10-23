@@ -25,7 +25,7 @@ defmodule Handbean.ConversationStore.Archive do
          title: conversation.title,
          scope: conversation.scope,
          workspace_id: conversation.workspace_id,
-         descendant_count: count_unarchived_descendants(rows)
+         descendant_count: count_unarchived_user_descendants(rows)
        }}
     else
       nil -> {:error, :not_found}
@@ -75,14 +75,17 @@ defmodule Handbean.ConversationStore.Archive do
     )
   end
 
-  defp count_unarchived_descendants([_root | descendants]) do
-    Enum.count(descendants, &(&1.status == "active" and not &1.archived?))
+  defp count_unarchived_user_descendants([_root | descendants]) do
+    Enum.count(descendants, fn descendant ->
+      descendant.status == "active" and descendant.visibility != "internal" and
+        not descendant.archived?
+    end)
   end
 
-  defp count_unarchived_descendants([]), do: 0
+  defp count_unarchived_user_descendants([]), do: 0
 
   defp archive_rows(rows, :leaf_only) do
-    if count_unarchived_descendants(rows) > 0 do
+    if count_unarchived_user_descendants(rows) > 0 do
       Repo.rollback(:confirmation_required)
     else
       archive_rows(rows, :confirmed)

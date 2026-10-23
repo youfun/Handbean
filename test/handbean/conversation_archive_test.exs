@@ -68,6 +68,55 @@ defmodule Handbean.ConversationArchiveTest do
     end
   end
 
+  test "internal descendants do not require confirmation but are archived with their parent" do
+    {:ok, parent} = ConversationStore.create_free(id: "internal-descendant-parent")
+
+    {:ok, internal} =
+      ConversationStore.create_free(
+        id: "internal-descendant-child",
+        visibility: "internal",
+        parent_conversation_id: parent["id"]
+      )
+
+    assert {:ok, %{descendant_count: 0}} = ConversationStore.archive_preview(parent["id"])
+
+    assert {:ok, _parent, archived_ids} =
+             ConversationStore.archive_subtree_if_leaf(parent["id"])
+
+    assert MapSet.new(archived_ids) == MapSet.new([parent["id"], internal["id"]])
+
+    for id <- archived_ids do
+      assert {:ok, %{"archived_at" => archived_at}} = ConversationStore.get_metadata(id)
+      assert is_binary(archived_at)
+    end
+  end
+
+  test "a user descendant below an internal node still requires confirmation" do
+    {:ok, parent} = ConversationStore.create_free(id: "nested-visible-parent")
+
+    {:ok, internal} =
+      ConversationStore.create_free(
+        id: "nested-visible-internal",
+        visibility: "internal",
+        parent_conversation_id: parent["id"]
+      )
+
+    {:ok, grandchild} =
+      ConversationStore.create_free(
+        id: "nested-visible-grandchild",
+        parent_conversation_id: internal["id"]
+      )
+
+    assert {:ok, %{descendant_count: 1}} = ConversationStore.archive_preview(parent["id"])
+
+    assert {:error, :confirmation_required} =
+             ConversationStore.archive_subtree_if_leaf(parent["id"])
+
+    for id <- [parent["id"], internal["id"], grandchild["id"]] do
+      assert {:ok, %{"archived_at" => nil}} = ConversationStore.get_metadata(id)
+    end
+  end
+
   test "archive preview excludes descendants that are already archived" do
     {:ok, parent} = ConversationStore.create_free(id: "preview-parent")
 
