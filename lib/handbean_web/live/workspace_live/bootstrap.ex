@@ -157,7 +157,7 @@ defmodule HandbeanWeb.WorkspaceLive.Bootstrap do
       |> assign(:thinking_active, false)
       |> assign(:think_buffer, "")
       # Agent state
-      |> assign(:input_value, "")
+      |> assign(:input_value, if(is_binary(params["draft"]), do: params["draft"], else: ""))
       |> assign(:workspace_command_intent, nil)
       |> assign(:composer_error, nil)
       |> assign(:running, false)

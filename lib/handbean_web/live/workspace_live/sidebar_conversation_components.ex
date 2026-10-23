@@ -89,6 +89,8 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarConversationComponents do
   attr :conv, :map, required: true
   attr :conversation_menu_id, :any, required: true
 
+  attr :id_prefix, :string, default: ""
+
   def conversation_menu(assigns) do
     ~H"""
     <div class="conversation-menu">
@@ -97,7 +99,7 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarConversationComponents do
         phx-click="toggle_conversation_menu"
         phx-value-id={@conv.id}
         data-conversation-menu-toggle
-        id={"conversation-menu-#{menu_scope_id(@conv)}-#{@conv.id}"}
+        id={"conversation-menu-#{@id_prefix}#{menu_scope_id(@conv)}-#{@conv.id}"}
         class={[
           "conversation-action",
           @conversation_menu_id == @conv.id && "is-open"
@@ -116,7 +118,7 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarConversationComponents do
       </button>
       <div
         :if={@conversation_menu_id == @conv.id}
-        id={"conversation-menu-panel-#{@conv.id}"}
+        id={"conversation-menu-panel-#{@id_prefix}#{@conv.id}"}
         class="conversation-menu-panel"
         role="menu"
         phx-click-away="close_conversation_menu"
@@ -127,7 +129,7 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarConversationComponents do
           phx-click="toggle_pin_conversation"
           phx-value-id={@conv.id}
           phx-value-ws_id={@conv.workspace_id}
-          id={"conversation-action-pin-#{menu_scope_id(@conv)}-#{@conv.id}"}
+          id={"conversation-action-pin-#{@id_prefix}#{menu_scope_id(@conv)}-#{@conv.id}"}
           class="conversation-menu-item"
         >
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
@@ -147,7 +149,7 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarConversationComponents do
           phx-click="open_rename_conversation"
           phx-value-id={@conv.id}
           phx-value-ws_id={@conv.workspace_id}
-          id={"conversation-action-rename-#{menu_scope_id(@conv)}-#{@conv.id}"}
+          id={"conversation-action-rename-#{@id_prefix}#{menu_scope_id(@conv)}-#{@conv.id}"}
           class="conversation-menu-item"
         >
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
@@ -169,7 +171,7 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarConversationComponents do
         <button
           type="button"
           role="menuitem"
-          id={"conversation-action-copy-id-#{menu_scope_id(@conv)}-#{@conv.id}"}
+          id={"conversation-action-copy-id-#{@id_prefix}#{menu_scope_id(@conv)}-#{@conv.id}"}
           class="conversation-menu-item"
           phx-hook="CopyText"
           data-copy={@conv.id}
@@ -201,7 +203,7 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarConversationComponents do
           phx-click="archive_conversation"
           phx-value-id={@conv.id}
           phx-value-ws_id={@conv.workspace_id}
-          id={"conversation-action-archive-#{menu_scope_id(@conv)}-#{@conv.id}"}
+          id={"conversation-action-archive-#{@id_prefix}#{menu_scope_id(@conv)}-#{@conv.id}"}
           class="conversation-menu-item"
         >
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
@@ -221,7 +223,7 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarConversationComponents do
           phx-click="open_delete_conversation"
           phx-value-id={@conv.id}
           phx-value-ws_id={@conv.workspace_id}
-          id={"conversation-action-delete-#{menu_scope_id(@conv)}-#{@conv.id}"}
+          id={"conversation-action-delete-#{@id_prefix}#{menu_scope_id(@conv)}-#{@conv.id}"}
           class="conversation-menu-item danger"
         >
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">

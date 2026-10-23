@@ -232,7 +232,7 @@ defmodule HandbeanWeb.WorkspaceLive do
           |> WorkspaceNavigation.close_mobile_sheets()
         end
 
-      {:noreply, socket}
+      {:noreply, ConversationRouting.flush_pending_new_conversation_message(socket)}
     else
       _ -> {:noreply, push_patch(socket, to: "/")}
     end

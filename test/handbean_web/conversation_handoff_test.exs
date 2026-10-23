@@ -138,7 +138,7 @@ defmodule HandbeanWeb.ConversationHandoffTest do
 
     refute has_element?(view, "button[phx-click='toggle_conversation_collaboration']")
     assert has_element?(view, "#ai-messages[data-history-has-more='true']")
-    refute has_element?(view, "button[phx-click='load_older_history']")
+    assert has_element?(view, "button[phx-click='load_older_history']")
     refute has_element?(view, "[data-user-msg='history-1']")
     assert has_element?(view, "[data-conversation-handoff='audit-a'] details")
 

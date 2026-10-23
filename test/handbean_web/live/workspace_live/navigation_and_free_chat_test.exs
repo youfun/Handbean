@@ -543,18 +543,49 @@ defmodule HandbeanWeb.WorkspaceLive.NavigationAndFreeChatTest do
 
       {:ok, view, _html} = live(conn, "/")
 
-      view |> element("#new-free-conversation") |> render_click()
+      view
+      |> element("button[phx-click='open_sheet'][phx-value-type='workspace']")
+      |> render_click()
 
-      assert render(view) =~ "Free chats"
+      assert has_element?(view, "#workspace-sheet[aria-hidden='false']")
+
+      html = view |> element("#new-free-conversation") |> render_click()
+
+      assert has_element?(view, "#workspace-sheet[aria-hidden='true']")
+      assert has_element?(view, ".mobile-workspace", "Free chats")
+      refute has_element?(view, ".mobile-workspace-tabs")
+      assert html =~ "Start with a message"
+      assert has_element?(view, "#new-conversation-composer")
 
       html =
         view
-        |> form("#composer", %{message: "hello free chat"})
+        |> form("#new-conversation-composer", %{message: "hello free chat"})
         |> render_submit()
 
       assert html =~ "hello free chat"
       assert render(view) =~ "hello free chat"
       refute render(view) =~ "Message not delivered"
+    end
+
+    test "mobile current conversation menu pins and renames the selected conversation", %{
+      conn: conn
+    } do
+      isolate_conversation_home!()
+      {:ok, conv} = Handbean.ConversationStore.create_free(title: "Mobile notes")
+      {:ok, view, _html} = live(conn, "/c/#{conv["id"]}")
+      menu = "#conversation-menu-mobile-free-#{conv["id"]}"
+
+      view |> element(menu) |> render_click()
+      view |> element("#conversation-action-pin-mobile-free-#{conv["id"]}") |> render_click()
+      {:ok, pinned} = Handbean.ConversationStore.get_metadata(conv["id"])
+      assert is_binary(pinned["pinned_at"])
+
+      view |> element(menu) |> render_click()
+      assert has_element?(view, "#conversation-action-pin-mobile-free-#{conv["id"]}", "Unpin")
+      view |> element("#conversation-action-rename-mobile-free-#{conv["id"]}") |> render_click()
+      view |> form("#rename-conversation-dialog", %{title: "Mobile renamed"}) |> render_submit()
+      {:ok, renamed} = Handbean.ConversationStore.get_metadata(conv["id"])
+      assert renamed["title"] == "Mobile renamed"
     end
 
     test "free chats can be renamed, archived, and restored", %{conn: conn} do

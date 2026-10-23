@@ -8,6 +8,12 @@
 >
   <Layouts.flash_group flash={@flash} />
   <.mobile_header
+    current_conversation_id={@current_conversation_id}
+    conversation_menu_id={@conversation_menu_id}
+    mobile_right_panel_open={@mobile_right_panel_open}
+    right_panel_view={@right_panel_view}
+    terminal_available?={@terminal_available?}
+    new_conversation_draft={@new_conversation_draft}
     chat_scope={@chat_scope}
     conversations_by_workspace={@conversations_by_workspace}
     current_workspace_id={@current_workspace_id}

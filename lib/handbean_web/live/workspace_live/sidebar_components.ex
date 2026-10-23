@@ -18,6 +18,13 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarComponents do
   attr :show_schedules, :boolean, default: false
   attr :schedule_count, :integer, default: 0
 
+  attr :current_conversation_id, :any, required: true
+  attr :conversation_menu_id, :any, required: true
+  attr :mobile_right_panel_open, :boolean, required: true
+  attr :right_panel_view, :atom, required: true
+  attr :terminal_available?, :boolean, required: true
+  attr :new_conversation_draft, :any, required: true
+
   def mobile_header(assigns), do: SidebarHeaderComponents.mobile_header(assigns)
 
   attr :chat_scope, :any, required: true

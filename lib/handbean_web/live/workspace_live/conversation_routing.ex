@@ -137,26 +137,58 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRouting do
           NewConversationDraft.apply_model_selection(new_socket, draft)
         end
 
-        {socket, conv_id} =
-          ConversationSwitching.new_conversation(socket, draft.workspace_id,
-            checkout_path: draft.checkout_path,
-            permission_mode: draft.permission_mode,
-            selected_model: draft.model,
-            selected_reasoning_level: draft.reasoning,
-            initialize_model: initialize_model,
-            model_display_name: &ModelSelection.model_display_name/2
-          )
-
-        socket =
-          socket
-          |> attach_created_conversation(draft.workspace_id, drop_composer?: false)
-          |> assign(:new_conversation_draft, nil)
-          |> assign(:input_value, "")
-          |> assign(:permission_mode, draft.permission_mode)
-          |> assign(:pending_new_conversation_message, draft.message)
-
-        {:noreply, push_patch(socket, to: "/w/#{draft.workspace_id}/c/#{conv_id}")}
+        if NewConversationDraft.free_draft?(draft) do
+          submit_free_conversation(socket, draft, initialize_model)
+        else
+          submit_workspace_conversation(socket, draft, initialize_model)
+        end
     end
+  end
+
+  defp submit_workspace_conversation(socket, draft, initialize_model) do
+    {socket, conv_id} =
+      ConversationSwitching.new_conversation(socket, draft.workspace_id,
+        checkout_path: draft.checkout_path,
+        permission_mode: draft.permission_mode,
+        selected_model: draft.model,
+        selected_reasoning_level: draft.reasoning,
+        initialize_model: initialize_model,
+        model_display_name: &ModelSelection.model_display_name/2
+      )
+
+    socket =
+      socket
+      |> attach_created_conversation(draft.workspace_id, drop_composer?: false)
+      |> assign(:new_conversation_draft, nil)
+      |> assign(:input_value, "")
+      |> assign(:permission_mode, draft.permission_mode)
+      |> assign(:pending_new_conversation_message, draft.message)
+
+    {:noreply, push_patch(socket, to: "/w/#{draft.workspace_id}/c/#{conv_id}")}
+  end
+
+  defp submit_free_conversation(socket, draft, initialize_model) do
+    {socket, conv_id} =
+      ConversationSwitching.new_free_conversation(socket,
+        permission_mode: draft.permission_mode,
+        selected_model: draft.model,
+        selected_reasoning_level: draft.reasoning,
+        initialize_model: initialize_model
+      )
+
+    socket =
+      socket
+      |> NewConversationDraft.close()
+      |> WorkspaceNavigation.expand_group("free")
+      |> WorkspaceNavigation.enter_free_chat()
+      |> WorkspaceNavigation.after_switch()
+      |> RuntimeProjection.subscribe_session()
+      |> assign(:new_conversation_draft, nil)
+      |> assign(:input_value, "")
+      |> assign(:permission_mode, draft.permission_mode)
+      |> assign(:pending_new_conversation_message, draft.message)
+
+    {:noreply, push_patch(socket, to: "/c/#{conv_id}")}
   end
 
   defp attach_created_conversation(socket, ws_id, opts \\ []) do

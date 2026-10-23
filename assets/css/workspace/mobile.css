@@ -1,4 +1,5 @@
 /* ── Mobile single-panel layout (≤ 768px) ── */
+.mobile-workspace-tabs,
 .mobile-header,
 .mobile-header-v2 {
   display: none;
@@ -49,6 +50,61 @@
     padding: 2px 6px;
     min-height: 48px;
     z-index: 20;
+  }
+
+  .mobile-workspace-tabs {
+    display: flex;
+    flex-shrink: 0;
+    gap: 4px;
+    padding: 4px 6px;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg-surface);
+  }
+
+  .mobile-workspace-tabs button {
+    flex: 1;
+    min-width: 0;
+    min-height: 44px;
+    border: 0;
+    border-radius: var(--sig-radius-md);
+    background: transparent;
+    color: var(--color-text-tertiary);
+    font-size: 13px;
+    touch-action: manipulation;
+  }
+
+  .mobile-workspace-tabs button[aria-pressed="true"] {
+    background: var(--color-surface-active);
+    color: var(--color-text-primary);
+    font-weight: 600;
+  }
+
+  .mobile-header-v2 .conversation-action {
+    opacity: 1;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  .mobile-header-v2 .conversation-action svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .mobile-header-v2 .conversation-menu-item {
+    min-height: 44px;
+    padding: 8px 12px;
+    font-size: 14px;
+  }
+
+  .mobile-header-v2 .conversation-menu-panel {
+    min-width: 180px;
+  }
+
+  .workspace-panel-header {
+    display: none;
   }
 
   .mobile-header-workspace-btn {
@@ -406,12 +462,29 @@
   }
 
   .new-conversation-page {
-    padding: 12vh 0.75rem 8vh;
+    padding: 1.5rem 0.75rem;
+    justify-content: center;
   }
 
   .new-conversation-heading {
-    margin-bottom: 1.25rem;
-    font-size: 1.625rem;
+    margin-bottom: 1.75rem;
+    font-size: 1.75rem;
+  }
+
+  .new-conversation-page .composer-bar {
+    border-radius: 0.875rem;
+    padding: 0.625rem 0.75rem 0.375rem;
+  }
+
+  .new-conversation-page .textarea-wrap textarea {
+    min-height: 3rem;
+    font-size: 16px;
+  }
+
+  .new-conversation-chips {
+    gap: 0.375rem 0.75rem;
+    padding-top: 0.5rem;
+    font-size: 0.8125rem;
   }
 
   .new-conversation-project,

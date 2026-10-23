@@ -253,6 +253,13 @@ defmodule HandbeanWeb.WorkspaceLive.InputEvents do
     {:noreply, WorkspaceNavigation.show_terminal(socket)}
   end
 
+  def handle("select_mobile_right_panel_view", %{"view" => "changes"}, socket) do
+    {:noreply,
+     socket
+     |> WorkspaceNavigation.select_panel("changes")
+     |> assign(:mobile_right_panel_open, true)}
+  end
+
   def handle("select_mobile_right_panel_view", %{"view" => "files"}, socket) do
     {:noreply, WorkspaceNavigation.show_files_mobile(socket)}
   end

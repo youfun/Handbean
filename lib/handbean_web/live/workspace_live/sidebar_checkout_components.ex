@@ -191,6 +191,7 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarCheckoutComponents do
 
           <div class="new-conversation-chips">
             <button
+              :if={@draft.projects != []}
               type="button"
               class="new-conversation-chip"
               phx-click="toggle_new_conversation_projects"
@@ -200,6 +201,11 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarCheckoutComponents do
               <.folder_icon />
               <span>{@draft.workspace_name}</span>
             </button>
+
+            <span :if={@draft.projects == []} class="new-conversation-chip is-static">
+              <.folder_icon />
+              <span>{@draft.workspace_name}</span>
+            </span>
 
             <label :if={length(@draft.checkouts) > 1} class="new-conversation-chip">
               <span class="sr-only">{gettext("Choose a checkout")}</span>
@@ -223,7 +229,7 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarCheckoutComponents do
             </label>
 
             <div
-              :if={@draft.project_menu_open?}
+              :if={@draft.project_menu_open? and @draft.projects != []}
               id="new-conversation-projects"
               class="new-conversation-projects"
             >

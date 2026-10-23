@@ -435,7 +435,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
 
   def new_free_conversation(socket, opts \\ []) do
     conversations = Map.get(socket.assigns.conversations_by_workspace, @free_key, [])
-    conversation = build_free_conversation(length(conversations) + 1)
+    conversation = build_free_conversation(length(conversations) + 1, opts)
 
     conversations_by_ws =
       Map.put(
@@ -773,9 +773,25 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
     conversation
   end
 
-  def build_free_conversation(num) do
+  def build_free_conversation(num, opts \\ []) do
     title = conversation_title(num)
-    {:ok, conversation} = Handbean.ConversationStore.create_free(title: title)
+
+    create_opts =
+      [title: title]
+      |> then(fn create_opts ->
+        Enum.reduce(
+          [:permission_mode, :selected_model, :selected_reasoning_level],
+          create_opts,
+          fn key, acc ->
+            case Keyword.fetch(opts, key) do
+              {:ok, value} -> Keyword.put(acc, key, value)
+              :error -> acc
+            end
+          end
+        )
+      end)
+
+    {:ok, conversation} = Handbean.ConversationStore.create_free(create_opts)
     conversation
   end
 

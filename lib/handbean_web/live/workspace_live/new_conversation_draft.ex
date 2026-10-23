@@ -11,6 +11,8 @@ defmodule HandbeanWeb.WorkspaceLive.NewConversationDraft do
 
   @permission_modes [:prompt, :auto_review, :yolo]
 
+  @free_workspace_id "__free__"
+
   def open(socket, opts \\ []) do
     source = Keyword.get(opts, :source, :header)
     workspace_id = Keyword.get(opts, :workspace_id) || default_workspace_id(socket)
@@ -20,6 +22,15 @@ defmodule HandbeanWeb.WorkspaceLive.NewConversationDraft do
       {:error, message} -> assign(socket, :composer_error, message)
     end
   end
+
+  def open_free(socket, opts \\ []) do
+    source = Keyword.get(opts, :source, :sidebar)
+    {:ok, draft} = build_free_draft(socket, source)
+    assign(socket, :new_conversation_draft, draft)
+  end
+
+  def free_draft?(%{workspace_id: @free_workspace_id}), do: true
+  def free_draft?(_draft), do: false
 
   def close(socket), do: assign(socket, :new_conversation_draft, nil)
 
@@ -135,9 +146,100 @@ defmodule HandbeanWeb.WorkspaceLive.NewConversationDraft do
     end
   end
 
+  defp build_free_draft(socket, source) do
+    default_ws = default_workspace(socket)
+    model_root = if default_ws, do: default_ws["path"], else: ""
+
+    models = model_defaults_for_root(socket, model_root)
+    permission_mode = default_free_permission_mode()
+
+    {:ok,
+     %{
+       id: Ecto.UUID.generate(),
+       source: source,
+       projects: [],
+       project_menu_open?: false,
+       workspace_id: @free_workspace_id,
+       workspace_name: gettext("自由对话"),
+       workspace_path: model_root,
+       checkouts: [],
+       checkout_path: nil,
+       models: models.available_models,
+       model: models.selected_model,
+       reasoning_levels: models.available_reasoning_levels,
+       reasoning: models.selected_reasoning_level,
+       permission_mode: permission_mode,
+       message: "",
+       error: nil
+     }}
+  end
+
+  defp default_workspace(socket) do
+    workspaces = socket.assigns[:workspaces] || []
+    current = socket.assigns[:current_workspace_id]
+
+    cond do
+      Enum.any?(workspaces, &(&1["id"] == current)) ->
+        Enum.find(workspaces, &(&1["id"] == current))
+
+      true ->
+        List.first(workspaces)
+    end
+  end
+
+  defp model_defaults_for_root(socket, nil), do: model_defaults_for_root(socket, "")
+
+  defp model_defaults_for_root(socket, model_root) do
+    boot = ModelSelection.boot(model_root)
+
+    selected =
+      cond do
+        is_binary(socket.assigns[:selected_model]) and
+            Enum.any?(boot.available_models, &(&1.id == socket.assigns[:selected_model])) ->
+          socket.assigns[:selected_model]
+
+        true ->
+          boot.selected_model
+      end
+
+    entry = ModelSelection.model_entry_for(selected, boot.available_models)
+    levels = Handbean.Agent.Reasoning.supported_levels(entry)
+
+    reasoning =
+      cond do
+        socket.assigns[:selected_reasoning_level] in levels ->
+          socket.assigns[:selected_reasoning_level]
+
+        true ->
+          Handbean.Agent.Reasoning.default_level(entry)
+      end
+
+    %{
+      available_models: boot.available_models,
+      selected_model: selected,
+      available_reasoning_levels: levels,
+      selected_reasoning_level: reasoning
+    }
+  end
+
+  defp default_free_permission_mode() do
+    case ConversationMode.mode_for_create("free", nil, []) do
+      {:ok, mode} -> String.to_existing_atom(mode)
+      {:error, _reason} -> ConversationMode.default()
+    end
+  end
+
   defp validate_submit(socket, draft) do
     message = String.trim(draft.message)
 
+    if free_draft?(draft) do
+      validate_free_submit(socket, draft, message)
+    else
+      validate_workspace_submit(socket, draft, message)
+    end
+  end
+
+  defp validate_workspace_submit(socket, draft, message) do
     with :ok <- require_message(message),
          {:ok, workspace} <- Handbean.WorkspaceStore.refresh_identity(draft.workspace_id),
          {:ok, checkout_path} <- validate_checkout(workspace, draft.checkout_path),
@@ -161,6 +263,50 @@ defmodule HandbeanWeb.WorkspaceLive.NewConversationDraft do
       {:ok, assign(socket, :new_conversation_draft, validated), validated}
     else
       {:error, message} -> {:error, put_error(socket, message)}
+    end
+  end
+
+  defp validate_free_submit(socket, draft, message) do
+    model_root = draft.workspace_path
+
+    with :ok <- require_message(message),
+         {:ok, models, model} <- validate_free_model(model_root, draft.model),
+         {:ok, reasoning_levels, reasoning} <-
+           validate_reasoning(models, model, draft.reasoning),
+         {:ok, permission_mode} <- validate_permission(draft.permission_mode) do
+      validated = %{
+        draft
+        | message: message,
+          models: models,
+          model: model,
+          reasoning_levels: reasoning_levels,
+          reasoning: reasoning,
+          permission_mode: permission_mode,
+          error: nil
+      }
+
+      {:ok, assign(socket, :new_conversation_draft, validated), validated}
+    else
+      {:error, message} -> {:error, put_error(socket, message)}
+    end
+  end
+
+  defp validate_free_model(nil, model) do
+    validate_free_model("", model)
+  end
+
+  defp validate_free_model(model_root, model) do
+    models = Handbean.Agent.ModelConfig.available_models_for_workspace(model_root)
+
+    cond do
+      models == [] ->
+        {:error, gettext("没有可用模型")}
+
+      Enum.any?(models, &(&1.id == model)) ->
+        {:ok, models, model}
+
+      true ->
+        {:error, gettext("所选模型已不可用，请重新选择")}
     end
   end
 

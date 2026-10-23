@@ -205,6 +205,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationEvents do
           {:noreply,
            socket
            |> assign(:conversation_menu_id, nil)
+           |> assign(:mobile_right_panel_open, false)
            |> assign(:rename_conversation, %{
              id: conv_id,
              workspace_id: if(free?, do: nil, else: ws_id),
@@ -506,19 +507,10 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationEvents do
   end
 
   def handle("new_free_conversation", _params, socket) do
-    socket = ConversationRouting.drop_composer_for_switch(socket)
-
-    {socket, conv_id} =
-      ConversationSwitching.new_free_conversation(socket, ModelSelection.switching_opts())
-
-    socket =
-      socket
-      |> WorkspaceNavigation.expand_group("free")
-      |> WorkspaceNavigation.enter_free_chat()
-      |> RuntimeProjection.subscribe_session()
-      |> WorkspaceNavigation.close_mobile_sheets()
-
-    {:noreply, push_patch(socket, to: "/c/#{conv_id}")}
+    {:noreply,
+     socket
+     |> WorkspaceNavigation.close_mobile_sheets()
+     |> NewConversationDraft.open_free(source: :sidebar)}
   end
 
   def handle("select_free_conversation", %{"id" => conv_id}, socket) do

@@ -209,13 +209,25 @@ defmodule HandbeanWeb.Feature.WorkspaceFeatureTest do
         |> click_button("#new-free-conversation", "")
 
       session
-      |> assert_has("#no-messages", "No messages yet")
+      |> assert_has("#new-conversation-composer")
+      |> fill_in("#new-conversation-message", "Message", with: "hello free chat", exact: false)
+      |> click_button("#new-conversation-send", "")
+
+      # After submitting, the free conversation page should show the composer
+      # and hide the workspace file panel.
+      session
       |> assert_has("#ai-input")
       |> refute_has("#workspace-panel")
-      |> assert_path("/c/*")
+      |> assert_has(".msg-bubble.msg-user", "hello free chat")
 
-      "/c/" <> conv_id = session.current_path
-      {:ok, meta} = Handbean.ConversationStore.get_metadata(conv_id)
+      # Verify a free-scoped conversation was persisted.
+      free_conversations =
+        Handbean.ConversationStore.list(include_timeline?: false)
+        |> Enum.filter(&Handbean.ConversationStore.free?/1)
+
+      assert length(free_conversations) >= 1
+      conv = List.first(free_conversations)
+      {:ok, meta} = Handbean.ConversationStore.get_metadata(conv["id"])
       assert meta["scope"] == "free"
       assert meta["workspace_id"] in [nil, ""]
     end
@@ -228,12 +240,20 @@ defmodule HandbeanWeb.Feature.WorkspaceFeatureTest do
     end
 
     test "archive button exists on conversation list", %{conn: conn} do
-      conn
-      |> visit("/")
-      |> start_conversation()
-      |> assert_has("button[phx-click='toggle_conversation_menu']", "More actions")
-      |> click_button("button[phx-click='toggle_conversation_menu']", "More actions")
-      |> assert_has(".conversation-menu-item[phx-click='archive_conversation']", "Archive")
+      session =
+        conn
+        |> visit("/")
+        |> start_conversation()
+
+      "/w/default/c/" <> conversation_id = session.current_path
+
+      session
+      |> within("#conversation-#{conversation_id}", fn session ->
+        session
+        |> assert_has("button[phx-click='toggle_conversation_menu']", "More actions")
+        |> click_button("button[phx-click='toggle_conversation_menu']", "More actions")
+        |> assert_has(".conversation-menu-item[phx-click='archive_conversation']", "Archive")
+      end)
     end
 
     test "conversation menu copies the id used for thread messaging", %{conn: conn} do
@@ -241,22 +261,35 @@ defmodule HandbeanWeb.Feature.WorkspaceFeatureTest do
         conn
         |> visit("/")
         |> start_conversation()
+
+      "/w/default/c/" <> conversation_id = session.current_path
+
+      session
+      |> within("#conversation-#{conversation_id}", fn session ->
+        session
         |> click_button("button[phx-click='toggle_conversation_menu']", "More actions")
-
-      conv =
-        Handbean.ConversationStore.list(include_timeline?: false)
-        |> Enum.max_by(& &1["updated_at"])
-
-      assert_has(session, ".conversation-menu-item[data-copy='#{conv["id"]}']", "Copy ID")
+        |> assert_has(
+          ".conversation-menu-item[data-copy='#{conversation_id}']",
+          "Copy ID"
+        )
+      end)
     end
 
     test "archive conversation removes it from active list", %{conn: conn} do
-      conn
-      |> visit("/")
-      |> start_conversation()
-      |> assert_has("button[phx-click='toggle_conversation_menu']", "More actions")
-      |> click_button("button[phx-click='toggle_conversation_menu']", "More actions")
-      |> click_button(".conversation-menu-item[phx-click='archive_conversation']", "Archive")
+      session =
+        conn
+        |> visit("/")
+        |> start_conversation()
+
+      "/w/default/c/" <> conversation_id = session.current_path
+
+      session
+      |> within("#conversation-#{conversation_id}", fn session ->
+        session
+        |> assert_has("button[phx-click='toggle_conversation_menu']", "More actions")
+        |> click_button("button[phx-click='toggle_conversation_menu']", "More actions")
+        |> click_button(".conversation-menu-item[phx-click='archive_conversation']", "Archive")
+      end)
       |> assert_has("#no-messages", "No messages yet")
     end
 
