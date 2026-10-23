@@ -49,9 +49,12 @@ defmodule HandbeanWeb.WorkspaceLive.InputEvents do
   end
 
   def handle("composer_drop", params, socket) do
-    # Form-level phx-change also fires when the model/reasoning <select>
-    # changes. Ignore those params and the picker snaps back on remorph.
-    socket = ModelSelection.apply_submitted(socket, params)
+    # Form-level phx-change also fires for native model/reasoning controls.
+    # Route the complete pair through the same validated transition as dedicated events.
+    socket =
+      if CliSelection.cli_selected?(socket.assigns),
+        do: socket,
+        else: ModelSelection.apply_submitted(socket, params)
 
     {:noreply, socket}
   end
@@ -177,8 +180,12 @@ defmodule HandbeanWeb.WorkspaceLive.InputEvents do
   end
 
   def handle("select_reasoning", %{"reasoning" => level}, socket) do
-    {:noreply,
-     socket |> ModelSelection.select_reasoning(level) |> CliSelection.remember_current()}
+    socket =
+      if CliSelection.cli_selected?(socket.assigns),
+        do: CliSelection.select_reasoning(socket, level),
+        else: ModelSelection.select_reasoning(socket, level)
+
+    {:noreply, socket}
   end
 
   def handle("refresh_models", _params, socket) do

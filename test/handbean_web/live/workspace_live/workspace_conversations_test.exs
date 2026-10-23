@@ -1,6 +1,31 @@
 defmodule HandbeanWeb.WorkspaceLive.WorkspaceConversationsTest do
   use HandbeanWeb.WorkspaceLiveCase
 
+  defmodule BlockingModelProvider do
+    @behaviour Handbean.Agent.Provider
+
+    @impl true
+    def complete(_messages, _tools, config) do
+      send(config.notify, {:model_submission_blocked, self()})
+
+      receive do
+        :release ->
+          {:ok,
+           %{
+             stop_reason: :end_turn,
+             messages: [Handbean.Agent.Message.assistant("done")],
+             usage: %{input_tokens: 1, output_tokens: 1},
+             response_metadata: %{}
+           }}
+      after
+        5_000 -> raise "model submission fixture timed out"
+      end
+    end
+
+    @impl true
+    def stream(messages, tools, config, _on_chunk), do: complete(messages, tools, config)
+  end
+
   describe "workspace integration" do
     setup do
       base_dir =
@@ -123,6 +148,110 @@ defmodule HandbeanWeb.WorkspaceLive.WorkspaceConversationsTest do
       |> render_click()
 
       assert has_element?(view, "#model-picker option[value='stepfun/step-router-v1'][selected]")
+    end
+
+    test "rejects a forged model selection without changing conversation metadata", %{conn: conn} do
+      configure_test_models!()
+      {:ok, view, _html} = live(conn, "/")
+      conversation_id = create_default_conversation(view)
+
+      assert {:ok, before} = Handbean.ConversationStore.get_metadata(conversation_id)
+      render_change(view, "select_model", %{"model" => "forged/missing-model"})
+
+      assert has_element?(view, ".composer-error", "Selected model is unavailable")
+      assert {:ok, after_selection} = Handbean.ConversationStore.get_metadata(conversation_id)
+      assert after_selection["selected_model"] == before["selected_model"]
+    end
+
+    test "rejects a model removed from configuration after mount", %{conn: conn} do
+      models_path = configure_test_models!()
+      {:ok, view, _html} = live(conn, "/")
+      conversation_id = create_default_conversation(view)
+      assert {:ok, before} = Handbean.ConversationStore.get_metadata(conversation_id)
+
+      config = models_path |> File.read!() |> Handbean.JSON.decode!()
+      config = update_in(config, ["providers"], &Map.delete(&1, "sui2api"))
+      File.write!(models_path, Handbean.JSON.encode!(config))
+
+      render_change(view, "select_model", %{"model" => "sui2api/gpt-5.5"})
+
+      assert has_element?(view, ".composer-error", "Model switch failed")
+      assert {:ok, after_selection} = Handbean.ConversationStore.get_metadata(conversation_id)
+      assert after_selection["selected_model"] == before["selected_model"]
+    end
+
+    test "submitted model requests the active Runner switch before persistence", %{
+      conn: conn,
+      ws_dir: ws_dir
+    } do
+      configure_test_models!()
+
+      {:ok, conversation} =
+        Handbean.ConversationStore.create("default",
+          title: "Active model submission",
+          selected_model: "stepfun/step-router-v1",
+          selected_reasoning_level: "medium"
+        )
+
+      assert {:ok, _} =
+               Handbean.Permissions.ConversationMode.update(conversation["id"], :yolo,
+                 source: :test
+               )
+
+      assert {:ok, %{run_pid: runner}} =
+               Handbean.Agent.Coordinator.start_run(conversation["id"], "start",
+                 workspace_path: ws_dir,
+                 working_directory: ws_dir,
+                 selected_model: "stepfun/step-router-v1",
+                 model: "step-router-v1",
+                 reasoning_level: "medium",
+                 provider: BlockingModelProvider,
+                 provider_config: %{notify: self()},
+                 tools: [],
+                 permission_mode: :yolo,
+                 source: :web,
+                 streaming: false,
+                 max_turns: 1
+               )
+
+      assert_receive {:model_submission_blocked, task}, 2_000
+      {:ok, view, _html} = live(conn, "/w/default/c/#{conversation["id"]}")
+
+      view
+      |> form("#composer", %{
+        "message" => "",
+        "model" => "sui2api/gpt-5.5"
+      })
+      |> render_submit()
+
+      assert {:ok, %{pending_model_switch: %{model_ref: "sui2api/gpt-5.5", revision: revision}}} =
+               Handbean.Agent.Runner.status(conversation["id"])
+
+      render_change(view, "select_model", %{"model" => "sui2api/gpt-5.5"})
+
+      assert {:ok, %{pending_model_switch: %{revision: ^revision}}} =
+               Handbean.Agent.Runner.status(conversation["id"])
+
+      assert {:ok, %{"selected_model" => "sui2api/gpt-5.5"}} =
+               Handbean.ConversationStore.get_metadata(conversation["id"])
+
+      view
+      |> form("#composer", %{
+        "message" => "/model stepfun/step-router-v1",
+        "model" => "sui2api/gpt-5.5"
+      })
+      |> render_submit()
+
+      assert {:ok, %{pending_model_switch: %{model_ref: "stepfun/step-router-v1"}}} =
+               Handbean.Agent.Runner.status(conversation["id"])
+
+      assert {:ok, %{"selected_model" => "stepfun/step-router-v1"}} =
+               Handbean.ConversationStore.get_metadata(conversation["id"])
+
+      monitor = Process.monitor(runner)
+      send(task, :release)
+      _ = Handbean.Agent.Runner.cancel(conversation["id"])
+      assert_receive {:DOWN, ^monitor, :process, ^runner, _reason}, 2_000
     end
 
     test "sending in a newly added workspace creates the first conversation", %{conn: conn} do

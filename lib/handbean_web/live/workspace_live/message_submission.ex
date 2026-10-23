@@ -93,19 +93,15 @@ defmodule HandbeanWeb.WorkspaceLive.MessageSubmission do
 
   def send_message(socket, params) do
     message = String.trim(params["message"] || "")
-    socket = ModelSelection.apply_submitted(socket, params)
-    {socket, message} = ModelSelection.apply_command(socket, message)
-    socket = assign(socket, :composer_error, nil)
 
-    case DirectCommand.maybe_send(
-           socket,
-           message,
-           params["workspace_command_operation_id"]
-         ) do
+    case prepare_or_send_direct_command(socket, params, message) do
       {:handled, result} ->
         result
 
-      :continue ->
+      {:error, socket} ->
+        {:noreply, socket}
+
+      {:ok, socket, message} ->
         if dm = subagent_dm(socket, message) do
           send_subagent_dm(socket, dm)
         else
@@ -117,20 +113,14 @@ defmodule HandbeanWeb.WorkspaceLive.MessageSubmission do
   def steer_message(socket, params) do
     message = String.trim(params["message"] || socket.assigns.input_value || "")
 
-    socket =
-      socket
-      |> ModelSelection.apply_submitted(params)
-      |> assign(:composer_error, nil)
-
-    case DirectCommand.maybe_send(
-           socket,
-           message,
-           params["workspace_command_operation_id"]
-         ) do
+    case prepare_or_send_direct_command(socket, params, message) do
       {:handled, result} ->
         result
 
-      :continue ->
+      {:error, socket} ->
+        {:noreply, socket}
+
+      {:ok, socket, message} ->
         if message != "" or socket.assigns.pending_attachments != [] or
              Composer.has_upload_entries?(socket) do
           send_or_queue_current(socket, message, :steer)
@@ -143,20 +133,14 @@ defmodule HandbeanWeb.WorkspaceLive.MessageSubmission do
   def queue_message(socket, params) do
     message = String.trim(params["message"] || socket.assigns.input_value || "")
 
-    socket =
-      socket
-      |> ModelSelection.apply_submitted(params)
-      |> assign(:composer_error, nil)
-
-    case DirectCommand.maybe_send(
-           socket,
-           message,
-           params["workspace_command_operation_id"]
-         ) do
+    case prepare_or_send_direct_command(socket, params, message) do
       {:handled, result} ->
         result
 
-      :continue ->
+      {:error, socket} ->
+        {:noreply, socket}
+
+      {:ok, socket, message} ->
         if message != "" or socket.assigns.pending_attachments != [] or
              Composer.has_upload_entries?(socket) do
           send_or_queue_current(socket, message, :follow_up)
@@ -164,6 +148,29 @@ defmodule HandbeanWeb.WorkspaceLive.MessageSubmission do
           {:noreply, socket}
         end
     end
+  end
+
+  defp prepare_or_send_direct_command(socket, params, message) do
+    case DirectCommand.maybe_send(
+           socket,
+           message,
+           params["workspace_command_operation_id"]
+         ) do
+      {:handled, result} ->
+        {:handled, result}
+
+      :continue ->
+        case prepare_model_submission(socket, params, message) do
+          {:ok, socket, message} -> {:ok, assign(socket, :composer_error, nil), message}
+          {:error, socket} -> {:error, socket}
+        end
+    end
+  end
+
+  defp prepare_model_submission(socket, params, message) do
+    if CliSelection.cli_selected?(socket.assigns),
+      do: {:ok, socket, message},
+      else: ModelSelection.prepare_submission(socket, params, message)
   end
 
   def stop(socket) do

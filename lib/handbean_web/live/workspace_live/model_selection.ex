@@ -45,22 +45,17 @@ defmodule HandbeanWeb.WorkspaceLive.ModelSelection do
   end
 
   def select(socket, model) do
-    socket
-    |> assign_model(model)
-    |> ConversationState.sync_conv_to()
-    |> request_active_switch()
+    case transition(socket, model, nil) do
+      {:ok, socket} -> socket
+      {:error, socket} -> socket
+    end
   end
 
   def select_reasoning(socket, level) do
-    selected =
-      if level in socket.assigns.available_reasoning_levels,
-        do: level,
-        else: socket.assigns.selected_reasoning_level
-
-    socket
-    |> assign(:selected_reasoning_level, selected)
-    |> ConversationState.sync_conv_to()
-    |> request_active_switch()
+    case transition(socket, socket.assigns.selected_model, level) do
+      {:ok, socket} -> socket
+      {:error, socket} -> socket
+    end
   end
 
   def select_from_sheet(socket, model) do
@@ -78,35 +73,116 @@ defmodule HandbeanWeb.WorkspaceLive.ModelSelection do
   def refresh(socket), do: reload_workspace_models(socket)
 
   def apply_submitted(socket, params) do
-    socket
-    |> maybe_assign_submitted_model(params)
-    |> maybe_assign_submitted_reasoning(params)
+    if Map.has_key?(params, "model") or Map.has_key?(params, "reasoning") do
+      model = submitted_value(params, "model", socket.assigns.selected_model)
+      reasoning = submitted_value(params, "reasoning", nil)
+
+      case transition(socket, model, reasoning) do
+        {:ok, socket} -> socket
+        {:error, socket} -> socket
+      end
+    else
+      socket
+    end
+  end
+
+  def prepare_submission(socket, params, message) do
+    {command?, remaining, command_model} = parse_model_command(message)
+
+    model =
+      if command?,
+        do: command_model,
+        else: submitted_value(params, "model", socket.assigns.selected_model)
+
+    reasoning = submitted_value(params, "reasoning", nil)
+    message = if command? and is_nil(remaining), do: "", else: remaining || message
+
+    case transition(socket, model, reasoning) do
+      {:ok, socket} -> {:ok, socket, message}
+      {:error, socket} -> {:error, socket}
+    end
   end
 
   def apply_command(socket, message) do
-    {command?, remaining, model} = parse_model_command(message)
-
-    socket = if command?, do: assign_model(socket, model), else: socket
-    message = if command? and is_nil(remaining), do: "", else: remaining || message
-    {socket, message}
+    case prepare_submission(socket, %{}, message) do
+      {:ok, socket, message} -> {socket, message}
+      {:error, socket} -> {socket, ""}
+    end
   end
 
   def apply_effective(socket), do: apply_effective_model_ai_settings(socket)
 
+  defp transition(socket, model, reasoning) do
+    with {:ok, model} <- validate_model(socket, model),
+         {:ok, candidate} <- prepare_candidate(socket, model, reasoning),
+         {:ok, run_opts} <- selection_run_opts(candidate),
+         {:ok, run_state} <- request_active_switch(candidate, run_opts) do
+      candidate = project_selected_model(candidate, run_state)
+
+      if same_socket_selection?(socket, candidate),
+        do: {:ok, candidate},
+        else: {:ok, ConversationState.sync_conv_to(candidate)}
+    else
+      {:error, reason} -> {:error, selection_error(socket, reason)}
+    end
+  end
+
+  defp same_socket_selection?(left, right) do
+    left.assigns.selected_model == right.assigns.selected_model and
+      left.assigns.selected_reasoning_level == right.assigns.selected_reasoning_level
+  end
+
+  defp validate_model(socket, model) when is_binary(model) do
+    if Enum.any?(socket.assigns.available_models, &(&1.id == model)),
+      do: {:ok, model},
+      else: {:error, :model_unavailable}
+  end
+
+  defp validate_model(_socket, _model), do: {:error, :model_unavailable}
+
+  defp prepare_candidate(socket, model, reasoning) do
+    candidate = assign_model(socket, model)
+    levels = candidate.assigns.available_reasoning_levels
+
+    cond do
+      reasoning in [nil, ""] ->
+        {:ok, candidate}
+
+      reasoning in levels ->
+        {:ok, assign(candidate, :selected_reasoning_level, reasoning)}
+
+      true ->
+        {:ok, candidate}
+    end
+  end
+
+  defp submitted_value(params, key, fallback) do
+    case Map.get(params, key) do
+      value when is_binary(value) and value != "" -> value
+      _ -> fallback
+    end
+  end
+
   defp assign_model(socket, model) do
-    display = model_display_name(model, socket.assigns.available_models)
-
-    overrides =
-      if Map.get(socket.assigns, :running, false) do
-        %{future_model: display}
-      else
-        %{model: display, active_model: display, future_model: display, pending_model: nil}
-      end
-
     socket
     |> assign(:selected_model, model)
     |> sync_reasoning_for_model(model)
-    |> StatusProjection.update_status(overrides)
+  end
+
+  defp project_selected_model(socket, :running) do
+    display = model_display_name(socket.assigns.selected_model, socket.assigns.available_models)
+    StatusProjection.update_status(socket, %{future_model: display})
+  end
+
+  defp project_selected_model(socket, :idle) do
+    display = model_display_name(socket.assigns.selected_model, socket.assigns.available_models)
+
+    StatusProjection.update_status(socket, %{
+      model: display,
+      active_model: display,
+      future_model: display,
+      pending_model: nil
+    })
   end
 
   def maybe_assign_submitted_model(socket, %{"model" => model}) when is_binary(model) do
@@ -532,37 +608,73 @@ defmodule HandbeanWeb.WorkspaceLive.ModelSelection do
     end
   end
 
-  defp request_active_switch(socket) do
+  defp selection_run_opts(socket) do
+    {workspace_path, effective} = switch_settings(socket)
+
+    RunOpts.for_selection(
+      workspace_path,
+      socket.assigns.selected_model,
+      socket.assigns.selected_reasoning_level,
+      effective,
+      checkout_path: ConversationState.current_checkout_path(socket)
+    )
+  end
+
+  defp request_active_switch(socket, run_opts) do
     conversation_id = socket.assigns[:current_conversation_id]
 
-    if socket.assigns[:running] and is_binary(conversation_id) do
-      with {:ok, %{running?: true, run_id: run_id}} <- Runner.status(conversation_id),
-           {workspace_path, effective} <- switch_settings(socket),
-           {:ok, run_opts} <-
-             RunOpts.for_selection(
-               workspace_path,
-               socket.assigns.selected_model,
-               socket.assigns.selected_reasoning_level,
-               effective,
-               checkout_path: ConversationState.current_checkout_path(socket)
-             ),
-           {:ok, _accepted} <-
-             Runner.request_model_switch(conversation_id, run_id, %{
-               model_ref: socket.assigns.selected_model,
-               reasoning_level: socket.assigns.selected_reasoning_level,
-               run_opts: run_opts
-             }) do
-        socket
-      else
-        {:ok, %{running?: false}} -> socket
-        {:error, reason} when reason in [:not_found, :not_running] -> socket
-        {:error, {:run_mismatch, _current}} -> socket
-        {:error, reason} -> model_switch_error(socket, reason)
+    if is_binary(conversation_id) do
+      case Runner.status(conversation_id) do
+        {:ok, %{running?: true, loop_owner: :cli_agent}} ->
+          {:ok, :running}
+
+        {:ok, %{running?: true, run_id: run_id} = status} ->
+          request_running_switch(socket, conversation_id, run_id, status, run_opts)
+
+        {:ok, %{running?: false}} ->
+          {:ok, :idle}
+
+        {:error, reason} when reason in [:not_found, :not_running] ->
+          {:ok, :idle}
+
+        {:error, reason} ->
+          {:error, reason}
       end
     else
-      socket
+      {:ok, :idle}
     end
   end
+
+  defp request_running_switch(socket, conversation_id, run_id, status, run_opts) do
+    desired = %{
+      model_ref: socket.assigns.selected_model,
+      reasoning_level: socket.assigns.selected_reasoning_level
+    }
+
+    if selection_matches?(status[:pending_model_switch] || status[:active_model], desired) do
+      {:ok, :running}
+    else
+      with {:ok, %{status: switch_status}}
+           when switch_status in [:accepted, :cancelled] <-
+             Runner.request_model_switch(conversation_id, run_id, %{
+               model_ref: desired.model_ref,
+               reasoning_level: desired.reasoning_level,
+               run_opts: run_opts
+             }) do
+        {:ok, :running}
+      else
+        {:error, reason} -> {:error, reason}
+        other -> {:error, {:model_switch_rejected, other}}
+      end
+    end
+  end
+
+  defp selection_matches?(selection, desired) when is_map(selection) do
+    selection[:model_ref] == desired.model_ref and
+      selection[:reasoning_level] == desired.reasoning_level
+  end
+
+  defp selection_matches?(_selection, _desired), do: false
 
   defp switch_settings(socket) do
     if ConversationState.free_chat?(socket) do
@@ -573,12 +685,19 @@ defmodule HandbeanWeb.WorkspaceLive.ModelSelection do
     end
   end
 
-  defp model_switch_error(socket, reason) do
-    Logger.warning("[ModelSelection] active-run model switch rejected: #{inspect(reason)}")
+  defp selection_error(socket, reason) do
+    Logger.warning("[ModelSelection] selection rejected: #{inspect(reason)}")
 
-    StatusProjection.update_status(socket, %{
-      status_detail: "Model switch failed: #{inspect(reason)}"
-    })
+    message =
+      case reason do
+        :model_unavailable -> "Selected model is unavailable"
+        :reasoning_level_unavailable -> "Selected reasoning level is unavailable"
+        _ -> "Model switch failed: #{inspect(reason)}"
+      end
+
+    socket
+    |> assign(:composer_error, message)
+    |> StatusProjection.update_status(%{status_detail: message})
   end
 
   def resolve_selected_model(_workspace_path, nil),

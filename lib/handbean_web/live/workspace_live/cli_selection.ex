@@ -102,6 +102,17 @@ defmodule HandbeanWeb.WorkspaceLive.CliSelection do
     end
   end
 
+  @spec select_reasoning(Phoenix.LiveView.Socket.t(), String.t()) :: Phoenix.LiveView.Socket.t()
+  def select_reasoning(socket, level) when is_binary(level) do
+    if cli_selected?(socket.assigns) and level in socket.assigns.available_reasoning_levels do
+      socket
+      |> assign(:selected_reasoning_level, level)
+      |> remember_current()
+    else
+      socket
+    end
+  end
+
   @doc "Options for `Handbean.Agent.CliAgent.Run.turn/2`. Nil when Handbean owns the turn."
   @spec run_opts(Phoenix.LiveView.Socket.t(), String.t()) :: keyword() | nil
   def run_opts(socket, conversation_id) do
