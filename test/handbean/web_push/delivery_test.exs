@@ -356,6 +356,21 @@ defmodule Handbean.WebPush.DeliveryTest do
              Delivery.deliver({:ended, task, :cancelled}, [subscription])
   end
 
+  test "VAPID identity failures retry every subscription instead of succeeding empty", context do
+    subscription = enroll(context, "browser", "en")
+    Repo.delete_all(Keys)
+
+    Repo.query!("""
+    CREATE TRIGGER web_push_keys_block BEFORE INSERT ON web_push_keys
+    BEGIN
+      SELECT RAISE(ABORT, 'blocked');
+    END
+    """)
+
+    assert %{subscriptions: [^subscription], retry_after: 1_000} =
+             Delivery.deliver(event(), [subscription])
+  end
+
   defp enroll(context, client_id, locale) do
     attrs = %{
       "endpoint" => "https://fcm.googleapis.com/fcm/send/#{client_id}",

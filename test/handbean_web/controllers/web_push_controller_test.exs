@@ -90,6 +90,49 @@ defmodule HandbeanWeb.WebPushControllerTest do
     assert WebPush.subscriptions() == []
   end
 
+  test "persistent signed client cookie recovers browser identity after session cookie loss", %{
+    conn: conn
+  } do
+    {owner, owner_token} = browser(conn)
+    subscription = subscription()
+    original_client_id = get_session(owner, "handbean_push_client")
+
+    assert json_response(
+             request(owner, owner_token, :post, "/api/web-push/subscription", %{
+               subscription: subscription,
+               locale: "en"
+             }),
+             200
+           ) == %{"ok" => true}
+
+    # Simulate browser restart dropping the transient _handbean_key session cookie
+    # while keeping the persistent signed handbean_push_client cookie.
+    reopened =
+      owner
+      |> recycle(["handbean_push_client"])
+      |> Map.put(:host, "localhost")
+
+    {reopened_conn, reopened_token} = browser(reopened)
+    assert get_session(reopened_conn, "handbean_push_client") == original_client_id
+
+    assert json_response(
+             request(reopened_conn, reopened_token, :post, "/api/web-push/subscription", %{
+               subscription: subscription,
+               locale: "zh_CN"
+             }),
+             200
+           ) == %{"ok" => true}
+
+    assert json_response(
+             request(reopened_conn, reopened_token, :delete, "/api/web-push/subscription", %{
+               endpoint: subscription["endpoint"]
+             }),
+             200
+           ) == %{"ok" => true}
+
+    assert WebPush.subscriptions() == []
+  end
+
   test "another browser cannot take over, test, or remove an enrolled endpoint", %{conn: conn} do
     {owner, owner_token} = browser(conn)
     {other, other_token} = browser(build_conn() |> Map.put(:host, "localhost"))

@@ -34,8 +34,17 @@ export function createWebPush(env = globalThis) {
   let config;
   let locale;
   let pending;
+  let persistedSignature = null;
   const listeners = new Set();
   let state = {status: "checking", busy: false, subscribed: false, configured: false, error: null};
+
+  function resolvedLocale() {
+    return (locale || config?.locale) === "zh_CN" ? "zh_CN" : "en";
+  }
+
+  function subscriptionSignature(subscription) {
+    return JSON.stringify([subscription.toJSON(), resolvedLocale(), config?.public_key || null]);
+  }
 
   function update(changes) {
     state = {...state, ...changes};
@@ -92,8 +101,9 @@ export function createWebPush(env = globalThis) {
   async function persist(subscription) {
     await api("subscription", "POST", {
       subscription: subscription.toJSON(),
-      locale: (locale || config.locale) === "zh_CN" ? "zh_CN" : "en"
+      locale: resolvedLocale()
     });
+    persistedSignature = subscriptionSignature(subscription);
   }
 
   function cleanupStorage(method, value) {
@@ -120,6 +130,7 @@ export function createWebPush(env = globalThis) {
   }
 
   async function cleanup(endpoints) {
+    persistedSignature = null;
     update({status: "cleanup"});
     const targets = new Set(endpoints);
     cleanupStorage("setItem", JSON.stringify([...targets]));
@@ -159,7 +170,8 @@ export function createWebPush(env = globalThis) {
     await cleanup([...(pendingCleanup() || []), subscription.endpoint]);
   }
 
-  function reconcile() {
+  function reconcile(options = {}) {
+    const onlyIfChanged = Boolean(options?.onlyIfChanged);
     return operation(async () => {
       const unsupported = pushSupport(env);
       if (unsupported) {
@@ -169,6 +181,24 @@ export function createWebPush(env = globalThis) {
       await ready();
       const subscription = await registration.pushManager.getSubscription();
       update({subscribed: Boolean(subscription)});
+      if (onlyIfChanged && config && pendingCleanup() === null) {
+        if (!state.configured) {
+          update({status: "unconfigured"});
+          return;
+        }
+        if (env.Notification.permission !== "granted") {
+          update({status: env.Notification.permission === "denied" ? "denied" : "disabled"});
+          return;
+        }
+        if (!subscription) {
+          update({status: "disabled"});
+          return;
+        }
+        if (keyMatches(subscription, config.public_key) && persistedSignature === subscriptionSignature(subscription)) {
+          update({status: "enabled"});
+          return;
+        }
+      }
       await loadConfig();
       const endpoints = pendingCleanup();
       if (endpoints) {
@@ -180,8 +210,10 @@ export function createWebPush(env = globalThis) {
       } else if (env.Notification.permission !== "granted") {
         update({status: env.Notification.permission === "denied" ? "denied" : "disabled"});
       } else if (!subscription) {
+        persistedSignature = null;
         update({status: "disabled"});
       } else if (!keyMatches(subscription, config.public_key)) {
+        persistedSignature = null;
         update({status: "renewal"});
       } else {
         await persist(subscription);
@@ -296,20 +328,23 @@ export function createWebPush(env = globalThis) {
 }
 
 let browserPush;
+let browserPushBooted = false;
 export function webPush() {
   browserPush ||= createWebPush(window);
   return browserPush;
 }
 
 export function bootWebPush() {
+  if (browserPushBooted) return;
+  browserPushBooted = true;
   const push = webPush();
   void push.reconcile();
   // Renewal is reconciled in a foreground page with its current CSRF token.
   // No worker background request bypasses the authenticated subscription API.
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") void push.reconcile();
+    if (document.visibilityState === "visible") void push.reconcile({onlyIfChanged: true});
   });
   window.addEventListener("pageshow", (event) => {
-    if (event.persisted) void push.reconcile();
+    if (event.persisted) void push.reconcile({onlyIfChanged: true});
   });
 }

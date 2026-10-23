@@ -141,6 +141,16 @@ defmodule Handbean.WebPush.Dispatcher do
     })
   end
 
+  defp retry_or_remove(pending, key, job, :failed) when job.attempt < @max_attempts do
+    backoff = 1_000 * Integer.pow(2, job.attempt - 1) + :rand.uniform(500)
+
+    Map.put(pending, key, %{
+      job
+      | attempt: job.attempt + 1,
+        ready_at: System.monotonic_time(:millisecond) + backoff
+    })
+  end
+
   defp retry_or_remove(pending, key, _job, _result), do: Map.delete(pending, key)
 
   defp notifiable?({:waiting, _}), do: true

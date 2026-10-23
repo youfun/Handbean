@@ -156,6 +156,29 @@ test("existing and renewed browser subscriptions reconcile without prompts; loca
   assert.equal(f.calls.some((call) => call.kind === "permission" || call.kind === "subscribe"), false);
 });
 
+test("foreground visibility reconcile skips network calls when subscription and cleanup state are unchanged", async () => {
+  const unsubscribed = fixture();
+  await unsubscribed.push.reconcile();
+  unsubscribed.calls.length = 0;
+  await unsubscribed.push.reconcile({onlyIfChanged: true});
+  assert.equal(unsubscribed.calls.some((call) => call.kind === "api"), false);
+
+  const subscribed = fixture({permission: "granted"});
+  subscribed.current = subscribed.subscription("https://push.example/stable");
+  await subscribed.push.reconcile();
+  assert.equal(posts(subscribed).length, 1);
+
+  subscribed.calls.length = 0;
+  await subscribed.push.reconcile({onlyIfChanged: true});
+  assert.equal(subscribed.calls.some((call) => call.kind === "api"), false);
+  assert.equal(subscribed.push.state.status, "enabled");
+
+  subscribed.current = subscribed.subscription("https://push.example/rotated");
+  await subscribed.push.reconcile({onlyIfChanged: true});
+  assert.equal(posts(subscribed).length, 1);
+  assert.equal(posts(subscribed)[0].body.subscription.endpoint, "https://push.example/rotated");
+});
+
 test("existing subscriptions with revoked or ungranted permission are never persisted", async () => {
   for (const permission of ["denied", "default"]) {
     const f = fixture({permission});

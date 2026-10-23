@@ -5,12 +5,17 @@ defmodule HandbeanWeb.WebPushController do
   alias Handbean.WebPush.Delivery
 
   @client_key "handbean_push_client"
+  @client_cookie_opts [
+    sign: true,
+    http_only: true,
+    same_site: "Lax",
+    max_age: 60 * 60 * 24 * 400
+  ]
 
   plug :no_store
 
   def config(conn, _params) do
-    client_id = get_session(conn, @client_key) || Ecto.UUID.generate()
-    conn = put_session(conn, @client_key, client_id)
+    {conn, _client_id} = ensure_client_id(conn)
 
     case WebPush.public_config() do
       {:ok, config} ->
@@ -22,7 +27,7 @@ defmodule HandbeanWeb.WebPushController do
   end
 
   def create(conn, %{"subscription" => subscription} = params) do
-    with {:ok, client_id} <- client_id(conn),
+    with {:ok, conn, client_id} <- client_id(conn),
          {:ok, _subscription} <-
            WebPush.subscribe(
              client_id,
@@ -42,7 +47,7 @@ defmodule HandbeanWeb.WebPushController do
   def create(conn, _params), do: error(conn, 422, :invalid_subscription)
 
   def delete(conn, %{"endpoint" => endpoint}) when is_binary(endpoint) do
-    with {:ok, client_id} <- client_id(conn) do
+    with {:ok, conn, client_id} <- client_id(conn) do
       :ok = WebPush.unsubscribe(client_id, endpoint)
       json(conn, %{ok: true})
     else
@@ -53,7 +58,7 @@ defmodule HandbeanWeb.WebPushController do
   def delete(conn, _params), do: error(conn, 422, :invalid_subscription)
 
   def test(conn, %{"endpoint" => endpoint}) when is_binary(endpoint) do
-    with {:ok, client_id} <- client_id(conn),
+    with {:ok, conn, client_id} <- client_id(conn),
          {:ok, subscription} <- WebPush.fetch(client_id, endpoint),
          :ok <- Delivery.test(subscription) do
       json(conn, %{ok: true})
@@ -78,11 +83,39 @@ defmodule HandbeanWeb.WebPushController do
     |> send_file(200, Path.join(Handbean.Paths.priv_dir(), "web_push/sw.js"))
   end
 
+  defp ensure_client_id(conn) do
+    case client_id(conn) do
+      {:ok, conn, id} ->
+        {persist_client_id(conn, id), id}
+
+      {:error, :missing_client} ->
+        id = Ecto.UUID.generate()
+        {persist_client_id(conn, id), id}
+    end
+  end
+
   defp client_id(conn) do
     case get_session(conn, @client_key) do
-      id when is_binary(id) -> {:ok, id}
-      _ -> {:error, :missing_client}
+      id when is_binary(id) and id != "" ->
+        {:ok, conn, id}
+
+      _ ->
+        conn = fetch_cookies(conn, signed: [@client_key])
+
+        case conn.cookies[@client_key] do
+          id when is_binary(id) and id != "" ->
+            {:ok, put_session(conn, @client_key, id), id}
+
+          _ ->
+            {:error, :missing_client}
+        end
     end
+  end
+
+  defp persist_client_id(conn, id) do
+    conn
+    |> put_session(@client_key, id)
+    |> put_resp_cookie(@client_key, id, @client_cookie_opts)
   end
 
   defp no_store(conn, _opts), do: put_resp_header(conn, "cache-control", "no-store")

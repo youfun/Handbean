@@ -15,9 +15,10 @@ export function createConnectionStatus(element, env = globalThis) {
 
   function connected() {
     if (!hadInterruption) {
-      render("connected");
+      if (element?.dataset.state !== "restored") render("connected");
       return;
     }
+    hadInterruption = false;
     render("restored");
     hideTimer = env.setTimeout(() => {
       element.hidden = true;
@@ -33,7 +34,7 @@ export function createConnectionStatus(element, env = globalThis) {
   function syncLiveView() {
     if (env.navigator?.onLine === false) offline();
     else if (liveViewRoot?.classList.contains("phx-connected")) connected();
-    else if (["phx-loading", "phx-error", "phx-client-error", "phx-server-error"]
+    else if (["phx-error", "phx-client-error", "phx-server-error"]
       .some((name) => liveViewRoot?.classList.contains(name))) disconnected();
   }
 

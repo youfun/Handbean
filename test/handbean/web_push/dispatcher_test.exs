@@ -80,6 +80,29 @@ defmodule Handbean.WebPush.DispatcherTest do
     Req.Test.verify!()
   end
 
+  test "crashed delivery worker retries up to max_attempts and succeeds on recovery", %{
+    worker: worker,
+    task: task
+  } do
+    parent = self()
+
+    Req.Test.expect(__MODULE__, fn _conn ->
+      send(parent, :crashed_attempt)
+      Process.exit(self(), :kill)
+    end)
+
+    Req.Test.expect(__MODULE__, fn conn ->
+      send(parent, :recovered_attempt)
+      Plug.Conn.send_resp(conn, 201, "")
+    end)
+
+    Dispatcher.broadcast({:ended, task, :completed})
+    assert_receive :crashed_attempt, 1_000
+    assert_receive :recovered_attempt, 3_000
+    :sys.get_state(worker)
+    Req.Test.verify!()
+  end
+
   test "cancellation invalidates queued waiting retries without notifying cancellation", %{
     worker: worker,
     task: task
@@ -208,6 +231,73 @@ defmodule Handbean.WebPush.DispatcherTest do
     assert %{subscriptions: []} = Handbean.WebPush.Delivery.deliver({:waiting, next_waiting})
     for _ <- 1..5, do: assert_received(:later_delivery)
     refute_received :later_delivery
+  end
+
+  test "fanout queries VAPID keys once per batch and skips DB work for irrelevant events", %{
+    task: task
+  } do
+    stop_supervised!(Dispatcher)
+    {:ok, _} = Handbean.WebPush.Keys.ensure()
+
+    for {index, locale} <- [{1, "en"}, {2, "zh_CN"}, {3, "en"}] do
+      assert {:ok, _} =
+               WebPush.subscribe(
+                 "batch-browser-#{index}",
+                 %{
+                   "endpoint" => "https://fcm.googleapis.com/fcm/send/batch-#{index}",
+                   "keys" => %{
+                     "p256dh" => Protocol.generate_key_pair().public_key,
+                     "auth" => Base.url_encode64(:crypto.strong_rand_bytes(16), padding: false)
+                   }
+                 },
+                 locale
+               )
+    end
+
+    Req.Test.stub(__MODULE__, fn conn ->
+      Plug.Conn.send_resp(conn, 201, "")
+    end)
+
+    ref = make_ref()
+    handler = {__MODULE__, ref}
+    recipient = self()
+
+    :ok =
+      :telemetry.attach(
+        handler,
+        [:handbean, :repo, :query],
+        fn _event, _measurements, metadata, _config ->
+          if String.contains?(metadata.query, "web_push_keys") or
+               String.contains?(metadata.query, "web_push_subscriptions") do
+            send(recipient, {ref, metadata.query})
+          end
+        end,
+        nil
+      )
+
+    try do
+      assert %{subscriptions: []} =
+               Handbean.WebPush.Delivery.deliver({:ended, task, :cancelled})
+
+      refute_received {^ref, _}
+
+      assert %{subscriptions: []} =
+               Handbean.WebPush.Delivery.deliver({:ended, task, :completed})
+
+      queries = collect_queries(ref)
+      key_queries = Enum.filter(queries, &String.contains?(&1, "web_push_keys"))
+      assert length(key_queries) == 1
+    after
+      :telemetry.detach(handler)
+    end
+  end
+
+  defp collect_queries(ref) do
+    receive do
+      {^ref, query} -> [query | collect_queries(ref)]
+    after
+      0 -> []
+    end
   end
 
   defp lifecycle(task, kind, payload) do

@@ -10,44 +10,75 @@ defmodule Handbean.WebPush.Delivery do
 
   @doc "Fan out one notification with bounded concurrency; return only transient failures for retry."
   def deliver(event, subscriptions \\ nil) do
-    subscriptions = subscriptions || WebPush.subscriptions()
+    if relevant?(event) do
+      case subscriptions || WebPush.subscriptions() do
+        [] ->
+          %{subscriptions: [], retry_after: 0}
 
-    results =
-      Task.async_stream(
-        subscriptions,
-        fn subscription ->
-          result =
-            if relevant?(event) do
-              send_notification(subscription, payload(event, subscription.locale))
-            else
-              :ok
-            end
+        subscriptions ->
+          deliver_subscriptions(event, subscriptions)
+      end
+    else
+      %{subscriptions: [], retry_after: 0}
+    end
+  end
 
-          {subscription, result}
-        end,
-        max_concurrency: 4,
-        timeout: 15_000,
-        on_timeout: :kill_task,
-        ordered: true
-      )
-      |> Enum.zip(subscriptions)
+  defp deliver_subscriptions(event, subscriptions) do
+    with {:ok, keys} <- ensure_vapid_keys(),
+         {:ok, encoded_payloads} <- encode_payloads(event, subscriptions) do
+      subject = WebPush.subject()
 
-    Enum.reduce(results, %{subscriptions: [], retry_after: 0}, fn
-      {{:ok, {subscription, {:error, {:transient, delay}}}}, _}, retry ->
-        %{
-          subscriptions: [subscription | retry.subscriptions],
-          retry_after: max(delay, retry.retry_after)
-        }
+      results =
+        Task.async_stream(
+          subscriptions,
+          fn subscription ->
+            result =
+              if relevant?(event) do
+                send_encoded_notification(
+                  subscription,
+                  Map.fetch!(encoded_payloads, subscription.locale),
+                  keys,
+                  subject
+                )
+              else
+                :ok
+              end
 
-      {{:exit, _}, subscription}, retry ->
-        %{
-          subscriptions: [subscription | retry.subscriptions],
-          retry_after: max(1_000, retry.retry_after)
-        }
+            {subscription, result}
+          end,
+          max_concurrency: 4,
+          timeout: 15_000,
+          on_timeout: :kill_task,
+          ordered: true
+        )
+        |> Enum.zip(subscriptions)
 
-      _, retry ->
-        retry
-    end)
+      Enum.reduce(results, %{subscriptions: [], retry_after: 0}, fn
+        {{:ok, {subscription, {:error, {:transient, delay}}}}, _}, retry ->
+          %{
+            subscriptions: [subscription | retry.subscriptions],
+            retry_after: max(delay, retry.retry_after)
+          }
+
+        {{:exit, _}, subscription}, retry ->
+          %{
+            subscriptions: [subscription | retry.subscriptions],
+            retry_after: max(1_000, retry.retry_after)
+          }
+
+        _, retry ->
+          retry
+      end)
+    else
+      {:error, _reason} ->
+        %{subscriptions: subscriptions, retry_after: 1_000}
+    end
+  end
+
+  defp ensure_vapid_keys do
+    Keys.ensure()
+  rescue
+    error -> {:error, error}
   end
 
   @doc "Send a test through the same encrypted provider path as task notifications."
@@ -79,13 +110,30 @@ defmodule Handbean.WebPush.Delivery do
     end)
   end
 
+  defp encode_payloads(event, subscriptions) do
+    subscriptions
+    |> Enum.map(& &1.locale)
+    |> Enum.uniq()
+    |> Enum.reduce_while({:ok, %{}}, fn locale, {:ok, acc} ->
+      case Handbean.JSON.encode(payload(event, locale)) do
+        {:ok, encoded} -> {:cont, {:ok, Map.put(acc, locale, encoded)}}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
+  end
+
   defp send_notification(subscription, payload) do
+    with {:ok, keys} <- Keys.ensure(),
+         {:ok, encoded} <- Handbean.JSON.encode(payload) do
+      send_encoded_notification(subscription, encoded, keys, WebPush.subject())
+    end
+  end
+
+  defp send_encoded_notification(subscription, encoded, keys, subject) do
     if WebPush.current?(subscription) do
       with :ok <- Endpoint.validate(subscription.endpoint),
-           {:ok, keys} <- Keys.ensure(),
            {:ok, authorization} <-
-             Protocol.authorization(subscription.endpoint, keys, WebPush.subject()),
-           {:ok, encoded} <- Handbean.JSON.encode(payload),
+             Protocol.authorization(subscription.endpoint, keys, subject),
            {:ok, body} <-
              Protocol.encrypt(encoded, %{
                "p256dh" => subscription.p256dh,

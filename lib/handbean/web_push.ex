@@ -96,8 +96,10 @@ defmodule Handbean.WebPush do
 
   @doc "Idempotently remove only the calling browser's endpoint."
   def unsubscribe(client_id, endpoint) when is_binary(client_id) and is_binary(endpoint) do
-    from(s in Subscription, where: s.client_id == ^client_id and s.endpoint == ^endpoint)
-    |> Repo.delete_all(log: false)
+    WriteTransaction.run(fn ->
+      from(s in Subscription, where: s.client_id == ^client_id and s.endpoint == ^endpoint)
+      |> Repo.delete_all(log: false)
+    end)
 
     :ok
   end
@@ -144,10 +146,12 @@ defmodule Handbean.WebPush do
 
   @doc "A stale provider response must not delete a replacement or refreshed subscription."
   def expire(%Subscription{} = subscription) do
-    from(s in Subscription,
-      where: s.client_id == ^subscription.client_id and s.revision == ^subscription.revision
-    )
-    |> Repo.delete_all(log: false)
+    WriteTransaction.run(fn ->
+      from(s in Subscription,
+        where: s.client_id == ^subscription.client_id and s.revision == ^subscription.revision
+      )
+      |> Repo.delete_all(log: false)
+    end)
 
     :ok
   end
@@ -157,10 +161,21 @@ defmodule Handbean.WebPush do
     now = DateTime.utc_now()
 
     if epoch do
-      from(s in Subscription,
-        where: s.access_epoch != ^epoch or (not is_nil(s.expires_at) and s.expires_at <= ^now)
-      )
-      |> Repo.delete_all(log: false)
+      query =
+        from(s in Subscription,
+          where: s.access_epoch != ^epoch or (not is_nil(s.expires_at) and s.expires_at <= ^now)
+        )
+
+      cond do
+        Repo.in_transaction?() ->
+          Repo.delete_all(query, log: false)
+
+        Repo.exists?(query, log: false) ->
+          WriteTransaction.run(fn -> Repo.delete_all(query, log: false) end)
+
+        true ->
+          :ok
+      end
     end
   end
 

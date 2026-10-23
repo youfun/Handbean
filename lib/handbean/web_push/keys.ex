@@ -6,6 +6,7 @@ defmodule Handbean.WebPush.Keys do
   import Ecto.Changeset
 
   alias Handbean.Repo
+  alias Handbean.Storage.WriteTransaction
   alias Handbean.WebPush.Protocol
 
   @primary_key {:id, :string, autogenerate: false}
@@ -25,14 +26,13 @@ defmodule Handbean.WebPush.Keys do
   defp create do
     pair = Protocol.generate_key_pair()
 
-    result =
-      %__MODULE__{id: "vapid"}
-      |> change(public_key: pair.public_key, private_key: pair.private_key)
-      |> Repo.insert(on_conflict: :nothing, conflict_target: :id, log: false)
-
-    case result do
-      {:ok, _} -> {:ok, Repo.get!(__MODULE__, "vapid", log: false)}
-      {:error, reason} -> {:error, reason}
-    end
+    WriteTransaction.run(fn ->
+      case %__MODULE__{id: "vapid"}
+           |> change(public_key: pair.public_key, private_key: pair.private_key)
+           |> Repo.insert(on_conflict: :nothing, conflict_target: :id, log: false) do
+        {:ok, _} -> Repo.get!(__MODULE__, "vapid", log: false)
+        {:error, reason} -> Repo.rollback(reason)
+      end
+    end)
   end
 end

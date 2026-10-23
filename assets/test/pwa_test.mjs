@@ -214,8 +214,14 @@ test("connection status follows LiveView join state and recovers when the socket
   const root = dom.window.document.querySelector("main");
   const element = dom.window.document.querySelector("div");
   const status = createConnectionStatus(element, env);
+  root.className = "phx-loading";
   status.bind(root);
   assert.equal(element.hidden, true);
+
+  root.className = "phx-connected";
+  observer.trigger();
+  assert.equal(element.hidden, true);
+  assert.equal(element.dataset.state, "connected");
 
   // A LiveView channel failure is visible even if the transport socket remains open.
   root.className = "phx-client-error";
@@ -238,4 +244,9 @@ test("connection status follows LiveView join state and recovers when the socket
   assert.equal(element.dataset.state, "restored");
   timers.at(-1)();
   assert.equal(element.hidden, true);
+
+  // Subsequent normal class mutations while connected do not re-trigger restored banner.
+  observer.trigger();
+  assert.equal(element.hidden, true);
+  assert.equal(element.dataset.state, "connected");
 });
