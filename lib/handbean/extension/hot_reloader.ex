@@ -243,7 +243,7 @@ defmodule Handbean.Extension.HotReloader do
     expanded = Path.expand(path)
 
     cond do
-      expanded == user_dir or String.starts_with?(expanded, user_dir <> "/") ->
+      path_within_dir?(expanded, user_dir) ->
         {:ok, state.configured_project}
 
       ProjectTrust.enabled?(state.trust_opts) ->
@@ -286,13 +286,17 @@ defmodule Handbean.Extension.HotReloader do
     expanded = Path.expand(path)
 
     project_path? =
-      state.project &&
-        String.starts_with?(
+      is_binary(state.project) and
+        path_within_dir?(
           expanded,
           Path.expand(Path.join(state.project, ".handbean/extensions"))
         )
 
-    project_path? or String.starts_with?(expanded, user_dir)
+    project_path? or path_within_dir?(expanded, user_dir)
+  end
+
+  defp path_within_dir?(expanded_path, expanded_dir) do
+    expanded_path == expanded_dir or String.starts_with?(expanded_path, expanded_dir <> "/")
   end
 
   defp commit_diagnostic(ext, reason) do
@@ -328,10 +332,7 @@ defmodule Handbean.Extension.HotReloader do
       [project && Path.expand(Path.join(project, ".handbean/extensions")), user_dir]
       |> Enum.reject(&is_nil/1)
 
-    under_root? =
-      Enum.any?(roots, fn dir ->
-        root == dir or String.starts_with?(root, dir <> "/")
-      end)
+    under_root? = Enum.any?(roots, &path_within_dir?(root, &1))
 
     under_root? and
       not File.exists?(Path.join(root, "extension.json")) and

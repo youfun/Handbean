@@ -502,6 +502,93 @@ defmodule Handbean.Extension.HotReloadTest do
     end)
   end
 
+  test "user extension file events reload safely when project is untrusted", %{
+    tmp: tmp,
+    registry: registry
+  } do
+    user_home = Path.join(tmp, "user-home")
+    File.mkdir_p!(user_home)
+
+    write_entry_extension!(user_home, "hotdemo", version: "0.1.0", result: ":user-v1")
+    write_entry_extension!(tmp, "projdemo", version: "0.1.0", result: ":proj-v1")
+
+    {:ok, pid} =
+      HotReloader.start_link(
+        name: :"hot_reload_untrusted_user_event_#{System.unique_integer([:positive])}",
+        project: tmp,
+        user_home: user_home,
+        ext_registry: registry,
+        enabled: true,
+        preload: true,
+        trusted_project?: false,
+        debounce_ms: 20
+      )
+
+    state = :sys.get_state(pid)
+    assert state.project == nil
+    assert {:ok, ext} = ExtRegistry.get(registry, "hotdemo")
+    assert ext.version == "0.1.0"
+    assert {:error, :not_found} = ExtRegistry.get(registry, "projdemo")
+
+    write_entry_extension!(user_home, "hotdemo", version: "0.2.0", result: ":user-v2")
+
+    state_file = Path.join(user_home, ".handbean/extensions/hotdemo/state.json")
+    File.write!(state_file, ~s({"status":"ok"}))
+    send(pid, {:file_event, state.watcher, {state_file, [:modified, :renamed]}})
+
+    assert_eventually(fn ->
+      assert Process.alive?(pid)
+      assert {:ok, reloaded} = ExtRegistry.get(registry, "hotdemo")
+      assert reloaded.version == "0.2.0"
+      assert {:ok, entry} = Handbean.Tool.Registry.get("ext__hotdemo__ping")
+      assert {:ok, ":user-v2"} = entry.executor.(%{}, %{})
+      assert {:error, :not_found} = ExtRegistry.get(registry, "projdemo")
+    end)
+  end
+
+  test "file events in sibling directories with similar prefixes do not schedule reload", %{
+    tmp: tmp,
+    registry: registry
+  } do
+    user_home = Path.join(tmp, "user-home")
+    File.mkdir_p!(user_home)
+
+    {:ok, pid} =
+      HotReloader.start_link(
+        name: :"hot_reload_prefix_boundary_#{System.unique_integer([:positive])}",
+        project: tmp,
+        user_home: user_home,
+        ext_registry: registry,
+        enabled: false,
+        preload: false,
+        trusted_project?: true,
+        debounce_ms: 60_000
+      )
+
+    send(
+      pid,
+      {:file_event, self(),
+       {Path.join(user_home, ".handbean/extensions-backup/hotdemo/state.json"), [:modified]}}
+    )
+
+    send(
+      pid,
+      {:file_event, self(),
+       {Path.join(tmp, ".handbean/extensions-backup/hotdemo/extension.json"), [:modified]}}
+    )
+
+    assert %{timer: nil} = :sys.get_state(pid)
+
+    send(
+      pid,
+      {:file_event, self(),
+       {Path.join(user_home, ".handbean/extensions/hotdemo/state.json"), [:modified]}}
+    )
+
+    assert %{timer: timer} = :sys.get_state(pid)
+    assert is_reference(timer)
+  end
+
   defmodule BlockingProvider do
     @behaviour Handbean.Agent.Provider
 
