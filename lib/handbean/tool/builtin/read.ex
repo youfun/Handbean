@@ -1,5 +1,6 @@
 defmodule Handbean.Tool.Builtin.Read do
   alias Handbean.Agent.Tool.Helpers
+  alias Handbean.Documents
 
   @moduledoc """
   Read file contents with pagination support.
@@ -20,6 +21,8 @@ defmodule Handbean.Tool.Builtin.Read do
   @impl true
   def description do
     "Read file contents. Supports pagination with offset/limit and conversation artifact references. " <>
+      "Extracts PDF, DOCX, XLSX and PPTX text with source labels; offset/limit paginate extracted lines. " <>
+      "Documents: 16 MiB input, 2 MiB extracted text, no OCR or encrypted files. " <>
       "Detects binary and image files automatically. An external path requires per-call approval unless the run is yolo."
   end
 
@@ -42,10 +45,17 @@ defmodule Handbean.Tool.Builtin.Read do
         },
         offset: %{
           type: "integer",
-          description: "Line number to start from (1-based, 0 = from start)",
+          minimum: 0,
+          description: "Text or extracted-document line number (1-based, 0 = from start)",
           default: 0
         },
-        limit: %{type: "integer", description: "Maximum lines to read", default: @default_limit}
+        limit: %{
+          type: "integer",
+          minimum: 1,
+          maximum: @default_limit,
+          description: "Maximum text or extracted-document lines to read",
+          default: @default_limit
+        }
       },
       required: ["file_path"]
     }
@@ -62,12 +72,14 @@ defmodule Handbean.Tool.Builtin.Read do
     offset = Map.get(input, "offset", 0)
     limit = Map.get(input, "limit", @default_limit)
 
-    if Handbean.ConversationArtifacts.tool_result_ref?(file_path) do
-      read_conversation_artifact(file_path, context, offset, limit)
-    else
-      with {:ok, resolved} <-
-             Handbean.Agent.Tool.resolve_path(Helpers.expand_tilde(file_path), context, :read) do
-        read_resolved(resolved, offset, limit)
+    with :ok <- validate_range(offset, limit) do
+      if Handbean.ConversationArtifacts.tool_result_ref?(file_path) do
+        read_conversation_artifact(file_path, context, offset, limit)
+      else
+        with {:ok, resolved} <-
+               Handbean.Agent.Tool.resolve_path(Helpers.expand_tilde(file_path), context, :read) do
+          read_resolved(resolved, offset, limit)
+        end
       end
     end
   end
@@ -98,10 +110,9 @@ defmodule Handbean.Tool.Builtin.Read do
     with :ok <- validate_exists(path),
          :ok <- validate_not_dir(path),
          :ok <- validate_readable(path) do
-      if binary_file?(path) do
-        read_image(path)
-      else
-        read_text(path, offset, limit)
+      case document_format(path) do
+        nil -> if binary_file?(path), do: read_image(path), else: read_text(path, offset, limit)
+        format -> read_document(path, format, offset, limit)
       end
     end
   end
@@ -111,7 +122,40 @@ defmodule Handbean.Tool.Builtin.Read do
 
   defp present_input_path(result, _file_path), do: result
 
+  defp document_format(path) do
+    case File.open(path, [:read, :binary], &IO.binread(&1, 8)) do
+      {:ok, <<"%PDF-", _::binary>>} -> :pdf
+      _ -> Documents.format(path)
+    end
+  end
+
+  defp read_document(path, format, offset, limit) do
+    with {:ok, bytes} <-
+           Handbean.Attachments.Access.read_bounded(path, Documents.max_input_bytes()),
+         {:ok, document} <- Documents.extract(bytes, format),
+         {:ok, output, metadata} <- Documents.paginate(document, offset, limit) do
+      notes = Enum.map_join(document.warnings, "\n", &"Note: #{&1}")
+
+      metadata =
+        Map.merge(metadata, %{
+          file_path: path,
+          binary: false,
+          total_bytes: byte_size(bytes),
+          extracted_document: true
+        })
+
+      {:ok, notes <> "\n\n" <> output, metadata}
+    end
+  end
+
   # ── Validation ──
+
+  defp validate_range(offset, limit)
+       when is_integer(offset) and offset >= 0 and is_integer(limit) and limit in 1..2_000,
+       do: :ok
+
+  defp validate_range(_, _),
+    do: {:error, "offset must be a non-negative integer; limit must be between 1 and 2000"}
 
   defp validate_exists(path) do
     if File.exists?(path), do: :ok, else: {:error, "#{path}: No such file"}
@@ -120,7 +164,9 @@ defmodule Handbean.Tool.Builtin.Read do
   defp validate_not_dir(path) do
     case File.stat(path) do
       {:ok, %{type: :directory}} -> {:error, "#{path}: Is a directory"}
-      _ -> :ok
+      {:ok, %{type: :regular}} -> :ok
+      {:ok, _} -> {:error, "#{path}: Only regular files can be read"}
+      {:error, reason} -> {:error, "#{path}: #{:file.format_error(reason)}"}
     end
   end
 

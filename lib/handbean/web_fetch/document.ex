@@ -4,24 +4,54 @@ defmodule Handbean.WebFetch.Document do
   @blocks ~w(p div section article main header footer blockquote ul ol table tr h1 h2 h3 h4 h5 h6)
   @discard "script, style, noscript, template, nav, aside, form, svg, head, [hidden], [aria-hidden=true]"
 
-  def extract(body, headers, url, max_chars) do
+  def extract(body, headers, url, max_chars, opts \\ []) do
     content_type = header(headers, "content-type")
 
     type =
       content_type |> String.split(";", parts: 2) |> hd() |> String.trim() |> String.downcase()
 
-    with :ok <- supported_type(type),
-         {:ok, body} <- decode(body, content_type),
-         {:ok, title, text} <- render(body, type, url) do
-      truncated = String.length(text) > max_chars
+    format = Handbean.Documents.format(type) || download_format(type, url)
+
+    case format do
+      nil ->
+        with :ok <- supported_type(type),
+             {:ok, body} <- decode(body, content_type),
+             {:ok, title, text} <- render(body, type, url) do
+          slice(text, %{title: title, content_type: type}, max_chars, opts)
+        end
+
+      format ->
+        with {:ok, document} <- Handbean.Documents.extract(body, format, opts) do
+          metadata = document |> Map.delete(:text) |> Map.merge(%{title: "", content_type: type})
+          slice(document.text, metadata, max_chars, opts)
+        end
+    end
+  end
+
+  defp download_format(type, %URI{path: path})
+       when type in ["application/octet-stream", "application/zip"],
+       do: Handbean.Documents.format(path)
+
+  defp download_format(_, _), do: nil
+
+  defp slice(text, metadata, max_chars, opts) do
+    offset = Keyword.get(opts, :offset, 0)
+    total = String.length(text)
+
+    if offset > total do
+      {:error, "offset is beyond extracted document end (#{total} characters)"}
+    else
+      content = String.slice(text, offset, max_chars)
+      next = offset + String.length(content)
 
       {:ok,
-       %{
-         title: title,
-         content_type: type,
-         content: String.slice(text, 0, max_chars),
-         truncated: truncated
-       }}
+       Map.merge(metadata, %{
+         content: content,
+         truncated: next < total,
+         offset: offset,
+         next_offset: if(next < total, do: next),
+         total_chars: total
+       })}
     end
   end
 

@@ -31,6 +31,10 @@ tmp-config/
 *.mobileprovision
 test/fixtures/*
 !test/fixtures/sample.txt
+!test/fixtures/documents/
+!test/fixtures/mcp/
+test/fixtures/mcp/*
+!test/fixtures/mcp/resource_server.sh
 
 # Ignore package tarball (built via "mix hex.build").
 handbea[mn]-*.tar

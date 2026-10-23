@@ -25,6 +25,7 @@ defmodule Handbean.Application do
         {DNSCluster, query: Application.get_env(:handbean, :dns_cluster_query) || :ignore},
         {Phoenix.PubSub, name: Handbean.PubSub},
         Handbean.Speech.Server,
+        Handbean.Documents,
         {Registry, keys: :unique, name: Handbean.SessionRegistry},
         {Registry, keys: :unique, name: Handbean.AgentRunRegistry},
         {Registry, keys: :unique, name: Handbean.AgentRunSupervisorRegistry},

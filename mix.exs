@@ -81,6 +81,8 @@ defmodule Handbean.MixProject do
       {:mint, "~> 1.11"},
       {:castore, "~> 1.0"},
       {:floki, "~> 0.38.4"},
+      {:saxy, "~> 1.6.0"},
+      {:handbean_pdf_parser, path: "vendor/handbean_pdf_parser"},
       {:llm_db, "~> 2026.10.5"},
       {:telemetry_metrics, "~> 1.0"},
       {:telemetry_poller, "~> 1.0"},

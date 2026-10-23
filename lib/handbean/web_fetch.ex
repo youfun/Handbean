@@ -17,13 +17,18 @@ defmodule Handbean.WebFetch do
 
   @doc "Fetch text from a public HTTP(S) URL. Options inject resolver/transport for tests."
   def fetch(url, max_chars \\ 20_000, opts \\ []) do
-    if is_integer(max_chars) and max_chars in 1..50_000 do
+    offset = Keyword.get(opts, :offset, 0)
+
+    if is_integer(max_chars) and max_chars in 1..50_000 and is_integer(offset) and offset >= 0 do
       deadline = System.monotonic_time(:millisecond) + 30_000
 
       with {:ok, uri} <- Address.parse(url),
            {:ok, final_uri, response} <- follow(uri, deadline, 3, opts),
            {:ok, document} <-
-             Document.extract(response.body, response.headers, final_uri, max_chars) do
+             Document.extract(response.body, response.headers, final_uri, max_chars,
+               offset: offset,
+               timeout: max(0, deadline - System.monotonic_time(:millisecond))
+             ) do
         {:ok,
          Map.merge(document, %{
            requested_url: URI.to_string(uri),
@@ -32,7 +37,8 @@ defmodule Handbean.WebFetch do
          })}
       end
     else
-      {:error, "max_chars must be an integer between 1 and 50000"}
+      {:error,
+       "max_chars must be an integer between 1 and 50000; offset must be a non-negative integer"}
     end
   end
 
