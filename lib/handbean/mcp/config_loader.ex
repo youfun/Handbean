@@ -56,7 +56,13 @@ defmodule Handbean.MCP.ConfigLoader do
           (global != nil and (global.disabled or not workspace_allowed?(global, workspace_id))) or
           (not Handbean.Host.shell?() and is_nil(cfg.url))
       end)
-      |> Map.new()
+      |> Map.new(fn {name, cfg} ->
+        scope =
+          if cfg.oauth,
+            do: [project: project, workspace_id: workspace_id, user_config_path: user_path]
+
+        {name, %{cfg | oauth_scope: scope}}
+      end)
 
     {:ok, %Config{servers: active, diagnostics: diagnostics}}
   end
@@ -183,7 +189,8 @@ defmodule Handbean.MCP.ConfigLoader do
       validate_name(name, source) ++
         validate_server_type(raw_cfg, name, source, transport_kind) ++
         validate_maps(raw_cfg, name, source) ++
-        validate_exposure(raw_cfg, name, source)
+        validate_exposure(raw_cfg, name, source) ++
+        validate_oauth(raw_cfg, name, source)
 
     if errors != [] do
       {:error, errors}
@@ -197,6 +204,13 @@ defmodule Handbean.MCP.ConfigLoader do
 
   def validate_server(name, _raw_cfg, source),
     do: {:error, [diagnostic(:error, "Server configuration must be an object", source, name)]}
+
+  defp validate_oauth(raw, name, source) do
+    case Handbean.MCP.OAuth.Config.validate(raw) do
+      :ok -> []
+      {:error, message} -> [diagnostic(:error, message, source, name)]
+    end
+  end
 
   defp validate_maps(raw, name, source) do
     Enum.flat_map(["headers", "env"], fn key ->
@@ -324,6 +338,7 @@ defmodule Handbean.MCP.ConfigLoader do
       "type",
       "url",
       "headers",
+      "oauth",
       "exposure",
       "description"
     ]
@@ -340,6 +355,7 @@ defmodule Handbean.MCP.ConfigLoader do
       type: raw_cfg["type"],
       url: raw_cfg["url"],
       headers: headers,
+      oauth: raw_cfg["oauth"],
       runtime_headers: resolve_placeholders(headers),
       source: source,
       exposure: normalize_exposure(Map.get(raw_cfg, "exposure", "deferred")),

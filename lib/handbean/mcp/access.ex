@@ -20,7 +20,9 @@ defmodule Handbean.MCP.Access do
     do: digest(Keyword.take(opts, [:project, :workspace_id, :user_config_path]) |> Enum.sort())
 
   # UI metadata/access edits must not invalidate connections still allowed elsewhere.
-  def fingerprint(%Handbean.MCP.ServerConfig{} = config), do: digest(%{config | raw: %{}})
+  def fingerprint(%Handbean.MCP.ServerConfig{} = config),
+    do: config |> Map.drop([:raw, :oauth_scope, :runtime_capabilities]) |> digest()
+
   def fingerprint(value), do: digest(value)
 
   def config(opts) do

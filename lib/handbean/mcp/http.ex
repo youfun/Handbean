@@ -29,14 +29,14 @@ defmodule Handbean.MCP.HTTP do
     params = Map.put(params, "_meta", client_meta())
 
     with {:ok, response} <- post(cfg, request(id, method, params), method, timeout_ms),
-         do: response(response.body, id)
+         do: response(response.body, id, method)
   end
 
   def call(%ServerConfig{} = cfg, method, params, timeout_ms) do
     id = Protocol.generate_id()
 
     with {:ok, response} <- post(cfg, request(id, method, params), nil, timeout_ms),
-         do: response(response.body, id)
+         do: response(response.body, id, method)
   end
 
   defp connect_modern(cfg, versions) do
@@ -62,7 +62,7 @@ defmodule Handbean.MCP.HTTP do
         with {:ok, result} <- response(response.body, id),
              versions when is_list(versions) <- result["supportedVersions"],
              true <- Enum.all?(versions, &is_binary/1) do
-          {:ok, cfg, versions}
+          {:ok, %{cfg | runtime_capabilities: capabilities(result)}, versions}
         else
           _ -> {:error, "Invalid server/discover response"}
         end
@@ -92,7 +92,13 @@ defmodule Handbean.MCP.HTTP do
       session = List.first(Req.Response.get_header(response, "mcp-session-id"))
       headers = Map.put(cfg.runtime_headers, "mcp-protocol-version", version)
       headers = if session, do: Map.put(headers, "mcp-session-id", session), else: headers
-      cfg = %{cfg | runtime_headers: headers, protocol_era: :legacy}
+
+      cfg = %{
+        cfg
+        | runtime_headers: headers,
+          protocol_era: :legacy,
+          runtime_capabilities: capabilities(result)
+      }
 
       with {:ok, _} <- post(cfg, %{"jsonrpc" => "2.0", "method" => "notifications/initialized"}),
            {:ok, tools} <- list_tools(cfg, nil, [], MapSet.new()) do
@@ -104,7 +110,17 @@ defmodule Handbean.MCP.HTTP do
     end
   end
 
-  defp list_tools(cfg, cursor, acc, seen) do
+  defp list_tools(%ServerConfig{runtime_capabilities: caps} = cfg, cursor, acc, seen)
+       when is_map(caps) do
+    if Map.has_key?(caps, "tools"), do: fetch_tools(cfg, cursor, acc, seen), else: {:ok, []}
+  end
+
+  defp list_tools(cfg, cursor, acc, seen), do: fetch_tools(cfg, cursor, acc, seen)
+
+  defp capabilities(%{"capabilities" => caps}) when is_map(caps), do: caps
+  defp capabilities(_), do: nil
+
+  defp fetch_tools(cfg, cursor, acc, seen) do
     params = if cursor, do: %{cursor: cursor}, else: %{}
 
     with {:ok, %{"tools" => tools} = result} when is_list(tools) <-
@@ -153,20 +169,54 @@ defmodule Handbean.MCP.HTTP do
       })
       |> maybe_put_modern_headers(cfg, payload, method)
 
+    case send_request(cfg, payload, headers, timeout_ms) do
+      {:ok, %{status: 599}} ->
+        {:error, "MCP HTTP response exceeded size limit"}
+
+      {:ok, %{status: status} = response} when status in 200..299 ->
+        {:ok, response}
+
+      {:ok, %{status: status, body: body}} ->
+        {:error, {:http, status, body}}
+
+      {:error, reason}
+      when reason in [
+             :authorization_required,
+             :oauth_scope_required,
+             :oauth_configuration_changed
+           ] ->
+        {:error, "MCP OAuth authorization required. Connect this server in Plugins settings."}
+
+      {:error, _} ->
+        {:error, "MCP HTTP request failed"}
+    end
+  end
+
+  defp send_request(%ServerConfig{oauth: oauth} = cfg, payload, headers, timeout_ms)
+       when is_map(oauth),
+       do: Handbean.MCP.OAuth.request(cfg, payload, headers, timeout_ms)
+
+  defp send_request(cfg, payload, headers, timeout_ms) do
     req = Application.get_env(:handbean, :mcp_http_req, Req)
 
-    case req.post(cfg.url,
-           body: Handbean.JSON.encode!(payload),
-           headers: headers,
-           decode_body: false,
-           redirect: false,
-           retry: false,
-           receive_timeout: timeout_ms
-         ) do
-      {:ok, %{status: status} = response} when status in 200..299 -> {:ok, response}
-      {:ok, %{status: status, body: body}} -> {:error, {:http, status, body}}
-      {:error, _} -> {:error, "MCP HTTP request failed"}
-    end
+    req.post(cfg.url,
+      body: Handbean.JSON.encode!(payload),
+      headers: headers,
+      decode_body: false,
+      redirect: false,
+      retry: false,
+      into: &receive_chunk/2,
+      request_timeout: timeout_ms,
+      receive_timeout: timeout_ms
+    )
+  end
+
+  defp receive_chunk({:data, chunk}, {request, response}) do
+    body = (response.body || "") <> chunk
+
+    if byte_size(body) <= 12 * 1024 * 1024,
+      do: {:cont, {request, %{response | body: body}}},
+      else: {:halt, {request, %{response | status: 599, body: ""}}}
   end
 
   defp maybe_put_modern_headers(headers, %ServerConfig{protocol_era: :legacy}, _payload, _method),
@@ -239,15 +289,15 @@ defmodule Handbean.MCP.HTTP do
     end)
   end
 
-  defp response(body, id) do
+  defp response(body, id, method \\ nil) do
     case Handbean.JSON.decode(body) do
-      {:ok, %{"id" => ^id} = message} -> rpc_result(message)
+      {:ok, %{"id" => ^id} = message} -> rpc_result(message, method)
       {:ok, _} -> {:error, "MCP response ID mismatch"}
-      {:error, _} -> sse_response(body, id)
+      {:error, _} -> sse_response(body, id, method)
     end
   end
 
-  defp sse_response(body, id) do
+  defp sse_response(body, id, method) do
     body
     |> String.replace("\r\n", "\n")
     |> String.split("\n\n")
@@ -259,14 +309,15 @@ defmodule Handbean.MCP.HTTP do
         |> Enum.map_join("\n", &(String.replace_prefix(&1, "data:", "") |> String.trim_leading()))
 
       case Handbean.JSON.decode(data) do
-        {:ok, %{"id" => ^id} = message} -> rpc_result(message)
+        {:ok, %{"id" => ^id} = message} -> rpc_result(message, method)
         _ -> nil
       end
     end)
   end
 
-  defp rpc_result(%{"error" => error}), do: {:error, error_text(error)}
-  defp rpc_result(message), do: Protocol.parse_response(message)
+  defp rpc_result(%{"error" => error}, "resources/" <> _), do: {:error, error}
+  defp rpc_result(%{"error" => error}, _method), do: {:error, error_text(error)}
+  defp rpc_result(message, _method), do: Protocol.parse_response(message)
 
   defp error_text(%{"message" => message}) when is_binary(message), do: message
   defp error_text(error), do: "MCP server returned a JSON-RPC error: #{inspect(error)}"

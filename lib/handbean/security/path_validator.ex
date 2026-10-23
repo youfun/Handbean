@@ -211,7 +211,14 @@ defmodule Handbean.Security.PathValidator do
     dirs ++
       files ++
       exts ++
-      ["!**/.env", "!**/.env.*", "!**/.config/gcloud/**", "!**/.config/gcloud"]
+      [
+        "!**/.env",
+        "!**/.env.*",
+        "!**/.config/gcloud/**",
+        "!**/.config/gcloud",
+        "!**/.handbean/mcp-oauth/**",
+        "!**/.handbean/mcp-oauth"
+      ]
   end
 
   @doc """
@@ -363,7 +370,7 @@ defmodule Handbean.Security.PathValidator do
   end
 
   defp sensitive_parts?(parts) do
-    Enum.any?(parts, &sensitive_part?/1) or config_gcloud?(parts)
+    Enum.any?(parts, &sensitive_part?/1) or sensitive_config_directory?(parts)
   end
 
   defp sensitive_part?(part) do
@@ -374,11 +381,12 @@ defmodule Handbean.Security.PathValidator do
       Enum.any?(@sensitive_exts, &String.ends_with?(part, &1))
   end
 
-  defp config_gcloud?(parts) do
+  defp sensitive_config_directory?(parts) do
     parts
     |> Enum.chunk_every(2, 1, :discard)
     |> Enum.any?(fn
       [".config", "gcloud"] -> true
+      [".handbean", "mcp-oauth"] -> true
       _ -> false
     end)
   end

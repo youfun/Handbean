@@ -67,7 +67,11 @@ defmodule Handbean.MCP.Settings do
          %{
            id: id,
            name: raw["name"] || id,
+           url: raw["url"],
+           description: raw["description"],
            transport: if(is_binary(raw["url"]), do: :http, else: :stdio),
+           auth: auth(raw),
+           oauth_configured: is_map(raw["oauth"]),
            disabled: raw["disabled"] == true,
            workspace_access:
              Map.get(raw, "workspace_access", %{"mode" => "all", "workspace_ids" => []}),
@@ -106,6 +110,9 @@ defmodule Handbean.MCP.Settings do
       "auth" => "none",
       "token" => "",
       "headers_json" => "",
+      "oauth_client_id" => "",
+      "oauth_issuer" => "",
+      "oauth_scopes" => "",
       "has_credentials" => false,
       "disabled" => false,
       "access_mode" => "selected",
@@ -125,6 +132,9 @@ defmodule Handbean.MCP.Settings do
          "name" => raw["name"] || id,
          "url" => raw["url"],
          "auth" => auth(raw),
+         "oauth_client_id" => get_in(raw, ["oauth", "client_id"]) || "",
+         "oauth_issuer" => get_in(raw, ["oauth", "issuer"]) || "",
+         "oauth_scopes" => Enum.join(get_in(raw, ["oauth", "scopes"]) || [], " "),
          "has_credentials" => map_size(Map.get(raw, "headers", %{})) > 0,
          "disabled" => raw["disabled"] == true,
          "access_mode" => access["mode"],
@@ -149,7 +159,24 @@ defmodule Handbean.MCP.Settings do
     end)
   end
 
-  def test_connection(form, opts \\ []) do
+  def toggle_disabled(id, disabled, opts \\ []) when is_boolean(disabled) do
+    update(opts, fn data ->
+      with {:ok, raw} <- fetch(data, id),
+           :ok <- editable(raw) do
+        updated = Map.put(raw, "disabled", disabled)
+        {:ok, put_in(data, ["mcpServers", id], updated), {:ok, id}}
+      end
+    end)
+  end
+
+  def test_connection(form, opts \\ [])
+
+  def test_connection(%{"auth" => "oauth"}, _opts),
+    do:
+      {:error,
+       "Save this server and authorize it in Plugins settings, then use it from the selected workspace."}
+
+  def test_connection(form, opts) do
     with {:ok, data} <- read(opts),
          {:ok, id, raw} <- prepare(form, data),
          {:ok, cfg} <- ConfigLoader.validate_server(id, raw, :user) do
@@ -197,9 +224,29 @@ defmodule Handbean.MCP.Settings do
           }
         })
 
-      {:ok, id, raw}
+      raw =
+        if form["auth"] == "oauth",
+          do: Map.put(raw, "oauth", oauth_config(form, old)),
+          else: Map.delete(raw, "oauth")
+
+      case Handbean.MCP.OAuth.Config.validate(raw) do
+        :ok -> {:ok, id, raw}
+        error -> error
+      end
     end
   end
+
+  defp oauth_config(form, old) do
+    old
+    |> Map.get("oauth", %{})
+    |> Map.take(["resource_metadata_url"])
+    |> Map.put("client_id", String.trim(form["oauth_client_id"] || ""))
+    |> maybe_oauth_field("issuer", String.trim(form["oauth_issuer"] || ""))
+    |> maybe_oauth_field("scopes", String.split(form["oauth_scopes"] || ""))
+  end
+
+  defp maybe_oauth_field(map, _key, value) when value in ["", []], do: map
+  defp maybe_oauth_field(map, key, value), do: Map.put(map, key, value)
 
   defp validate_form(form) do
     uri = URI.parse(String.trim(form["url"] || ""))
@@ -212,7 +259,7 @@ defmodule Handbean.MCP.Settings do
           uri.fragment != nil ->
         {:error, "Enter an HTTP(S) URL without embedded credentials or a fragment"}
 
-      form["auth"] not in ["none", "bearer", "headers"] ->
+      form["auth"] not in ["none", "bearer", "headers", "oauth"] ->
         {:error, "Invalid authentication mode"}
 
       form["access_mode"] not in ["selected", "all"] ->
@@ -229,7 +276,7 @@ defmodule Handbean.MCP.Settings do
     end
   end
 
-  defp headers(%{"auth" => "none"}, _), do: {:ok, %{}}
+  defp headers(%{"auth" => mode}, _) when mode in ["none", "oauth"], do: {:ok, %{}}
 
   defp headers(%{"auth" => mode} = form, old) do
     value = if mode == "bearer", do: form["token"] || "", else: form["headers_json"] || ""
@@ -279,6 +326,8 @@ defmodule Handbean.MCP.Settings do
         {:error, "Headers must be a JSON object of strings"}
     end
   end
+
+  defp auth(%{"oauth" => oauth}) when is_map(oauth), do: "oauth"
 
   defp auth(raw) do
     headers = Map.get(raw, "headers", %{})

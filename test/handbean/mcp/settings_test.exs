@@ -146,4 +146,28 @@ defmodule Handbean.MCP.SettingsTest do
     assert {:ok, entries} = Settings.list(opts)
     assert length(entries) == 8
   end
+
+  test "toggle_disabled flips disabled state while preserving saved credentials", %{opts: opts} do
+    form =
+      Settings.new_form("a")
+      |> Map.merge(%{
+        "name" => "Toggleable Server",
+        "url" => "https://docs.example/mcp",
+        "auth" => "bearer",
+        "token" => "keep-this-token"
+      })
+
+    assert {:ok, id} = Settings.save(form, opts)
+
+    assert {:ok, [%{id: ^id, disabled: false, url: "https://docs.example/mcp"}]} =
+             Settings.list(opts)
+
+    assert {:ok, ^id} = Settings.toggle_disabled(id, true, opts)
+    assert {:ok, [%{id: ^id, disabled: true}]} = Settings.list(opts)
+    assert {:ok, raw} = Settings.read(opts)
+    assert raw["mcpServers"][id]["headers"] == %{"authorization" => "Bearer keep-this-token"}
+
+    assert {:ok, ^id} = Settings.toggle_disabled(id, false, opts)
+    assert {:ok, [%{id: ^id, disabled: false}]} = Settings.list(opts)
+  end
 end

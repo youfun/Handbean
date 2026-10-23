@@ -81,6 +81,9 @@ defmodule HandbeanWeb.Router do
     get "/settings/error-diagnostics", ErrorDiagnosticsController, :download
     live "/settings", SettingsLive, :index
     live "/settings/available-models", AvailableModelsLive, :index
+    post "/mcp/oauth/:workspace_id/:server/start", MCPOAuthController, :start
+    get "/mcp/oauth/callback", MCPOAuthController, :callback, log: false
+    post "/mcp/oauth/:workspace_id/:server/disconnect", MCPOAuthController, :disconnect
     error_tracker_dashboard("/errors")
 
     get "/uploads/:conversation_id/:file", UploadsController, :show

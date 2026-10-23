@@ -13,6 +13,7 @@ defmodule Handbean.MCP.ServerRuntime do
 
   @stdio_request_timeout_ms 15_000
   @bootstrap_call_timeout_ms 115_000
+  @max_stdio_frame_bytes 12 * 1_024 * 1_024
 
   @type tool_spec :: %{
           name: String.t(),
@@ -28,7 +29,11 @@ defmodule Handbean.MCP.ServerRuntime do
         }
 
   @type stdio_request :: %{
-          kind: :initialize | :list_tools | {:call_tool, GenServer.from()},
+          kind:
+            :initialize
+            | :list_tools
+            | {:call_tool, GenServer.from()}
+            | {:resource, GenServer.from()},
           deadline: integer(),
           timer_ref: reference()
         }
@@ -38,6 +43,7 @@ defmodule Handbean.MCP.ServerRuntime do
           port: port() | nil,
           next_id: non_neg_integer(),
           tools: [tool_spec()],
+          capabilities: map() | nil,
           pending: %{binary() => stdio_request()},
           stdio_buffer: binary(),
           status: :opening | :initializing | :listing_tools | :ready | {:failed, term()},
@@ -62,6 +68,23 @@ defmodule Handbean.MCP.ServerRuntime do
   def call_tool(pid, tool_name, input, timeout_ms \\ 60_000)
       when is_integer(timeout_ms) and timeout_ms > 0 do
     GenServer.call(pid, {:call_tool, tool_name, input, timeout_ms}, timeout_ms + 1_000)
+  end
+
+  @doc "Requests one resource page or resource contents over the existing transport."
+  def resource_request(pid, method, params, timeout_ms \\ 60_000, opts \\ [])
+      when method in ["resources/list", "resources/templates/list", "resources/read"] and
+             is_map(params) and is_integer(timeout_ms) and timeout_ms > 0 do
+    deadline = Keyword.get(opts, :deadline, System.monotonic_time(:millisecond) + timeout_ms)
+    authorization = Keyword.get(opts, :authorization)
+
+    GenServer.call(
+      pid,
+      {:resource_request, method, params, deadline, authorization},
+      timeout_ms + 1_000
+    )
+  catch
+    :exit, {:timeout, _} -> {:error, timeout_reason()}
+    :exit, _reason -> {:error, :runtime_unavailable}
   end
 
   @spec shutdown(pid()) :: :ok
@@ -109,6 +132,7 @@ defmodule Handbean.MCP.ServerRuntime do
       port: nil,
       next_id: 1,
       tools: [],
+      capabilities: nil,
       pending: %{},
       stdio_buffer: "",
       status: :opening,
@@ -146,7 +170,7 @@ defmodule Handbean.MCP.ServerRuntime do
           )}}
 
       {:error, reason} ->
-        {:noreply, {:stdio, fail_stdio(state, reason)}}
+        stdio_transition(fail_stdio(state, reason))
     end
   end
 
@@ -263,6 +287,40 @@ defmodule Handbean.MCP.ServerRuntime do
     {:reply, {:error, "MCP server is still initializing"}, {:http, state}}
   end
 
+  def handle_call(
+        {:resource_request, method, params, deadline, authorization},
+        from,
+        {:stdio, %{status: :ready} = state}
+      ) do
+    with :ok <- resource_authorized(authorization),
+         {:ok, remaining} <- resource_budget(deadline),
+         :ok <- resource_capability(state.capabilities) do
+      state = start_stdio_request(state, method, params, {:resource, from}, remaining)
+      {:noreply, {:stdio, state}}
+    else
+      {:error, _} = error -> {:reply, error, {:stdio, state}}
+    end
+  end
+
+  def handle_call(
+        {:resource_request, method, params, deadline, authorization},
+        _from,
+        {:http, %{status: :ready} = state}
+      ) do
+    result =
+      with :ok <- resource_authorized(authorization),
+           {:ok, _remaining} <- resource_budget(deadline),
+           :ok <- resource_capability(Map.get(state.cfg, :runtime_capabilities)) do
+        call_resource_http(state.cfg, method, params, deadline, authorization)
+      end
+
+    {:reply, result, {:http, state}}
+  end
+
+  def handle_call({:resource_request, _, _, _, _}, _from, {transport, state}) do
+    {:reply, {:error, :runtime_unavailable}, {transport, state}}
+  end
+
   @impl true
   def terminate(_reason, {:stdio, %{port: port}}), do: safe_close_port(port)
   def terminate(_reason, {:http, _state}), do: :ok
@@ -329,10 +387,10 @@ defmodule Handbean.MCP.ServerRuntime do
   def handle_info({port, {:data, data}}, {:stdio, %{port: port} = state}) do
     case consume_stdio_data(state, data) do
       {:ok, messages, state} ->
-        {:noreply, {:stdio, Enum.reduce(messages, state, &route_stdio_message/2)}}
+        stdio_transition(Enum.reduce(messages, state, &route_stdio_message/2))
 
       {:error, reason, state} ->
-        {:noreply, {:stdio, fail_stdio(state, reason)}}
+        stdio_transition(fail_stdio(state, reason))
     end
   end
 
@@ -344,7 +402,7 @@ defmodule Handbean.MCP.ServerRuntime do
         {:incomplete_stdio_message, byte_size(state.stdio_buffer), status}
       end
 
-    {:noreply, {:stdio, fail_stdio(state, reason)}}
+    stdio_transition(fail_stdio(state, reason))
   end
 
   def handle_info({:stdio_request_timeout, id, deadline}, {:stdio, state}) do
@@ -360,7 +418,7 @@ defmodule Handbean.MCP.ServerRuntime do
           {:noreply, {:stdio, put_in(state.pending[id], request)}}
         else
           state = %{state | pending: Map.delete(state.pending, id)}
-          {:noreply, {:stdio, complete_stdio_request(state, request, {:error, timeout_reason()})}}
+          stdio_transition(complete_stdio_request(state, request, {:error, timeout_reason()}))
         end
 
       _stale_or_completed_request ->
@@ -369,14 +427,21 @@ defmodule Handbean.MCP.ServerRuntime do
   end
 
   defp consume_stdio_data(state, data) do
-    {lines, stdio_buffer} = Protocol.split_lines(state.stdio_buffer <> data)
-    state = %{state | stdio_buffer: stdio_buffer}
+    if byte_size(state.stdio_buffer) + byte_size(data) > @max_stdio_frame_bytes do
+      {:error, :mcp_response_too_large, %{state | stdio_buffer: ""}}
+    else
+      {lines, stdio_buffer} = Protocol.split_lines(state.stdio_buffer <> data)
+      state = %{state | stdio_buffer: stdio_buffer}
 
-    case Protocol.decode_lines(lines) do
-      {:ok, messages} -> {:ok, messages, state}
-      {:error, reason} -> {:error, {:invalid_stdio_message, reason}, state}
+      case Protocol.decode_lines(lines) do
+        {:ok, messages} -> {:ok, messages, state}
+        {:error, reason} -> {:error, {:invalid_stdio_message, reason}, state}
+      end
     end
   end
+
+  defp stdio_transition(%{status: {:failed, _}} = state), do: {:stop, :normal, {:stdio, state}}
+  defp stdio_transition(state), do: {:noreply, {:stdio, state}}
 
   defp route_stdio_message(%{"id" => id} = response, state) do
     case Map.pop(state.pending, to_string(id)) do
@@ -400,11 +465,20 @@ defmodule Handbean.MCP.ServerRuntime do
 
   defp route_stdio_message(_notification_or_unknown_message, state), do: state
 
-  defp complete_stdio_request(state, %{kind: :initialize}, {:ok, _result}) do
+  defp complete_stdio_request(state, %{kind: :initialize}, {:ok, result}) when is_map(result) do
     :ok = stdio_notify(state, "notifications/initialized", %{})
-    state = %{state | status: :listing_tools}
-    start_stdio_request(state, "tools/list", %{}, :list_tools, @stdio_request_timeout_ms)
+    capabilities = result["capabilities"]
+    state = %{state | capabilities: capabilities, status: :listing_tools}
+
+    if is_map(capabilities) and not Map.has_key?(capabilities, "tools") do
+      complete_stdio_request(state, %{kind: :list_tools}, {:ok, %{"tools" => []}})
+    else
+      start_stdio_request(state, "tools/list", %{}, :list_tools, @stdio_request_timeout_ms)
+    end
   end
+
+  defp complete_stdio_request(state, %{kind: :initialize}, {:ok, _result}),
+    do: fail_stdio(state, :invalid_initialize_response)
 
   defp complete_stdio_request(state, %{kind: :initialize}, {:error, reason}),
     do: fail_stdio(state, reason)
@@ -431,6 +505,65 @@ defmodule Handbean.MCP.ServerRuntime do
     GenServer.reply(from, {:error, format_error(reason)})
     state
   end
+
+  defp complete_stdio_request(state, %{kind: {:resource, from}}, result) do
+    GenServer.reply(from, result)
+    state
+  end
+
+  defp call_resource_http(cfg, method, params, deadline, authorization) do
+    task =
+      Task.Supervisor.async_nolink(Handbean.AgentRunTaskSupervisor, fn ->
+        with :ok <- resource_authorized(authorization),
+             {:ok, remaining} <- resource_budget(deadline) do
+          Handbean.MCP.HTTP.call(cfg, method, params, remaining)
+        end
+      end)
+
+    # A receive timeout alone permits an endless slow stream. This deadline also
+    # bounds OAuth credential locks, refreshes, connection setup and body receipt.
+    remaining = max(deadline - System.monotonic_time(:millisecond), 0)
+
+    case Task.yield(task, remaining) do
+      {:ok, result} ->
+        result
+
+      {:exit, _reason} ->
+        {:error, :runtime_unavailable}
+
+      nil ->
+        Task.shutdown(task, :brutal_kill)
+        {:error, timeout_reason()}
+    end
+  end
+
+  defp resource_budget(deadline) do
+    remaining = deadline - System.monotonic_time(:millisecond)
+    if remaining > 0, do: {:ok, remaining}, else: {:error, timeout_reason()}
+  end
+
+  # Low-level runtime callers are trusted application code. Model tools always
+  # supply the original effective config and scope through Resources.
+  defp resource_authorized(nil), do: :ok
+
+  defp resource_authorized({config, opts}) do
+    if Handbean.MCP.Access.allowed?(config, opts, %{mcp_scope: opts}),
+      do: :ok,
+      else: {:error, :resource_access_revoked}
+  end
+
+  defp resource_capability(capabilities) do
+    if resources_supported?(capabilities), do: :ok, else: {:error, :resources_not_supported}
+  end
+
+  # Older servers sometimes omit capabilities altogether; let their RPC response
+  # establish support. An explicit capability map is authoritative.
+  defp resources_supported?(nil), do: true
+
+  defp resources_supported?(capabilities) when is_map(capabilities),
+    do: is_map(capabilities["resources"])
+
+  defp resources_supported?(_), do: false
 
   defp normalize_tools(tools) do
     Enum.flat_map(tools, fn
@@ -461,6 +594,7 @@ defmodule Handbean.MCP.ServerRuntime do
 
       case request.kind do
         {:call_tool, from} -> GenServer.reply(from, {:error, format_error(reason)})
+        {:resource, from} -> GenServer.reply(from, {:error, reason})
         _bootstrap_request -> :ok
       end
     end)

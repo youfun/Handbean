@@ -301,6 +301,31 @@ defmodule Handbean.Security.PathValidator.Test do
       refute reason =~ home_key
     end
 
+    test "blocks MCP OAuth credentials through file and command access" do
+      root = Path.join(@sandbox_dir, ".handbean/mcp-oauth")
+      File.mkdir_p!(root)
+      token = Path.join(root, "tokens.enc")
+      File.write!(token, "fake-encrypted-token")
+      link = Path.join(@sandbox_dir, "ordinary-looking-file")
+      File.ln_s!(token, link)
+
+      for path <- [root, token, link, Path.join(root, "key")] do
+        assert PathValidator.reject_resolved(path) == {:error, "sensitive path blocked"}
+      end
+
+      assert {:error, "sensitive path blocked"} =
+               Handbean.Agent.Tool.resolve_path(link, %{working_directory: @sandbox_dir}, :read)
+
+      assert PathValidator.reject_sensitive_command("cat #{link}", @sandbox_dir) ==
+               {:error, "sensitive path blocked"}
+
+      assert PathValidator.reject_sensitive("/project/.HANDBEAN/MCP-OAUTH/tokens.enc") ==
+               {:error, "sensitive path blocked"}
+
+      assert PathValidator.reject_sensitive("/project/lib/handbean/mcp/oauth.ex") == :ok
+      assert PathValidator.reject_sensitive("/project/.handbean/mcp.json") == :ok
+    end
+
     test "allows ordinary workspace sources and the narrowed config names" do
       app = Path.join(@sandbox_dir, "lib/app.ex")
       readme = Path.join(@sandbox_dir, "README.md")

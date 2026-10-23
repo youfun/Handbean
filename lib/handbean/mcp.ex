@@ -11,8 +11,8 @@ defmodule Handbean.MCP do
   def load_config(opts \\ []), do: ConfigLoader.load(opts)
   def start_runtime(opts \\ []), do: RuntimeSupervisor.start_runtime(opts)
 
-  def bootstrap(opts \\ []),
-    do: GenServer.call(__MODULE__, {:bootstrap, opts}, @bootstrap_timeout_ms)
+  def bootstrap(opts \\ [], timeout_ms \\ @bootstrap_timeout_ms),
+    do: GenServer.call(__MODULE__, {:bootstrap, opts}, timeout_ms)
 
   def teardown_previous(opts \\ []),
     do: GenServer.call(__MODULE__, {:teardown, opts}, @bootstrap_timeout_ms)
@@ -326,13 +326,13 @@ defmodule Handbean.MCP do
                 server = %{name: name, config: cfg, pid: pid, tools: tools}
                 %{acc | servers: [server | acc.servers]}
 
-              {:error, _reason} ->
+              {:error, reason} ->
                 send(owner, {:mcp_candidate_discard, flight_id, pid})
-                add_server_error(acc, name, "Tool discovery failed")
+                add_server_error(acc, name, connection_error(reason, "Tool discovery failed"))
             end
 
-          {:error, _reason} ->
-            add_server_error(acc, name, "Connection failed")
+          {:error, reason} ->
+            add_server_error(acc, name, connection_error(reason, "Connection failed"))
         end
       end
     )
@@ -352,6 +352,7 @@ defmodule Handbean.MCP do
       %{
         config: candidate.config,
         registered: [],
+        servers: %{},
         runtime_pids: [],
         server_errors: candidate.server_errors
       },
@@ -361,6 +362,7 @@ defmodule Handbean.MCP do
             %{
               acc
               | registered: acc.registered ++ registered,
+                servers: Map.put(acc.servers, server.name, Map.take(server, [:pid, :config])),
                 runtime_pids: [server.pid | acc.runtime_pids]
             }
 
@@ -379,6 +381,17 @@ defmodule Handbean.MCP do
   catch
     :exit, reason -> {:error, reason}
   end
+
+  defp connection_error(reason, _fallback)
+       when reason in [
+              :authorization_required,
+              :oauth_scope_required,
+              :oauth_configuration_changed,
+              "MCP OAuth authorization required. Connect this server in Plugins settings."
+            ],
+       do: "MCP authorization required. Authorize or reconnect this server in plugin settings."
+
+  defp connection_error(_reason, fallback), do: fallback
 
   defp add_server_error(result, name, error) do
     %{result | server_errors: [%{server: name, error: error} | result.server_errors]}
