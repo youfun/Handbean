@@ -4,6 +4,135 @@ defmodule Handbean.ConversationStoreTest do
   alias Handbean.{ConversationStore, ConversationTranscriptStore}
   alias Handbean.Storage.ConversationRunUsage
 
+  test "channel bindings are generic, projected and immutable" do
+    assert {:error, :invalid_channel_binding} =
+             ConversationStore.create_free(
+               id: "invalid-channel-binding",
+               channel_binding: %{channel: "WeChat", label: "微信"}
+             )
+
+    assert {:error, :invalid_channel_binding} =
+             ConversationStore.create_free(
+               id: "missing-channel-binding",
+               channel_binding: %{label: "微信"}
+             )
+
+    assert {:error, :invalid_channel_binding} =
+             ConversationStore.create_free(
+               id: "boolean-channel-binding",
+               channel_binding: %{channel: true, label: "微信"}
+             )
+
+    assert {:error, :invalid_channel_binding} =
+             ConversationStore.create_free(
+               id: "malformed-channel-binding",
+               channel_binding: [{:channel, "weixin"}, :invalid]
+             )
+
+    assert {:error, :invalid_channel_binding} =
+             ConversationStore.create_free(
+               id: "oversized-channel-label",
+               channel_binding: %{channel: "weixin", label: String.duplicate("微", 25)}
+             )
+
+    assert {:ok, created} =
+             ConversationStore.create_free(
+               id: "channel-bound",
+               channel_binding: %{channel: :weixin, label: " 微信 ", token: "not-projected"}
+             )
+
+    expected = %{"channel" => "weixin", "label" => "微信"}
+    assert created["channel_binding"] == expected
+    assert {:ok, %{"channel_binding" => ^expected}} = ConversationStore.get_summary(created["id"])
+
+    assert {:ok, unbound} = ConversationStore.create_free(id: "channel-unbound")
+    assert is_nil(unbound["channel_binding"])
+
+    assert {:ok, %{"channel_binding" => ^expected}} =
+             ConversationStore.bind_channel(unbound["id"], channel: "weixin", label: "微信")
+
+    assert {:ok, %{"channel_binding" => ^expected}} =
+             ConversationStore.bind_channel(unbound["id"], %{
+               "channel" => "weixin",
+               "label" => "微信"
+             })
+
+    assert {:error, :conversation_already_bound} =
+             ConversationStore.bind_channel(unbound["id"], channel: "telegram", label: "Telegram")
+
+    assert {:error, :invalid_channel_binding} =
+             ConversationStore.bind_channel(unbound["id"], channel: "telegram", label: "")
+  end
+
+  test "concurrent channel binding has one immutable winner" do
+    for attempt <- 1..5 do
+      id = "concurrent-channel-#{attempt}"
+      assert {:ok, _conversation} = ConversationStore.create_free(id: id)
+      parent = self()
+
+      tasks =
+        for index <- 1..8 do
+          Task.async(fn ->
+            send(parent, {:channel_binder_ready, self()})
+
+            receive do
+              :bind_channel -> :ok
+            end
+
+            ConversationStore.bind_channel(id,
+              channel: "sns_#{index}",
+              label: "SNS #{index}"
+            )
+          end)
+        end
+
+      task_pids =
+        for _index <- 1..8 do
+          assert_receive {:channel_binder_ready, pid}
+          pid
+        end
+
+      Enum.each(task_pids, &send(&1, :bind_channel))
+      results = Enum.map(tasks, &Task.await(&1, 5_000))
+
+      assert Enum.count(results, &match?({:ok, _metadata}, &1)) == 1
+      assert Enum.count(results, &match?({:error, :conversation_already_bound}, &1)) == 7
+
+      assert {:ok, %{"channel_binding" => persisted}} = ConversationStore.get_summary(id)
+      assert Enum.any?(results, &match?({:ok, %{"channel_binding" => ^persisted}}, &1))
+    end
+  end
+
+  test "concurrent identical channel bindings are idempotent" do
+    assert {:ok, conversation} = ConversationStore.create_free(id: "same-concurrent-channel")
+    parent = self()
+
+    tasks =
+      for _index <- 1..8 do
+        Task.async(fn ->
+          send(parent, {:same_channel_binder_ready, self()})
+
+          receive do
+            :bind_channel -> :ok
+          end
+
+          ConversationStore.bind_channel(conversation["id"], channel: "weixin", label: "微信")
+        end)
+      end
+
+    task_pids =
+      for _index <- 1..8 do
+        assert_receive {:same_channel_binder_ready, pid}
+        pid
+      end
+
+    Enum.each(task_pids, &send(&1, :bind_channel))
+
+    assert Enum.all?(tasks, fn task ->
+             match?({:ok, %{"channel_binding" => %{"channel" => "weixin"}}}, Task.await(task))
+           end)
+  end
+
   test "metadata and timeline-free lists keep query counts bounded as conversations grow" do
     for scope <- [:workspace, :free] do
       create = fn id ->
@@ -448,7 +577,7 @@ defmodule Handbean.ConversationStoreTest do
 
     assert Enum.sort(Map.keys(hd(summaries))) ==
              Enum.sort(
-               ~w(id visibility parent_conversation_id parent_run_id parent_tool_call_id scope workspace_id checkout_path title title_source archived_at pinned_at created_at updated_at)
+               ~w(id visibility parent_conversation_id parent_run_id parent_tool_call_id scope workspace_id checkout_path title title_source channel_binding archived_at pinned_at created_at updated_at)
              )
 
     assert Enum.map(ConversationStore.list_summaries("workspace-a"), & &1["id"]) == [

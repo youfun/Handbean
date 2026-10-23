@@ -6,10 +6,12 @@ defmodule Handbean.ConversationStore do
   representation stay private to this module.
   """
 
+  import Ecto.Query, only: [from: 2]
+
   alias Ecto.Changeset
   alias Handbean.ConversationStore.{Archive, Codec, Projection, Usage}
   alias Handbean.Repo
-  alias Handbean.Storage.{Conversation, ConversationEditorState}
+  alias Handbean.Storage.{Conversation, ConversationEditorState, WriteTransaction}
 
   @type conversation :: map()
   @title_max_length 80
@@ -27,6 +29,7 @@ defmodule Handbean.ConversationStore do
     :selected_reasoning_level,
     :permission_mode,
     :permission_revision,
+    :channel_binding,
     :collaboration,
     :last_run_result,
     :loaded_tools,
@@ -43,12 +46,15 @@ defmodule Handbean.ConversationStore do
                       :checkout_path,
                       :permission_mode,
                       :permission_revision,
+                      :channel_binding,
                       :next_entry_sequence,
                       :created_at,
                       :updated_at
                     ]
   @owned_on_upsert ~w(collaboration visibility last_run_result parent_conversation_id parent_run_id parent_tool_call_id pinned_at)
   @usage_meta_keys ~w(token_usage run_usage usage_legacy run_usage_replace delegated_usage)
+  @channel_name ~r/\A[a-z][a-z0-9_-]{0,31}\z/
+  @channel_label_max_length 24
 
   @doc "List every persisted conversation."
   @spec list(keyword()) :: [conversation()]
@@ -284,6 +290,48 @@ defmodule Handbean.ConversationStore do
     end
   end
 
+  @doc "Bind one external channel to a conversation without persisting recipient or credential data."
+  @spec bind_channel(String.t(), map() | keyword()) :: {:ok, map()} | {:error, atom()}
+  def bind_channel(id, binding) when is_binary(id) do
+    with {:ok, normalized} <- normalize_channel_binding(binding) do
+      timestamp = now()
+
+      query =
+        from conversation in Conversation,
+          where:
+            conversation.id == ^id and conversation.status == "active" and
+              is_nil(conversation.channel_binding)
+
+      result =
+        WriteTransaction.run(fn ->
+          case Repo.update_all(query, set: [channel_binding: normalized, updated_at: timestamp]) do
+            {1, _rows} ->
+              case fetch_row(id) do
+                {:ok, row} -> {:bound, metadata_map(row)}
+                {:error, reason} -> Repo.rollback(reason)
+              end
+
+            {0, _rows} ->
+              existing_channel_binding(id, normalized)
+          end
+        end)
+
+      case result do
+        {:ok, {:bound, metadata}} ->
+          :ok = broadcast_updated(id)
+          {:ok, metadata}
+
+        {:ok, other} ->
+          other
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  def bind_channel(_id, _binding), do: {:error, :invalid_channel_binding}
+
   def normalize_title(title) when is_binary(title) do
     normalized =
       title
@@ -494,7 +542,8 @@ defmodule Handbean.ConversationStore do
 
   defp create_conversation(scope, workspace_id, opts) do
     with {:ok, checkout_path} <- checkout_path_for_create(scope, workspace_id, opts),
-         {:ok, permission_mode} <- permission_mode_for_create(scope, workspace_id, opts) do
+         {:ok, permission_mode} <- permission_mode_for_create(scope, workspace_id, opts),
+         {:ok, channel_binding} <- channel_binding_for_create(opts) do
       id = Keyword.get(opts, :id, Ecto.UUID.generate())
       timestamp = now()
 
@@ -512,6 +561,7 @@ defmodule Handbean.ConversationStore do
         selected_model: Keyword.get(opts, :selected_model),
         selected_reasoning_level: Keyword.get(opts, :selected_reasoning_level),
         permission_mode: permission_mode,
+        channel_binding: channel_binding,
         collaboration: Keyword.get(opts, :collaboration),
         last_run_result: Keyword.get(opts, :last_run_result),
         loaded_tools: encode_json!(Keyword.get(opts, :loaded_tools, [])),
@@ -568,6 +618,67 @@ defmodule Handbean.ConversationStore do
   defp permission_mode_for_create(scope, workspace_id, opts) do
     Handbean.Permissions.ConversationMode.mode_for_create(scope, workspace_id, opts)
   end
+
+  defp channel_binding_for_create(opts) do
+    case Keyword.get(opts, :channel_binding) do
+      nil -> {:ok, nil}
+      binding -> normalize_channel_binding(binding)
+    end
+  end
+
+  defp normalize_channel_binding(binding) when is_list(binding) do
+    if Keyword.keyword?(binding),
+      do: binding |> Map.new() |> normalize_channel_binding(),
+      else: {:error, :invalid_channel_binding}
+  end
+
+  defp normalize_channel_binding(binding) when is_map(binding) do
+    channel = binding |> map_value("channel") |> normalize_channel_name()
+    label = binding |> map_value("label") |> normalize_channel_label()
+
+    if is_binary(channel) and is_binary(label),
+      do: {:ok, %{"channel" => channel, "label" => label}},
+      else: {:error, :invalid_channel_binding}
+  end
+
+  defp normalize_channel_binding(_binding), do: {:error, :invalid_channel_binding}
+
+  defp normalize_channel_name(nil), do: nil
+  defp normalize_channel_name(value) when is_boolean(value), do: nil
+
+  defp normalize_channel_name(value) when is_atom(value),
+    do: value |> Atom.to_string() |> normalize_channel_name()
+
+  defp normalize_channel_name(value) when is_binary(value) do
+    value = String.trim(value)
+    if Regex.match?(@channel_name, value), do: value
+  end
+
+  defp normalize_channel_name(_value), do: nil
+
+  defp normalize_channel_label(value) when is_binary(value) do
+    normalized =
+      value
+      |> String.replace(~r/[\r\n\t]+/u, " ")
+      |> String.replace(~r/[[:cntrl:]]/u, "")
+      |> String.replace(~r/\s+/u, " ")
+      |> String.trim()
+
+    if normalized != "" and String.length(normalized) <= @channel_label_max_length,
+      do: normalized
+  end
+
+  defp normalize_channel_label(_value), do: nil
+
+  defp existing_channel_binding(id, normalized) do
+    with {:ok, row} <- fetch_row(id),
+         :ok <- channel_binding_compatible?(row.channel_binding, normalized) do
+      {:ok, metadata_map(row)}
+    end
+  end
+
+  defp channel_binding_compatible?(binding, binding), do: :ok
+  defp channel_binding_compatible?(_current, _incoming), do: {:error, :conversation_already_bound}
 
   defp checkout_path_for_create("free", _workspace_id, _opts), do: {:ok, nil}
 
