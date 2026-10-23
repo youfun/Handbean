@@ -25,6 +25,7 @@ defmodule Handbean.Storage.ConversationRun do
     field :error, :string
     field :turn_count, :integer, default: 0
     field :duration_ms, :integer
+    field :code_baseline, :map
     field :capture_version, :integer, default: 1
     field :started_at, :utc_datetime_usec
     field :completed_at, :utc_datetime_usec

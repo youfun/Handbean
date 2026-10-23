@@ -26,6 +26,7 @@ defmodule HandbeanWeb.FileChangeCard do
   def card(assigns) do
     change = ChangeHelper.change_from_entry(assigns.entry)
     lines = ChangeHelper.normalize_diff_lines(Map.get(change, "diff_lines")) || []
+    %{added: added, removed: removed} = change_counts(change, lines)
     entry_id = entry_id(assigns.entry)
     {preview, truncated?} = if assigns.open?, do: preview_lines(lines), else: {[], false}
 
@@ -36,10 +37,10 @@ defmodule HandbeanWeb.FileChangeCard do
       |> assign(:diff_truncated?, truncated?)
       |> assign(:entry_id, entry_id)
       |> assign(:card_id, assigns.id || "file-change-#{entry_id}")
-      |> assign(:label, label(assigns.entry, lines))
+      |> assign(:label, label(assigns.entry, lines, removed))
       |> assign(:path, display_path(change, assigns.entry, assigns.workspace_root))
-      |> assign(:added, count(lines, :add))
-      |> assign(:removed, count(lines, :remove))
+      |> assign(:added, added)
+      |> assign(:removed, removed)
       |> assign(:reversible?, reversible?(change))
       |> assign(
         :confirming?,
@@ -178,6 +179,12 @@ defmodule HandbeanWeb.FileChangeCard do
   end
 
   @doc "Counts additions and removals using the same diff types as file cards."
+  def line_counts(%{} = change_or_entry) do
+    change = ChangeHelper.change_from_entry(change_or_entry)
+    lines = ChangeHelper.normalize_diff_lines(Map.get(change, "diff_lines")) || []
+    change_counts(change, lines)
+  end
+
   def line_counts(lines) do
     lines = ChangeHelper.normalize_diff_lines(lines) || []
     %{added: count(lines, :add), removed: count(lines, :remove)}
@@ -185,7 +192,8 @@ defmodule HandbeanWeb.FileChangeCard do
 
   @doc "True when the entry records a visible file change."
   def change_entry?(%{} = entry) do
-    (TranscriptEntry.tool_name(entry) in ["edit", "write"] and diff_lines(entry) != []) or
+    (TranscriptEntry.tool_name(entry) in ["edit", "write"] and
+       (diff_lines(entry) != [] or has_diff_stat?(entry))) or
       recorded_effects(entry) != []
   end
 
@@ -346,6 +354,7 @@ defmodule HandbeanWeb.FileChangeCard do
       |> Map.put("id", net_id(source))
       |> Map.put("change", change)
       |> Map.put("diff_lines", change["diff_lines"])
+      |> Map.put("diff_stat", change["diff_stat"])
     end
   end
 
@@ -406,6 +415,7 @@ defmodule HandbeanWeb.FileChangeCard do
       "file_path" => net_path(source),
       "change" => change,
       "diff_lines" => change["diff_lines"],
+      "diff_stat" => change["diff_stat"],
       "change_type" => change_type,
       "net_order" => Map.get(source, "net_order") || Map.get(source, "id")
     }
@@ -445,13 +455,33 @@ defmodule HandbeanWeb.FileChangeCard do
       is_binary(Map.get(change, "change_id"))
   end
 
-  defp label(entry, lines) do
+  defp label(entry, lines, removed) do
     type = entry["change_type"] || Map.get(ChangeHelper.change_from_entry(entry), "change_type")
-    created? = type == "write" and count(lines, :remove) == 0
+    created? = type == "write" and removed == 0 and count(lines, :remove) == 0
 
     case type do
       "delete" -> "Deleted"
       _ -> if(created?, do: "Created", else: "edit")
+    end
+  end
+
+  defp change_counts(change, lines) do
+    line_added = count(lines, :add)
+    line_removed = count(lines, :remove)
+
+    case ChangeHelper.normalize_diff_stat(Map.get(change, "diff_stat")) do
+      %{"added" => added, "removed" => removed} ->
+        %{added: max(added, line_added), removed: max(removed, line_removed)}
+
+      _ ->
+        %{added: line_added, removed: line_removed}
+    end
+  end
+
+  defp has_diff_stat?(entry) do
+    case entry |> ChangeHelper.change_from_entry() |> Map.get("diff_stat") do
+      %{"added" => added, "removed" => removed} -> added > 0 or removed > 0
+      _ -> false
     end
   end
 

@@ -263,6 +263,7 @@ defmodule Handbean.Agent.TranscriptPersistence.Entry do
       permission_source: Keyword.get(opts, :permission_source),
       delegated_approval: Keyword.get(opts, :delegated_approval),
       orphan_recovery?: Keyword.get(opts, :orphan_recovery?, false),
+      code_baseline: payload_value(payload, :code_baseline) || Keyword.get(opts, :code_baseline),
       error: payload_value(payload, :error),
       turns: payload_value(payload, :turns),
       duration_ms: payload_value(payload, :duration_ms)

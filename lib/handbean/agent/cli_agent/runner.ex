@@ -564,9 +564,12 @@ defmodule Handbean.Agent.CliAgent.Runner do
   end
 
   defp persist_and_broadcast_start(state) do
+    code_baseline =
+      Handbean.Git.collect_code_baseline(state.opts[:cwd] || state.opts[:working_directory])
+
     payload =
       lifecycle_payload(state)
-      |> Map.merge(%{model: state.opts[:model]})
+      |> Map.merge(%{model: state.opts[:model], code_baseline: code_baseline})
 
     with :ok <-
            TranscriptPersistence.handle_event(

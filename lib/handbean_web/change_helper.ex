@@ -25,6 +25,23 @@ defmodule HandbeanWeb.ChangeHelper do
   def normalize_diff_lines(_), do: nil
 
   @doc """
+  Normalizes a diff_stat map to string keys `"added"` and `"removed"` with
+  non-negative integer counts. Returns `nil` for invalid inputs.
+  """
+  def normalize_diff_stat(stat) when is_map(stat) do
+    added = value(stat, "added")
+    removed = value(stat, "removed")
+
+    if is_integer(added) and added >= 0 and is_integer(removed) and removed >= 0 do
+      %{"added" => added, "removed" => removed}
+    else
+      nil
+    end
+  end
+
+  def normalize_diff_stat(_), do: nil
+
+  @doc """
   Converts all atom keys in a map to string keys, recursively.
   Returns `%{}` for non-map inputs.
   """
@@ -92,6 +109,8 @@ defmodule HandbeanWeb.ChangeHelper do
     |> put_if_missing("file_path", value(entry, "file_path") || value(details, "file_path"))
     |> put_if_missing("diff_lines", value(entry, "diff_lines") || value(details, "diff_lines"))
     |> Map.update("diff_lines", nil, &normalize_diff_lines/1)
+    |> put_if_missing("diff_stat", value(entry, "diff_stat") || value(details, "diff_stat"))
+    |> Map.update("diff_stat", nil, &normalize_diff_stat/1)
     |> put_if_missing("reversible", value(entry, "reversible") || value(details, "reversible"))
     |> put_if_missing(
       "revert_status",

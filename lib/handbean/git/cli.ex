@@ -85,6 +85,21 @@ defmodule Handbean.Git.CLI do
   end
 
   @doc false
+  def status_snapshot(path, opts \\ []) when is_binary(path) do
+    timeout = Keyword.get(opts, :timeout, 1_500)
+
+    with {:ok, output} <-
+           git(
+             ["status", "--porcelain=v2", "--branch", "-z", "--untracked-files=normal"],
+             cwd: path,
+             env: ceiling_env(opts[:ceiling]),
+             timeout: timeout
+           ) do
+      {:ok, parse_status(output)}
+    end
+  end
+
+  @doc false
   def read_head_file(repo, path) when is_binary(path), do: read_revision_file(repo, "HEAD", path)
 
   @doc false
@@ -617,10 +632,16 @@ defmodule Handbean.Git.CLI do
 
   defp parse_status(output) do
     records = nul_records(output)
-    %{branch: parse_branch(records), entries: parse_status_entries(records, []) |> Enum.reverse()}
+    {branch, head_oid} = parse_branch_and_oid(records)
+
+    %{
+      branch: branch,
+      head_oid: head_oid,
+      entries: parse_status_entries(records, []) |> Enum.reverse()
+    }
   end
 
-  defp parse_branch(records) do
+  defp parse_branch_and_oid(records) do
     oid =
       Enum.find_value(records, fn record ->
         if String.starts_with?(record, "# branch.oid "),
@@ -633,12 +654,22 @@ defmodule Handbean.Git.CLI do
           do: String.trim_leading(record, "# branch.head ")
       end)
 
-    cond do
-      oid == "(initial)" -> :unborn
-      head == "(detached)" -> :detached
-      is_binary(head) and head != "" -> head
-      true -> :unborn
-    end
+    branch =
+      cond do
+        oid == "(initial)" -> :unborn
+        head == "(detached)" -> :detached
+        is_binary(head) and head != "" -> head
+        true -> :unborn
+      end
+
+    head_oid =
+      if is_binary(oid) and oid != "" and oid != "(initial)" do
+        oid
+      else
+        nil
+      end
+
+    {branch, head_oid}
   end
 
   defp parse_status_entries([], acc), do: acc

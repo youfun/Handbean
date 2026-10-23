@@ -82,10 +82,12 @@ defmodule Handbean.Conversations.Trajectory do
       }
     }
 
+    runs = project_runs(snapshot.runs, detail_level, run_id)
+
     {base, _collection_reserve} =
       bound_header_collections(
         base,
-        snapshot.runs,
+        runs,
         snapshot.turns,
         snapshot.runs_truncated?,
         snapshot.turns_truncated?,
@@ -207,6 +209,8 @@ defmodule Handbean.Conversations.Trajectory do
         :event,
         :status,
         :tool_name,
+        :diff_stat,
+        :change_count,
         :started_at,
         :completed_at,
         :duration_ms,
@@ -225,6 +229,63 @@ defmodule Handbean.Conversations.Trajectory do
     end
   end
 
+  defp project_runs(runs, detail_level, run_id) when is_list(runs) do
+    include_dirty_files? = detail_level == "full" or is_binary(run_id)
+
+    {projected, _prev_sha} =
+      Enum.map_reduce(runs, nil, fn run, prev_sha ->
+        case Map.get(run, :code_baseline) || Map.get(run, "code_baseline") do
+          baseline when is_map(baseline) ->
+            {projected_baseline, next_sha} =
+              project_code_baseline(baseline, prev_sha, include_dirty_files?)
+
+            {
+              run
+              |> Map.delete("code_baseline")
+              |> Map.put(:code_baseline, projected_baseline)
+              |> drop_nil_values(),
+              next_sha
+            }
+
+          _ ->
+            {drop_nil_values(run), prev_sha}
+        end
+      end)
+
+    projected
+  end
+
+  defp project_runs(_runs, _detail_level, _run_id), do: []
+
+  defp project_code_baseline(baseline, prev_sha, include_dirty_files?) do
+    sanitized = sanitize(baseline)
+    curr_sha = Map.get(sanitized, "head_sha") || Map.get(sanitized, :head_sha)
+
+    with_drift =
+      cond do
+        is_binary(curr_sha) and is_binary(prev_sha) and curr_sha != prev_sha ->
+          sanitized
+          |> Map.put("baseline_changed", true)
+          |> Map.put("previous_head_sha", prev_sha)
+
+        is_binary(curr_sha) ->
+          Map.put(sanitized, "baseline_changed", false)
+
+        true ->
+          sanitized
+      end
+
+    projected =
+      if include_dirty_files? do
+        with_drift
+      else
+        Map.drop(with_drift, ["dirty_files", :dirty_files])
+      end
+
+    next_sha = if is_binary(curr_sha), do: curr_sha, else: prev_sha
+    {projected, next_sha}
+  end
+
   defp project_record(entry, detail_level) do
     kind = record_kind(entry)
     status = record_status(entry, kind)
@@ -240,6 +301,8 @@ defmodule Handbean.Conversations.Trajectory do
       event: record_event(kind, status),
       status: status,
       summary: record_summary(entry, kind),
+      diff_stat: record_diff_stat(entry),
+      change_count: record_change_count(entry),
       created_at: entry["created_at"],
       updated_at: entry["updated_at"]
     }
@@ -265,6 +328,71 @@ defmodule Handbean.Conversations.Trajectory do
     end
     |> drop_nil_values()
   end
+
+  defp record_diff_stat(entry) when is_map(entry) do
+    details = entry["details"] || %{}
+    direct = entry["diff_stat"] || Map.get(details, "diff_stat") || Map.get(details, :diff_stat)
+
+    case normalize_diff_stat(direct) do
+      %{} = stat ->
+        stat
+
+      nil ->
+        changes = Map.get(details, "changes") || Map.get(details, :changes)
+
+        if is_list(changes) and changes != [] do
+          aggregate_changes_diff_stat(changes)
+        else
+          nil
+        end
+    end
+  end
+
+  defp record_diff_stat(_entry), do: nil
+
+  defp normalize_diff_stat(stat) when is_map(stat) do
+    added = Map.get(stat, "added", Map.get(stat, :added))
+    removed = Map.get(stat, "removed", Map.get(stat, :removed))
+
+    if is_integer(added) and added >= 0 and is_integer(removed) and removed >= 0 do
+      %{added: added, removed: removed}
+    else
+      nil
+    end
+  end
+
+  defp normalize_diff_stat(_stat), do: nil
+
+  defp aggregate_changes_diff_stat(changes) do
+    {added, removed, matched?} =
+      Enum.reduce(changes, {0, 0, false}, fn change, {add_acc, rem_acc, seen?} ->
+        stat =
+          if is_map(change) do
+            normalize_diff_stat(Map.get(change, "diff_stat") || Map.get(change, :diff_stat))
+          end
+
+        case stat do
+          %{added: a, removed: r} -> {add_acc + a, rem_acc + r, true}
+          _ -> {add_acc, rem_acc, seen?}
+        end
+      end)
+
+    if matched?, do: %{added: added, removed: removed}, else: nil
+  end
+
+  defp record_change_count(entry) when is_map(entry) do
+    details = entry["details"] || %{}
+    count = Map.get(details, "change_count") || Map.get(details, :change_count)
+    changes = Map.get(details, "changes") || Map.get(details, :changes)
+
+    cond do
+      is_integer(count) and count > 0 -> count
+      is_list(changes) and changes != [] -> length(changes)
+      true -> nil
+    end
+  end
+
+  defp record_change_count(_entry), do: nil
 
   defp put_full_fields(base, entry, "tool") do
     base

@@ -213,11 +213,18 @@ defmodule Handbean.Agent.Turn do
       # session_end middleware
       mw_run(state, :session_end)
     else
+      code_baseline =
+        Handbean.Git.collect_code_baseline(
+          state.config.working_directory || state.config.workspace_path ||
+            Keyword.get(opts, :working_directory) || Keyword.get(opts, :cwd)
+        )
+
       Events.emit(opts, :run_start, %{
         model: state.config.model,
         reasoning_level: state.config.reasoning_level,
         config_revision: state.config_revision,
-        loop_owner: :handbean
+        loop_owner: :handbean,
+        code_baseline: code_baseline
       })
 
       run_start = System.monotonic_time(:millisecond)

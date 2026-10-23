@@ -382,6 +382,23 @@ defmodule HandbeanWeb.WorkspaceLive.AgentEventsFilesAndRunsTest do
       assert has_element?(view, "#workspace-panel #terminal-panel")
     end
 
+    test "mobile tabs open each workspace view and return to the conversation", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/")
+
+      for {tab, content} <- [
+            {"changes", "#workspace-changes"},
+            {"files", "#workspace-files"},
+            {"terminal", "#terminal-panel"}
+          ] do
+        view |> element("#mobile-tab-#{tab}") |> render_click()
+        assert has_element?(view, "#workspace-panel.mobile-panel-open #{content}")
+        assert has_element?(view, "#mobile-tab-#{tab}[aria-pressed=true]")
+        view |> element("#mobile-tab-agent") |> render_click()
+        refute has_element?(view, "#workspace-panel.mobile-panel-open")
+        assert has_element?(view, "#mobile-tab-agent[aria-pressed=true]")
+      end
+    end
+
     test "duplicate file_path does not add duplicate editor file", %{conn: conn} do
       ws = Handbean.Workspace.ensure_root!()
       file_path = Path.join(ws, "dup.ex")

@@ -52,6 +52,98 @@ defmodule Handbean.Git do
     end
   end
 
+  @max_baseline_dirty_files 50
+
+  @doc """
+  Collects a lightweight, bounded Git worktree baseline when `working_directory`
+  is the repository root. Parent repositories are deliberately not discovered so
+  a nested workspace cannot reveal dirty paths outside its authorization boundary.
+
+  `dirty_count` counts Git status paths; an untracked directory may therefore count
+  as one path. Returns a string-keyed map suitable for persisting on
+  `conversation_runs.code_baseline`, or `nil` when `working_directory` is missing,
+  is not itself a Git worktree root, or Git times out.
+  """
+  @spec collect_code_baseline(Path.t() | nil, keyword()) :: map() | nil
+  def collect_code_baseline(working_directory, opts \\ [])
+
+  def collect_code_baseline(working_directory, opts)
+      when is_binary(working_directory) and working_directory != "" do
+    workspace = Path.expand(working_directory)
+
+    if File.dir?(workspace) do
+      backend = Keyword.get(opts, :backend, backend())
+      ceiling = Path.dirname(workspace)
+      timeout = Keyword.get(opts, :timeout, 1_500)
+
+      with {:ok, status} <- baseline_status(backend, workspace, ceiling, timeout) do
+        build_code_baseline(status)
+      else
+        _ -> nil
+      end
+    else
+      nil
+    end
+  rescue
+    _ -> nil
+  catch
+    _, _ -> nil
+  end
+
+  def collect_code_baseline(_working_directory, _opts), do: nil
+
+  defp baseline_status(CLI, workspace, ceiling, timeout) do
+    with :ok <- CLI.available() do
+      CLI.status_snapshot(workspace, ceiling: ceiling, timeout: timeout)
+    end
+  end
+
+  defp baseline_status(backend, workspace, ceiling, _timeout) do
+    with :ok <- backend.available(),
+         {:ok, repo} <- backend.open(workspace, ceiling: ceiling),
+         {:ok, status} <- backend.status(repo) do
+      head_oid =
+        case Map.get(status, :head_oid) do
+          oid when is_binary(oid) and oid != "" ->
+            oid
+
+          _ ->
+            case backend.log(repo, limit: 1) do
+              {:ok, [%{oid: oid} | _]} when is_binary(oid) and oid != "" -> oid
+              _ -> nil
+            end
+        end
+
+      {:ok, Map.put(status, :head_oid, head_oid)}
+    end
+  end
+
+  defp build_code_baseline(status) when is_map(status) do
+    entries = Map.get(status, :entries) || []
+
+    dirty_paths =
+      entries
+      |> Enum.reject(fn entry ->
+        Map.get(entry, :staged) == :ignored or Map.get(entry, :unstaged) == :ignored
+      end)
+      |> Enum.map(&Map.get(&1, :path))
+      |> Enum.filter(&(is_binary(&1) and &1 != ""))
+      |> Enum.uniq()
+
+    dirty_count = length(dirty_paths)
+    head_oid = Map.get(status, :head_oid)
+
+    %{
+      "head_sha" => if(is_binary(head_oid) and head_oid != "", do: head_oid, else: nil),
+      "branch" => format_branch(Map.get(status, :branch)),
+      "dirty_files" => Enum.take(dirty_paths, @max_baseline_dirty_files),
+      "dirty_count" => dirty_count,
+      "dirty_files_truncated" => dirty_count > @max_baseline_dirty_files,
+      "collected_at" =>
+        DateTime.utc_now() |> DateTime.truncate(:microsecond) |> DateTime.to_iso8601()
+    }
+  end
+
   @spec perform(action(), Path.t(), Path.t(), keyword()) ::
           {:ok, String.t(), map()} | {:error, String.t()} | {:error, String.t(), map()}
   def perform(action, workspace, path, opts \\ []) do

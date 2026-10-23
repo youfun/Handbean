@@ -294,9 +294,17 @@ defmodule Handbean.Agent.CliAgent.Run do
     else
       Binding.record_run_start(conversation_id, opts[:backend], opts[:run_id], opts)
 
+      payload =
+        opts
+        |> lifecycle_payload()
+        |> Map.put(
+          :code_baseline,
+          Handbean.Git.collect_code_baseline(opts[:cwd] || opts[:working_directory])
+        )
+
       TranscriptPersistence.handle_event(
         conversation_id,
-        {:run_start, lifecycle_payload(opts)},
+        {:run_start, payload},
         opts
       )
     end

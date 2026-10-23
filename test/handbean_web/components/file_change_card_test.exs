@@ -429,6 +429,31 @@ defmodule HandbeanWeb.FileChangeCardTest do
       assert [collapsed] = FileChangeCard.changes(timeline)
       refute collapsed["id"] in ["w1", "e1"] or timeline == [collapsed]
     end
+
+    test "card and line_counts preserve pre-truncation diff_stat when diff_lines are truncated" do
+      truncated_lines = Enum.map(1..80, &%{"type" => "ins", "text" => "line #{&1}"})
+
+      entry = %{
+        "id" => "truncated-edit",
+        "content_type" => "tool",
+        "tool_name" => "edit",
+        "tool_status" => "done",
+        "file_path" => "lib/truncated.ex",
+        "details" => %{
+          "file_path" => "lib/truncated.ex",
+          "diff_lines" => truncated_lines,
+          "diff_stat" => %{"added" => 140, "removed" => 12},
+          "reversible" => false,
+          "revert_status" => "unavailable"
+        }
+      }
+
+      assert FileChangeCard.line_counts(entry) == %{added: 140, removed: 12}
+
+      html = Phoenix.LiveViewTest.render_component(&FileChangeCard.card/1, entry: entry)
+      assert html =~ "+140"
+      assert html =~ "−12"
+    end
   end
 
   defp write_entry(id, path, before_content, after_content) do

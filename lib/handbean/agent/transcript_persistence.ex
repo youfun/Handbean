@@ -90,6 +90,19 @@ defmodule Handbean.Agent.TranscriptPersistence do
 
   def handle_event(conversation_id, {:run_start, payload}, opts)
       when is_binary(conversation_id) do
+    payload =
+      if is_map(payload) and
+           not (Map.has_key?(payload, :code_baseline) or Map.has_key?(payload, "code_baseline")) do
+        baseline =
+          Handbean.Git.collect_code_baseline(
+            Keyword.get(opts, :working_directory) || Keyword.get(opts, :cwd)
+          )
+
+        Map.put(payload, :code_baseline, baseline)
+      else
+        payload
+      end
+
     with :ok <-
            record_lifecycle(:run_start, conversation_id, Entry.lifecycle_attrs(payload, opts)),
          :ok <- consume_inbound(conversation_id, opts) do

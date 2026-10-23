@@ -23,6 +23,7 @@ defmodule Handbean.Agent.Tool.ResultContract do
     :cursor,
     :cleanup_error,
     :diff_lines,
+    :diff_stat,
     :change_id,
     :change_snapshot_ref,
     :changes,
@@ -162,12 +163,28 @@ defmodule Handbean.Agent.Tool.ResultContract do
 
   defp bound_values(details) do
     bounded =
-      Map.new(details, fn
-        {:diff_lines, lines} -> {:diff_lines, bound_diff(lines)}
-        {:changes, changes} -> {:changes, bound_changes(changes)}
-        {:job, job} when is_map(job) -> {:job, bound_job(job)}
-        {key, value} when is_binary(value) -> {key, bound_text(value, @max_detail_string)}
-        {key, value} -> {key, value}
+      details
+      |> Enum.reduce(%{}, fn
+        {:diff_lines, lines}, acc ->
+          Map.put(acc, :diff_lines, bound_diff(lines))
+
+        {:diff_stat, stat}, acc ->
+          case bound_diff_stat(stat) do
+            nil -> acc
+            bounded_stat -> Map.put(acc, :diff_stat, bounded_stat)
+          end
+
+        {:changes, changes}, acc ->
+          Map.put(acc, :changes, bound_changes(changes))
+
+        {:job, job}, acc when is_map(job) ->
+          Map.put(acc, :job, bound_job(job))
+
+        {key, value}, acc when is_binary(value) ->
+          Map.put(acc, key, bound_text(value, @max_detail_string))
+
+        {key, value}, acc ->
+          Map.put(acc, key, value)
       end)
 
     case Map.get(details, :changes) do
@@ -180,6 +197,19 @@ defmodule Handbean.Agent.Tool.ResultContract do
         bounded
     end
   end
+
+  defp bound_diff_stat(stat) when is_map(stat) do
+    added = Map.get(stat, :added, Map.get(stat, "added", 0))
+    removed = Map.get(stat, :removed, Map.get(stat, "removed", 0))
+
+    if is_integer(added) and added >= 0 and is_integer(removed) and removed >= 0 do
+      %{added: added, removed: removed}
+    else
+      nil
+    end
+  end
+
+  defp bound_diff_stat(_stat), do: nil
 
   defp bound_diff(lines) when is_list(lines) do
     lines
@@ -203,28 +233,41 @@ defmodule Handbean.Agent.Tool.ResultContract do
     |> Enum.take(32)
     |> Enum.map(fn
       change when is_map(change) ->
-        Map.take(change, [
-          :file_path,
-          :change_snapshot_ref,
-          :change_type,
-          :existed_before,
-          :existed_after,
-          :before_sha256,
-          :after_sha256,
-          :reversible,
-          :revert_status,
-          :revert_reason,
-          "file_path",
-          "change_snapshot_ref",
-          "change_type",
-          "existed_before",
-          "existed_after",
-          "before_sha256",
-          "after_sha256",
-          "reversible",
-          "revert_status",
-          "revert_reason"
-        ])
+        taken =
+          Map.take(change, [
+            :file_path,
+            :change_snapshot_ref,
+            :change_type,
+            :existed_before,
+            :existed_after,
+            :before_sha256,
+            :after_sha256,
+            :diff_stat,
+            :reversible,
+            :revert_status,
+            :revert_reason,
+            "file_path",
+            "change_snapshot_ref",
+            "change_type",
+            "existed_before",
+            "existed_after",
+            "before_sha256",
+            "after_sha256",
+            "diff_stat",
+            "reversible",
+            "revert_status",
+            "revert_reason"
+          ])
+
+        case bound_diff_stat(Map.get(taken, :diff_stat, Map.get(taken, "diff_stat"))) do
+          nil ->
+            Map.drop(taken, [:diff_stat, "diff_stat"])
+
+          bounded_stat ->
+            taken
+            |> Map.delete("diff_stat")
+            |> Map.put(:diff_stat, bounded_stat)
+        end
 
       _other ->
         %{}
@@ -306,6 +349,7 @@ defmodule Handbean.Agent.Tool.ResultContract do
         :file_path,
         :change_snapshot_ref,
         :change_count,
+        :diff_stat,
         :partial,
         :artifact_ref,
         :artifact_unavailable,

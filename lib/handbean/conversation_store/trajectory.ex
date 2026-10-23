@@ -98,6 +98,8 @@ defmodule Handbean.ConversationStore.Trajectory do
   def record_run_start(conversation_id, attrs)
       when is_binary(conversation_id) and is_map(attrs) do
     with {:ok, run_id} <- required_string(value(attrs, :run_id)) do
+      code_baseline = normalize_code_baseline(value(attrs, :code_baseline))
+
       result =
         Repo.transaction(
           fn ->
@@ -127,6 +129,7 @@ defmodule Handbean.ConversationStore.Trajectory do
               error: nil,
               turn_count: 0,
               duration_ms: nil,
+              code_baseline: code_baseline,
               capture_version: @capture_version,
               started_at: timestamp,
               completed_at: nil,
@@ -136,11 +139,19 @@ defmodule Handbean.ConversationStore.Trajectory do
 
             conflict =
               row
-              |> Map.take([:loop_owner, :backend, :model, :capture_version, :updated_at])
-              |> Map.to_list()
+              |> Map.take([
+                :loop_owner,
+                :backend,
+                :model,
+                :capture_version,
+                :updated_at
+              ])
+              |> Enum.to_list()
 
-            case insert(ConversationRun, row, conflict, [:conversation_id, :run_id]) do
-              :ok -> :ok
+            with :ok <- insert(ConversationRun, row, conflict, [:conversation_id, :run_id]),
+                 :ok <- fill_code_baseline(conversation_id, run_id, code_baseline) do
+              :ok
+            else
               {:error, reason} -> Repo.rollback(reason)
             end
           end,
@@ -162,6 +173,7 @@ defmodule Handbean.ConversationStore.Trajectory do
       timestamp = now()
       status = optional_string(value(attrs, :status)) || "completed"
       completed_at = if status in ["running", "interrupted"], do: nil, else: timestamp
+      code_baseline = normalize_code_baseline(value(attrs, :code_baseline))
 
       duration_ms =
         non_negative_integer(value(attrs, :duration_ms), nil) ||
@@ -178,6 +190,7 @@ defmodule Handbean.ConversationStore.Trajectory do
         error: bounded_error(value(attrs, :error)),
         turn_count: non_negative_integer(value(attrs, :turns), 0),
         duration_ms: duration_ms,
+        code_baseline: code_baseline,
         capture_version: @capture_version,
         started_at: nil,
         completed_at: completed_at,
@@ -211,6 +224,7 @@ defmodule Handbean.ConversationStore.Trajectory do
                    value(attrs, :orphan_recovery?) == true
                  ),
                :ok <- insert(ConversationRun, row, conflict, [:conversation_id, :run_id]),
+               :ok <- fill_code_baseline(conversation_id, run_id, code_baseline),
                :ok <- settle_open_turns(conversation_id, run_id, status, timestamp) do
             Repo.update_all(
               from(conversation in Conversation, where: conversation.id == ^conversation_id),
@@ -552,6 +566,7 @@ defmodule Handbean.ConversationStore.Trajectory do
         current_permission_revision: nil,
         permission_changed_at: nil,
         permission_changes: [],
+        code_baseline: nil,
         fidelity: "partial"
       }
     end)
@@ -775,6 +790,7 @@ defmodule Handbean.ConversationStore.Trajectory do
       error: Handbean.Log.Redactor.redact(run.error),
       turn_count: run.turn_count,
       duration_ms: run.duration_ms,
+      code_baseline: run.code_baseline,
       started_at: iso8601(run.started_at),
       completed_at: iso8601(run.completed_at),
       capture_version: run.capture_version
@@ -848,6 +864,21 @@ defmodule Handbean.ConversationStore.Trajectory do
     :ok
   end
 
+  defp fill_code_baseline(_conversation_id, _run_id, nil), do: :ok
+
+  defp fill_code_baseline(conversation_id, run_id, code_baseline) do
+    Repo.update_all(
+      from(run in ConversationRun,
+        where:
+          run.conversation_id == ^conversation_id and run.run_id == ^run_id and
+            is_nil(run.code_baseline)
+      ),
+      set: [code_baseline: code_baseline]
+    )
+
+    :ok
+  end
+
   defp insert(schema, row, conflict, target) do
     case Repo.insert_all(schema, [row], on_conflict: [set: conflict], conflict_target: target) do
       {count, _} when count in [0, 1] -> :ok
@@ -876,6 +907,47 @@ defmodule Handbean.ConversationStore.Trajectory do
 
   defp non_negative_integer(value, _default) when is_integer(value) and value >= 0, do: value
   defp non_negative_integer(_value, default), do: default
+
+  defp normalize_code_baseline(baseline) when is_map(baseline) do
+    head_sha = optional_string(value(baseline, :head_sha))
+    branch = optional_string(value(baseline, :branch))
+    raw_files = value(baseline, :dirty_files)
+
+    dirty_files =
+      if is_list(raw_files) do
+        raw_files
+        |> Enum.filter(&(is_binary(&1) and &1 != ""))
+        |> Enum.take(50)
+      else
+        []
+      end
+
+    dirty_count = non_negative_integer(value(baseline, :dirty_count), length(dirty_files))
+
+    truncated =
+      case value(baseline, :dirty_files_truncated) do
+        flag when is_boolean(flag) -> flag
+        _ -> dirty_count > length(dirty_files)
+      end
+
+    collected_at =
+      case value(baseline, :collected_at) do
+        %DateTime{} = dt -> iso8601(dt)
+        str when is_binary(str) and str != "" -> str
+        _ -> iso8601(now())
+      end
+
+    %{
+      "head_sha" => head_sha,
+      "branch" => branch,
+      "dirty_files" => dirty_files,
+      "dirty_count" => dirty_count,
+      "dirty_files_truncated" => truncated,
+      "collected_at" => collected_at
+    }
+  end
+
+  defp normalize_code_baseline(_), do: nil
 
   defp bounded_error(nil), do: nil
   defp bounded_error(error) when is_binary(error), do: String.slice(error, 0, 16_000)

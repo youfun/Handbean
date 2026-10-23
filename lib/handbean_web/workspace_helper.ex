@@ -492,8 +492,11 @@ defmodule HandbeanWeb.WorkspaceHelper do
       |> Enum.uniq()
       |> length()
 
-    lines = Enum.flat_map(changes, &(&1["diff_lines"] || []))
-    %{added: added, removed: removed} = HandbeanWeb.FileChangeCard.line_counts(lines)
+    %{added: added, removed: removed} =
+      Enum.reduce(changes, %{added: 0, removed: 0}, fn change, acc ->
+        counts = HandbeanWeb.FileChangeCard.line_counts(change)
+        %{added: acc.added + counts.added, removed: acc.removed + counts.removed}
+      end)
 
     summary =
       if files > 0 do

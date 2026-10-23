@@ -163,11 +163,21 @@ defmodule Handbean.ChangeSnapshot do
       before_content: if(reversible, do: before_content, else: nil),
       after_content: if(reversible, do: after_content, else: nil),
       diff_lines: diff_lines,
+      diff_stat: diff_stat(diff_lines),
       reversible: reversible,
       revert_status: if(reversible, do: "available", else: "unavailable"),
       revert_reason: if(reversible, do: nil, else: "too_large")
     }
   end
+
+  defp diff_stat(lines) when is_list(lines) do
+    %{
+      added: Enum.count(lines, &(&1["type"] == "ins")),
+      removed: Enum.count(lines, &(&1["type"] == "del"))
+    }
+  end
+
+  defp diff_stat(_lines), do: %{added: 0, removed: 0}
 
   defp snapshot_metadata_keys do
     [
@@ -178,6 +188,7 @@ defmodule Handbean.ChangeSnapshot do
       :existed_after,
       :before_sha256,
       :after_sha256,
+      :diff_stat,
       :reversible,
       :revert_status,
       :revert_reason

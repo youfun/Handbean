@@ -691,6 +691,52 @@ defmodule Handbean.Tool.Builtin.GitTest do
     refute local =~ "Handbean Agent"
   end
 
+  test "collect_code_baseline captures head_sha, branch, and bounded dirty files", %{
+    work: work,
+    ctx: ctx
+  } do
+    assert Handbean.Git.collect_code_baseline(nil) == nil
+    assert Handbean.Git.collect_code_baseline(Path.join(work, "nonexistent")) == nil
+    assert Handbean.Git.collect_code_baseline(work) == nil
+
+    assert {:ok, _, _} = Git.execute(%{"action" => "init"}, ctx)
+
+    unborn = Handbean.Git.collect_code_baseline(work)
+    assert unborn["head_sha"] == nil
+    assert unborn["branch"] == "(unborn)"
+    assert unborn["dirty_files"] == []
+    assert unborn["dirty_count"] == 0
+    assert unborn["dirty_files_truncated"] == false
+    assert is_binary(unborn["collected_at"])
+
+    File.write!(Path.join(work, "a.txt"), "one\n")
+    assert {:ok, _, _} = Git.execute(%{"action" => "add"}, ctx)
+    assert {:ok, _, %{oid: oid}} = Git.execute(%{"action" => "commit", "message" => "init"}, ctx)
+
+    clean = Handbean.Git.collect_code_baseline(work)
+    assert clean["head_sha"] == oid
+    assert clean["branch"] == "main"
+    assert clean["dirty_files"] == []
+    assert clean["dirty_count"] == 0
+    assert clean["dirty_files_truncated"] == false
+
+    nested_workspace = Path.join(work, "nested-workspace")
+    File.mkdir_p!(nested_workspace)
+    assert Handbean.Git.collect_code_baseline(nested_workspace) == nil
+
+    for idx <- 1..55 do
+      name = "file_#{String.pad_leading(Integer.to_string(idx), 2, "0")}.txt"
+      File.write!(Path.join(work, name), "dirty #{idx}\n")
+    end
+
+    dirty = Handbean.Git.collect_code_baseline(work)
+    assert dirty["head_sha"] == oid
+    assert dirty["branch"] == "main"
+    assert dirty["dirty_count"] == 55
+    assert length(dirty["dirty_files"]) == 50
+    assert dirty["dirty_files_truncated"] == true
+  end
+
   defp fixture_commit(git, repo, message) do
     env = [{"GIT_TERMINAL_PROMPT", "0"}]
 
