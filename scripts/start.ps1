@@ -101,10 +101,15 @@ New-Item -ItemType Directory -Force -Path $data | Out-Null
 if (-not $env:DATABASE_PATH) { $env:DATABASE_PATH = Join-Path $data "handbean.db" }
 if (-not $env:HANDBEAN_WORKSPACES_FILE) { $env:HANDBEAN_WORKSPACES_FILE = Join-Path $data "workspaces.json" }
 Add-ExperimentalToolchain $data $releaseRoot
+$secretFile = Join-Path $data "secret_key_base"
+if (-not $env:SECRET_KEY_BASE -and (Test-Path $secretFile)) {
+  $env:SECRET_KEY_BASE = (Get-Content $secretFile -Raw).Trim()
+}
 if (-not $env:SECRET_KEY_BASE) {
   $bytes = New-Object byte[] 48
   [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
   $env:SECRET_KEY_BASE = [Convert]::ToBase64String($bytes)
+  Set-Content -Path $secretFile -Value "$($env:SECRET_KEY_BASE)`n" -NoNewline
 }
 
 if ($env:HANDBEAN_PUBLIC_BIND -eq "1") {

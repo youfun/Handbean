@@ -7,13 +7,15 @@ set -euo pipefail
 umask 077
 
 usage() {
-  echo "Usage: bash start.sh [--lan HOST]"
-  echo "Default: local access only. --lan enables password-protected HTTP on all IPv4 interfaces."
+  echo "Usage: bash start.sh [--lan HOST | -LanHost HOST]"
+  echo "Default: local access only. --lan / -LanHost enables password-protected HTTP on all IPv4 interfaces."
   echo "HOST must be the hostname or IPv4 address used by other devices, without scheme or port."
 }
 
-case "${1:-}" in
-  --lan)
+# Accept --lan and -LanHost in any letter case, matching the Windows start.bat flag.
+lan_option="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
+case "$lan_option" in
+  --lan|-lanhost)
     if [[ $# -ne 2 || -z "$2" || "$2" == -* || "$2" == *[/:[:space:]]* ]]; then
       usage >&2
       exit 2
@@ -67,8 +69,17 @@ if [[ "${HANDBEAN_PUBLIC_BIND:-0}" == 1 && -z "${HANDBEAN_ACCESS_PASSWORD:-}" ]]
   fi
 fi
 
+mkdir -p "$HOME/.handbean"
+
+secret_file="$HOME/.handbean/secret_key_base"
+if [[ -z "${SECRET_KEY_BASE:-}" && -s "$secret_file" ]]; then
+  IFS= read -r SECRET_KEY_BASE < "$secret_file" || true
+  SECRET_KEY_BASE="${SECRET_KEY_BASE//$'\r'/}"
+fi
 if [[ -z "${SECRET_KEY_BASE:-}" ]]; then
   SECRET_KEY_BASE="$(openssl rand -base64 48)"
+  printf '%s\n' "$SECRET_KEY_BASE" > "$secret_file"
+  chmod 600 "$secret_file"
 fi
 export SECRET_KEY_BASE
 
@@ -80,8 +91,6 @@ if [[ -f .handbean-host ]]; then
     *) echo "Unsupported packaged host declaration: $packaged_host" >&2; exit 2 ;;
   esac
 fi
-
-mkdir -p "$HOME/.handbean"
 
 echo "🚀 Handbean 启动中..."
 if [[ "${HANDBEAN_PUBLIC_BIND:-0}" == 1 ]]; then

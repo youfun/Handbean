@@ -86,6 +86,21 @@ defmodule Handbean.WebUILauncherTest do
     end
 
     @tag launcher: {command, prefix, script, lan_option}
+    test "#{name}: persists SECRET_KEY_BASE across restarts when not provided in env", context do
+      launcher = fixture(context.root, elem(context.launcher, 2), :package)
+      secret_file = Path.join([context.root, "home", ".handbean", "secret_key_base"])
+
+      assert {first_output, 0} = run(context, launcher, [], %{"SECRET_KEY_BASE" => nil})
+      assert File.regular?(secret_file)
+      secret = secret_file |> File.read!() |> String.trim()
+      assert byte_size(secret) >= 64
+      assert first_output =~ "secret=#{secret}"
+
+      assert {second_output, 0} = run(context, launcher, [], %{"SECRET_KEY_BASE" => nil})
+      assert second_output =~ "secret=#{secret}"
+    end
+
+    @tag launcher: {command, prefix, script, lan_option}
     test "#{name}: LAN startup fails closed without a password or with an invalid host",
          context do
       launcher = fixture(context.root, elem(context.launcher, 2), :package)
@@ -183,7 +198,8 @@ defmodule Handbean.WebUILauncherTest do
         if not defined HANDBEAN_WORKSPACES_FILE set HANDBEAN_WORKSPACES_FILE=unset
         if not defined DATABASE_PATH set DATABASE_PATH=unset
         if not defined HOME set HOME=unset
-        echo LAUNCH %1 host=%PHX_HOST% port=%PORT% public=%HANDBEAN_PUBLIC_BIND% http=%HANDBEAN_ALLOW_HTTP% mode=%HANDBEAN_ACCESS_MODE% password_ok=%password_ok% layout=#{layout} workspaces=%HANDBEAN_WORKSPACES_FILE% database=%DATABASE_PATH% home=%HOME%
+        if not defined SECRET_KEY_BASE set SECRET_KEY_BASE=unset
+        echo LAUNCH %1 host=%PHX_HOST% port=%PORT% public=%HANDBEAN_PUBLIC_BIND% http=%HANDBEAN_ALLOW_HTTP% mode=%HANDBEAN_ACCESS_MODE% password_ok=%password_ok% layout=#{layout} workspaces=%HANDBEAN_WORKSPACES_FILE% database=%DATABASE_PATH% home=%HOME% secret=%SECRET_KEY_BASE%
         if defined LAUNCH_TEST_EXIT exit /b %LAUNCH_TEST_EXIT%
         exit /b 0
         """
@@ -192,10 +208,10 @@ defmodule Handbean.WebUILauncherTest do
         #!/usr/bin/env bash
         password_ok=no
         if [[ "${HANDBEAN_ACCESS_PASSWORD:-}" == launcher-test-secret ]]; then password_ok=yes; fi
-        printf 'LAUNCH %s host=%s port=%s public=%s http=%s mode=%s password_ok=%s layout=#{layout} workspaces=%s database=%s home=%s\n' \
+        printf 'LAUNCH %s host=%s port=%s public=%s http=%s mode=%s password_ok=%s layout=#{layout} workspaces=%s database=%s home=%s secret=%s\n' \
           "$1" "$PHX_HOST" "$PORT" "${HANDBEAN_PUBLIC_BIND:-unset}" \
           "${HANDBEAN_ALLOW_HTTP:-unset}" "${HANDBEAN_ACCESS_MODE:-unset}" "$password_ok" \
-          "${HANDBEAN_WORKSPACES_FILE:-unset}" "${DATABASE_PATH:-unset}" "${HOME:-unset}"
+          "${HANDBEAN_WORKSPACES_FILE:-unset}" "${DATABASE_PATH:-unset}" "${HOME:-unset}" "${SECRET_KEY_BASE:-unset}"
         exit "${LAUNCH_TEST_EXIT:-0}"
         """
       end
