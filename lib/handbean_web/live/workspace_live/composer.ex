@@ -73,7 +73,7 @@ defmodule HandbeanWeb.WorkspaceLive.Composer do
     do: assign(socket, :workspace_command_intent, nil)
 
   def workspace_command_operation(socket, command, client_operation_id \\ nil)
-      when is_binary(command) do
+      when is_binary(command) or is_tuple(command) do
     conversation_id = socket.assigns[:current_conversation_id]
     current = socket.assigns[:workspace_command_intent]
 

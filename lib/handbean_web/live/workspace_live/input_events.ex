@@ -85,7 +85,15 @@ defmodule HandbeanWeb.WorkspaceLive.InputEvents do
   end
 
   def handle("update_input", %{"value" => value}, socket) do
-    suggestions = Skills.suggestions(value, socket.assigns.available_skills)
+    suggestions =
+      if String.starts_with?(value, "/ext:") and socket.assigns.chat_scope != :free do
+        socket
+        |> ConversationState.current_checkout_path()
+        |> Handbean.WorkspaceCommand.list_commands()
+        |> Enum.filter(&String.starts_with?(&1.name, value))
+      else
+        Skills.suggestions(value, socket.assigns.available_skills)
+      end
 
     {:noreply,
      socket
@@ -116,7 +124,12 @@ defmodule HandbeanWeb.WorkspaceLive.InputEvents do
   end
 
   def handle("select_skill_suggestion", %{"name" => skill_name}, socket) do
-    new_value = Skills.select(socket.assigns.input_value, skill_name)
+    new_value =
+      if String.starts_with?(skill_name, "/ext:") do
+        skill_name <> " "
+      else
+        Skills.select(socket.assigns.input_value, skill_name)
+      end
 
     {:noreply,
      socket

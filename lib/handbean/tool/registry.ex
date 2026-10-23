@@ -46,6 +46,16 @@ defmodule Handbean.Tool.Registry do
     GenServer.call(__MODULE__, {:replace_owner, owner, tool_mods})
   end
 
+  @doc "Return the modules currently registered for one owner."
+  @spec owner_modules(term()) :: [module()]
+  def owner_modules(owner) do
+    snapshot().tools
+    |> Map.values()
+    |> Enum.filter(&(Map.get(&1.meta, :owner) == owner and &1.kind == :module))
+    |> Enum.map(& &1.module)
+    |> Enum.uniq()
+  end
+
   @doc "Remove all tools owned by `owner`."
   @spec remove_owner(term()) :: :ok
   def remove_owner(owner) do
@@ -245,6 +255,9 @@ defmodule Handbean.Tool.Registry do
       Handbean.Tool.Builtin.Computer,
       :computer_use_backend
     )
+    |> host_gate(Host.mcp?(), Handbean.Tool.Builtin.ListMCPResources, :mcp)
+    |> host_gate(Host.mcp?(), Handbean.Tool.Builtin.ListMCPResourceTemplates, :mcp)
+    |> host_gate(Host.mcp?(), Handbean.Tool.Builtin.ReadMCPResource, :mcp)
     |> host_gate(Host.shell?(), Handbean.Tool.Builtin.Bash, :shell)
     |> host_gate(
       not is_nil(Host.browser_backend()),

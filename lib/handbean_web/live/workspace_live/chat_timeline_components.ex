@@ -445,7 +445,7 @@ defmodule HandbeanWeb.WorkspaceLive.ChatTimelineComponents do
                   <span>{gettext("Workspace command")}</span>
                   <span>{render_tool_status(tool_entry_status(entry))}</span>
                 </div>
-                <pre class="mt-2 overflow-x-auto whitespace-pre-wrap break-words text-xs text-secondary"><code>{get_in(entry, ["input", "command"])}</code></pre>
+                <pre class="mt-2 overflow-x-auto whitespace-pre-wrap break-words text-xs text-secondary"><code>{entry["tool_input_summary"] || get_in(entry, ["input", "command"])}</code></pre>
                 <pre
                   :if={is_binary(entry["output"]) and entry["output"] != ""}
                   class="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs text-primary"

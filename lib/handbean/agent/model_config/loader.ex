@@ -462,7 +462,12 @@ defmodule Handbean.Agent.ModelConfig.Loader do
   """
   @spec provider_config_for(Path.t(), String.t(), String.t() | nil) ::
           {:ok, map()} | {:error, String.t()}
-  def provider_config_for(working_directory \\ File.cwd!(), provider_id, model_id \\ nil) do
+  def provider_config_for(working_directory \\ File.cwd!(), provider_id, model_id \\ nil)
+
+  def provider_config_for(scope, "ext:" <> _ = provider_id, model_id),
+    do: Handbean.Extension.Provider.config(scope, provider_id, model_id)
+
+  def provider_config_for(working_directory, provider_id, model_id) do
     _ = working_directory
     raw_json = load_raw_global_config()
 
@@ -562,7 +567,16 @@ defmodule Handbean.Agent.ModelConfig.Loader do
   """
   @spec all_global_models() :: [map()]
   def all_global_models do
-    load_raw_global_config() |> extract_all_models()
+    (load_raw_global_config()
+     |> extract_all_models()
+     |> Enum.reject(&String.starts_with?(&1.provider_id, "ext:"))) ++
+      Handbean.Extension.Provider.models(:global)
+  end
+
+  @doc "Models visible to a workspace before its allowlist is applied."
+  def models_for_workspace(workspace) do
+    Enum.reject(all_global_models(), &String.starts_with?(&1.provider_id, "ext:")) ++
+      Handbean.Extension.Provider.models(workspace)
   end
 
   @doc """

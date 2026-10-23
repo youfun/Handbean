@@ -29,22 +29,31 @@ defmodule Handbean.Extension.HotReloader do
   @spec reload(keyword()) :: {:ok, [Handbean.Extension.Diagnostic.t()]}
   def reload(opts \\ []) do
     ext_registry = Keyword.get(opts, :ext_registry, ExtRegistry)
-    :global.trans({__MODULE__, ext_registry}, fn -> reload_unlocked(opts) end)
+    :global.trans({{__MODULE__, ext_registry}, self()}, fn -> reload_unlocked(opts) end)
   end
 
   defp reload_unlocked(opts) do
     project = trusted_project(opts)
-    user_home = Keyword.get(opts, :user_home, default_user_home())
+    user_home = Keyword.get(opts, :user_home, default_user_home()) |> canonical_root()
     ext_registry = Keyword.get(opts, :ext_registry, ExtRegistry)
 
     result = Loader.load(project: project, user_home: user_home)
     previous = ExtRegistry.list(ext_registry)
+    previous_capabilities = ExtRegistry.capability_extensions(ext_registry)
+    winners = MapSet.new(result.extensions, & &1.root)
 
     integration_diagnostics =
-      Enum.flat_map(result.extensions, fn ext ->
+      Enum.flat_map(result.scoped_extensions, fn ext ->
         case ExtensionBridge.prepare(ext) do
           {:ok, prepared} ->
-            case ExtensionBridge.commit_prepared(prepared, ext_registry: ext_registry) do
+            commit_result =
+              if MapSet.member?(winners, ext.root) do
+                ExtensionBridge.commit_prepared(prepared, ext_registry: ext_registry)
+              else
+                ExtRegistry.commit_capabilities(ext_registry, ext, prepared.capabilities)
+              end
+
+            case commit_result do
               :ok -> prepared.diagnostics
               {:error, reason} -> prepared.diagnostics ++ [commit_diagnostic(ext, reason)]
             end
@@ -60,6 +69,11 @@ defmodule Handbean.Extension.HotReloader do
         user_home: user_home,
         ext_registry: ext_registry
       )
+
+    Enum.each(previous_capabilities, fn ext ->
+      if removed_from_scanned_roots?(ext, project, user_home),
+        do: ExtRegistry.remove_capabilities(ext_registry, ext.root)
+    end)
 
     {:ok, result.diagnostics ++ integration_diagnostics ++ removed_diagnostics}
   end
@@ -173,7 +187,7 @@ defmodule Handbean.Extension.HotReloader do
        enabled: enabled?,
        watcher: watcher,
        timer: nil,
-       pending_project: nil
+       pending_projects: MapSet.new()
      }}
   end
 
@@ -185,7 +199,8 @@ defmodule Handbean.Extension.HotReloader do
   def handle_cast({:path_changed, path}, state) do
     with {:ok, discovered} <- project_from_extension_path(path),
          {:ok, reload_project} <- reload_project_for(path, discovered, state) do
-      {:noreply, schedule_reload(%{state | pending_project: reload_project})}
+      pending = MapSet.put(state.pending_projects, reload_project)
+      {:noreply, schedule_reload(%{state | pending_projects: pending})}
     else
       :error -> {:noreply, state}
     end
@@ -194,7 +209,8 @@ defmodule Handbean.Extension.HotReloader do
   @impl true
   def handle_info({:file_event, _watcher, {path, _events}}, state) do
     if extension_path?(path, state) do
-      {:noreply, schedule_reload(state)}
+      pending = MapSet.put(state.pending_projects, state.project)
+      {:noreply, schedule_reload(%{state | pending_projects: pending})}
     else
       {:noreply, state}
     end
@@ -205,22 +221,24 @@ defmodule Handbean.Extension.HotReloader do
   end
 
   def handle_info(:reload, state) do
-    project = state.pending_project || state.project
+    projects =
+      if MapSet.size(state.pending_projects) == 0,
+        do: [state.project],
+        else: Enum.sort(state.pending_projects)
 
-    {elapsed_us, result} =
-      :timer.tc(fn ->
-        reload(
-          [
-            project: project,
-            user_home: state.user_home,
-            ext_registry: state.ext_registry
-          ] ++ state.trust_opts
-        )
-      end)
+    Enum.each(projects, fn project ->
+      {elapsed_us, result} =
+        :timer.tc(fn ->
+          reload(
+            [project: project, user_home: state.user_home, ext_registry: state.ext_registry] ++
+              state.trust_opts
+          )
+        end)
 
-    log_reload_result(elapsed_us, result)
+      log_reload_result(elapsed_us, result)
+    end)
 
-    {:noreply, %{state | timer: nil, pending_project: nil}}
+    {:noreply, %{state | timer: nil, pending_projects: MapSet.new()}}
   end
 
   defp log_reload_result(elapsed_us, {:ok, diags}) do
@@ -256,8 +274,17 @@ defmodule Handbean.Extension.HotReloader do
 
   defp trusted_project(opts) do
     if ProjectTrust.enabled?(opts),
-      do: Keyword.get(opts, :project, File.cwd!()),
+      do: Keyword.get(opts, :project, File.cwd!()) |> canonical_root(),
       else: nil
+  end
+
+  defp canonical_root(nil), do: nil
+
+  defp canonical_root(path) do
+    case Handbean.Security.PathValidator.canonicalize(path) do
+      {:ok, canonical} -> canonical
+      {:error, _} -> Path.expand(path)
+    end
   end
 
   defp default_user_home, do: Handbean.Home.path()
@@ -314,7 +341,10 @@ defmodule Handbean.Extension.HotReloader do
 
     previous
     |> Enum.reject(&MapSet.member?(loaded_names, &1.name))
-    |> Enum.filter(&removed_from_scanned_roots?(&1, project, user_home))
+    |> Enum.filter(fn ext ->
+      removed_from_scanned_roots?(ext, project, user_home) or
+        successfully_replaced_at_root?(ext, loaded, ext_registry)
+    end)
     |> Enum.flat_map(fn ext ->
       owner = {:extension, ext.name}
       _ = Handbean.Tool.Registry.remove_owner(owner)
@@ -322,6 +352,24 @@ defmodule Handbean.Extension.HotReloader do
       :ok = ExtRegistry.unregister(ext_registry, ext.name)
       []
     end)
+  end
+
+  defp successfully_replaced_at_root?(previous, loaded, ext_registry) do
+    replacement =
+      Enum.find(loaded, fn current ->
+        current.name != previous.name and Path.expand(current.root) == Path.expand(previous.root)
+      end)
+
+    case replacement do
+      nil ->
+        false
+
+      current ->
+        case ExtRegistry.get(ext_registry, current.name) do
+          {:ok, registered} -> Path.expand(registered.root) == Path.expand(current.root)
+          _ -> false
+        end
+    end
   end
 
   defp removed_from_scanned_roots?(ext, project, user_home) do
@@ -335,7 +383,9 @@ defmodule Handbean.Extension.HotReloader do
     under_root? = Enum.any?(roots, &path_within_dir?(root, &1))
 
     under_root? and
-      not File.exists?(Path.join(root, "extension.json")) and
-      not File.exists?(Path.join(root, "manifest.json"))
+      missing_manifest?(Path.join(root, "extension.json")) and
+      missing_manifest?(Path.join(root, "manifest.json"))
   end
+
+  defp missing_manifest?(path), do: File.lstat(path) == {:error, :enoent}
 end

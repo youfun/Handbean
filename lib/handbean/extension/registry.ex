@@ -11,7 +11,10 @@ defmodule Handbean.Extension.Registry do
 
   def start_link(opts \\ []) do
     name = Keyword.fetch!(opts, :name)
-    Agent.start_link(fn -> %{extensions: %{}, hook_modules: %{}} end, name: name)
+
+    Agent.start_link(fn -> %{extensions: %{}, hook_modules: %{}, capabilities: %{}} end,
+      name: name
+    )
   end
 
   @spec register(atom() | pid(), Handbean.Extension.t(), keyword()) ::
@@ -60,7 +63,7 @@ defmodule Handbean.Extension.Registry do
 
   @doc "Commit an extension manifest and its current hook module together."
   @spec commit(atom() | pid(), Handbean.Extension.t(), module() | nil) :: :ok
-  def commit(registry, extension, hook_module) do
+  def commit(registry, extension, hook_module, capabilities \\ %{commands: [], providers: []}) do
     Agent.update(registry, fn state ->
       hook_modules =
         case hook_module do
@@ -71,7 +74,8 @@ defmodule Handbean.Extension.Registry do
       %{
         state
         | extensions: Map.put(state.extensions, extension.name, extension),
-          hook_modules: hook_modules
+          hook_modules: hook_modules,
+          capabilities: put_capabilities(state.capabilities, extension, capabilities)
       }
     end)
 
@@ -81,10 +85,25 @@ defmodule Handbean.Extension.Registry do
   @spec unregister(atom() | pid(), String.t()) :: :ok
   def unregister(registry, name) do
     Agent.update(registry, fn state ->
+      extension = state.extensions[name]
+
+      capabilities =
+        case extension do
+          %{root: root} ->
+            case state.capabilities[root] do
+              %{extension: %{name: ^name}} -> Map.delete(state.capabilities, root)
+              _replacement_or_missing -> state.capabilities
+            end
+
+          _ ->
+            state.capabilities
+        end
+
       %{
         state
         | extensions: Map.delete(state.extensions, name),
-          hook_modules: Map.delete(state.hook_modules, name)
+          hook_modules: Map.delete(state.hook_modules, name),
+          capabilities: capabilities
       }
     end)
 
@@ -107,7 +126,10 @@ defmodule Handbean.Extension.Registry do
 
   @spec reset(atom() | pid()) :: :ok
   def reset(registry) do
-    Agent.update(registry, fn _state -> %{extensions: %{}, hook_modules: %{}} end)
+    Agent.update(registry, fn _state ->
+      %{extensions: %{}, hook_modules: %{}, capabilities: %{}}
+    end)
+
     :ok
   end
 
@@ -143,6 +165,71 @@ defmodule Handbean.Extension.Registry do
     |> Enum.flat_map(fn ext ->
       Enum.map(ext.providers, fn prov -> Map.put(prov, :extension_name, ext.name) end)
     end)
+  end
+
+  @doc "Commit scoped commands and providers without changing legacy tool/hook ownership."
+  def commit_capabilities(registry, extension, capabilities) do
+    Agent.update(registry, fn state ->
+      %{state | capabilities: put_capabilities(state.capabilities, extension, capabilities)}
+    end)
+  end
+
+  def capability_extensions(registry),
+    do:
+      Agent.get(registry, fn state ->
+        Enum.map(state.capabilities, fn {_root, record} -> record.extension end)
+      end)
+
+  def remove_capabilities(registry, root) do
+    Agent.update(registry, fn state ->
+      %{state | capabilities: Map.delete(state.capabilities, root)}
+    end)
+  end
+
+  @doc "Project capabilities shadow user capabilities only in their own checkout."
+  def capabilities(kind, scope, registry \\ __MODULE__) when kind in [:commands, :providers] do
+    scope = canonical_scope(scope)
+    trusted? = Handbean.ProjectTrust.enabled?()
+
+    Agent.get(registry, fn state ->
+      state.capabilities
+      |> Map.values()
+      |> Enum.filter(fn record ->
+        record.extension.scope == :user or
+          (trusted? and scope != :invalid and record.extension.scope == scope)
+      end)
+      |> Enum.group_by(& &1.extension.name)
+      |> Enum.flat_map(fn {_name, records} ->
+        record = Enum.find(records, &(&1.extension.scope == scope)) || List.first(records)
+        if record.extension.enabled and scope != :invalid, do: Map.fetch!(record, kind), else: []
+      end)
+      |> Enum.sort_by(& &1.name)
+    end)
+  catch
+    :exit, _ -> []
+  end
+
+  defp canonical_scope(:global), do: :global
+
+  defp canonical_scope(path) when is_binary(path) do
+    case Handbean.Security.PathValidator.canonicalize(path) do
+      {:ok, canonical} -> {:project, canonical}
+      _ -> :invalid
+    end
+  end
+
+  defp canonical_scope(_), do: :invalid
+
+  defp put_capabilities(records, extension, capabilities) do
+    if is_nil(extension.scope) do
+      records
+    else
+      records
+      |> Map.reject(fn {_root, record} ->
+        record.extension.scope == extension.scope and record.extension.name == extension.name
+      end)
+      |> Map.put(extension.root, Map.put(capabilities, :extension, extension))
+    end
   end
 
   @spec size(atom() | pid()) :: non_neg_integer()

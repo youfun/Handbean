@@ -172,7 +172,10 @@ defmodule HandbeanWeb.WorkspaceLive.ModelSelection do
         {:error, _} -> Handbean.Workspace.root()
       end
 
-    available = Handbean.Agent.ModelConfig.available_models_for_workspace(workspace_root)
+    available =
+      Handbean.Agent.ModelConfig.available_models_for_workspace(workspace_root,
+        checkout_path: ConversationState.current_checkout_path(socket)
+      )
 
     current_model = socket.assigns.selected_model
 
@@ -424,7 +427,11 @@ defmodule HandbeanWeb.WorkspaceLive.ModelSelection do
 
   def initialize_workspace_conversation_model(socket) do
     workspace_path = ConversationState.current_workspace_path(socket)
-    available = Handbean.Agent.ModelConfig.available_models_for_workspace(workspace_path)
+
+    available =
+      Handbean.Agent.ModelConfig.available_models_for_workspace(workspace_path,
+        checkout_path: ConversationState.current_checkout_path(socket)
+      )
 
     socket
     |> assign(:available_models, available)
@@ -536,7 +543,8 @@ defmodule HandbeanWeb.WorkspaceLive.ModelSelection do
                workspace_path,
                socket.assigns.selected_model,
                socket.assigns.selected_reasoning_level,
-               effective
+               effective,
+               checkout_path: ConversationState.current_checkout_path(socket)
              ),
            {:ok, _accepted} <-
              Runner.request_model_switch(conversation_id, run_id, %{
@@ -589,7 +597,9 @@ defmodule HandbeanWeb.WorkspaceLive.ModelSelection do
     # to an available model), not the raw conversation store value.
     model_id = socket.assigns[:selected_model]
 
-    case resolve_selected_model(workspace_path, model_id) do
+    case RunOpts.resolve_model(workspace_path, model_id,
+           checkout_path: ConversationState.current_checkout_path(socket)
+         ) do
       {:ok, provider_config, _resolved_id} ->
         {:ok, provider_config, model_id}
 

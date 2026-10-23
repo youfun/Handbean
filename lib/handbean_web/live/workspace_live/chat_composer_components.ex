@@ -265,7 +265,9 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComposerComponents do
                   phx-value-name={skill.name}
                   class="skill-suggestion-btn"
                 >
-                  <span class="skill-suggestion-name">/skill:{skill.name}</span>
+                  <span class="skill-suggestion-name">{if String.starts_with?(skill.name, "/ext:"),
+                    do: skill.name,
+                    else: "/skill:#{skill.name}"}</span>
                   <span class="skill-suggestion-desc">{skill.description}</span>
                 </button>
               </div>

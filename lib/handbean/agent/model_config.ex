@@ -5,7 +5,9 @@ defmodule Handbean.Agent.ModelConfig do
   This module is the stable public facade for loading, resolving, filtering, and
   mutating the shared model catalog. Workspace restrictions remain in
   `.handbean/settings.jsonc`; provider credentials remain in `models.json` or
-  explicitly referenced environment variables.
+  explicitly referenced environment variables. Workspace catalog and resolution
+  functions accept `checkout_path: path` for project extension capabilities;
+  model allowlists continue to belong to the workspace root.
   """
 
   alias Handbean.Agent.ModelConfig.{Loader, Mutation, Policy}
@@ -55,29 +57,29 @@ defmodule Handbean.Agent.ModelConfig do
 
   @doc "List enabled global models allowed by a workspace policy."
   @spec available_models_for_workspace(Path.t()) :: [map()]
-  def available_models_for_workspace(workspace_root),
-    do: Policy.available_models_for_workspace(workspace_root)
+  def available_models_for_workspace(workspace_root, opts \\ []),
+    do: Policy.available_models_for_workspace(workspace_root, opts)
 
   @doc "Return the effective default composite model id for a workspace."
   @spec default_model_for_workspace(Path.t()) :: String.t() | nil
-  def default_model_for_workspace(workspace_root),
-    do: Policy.default_model_for_workspace(workspace_root)
+  def default_model_for_workspace(workspace_root, opts \\ []),
+    do: Policy.default_model_for_workspace(workspace_root, opts)
 
   @doc "Return the explicitly configured default only when it is currently available."
   @spec strict_default_model_for_workspace(Path.t()) :: String.t() | nil
-  def strict_default_model_for_workspace(workspace_root),
-    do: Policy.strict_default_model_for_workspace(workspace_root)
+  def strict_default_model_for_workspace(workspace_root, opts \\ []),
+    do: Policy.strict_default_model_for_workspace(workspace_root, opts)
 
   @doc "Return whether a model is allowed by a workspace policy."
   @spec model_allowed_for_workspace?(Path.t(), String.t()) :: boolean()
-  def model_allowed_for_workspace?(workspace_root, model_id),
-    do: Policy.model_allowed_for_workspace?(workspace_root, model_id)
+  def model_allowed_for_workspace?(workspace_root, model_id, opts \\ []),
+    do: Policy.model_allowed_for_workspace?(workspace_root, model_id, opts)
 
   @doc "Resolve an allowed workspace model to provider configuration."
   @spec resolve_model_for_workspace(Path.t(), String.t()) ::
           {:ok, map(), String.t()} | {:error, String.t()}
-  def resolve_model_for_workspace(workspace_root, composite_id),
-    do: Policy.resolve_model_for_workspace(workspace_root, composite_id)
+  def resolve_model_for_workspace(workspace_root, composite_id, opts \\ []),
+    do: Policy.resolve_model_for_workspace(workspace_root, composite_id, opts)
 
   @doc "Resolve a composite model id from the unrestricted global catalog."
   @spec resolve_global_model(String.t()) ::

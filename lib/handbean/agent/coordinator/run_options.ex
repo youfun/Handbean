@@ -105,7 +105,9 @@ defmodule Handbean.Agent.Coordinator.RunOptions do
     workspace_path = Keyword.fetch!(opts, :workspace_path)
     model = Keyword.fetch!(opts, :model)
 
-    if Handbean.Agent.ModelConfig.model_allowed_for_workspace?(workspace_path, model) do
+    if Handbean.Agent.ModelConfig.model_allowed_for_workspace?(workspace_path, model,
+         checkout_path: Keyword.get(opts, :working_directory, workspace_path)
+       ) do
       validate_om_model_policy(opts)
     else
       {:error,
@@ -233,7 +235,9 @@ defmodule Handbean.Agent.Coordinator.RunOptions do
         Handbean.Agent.ModelConfig.resolve_global_model(model)
 
       match?({:ok, _}, Keyword.fetch(opts, :workspace_path)) ->
-        Handbean.Agent.ModelConfig.resolve_model_for_workspace(opts[:workspace_path], model)
+        Handbean.Agent.ModelConfig.resolve_model_for_workspace(opts[:workspace_path], model,
+          checkout_path: Keyword.get(opts, :working_directory, opts[:workspace_path])
+        )
 
       true ->
         :error

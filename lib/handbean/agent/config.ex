@@ -213,6 +213,9 @@ defmodule Handbean.Agent.Config do
     - default → `Handbean.Agent.Provider.OpenAICompat`
   """
   @spec resolve_provider_from_api(atom() | nil, String.t() | nil, String.t() | nil) :: module()
+  def resolve_provider_from_api(:extension, _model, _provider),
+    do: Handbean.Extension.Provider
+
   def resolve_provider_from_api(:openai_codex_responses, _model, _provider),
     do: Handbean.Agent.Provider.Codex
 

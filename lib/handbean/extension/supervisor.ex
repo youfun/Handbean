@@ -14,6 +14,27 @@ defmodule Handbean.Extension.Supervisor do
 
   require Logger
 
+  defmodule WorkerContainer do
+    @moduledoc false
+    use Supervisor
+
+    def start_link(worker_spec), do: Supervisor.start_link(__MODULE__, worker_spec)
+
+    @impl true
+    def init(worker_spec), do: Supervisor.init([worker_spec], strategy: :one_for_one)
+
+    def worker_pid(container) do
+      container
+      |> Supervisor.which_children()
+      |> Enum.find_value(fn
+        {_id, pid, _type, _modules} when is_pid(pid) -> pid
+        _ -> nil
+      end)
+    catch
+      :exit, _ -> nil
+    end
+  end
+
   @spec start_link(keyword()) :: Supervisor.on_start()
   def start_link(opts \\ []) do
     DynamicSupervisor.start_link(__MODULE__, opts, name: __MODULE__)
@@ -32,14 +53,70 @@ defmodule Handbean.Extension.Supervisor do
     DynamicSupervisor.init(strategy: :one_for_one)
   end
 
+  @type worker_change :: %{
+          owner: term(),
+          keep: [{module(), pid()}],
+          drop: [{module(), pid()}],
+          started: [{module(), pid()}]
+        }
+
+  @doc "Start candidate workers without retiring the owner's current workers."
+  @spec prepare_workers(term(), [module()]) :: {:ok, worker_change()} | {:error, term()}
+  def prepare_workers(owner, modules) when is_list(modules) do
+    if Process.whereis(__MODULE__) do
+      owner = normalize_owner(owner)
+
+      wanted =
+        modules
+        |> Enum.filter(&function_exported?(&1, :child_spec, 1))
+        |> Enum.uniq()
+
+      current = entries_for(owner)
+
+      {keep, drop} =
+        Enum.split_with(current, fn {mod, container} ->
+          Process.alive?(container) and mod in wanted
+        end)
+
+      kept_mods = MapSet.new(keep, &elem(&1, 0))
+      missing = Enum.reject(wanted, &MapSet.member?(kept_mods, &1))
+
+      case start_all(missing, []) do
+        {:ok, started} ->
+          {:ok, %{owner: owner, keep: keep, drop: drop, started: started}}
+
+        {:error, reason, started} ->
+          terminate_entries(started)
+          {:error, {:worker_start_failed, reason}}
+      end
+    else
+      {:ok, %{owner: normalize_owner(owner), keep: [], drop: [], started: []}}
+    end
+  end
+
+  @doc "Finalize a prepared worker change after the other runtime registries commit."
+  @spec commit_workers(worker_change()) :: :ok
+  def commit_workers(%{owner: owner, keep: keep, drop: drop, started: started}) do
+    terminate_entries(drop)
+    put_entries(owner, keep ++ started)
+    :ok
+  end
+
+  @doc "Stop only workers started by a prepared change, preserving the old owner state."
+  @spec abort_workers(worker_change()) :: :ok
+  def abort_workers(%{started: started}) do
+    terminate_entries(started)
+    :ok
+  end
+
   @doc """
   Reconcile workers for `ext_name` with the modules from a successful compile.
 
   Alive workers whose module is still listed are kept. Missing `child_spec/1`
   modules are started. Modules no longer present are terminated.
   """
-  @spec replace_workers(term(), [module()]) :: :ok
-  @spec replace_workers(term(), [module()], keyword()) :: :ok
+  @spec replace_workers(term(), [module()]) :: :ok | {:error, term()}
+  @spec replace_workers(term(), [module()], keyword()) :: :ok | {:error, term()}
   def replace_workers(owner, modules, opts \\ []) when is_list(modules) do
     if Process.whereis(__MODULE__) do
       do_sync(normalize_owner(owner), modules, Keyword.get(opts, :restart, false))
@@ -53,8 +130,19 @@ defmodule Handbean.Extension.Supervisor do
     owner
     |> lookup_owner()
     |> entries_for()
-    |> Enum.filter(fn {_mod, pid} -> Process.alive?(pid) end)
-    |> Enum.map(&elem(&1, 1))
+    |> Enum.filter(fn {_mod, container} -> Process.alive?(container) end)
+    |> Enum.map(fn {_mod, container} -> WorkerContainer.worker_pid(container) end)
+    |> Enum.filter(&is_pid/1)
+  end
+
+  @doc "Return alive worker modules currently owned by an extension or mount."
+  @spec worker_modules(term()) :: [module()]
+  def worker_modules(owner) do
+    owner
+    |> lookup_owner()
+    |> entries_for()
+    |> Enum.filter(fn {_mod, container} -> Process.alive?(container) end)
+    |> Enum.map(&elem(&1, 0))
   end
 
   defp do_sync(owner, modules, restart?) do
@@ -65,45 +153,75 @@ defmodule Handbean.Extension.Supervisor do
 
     current = entries_for(owner)
 
-    {keep, drop} =
-      Enum.split_with(current, fn {mod, pid} ->
-        Process.alive?(pid) and mod in wanted and not restart?
-      end)
+    if restart? do
+      restart_workers(owner, wanted, current)
+    else
+      reconcile_workers(owner, wanted, current)
+    end
+  end
 
-    Enum.each(drop, fn {_mod, pid} ->
-      _ = DynamicSupervisor.terminate_child(__MODULE__, pid)
+  defp reconcile_workers(owner, wanted, _current) do
+    case prepare_workers(owner, wanted) do
+      {:ok, change} -> commit_workers(change)
+      {:error, _} = error -> error
+    end
+  end
+
+  defp restart_workers(owner, wanted, current) do
+    terminate_entries(current)
+
+    case start_all(wanted, []) do
+      {:ok, started} ->
+        put_entries(owner, started)
+        :ok
+
+      {:error, reason, started} ->
+        terminate_entries(started)
+        put_entries(owner, [])
+        {:error, {:worker_start_failed, reason}}
+    end
+  end
+
+  defp start_all([], started), do: {:ok, Enum.reverse(started)}
+
+  defp start_all([mod | rest], started) do
+    case start_one(mod) do
+      {:ok, entry} -> start_all(rest, [entry | started])
+      {:error, reason} -> {:error, {mod, reason}, started}
+    end
+  end
+
+  defp terminate_entries(entries) do
+    Enum.each(entries, fn {_mod, container} ->
+      if Process.alive?(container), do: DynamicSupervisor.terminate_child(__MODULE__, container)
     end)
-
-    kept_mods = MapSet.new(keep, &elem(&1, 0))
-
-    started =
-      wanted
-      |> Enum.reject(&MapSet.member?(kept_mods, &1))
-      |> Enum.flat_map(&start_one/1)
-
-    put_entries(owner, keep ++ started)
-    :ok
   end
 
   defp start_one(mod) do
-    spec = Supervisor.child_spec(mod.child_spec([]), restart: :permanent)
+    worker_spec = Supervisor.child_spec(mod.child_spec([]), restart: :permanent)
 
-    case DynamicSupervisor.start_child(__MODULE__, spec) do
-      {:ok, pid} ->
-        [{mod, pid}]
+    container_spec = %{
+      id: {WorkerContainer, make_ref()},
+      start: {WorkerContainer, :start_link, [worker_spec]},
+      restart: :temporary,
+      type: :supervisor
+    }
 
-      {:ok, pid, _info} ->
-        [{mod, pid}]
+    case DynamicSupervisor.start_child(__MODULE__, container_spec) do
+      {:ok, container} ->
+        {:ok, {mod, container}}
 
-      {:error, {:already_started, pid}} ->
-        [{mod, pid}]
+      {:ok, container, _info} ->
+        {:ok, {mod, container}}
 
       {:error, reason} ->
+        reason = normalize_start_error(reason)
+
         Logger.warning(
           "[Extension.Supervisor] failed to start #{inspect(mod)}: #{inspect(reason)}"
         )
 
-        []
+        {:error, reason}
     end
   rescue
     exception ->
@@ -111,8 +229,13 @@ defmodule Handbean.Extension.Supervisor do
         "[Extension.Supervisor] invalid child spec for #{inspect(mod)}: #{Exception.message(exception)}"
       )
 
-      []
+      {:error, {:invalid_child_spec, Exception.message(exception)}}
   end
+
+  defp normalize_start_error({:shutdown, {:failed_to_start_child, _id, reason}}),
+    do: normalize_start_error(reason)
+
+  defp normalize_start_error(reason), do: reason
 
   defp normalize_owner(owner) when is_binary(owner), do: {:extension, owner}
   defp normalize_owner(owner), do: owner

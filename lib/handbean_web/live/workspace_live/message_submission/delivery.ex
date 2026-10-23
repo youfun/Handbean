@@ -37,7 +37,8 @@ defmodule HandbeanWeb.WorkspaceLive.MessageSubmission.Delivery do
                workspace_path,
                selected_model,
                selected_reasoning_level,
-               socket.assigns.effective_settings
+               socket.assigns.effective_settings,
+               checkout_path: checkout_path
              ) do
         msg_id = Keyword.get(opts, :message_id)
 
@@ -236,7 +237,8 @@ defmodule HandbeanWeb.WorkspaceLive.MessageSubmission.Delivery do
            workspace_path,
            selected_model,
            selected_reasoning_level,
-           socket.assigns.effective_settings
+           socket.assigns.effective_settings,
+           checkout_path: ConversationState.current_checkout_path(socket)
          ) do
       {:ok, built} ->
         msg_id = RuntimeProjection.unique_id("msg-user")

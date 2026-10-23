@@ -31,8 +31,8 @@ defmodule Handbean.Agent.ModelConfig.Policy do
   `:name`, `:provider_id`, and `:model_id` keys.
   """
   @spec available_models_for_workspace(Path.t()) :: [map()]
-  def available_models_for_workspace(workspace_root) do
-    all_models = Loader.all_global_models()
+  def available_models_for_workspace(workspace_root, opts \\ []) do
+    all_models = Loader.models_for_workspace(Keyword.get(opts, :checkout_path, workspace_root))
 
     case load_workspace_policy(workspace_root) do
       :unrestricted ->
@@ -56,8 +56,8 @@ defmodule Handbean.Agent.ModelConfig.Policy do
   - Malformed policy → nil
   """
   @spec default_model_for_workspace(Path.t()) :: String.t() | nil
-  def default_model_for_workspace(workspace_root) do
-    available = available_models_for_workspace(workspace_root)
+  def default_model_for_workspace(workspace_root, opts \\ []) do
+    available = available_models_for_workspace(workspace_root, opts)
 
     case load_workspace_policy(workspace_root) do
       :unrestricted ->
@@ -103,10 +103,10 @@ defmodule Handbean.Agent.ModelConfig.Policy do
   entry when the configured default is missing or invalid.
   """
   @spec strict_default_model_for_workspace(Path.t()) :: String.t() | nil
-  def strict_default_model_for_workspace(workspace_root) do
+  def strict_default_model_for_workspace(workspace_root, opts \\ []) do
     available_ids =
       workspace_root
-      |> available_models_for_workspace()
+      |> available_models_for_workspace(opts)
       |> Enum.map(& &1.id)
       |> MapSet.new()
 
@@ -130,8 +130,8 @@ defmodule Handbean.Agent.ModelConfig.Policy do
   Check whether a composite model id is allowed in the workspace.
   """
   @spec model_allowed_for_workspace?(Path.t(), String.t()) :: boolean()
-  def model_allowed_for_workspace?(workspace_root, model_id) do
-    available = available_models_for_workspace(workspace_root)
+  def model_allowed_for_workspace?(workspace_root, model_id, opts \\ []) do
+    available = available_models_for_workspace(workspace_root, opts)
     Enum.any?(available, &model_matches?(&1, model_id))
   end
 
@@ -152,8 +152,8 @@ defmodule Handbean.Agent.ModelConfig.Policy do
   """
   @spec resolve_model_for_workspace(Path.t(), String.t()) ::
           {:ok, map(), String.t()} | {:error, String.t()}
-  def resolve_model_for_workspace(workspace_root, composite_id) do
-    available = available_models_for_workspace(workspace_root)
+  def resolve_model_for_workspace(workspace_root, composite_id, opts \\ []) do
+    available = available_models_for_workspace(workspace_root, opts)
 
     model_entry = Enum.find(available, &(&1.id == composite_id))
 
@@ -161,7 +161,9 @@ defmodule Handbean.Agent.ModelConfig.Policy do
       provider_id = model_entry.provider_id
       actual_model_id = model_entry.model_id
 
-      case Loader.provider_config_for(workspace_root, provider_id, actual_model_id) do
+      checkout = Keyword.get(opts, :checkout_path, workspace_root)
+
+      case Loader.provider_config_for(checkout, provider_id, actual_model_id) do
         {:ok, provider_config} ->
           {:ok, provider_config, actual_model_id}
 
@@ -187,7 +189,7 @@ defmodule Handbean.Agent.ModelConfig.Policy do
 
       model_entry ->
         case Loader.provider_config_for(
-               File.cwd!(),
+               :global,
                model_entry.provider_id,
                model_entry.model_id
              ) do

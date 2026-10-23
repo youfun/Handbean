@@ -28,6 +28,8 @@ defmodule Handbean.WorkspaceCommand do
   @timeout_seconds 120
   @response_retry_ms 5_000
 
+  @type command :: String.t() | {:extension, String.t(), String.t()}
+
   @type reason ::
           :busy
           | :empty_command
@@ -53,10 +55,23 @@ defmodule Handbean.WorkspaceCommand do
   def supported?, do: validate_host() == :ok
 
   @doc "Classify a composer message without treating malformed `!` input as ordinary chat."
-  @spec parse(term()) :: :not_command | {:ok, String.t()} | {:error, reason()}
+  @spec parse(term()) :: :not_command | {:ok, command()} | {:error, reason()}
   def parse(message) when is_binary(message) do
     message = String.trim(message)
 
+    if String.starts_with?(message, "/ext:") do
+      {:ok, Handbean.Extension.Command.parse(message)}
+    else
+      parse_shell(message)
+    end
+  end
+
+  def parse(_message), do: :not_command
+
+  @doc "List executable extension commands for a checkout."
+  def list_commands(workspace), do: Handbean.Extension.Command.list(workspace)
+
+  defp parse_shell(message) do
     if String.starts_with?(message, "!") do
       command = message |> String.slice(1..-1//1) |> String.trim()
 
@@ -70,8 +85,6 @@ defmodule Handbean.WorkspaceCommand do
       :not_command
     end
   end
-
-  def parse(_message), do: :not_command
 
   @spec active?(String.t()) :: boolean()
   def active?(conversation_id) when is_binary(conversation_id) do
@@ -88,11 +101,12 @@ defmodule Handbean.WorkspaceCommand do
   end
 
   @doc "Submit one already-classified command for the conversation's immutable checkout."
-  @spec submit(String.t(), String.t(), keyword()) :: {:ok, map()} | {:error, reason()}
+  @spec submit(String.t(), command(), keyword()) :: {:ok, map()} | {:error, reason()}
   def submit(conversation_id, command, opts \\ [])
 
   def submit(conversation_id, command, opts)
-      when is_binary(conversation_id) and is_binary(command) and is_list(opts) do
+      when is_binary(conversation_id) and (is_binary(command) or is_tuple(command)) and
+             is_list(opts) do
     operation_id = Keyword.get(opts, :operation_id, Ecto.UUID.generate())
     source = Keyword.get(opts, :source, :unknown)
 
@@ -133,8 +147,8 @@ defmodule Handbean.WorkspaceCommand do
       ) do
     with {:ok, command} <- normalize_command(command),
          :ok <- validate_operation_id(operation_id),
-         :ok <- validate_host(),
          {:ok, binding} <- workspace_binding(conversation_id),
+         :ok <- validate_command_host(command, binding),
          :ok <- admit(state, conversation_id, operation_id),
          {:ok, admission} <- admit_operation(conversation_id, command, operation_id, source) do
       case admission do
@@ -202,6 +216,19 @@ defmodule Handbean.WorkspaceCommand do
     end
   end
 
+  def handle_info({:command_deadline, operation_id}, state) do
+    case state.operations[operation_id] do
+      %{pid: pid, ref: ref} when is_pid(pid) ->
+        Process.demonitor(ref, [:flush])
+        Task.Supervisor.terminate_child(Handbean.WorkspaceCommand.TaskSupervisor, pid)
+        state = %{state | refs: Map.delete(state.refs, ref)}
+        {:noreply, settle_and_drop(state, operation_id, {:error, "Command timed out"})}
+
+      _ ->
+        {:noreply, state}
+    end
+  end
+
   def handle_info({:retry_terminal_persistence, operation_id}, state) do
     case Map.fetch(state.operations, operation_id) do
       {:ok, %{terminal_result: result, terminal_duration: duration}} ->
@@ -242,7 +269,14 @@ defmodule Handbean.WorkspaceCommand do
   def handle_info({:EXIT, _pid, _reason}, state), do: {:noreply, state}
   def handle_info(_message, state), do: {:noreply, state}
 
-  defp normalize_command(command) do
+  defp normalize_command({:extension, name, args} = command)
+       when is_binary(name) and is_binary(args) do
+    if byte_size(name) + byte_size(args) <= @max_command_bytes and String.valid?(name <> args),
+      do: {:ok, command},
+      else: {:error, :invalid_command}
+  end
+
+  defp normalize_command(command) when is_binary(command) do
     command = String.trim(command)
 
     cond do
@@ -252,6 +286,17 @@ defmodule Handbean.WorkspaceCommand do
       true -> {:ok, command}
     end
   end
+
+  defp normalize_command(_), do: {:error, :invalid_command}
+
+  defp validate_command_host({:extension, name, _args}, binding) do
+    case Handbean.Extension.Command.resolve(binding.checkout_path, name) do
+      {:ok, _command} -> :ok
+      {:error, _} = error -> error
+    end
+  end
+
+  defp validate_command_host(_command, _binding), do: validate_host()
 
   defp validate_operation_id(id) when is_binary(id) and byte_size(id) in 1..200, do: :ok
   defp validate_operation_id(_id), do: {:error, :invalid_command}
@@ -302,6 +347,7 @@ defmodule Handbean.WorkspaceCommand do
 
   defp admit_operation(conversation_id, command, operation_id, source) do
     entries = start_entries(conversation_id, command, operation_id, source)
+    input_command = persisted_command(command)
 
     case ConversationTranscriptStore.append_many(conversation_id, entries) do
       {:ok, persisted} ->
@@ -309,7 +355,7 @@ defmodule Handbean.WorkspaceCommand do
 
       {:error, :duplicate_id} ->
         case existing_entries(conversation_id, operation_id) do
-          [_, %{"input" => %{"command" => ^command}}] = existing ->
+          [_, %{"input" => %{"command" => ^input_command}}] = existing ->
             {:ok, {:existing, existing}}
 
           [_, _] ->
@@ -339,7 +385,16 @@ defmodule Handbean.WorkspaceCommand do
 
     case start_worker(command, binding, operation_id, opts) do
       {:ok, task} ->
-        operation = %{operation | ref: task.ref, pid: task.pid}
+        timer =
+          if is_tuple(command),
+            do:
+              Process.send_after(
+                self(),
+                {:command_deadline, operation_id},
+                command_timeout_ms(opts)
+              )
+
+        operation = operation |> Map.merge(%{ref: task.ref, pid: task.pid, timer: timer})
 
         state = %{
           state
@@ -364,6 +419,13 @@ defmodule Handbean.WorkspaceCommand do
             reload_entries(binding.conversation_id, operation_id),
             :failed
           )}, state}
+    end
+  end
+
+  defp command_timeout_ms(opts) do
+    case Keyword.get(opts, :timeout_ms, @timeout_seconds * 1_000) do
+      value when is_integer(value) and value > 0 and value <= @timeout_seconds * 1_000 -> value
+      _ -> @timeout_seconds * 1_000
     end
   end
 
@@ -407,6 +469,9 @@ defmodule Handbean.WorkspaceCommand do
     end
   end
 
+  defp execute({:extension, _name, _args} = command, context, _timeout_seconds),
+    do: Handbean.Extension.Command.execute(command, context)
+
   defp execute(command, context, timeout_seconds) do
     Bash.execute(
       %{"command" => command, "timeout" => timeout_seconds, "job" => false},
@@ -435,6 +500,30 @@ defmodule Handbean.WorkspaceCommand do
   defp settle_and_drop(state, operation_id, result, duration) do
     operation = Map.fetch!(state.operations, operation_id)
 
+    operation =
+      if Map.has_key?(operation, :terminal_result) do
+        operation
+      else
+        if timer = operation[:timer], do: Process.cancel_timer(timer)
+        if is_reference(operation.ref), do: Process.demonitor(operation.ref, [:flush])
+
+        Map.merge(operation, %{
+          terminal_result: result,
+          terminal_duration: duration,
+          timer: nil,
+          pid: nil
+        })
+      end
+
+    result = operation.terminal_result
+    duration = operation.terminal_duration
+
+    state = %{
+      state
+      | operations: Map.put(state.operations, operation_id, operation),
+        refs: Map.delete(state.refs, operation.ref)
+    }
+
     case safe_persist_terminal(operation, result, duration) do
       {:ok, entry} ->
         deliver_agent_response(operation.conversation_id, entry, operation.responder)
@@ -461,6 +550,8 @@ defmodule Handbean.WorkspaceCommand do
   end
 
   defp drop_operation(state, operation_id, ref) do
+    if timer = state.operations[operation_id][:timer], do: Process.cancel_timer(timer)
+
     %{
       state
       | operations: Map.delete(state.operations, operation_id),
@@ -546,6 +637,13 @@ defmodule Handbean.WorkspaceCommand do
   defp terminal_patch(other, duration),
     do: terminal_patch({:error, "Unexpected command result: #{inspect(other)}"}, duration)
 
+  defp persisted_command({:extension, name, args}), do: %{"name" => name, "arguments" => args}
+  defp persisted_command(command), do: command
+  defp command_label({:extension, name, args}), do: String.trim_trailing(name <> " " <> args)
+  defp command_label(command), do: "!" <> command
+  defp command_name({:extension, name, _args}), do: name
+  defp command_name(_command), do: "bash"
+
   defp start_entries(_conversation_id, command, operation_id, source) do
     timestamp = now_iso8601()
     source = to_string(source)
@@ -557,7 +655,7 @@ defmodule Handbean.WorkspaceCommand do
         "message_type" => "user",
         "role" => "user",
         "direction" => "inbound",
-        "content" => "!#{command}",
+        "content" => command_label(command),
         "direct_command" => true,
         "command_operation_id" => operation_id,
         "source" => source,
@@ -570,10 +668,10 @@ defmodule Handbean.WorkspaceCommand do
         "role" => "tool",
         "direction" => "internal",
         "tool_use_id" => operation_id,
-        "tool_name" => "bash",
+        "tool_name" => command_name(command),
         "tool_status" => "running",
-        "input" => %{"command" => command},
-        "tool_input_summary" => command,
+        "input" => %{"command" => persisted_command(command)},
+        "tool_input_summary" => command_label(command),
         "direct_command" => true,
         "command_operation_id" => operation_id,
         "source" => source,

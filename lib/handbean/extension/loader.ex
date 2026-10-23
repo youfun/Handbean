@@ -17,7 +17,7 @@ defmodule Handbean.Extension.Loader do
 
   defmodule Result do
     @moduledoc false
-    defstruct extensions: [], diagnostics: []
+    defstruct extensions: [], scoped_extensions: [], diagnostics: []
 
     @type t :: %__MODULE__{
             extensions: [Handbean.Extension.t()],
@@ -36,7 +36,9 @@ defmodule Handbean.Extension.Loader do
     dir = Path.join(workspace, ".handbean/extensions")
 
     if File.dir?(dir) do
-      load_from_dir(dir, :project)
+      result = load_from_dir(dir, :project)
+      {:ok, canonical} = Handbean.Security.PathValidator.canonicalize(workspace)
+      %{result | extensions: Enum.map(result.extensions, &%{&1 | scope: {:project, canonical}})}
     else
       %Result{}
     end
@@ -52,7 +54,8 @@ defmodule Handbean.Extension.Loader do
     dir = Path.join(home, ".handbean/extensions")
 
     if File.dir?(dir) do
-      load_from_dir(dir, :user)
+      result = load_from_dir(dir, :user)
+      %{result | extensions: Enum.map(result.extensions, &%{&1 | scope: :user})}
     else
       %Result{}
     end
@@ -185,12 +188,22 @@ defmodule Handbean.Extension.Loader do
           {:ok, content} ->
             case Manifest.from_json(content) do
               {:ok, manifest} ->
-                case Handbean.Extension.new(manifest, dir) do
-                  {:ok, ext} ->
-                    %Result{extensions: [ext]}
-
-                  {:error, diagnostic} ->
+                with {:ok, canonical_root} <- Handbean.Security.PathValidator.canonicalize(dir),
+                     {:ok, ext} <- Handbean.Extension.new(manifest, canonical_root) do
+                  %Result{extensions: [ext]}
+                else
+                  {:error, %Diagnostic{} = diagnostic} ->
                     %Result{diagnostics: [diagnostic]}
+
+                  {:error, _reason} ->
+                    %Result{
+                      diagnostics: [
+                        %Diagnostic{
+                          type: :validation_error,
+                          message: "Cannot resolve extension root"
+                        }
+                      ]
+                    }
                 end
 
               {:error, diagnostic} ->
@@ -313,6 +326,7 @@ defmodule Handbean.Extension.Loader do
 
     %Result{
       extensions: user_exts ++ project.extensions,
+      scoped_extensions: user.extensions ++ project.extensions,
       diagnostics: user.diagnostics ++ project.diagnostics
     }
   end

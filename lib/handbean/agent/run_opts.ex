@@ -13,9 +13,9 @@ defmodule Handbean.Agent.RunOpts do
 
   @spec for_selection(String.t() | nil, String.t() | nil, term(), term()) ::
           {:ok, keyword()} | {:error, term()}
-  def for_selection(workspace_path, composite_id, reasoning_level, effective_settings) do
-    with {:ok, provider_config, model_id} <- resolve_model(workspace_path, composite_id) do
-      entry = model_entry(workspace_path, composite_id)
+  def for_selection(workspace_path, composite_id, reasoning_level, effective_settings, opts \\ []) do
+    with {:ok, provider_config, model_id} <- resolve_model(workspace_path, composite_id, opts) do
+      entry = model_entry(workspace_path, composite_id, opts)
       builtin_memory_enabled = builtin_memory_enabled(workspace_path)
 
       provider_config =
@@ -39,14 +39,14 @@ defmodule Handbean.Agent.RunOpts do
       when is_binary(workspace_path) and is_binary(composite_id) do
     effective = Settings.effective_model_ai(workspace_path)
     reasoning = Keyword.get(opts, :reasoning_level) || effective.reasoning
-    for_selection(workspace_path, composite_id, reasoning, effective)
+    for_selection(workspace_path, composite_id, reasoning, effective, opts)
   end
 
   @spec resolve_model(String.t() | nil, String.t() | nil) ::
           {:ok, map(), String.t()} | {:error, term()}
-  def resolve_model(workspace_path, composite_id) do
+  def resolve_model(workspace_path, composite_id, opts \\ []) do
     if is_binary(workspace_path) and workspace_path != "" do
-      ModelConfig.resolve_model_for_workspace(workspace_path, composite_id)
+      ModelConfig.resolve_model_for_workspace(workspace_path, composite_id, opts)
     else
       resolve_global(composite_id)
     end
@@ -59,7 +59,7 @@ defmodule Handbean.Agent.RunOpts do
 
     if model_entry do
       case ModelConfig.provider_config_for(
-             File.cwd!(),
+             :global,
              model_entry.provider_id,
              model_entry.model_id
            ) do
@@ -71,10 +71,10 @@ defmodule Handbean.Agent.RunOpts do
     end
   end
 
-  defp model_entry(workspace_path, composite_id) do
+  defp model_entry(workspace_path, composite_id, opts) do
     available =
       if is_binary(workspace_path) and workspace_path != "" do
-        ModelConfig.available_models_for_workspace(workspace_path)
+        ModelConfig.available_models_for_workspace(workspace_path, opts)
       else
         ModelConfig.all_global_models()
       end

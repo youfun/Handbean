@@ -27,10 +27,12 @@ defmodule Handbean.WorkspaceCommand.AgentResponse do
   end
 
   defp deliver_to_handbean(conversation_id, entry, conversation, workspace, checkout_path) do
-    with model when is_binary(model) <- selected_model(conversation, workspace["path"]),
+    with model when is_binary(model) <-
+           selected_model(conversation, workspace["path"], checkout_path),
          {:ok, built} <-
            RunOpts.for_workspace(workspace["path"], model,
-             reasoning_level: conversation["selected_reasoning_level"]
+             reasoning_level: conversation["selected_reasoning_level"],
+             checkout_path: checkout_path
            ) do
       operation_id = entry["command_operation_id"] || entry["tool_use_id"] || entry["id"]
       content = observation(entry)
@@ -108,7 +110,13 @@ defmodule Handbean.WorkspaceCommand.AgentResponse do
 
   @spec observation(map()) :: String.t()
   def observation(entry) when is_map(entry) do
-    command = get_in(entry, ["input", "command"]) || ""
+    command =
+      case get_in(entry, ["input", "command"]) do
+        %{"name" => name, "arguments" => args} -> String.trim_trailing(name <> " " <> args)
+        value when is_binary(value) -> value
+        _ -> ""
+      end
+
     output = entry["output"] || entry["tool_error"] || "(no output)"
     exit_code = get_in(entry, ["details", "exit_code"])
 
@@ -132,10 +140,10 @@ defmodule Handbean.WorkspaceCommand.AgentResponse do
       "workspace-command-response-#{operation_id}-#{Ecto.UUID.generate()}"
   end
 
-  defp selected_model(conversation, workspace_path) do
+  defp selected_model(conversation, workspace_path, checkout_path) do
     case conversation["selected_model"] do
       model when is_binary(model) and model != "" -> model
-      _ -> ModelConfig.default_model_for_workspace(workspace_path)
+      _ -> ModelConfig.default_model_for_workspace(workspace_path, checkout_path: checkout_path)
     end
   end
 end

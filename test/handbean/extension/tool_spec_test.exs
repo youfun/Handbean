@@ -120,18 +120,17 @@ defmodule Handbean.Extension.ToolSpecTest do
 
       assert spec.extension == "my-ext"
       # /ext: prefix is auto-added
-      assert spec.name == "/ext:notify:send"
+      assert spec.name == "/ext:my-ext:notify:send"
       assert spec.description == "Manual send"
     end
 
-    test "prefixes with /ext: if needed" do
+    test "includes the extension namespace" do
       assert {:ok, spec} = CommandSpec.new("my-ext", "send", %{description: "desc"})
-      assert spec.name == "/ext:send"
+      assert spec.name == "/ext:my-ext:send"
     end
 
-    test "keeps /ext: prefix if already present" do
-      assert {:ok, spec} = CommandSpec.new("my-ext", "/ext:send", %{description: "desc"})
-      assert spec.name == "/ext:send"
+    test "rejects a caller supplied namespace" do
+      assert {:error, _} = CommandSpec.new("my-ext", "/ext:send", %{description: "desc"})
     end
 
     test "rejects empty command name" do
@@ -149,7 +148,7 @@ defmodule Handbean.Extension.ToolSpecTest do
                })
 
       assert spec.extension == "my-ext"
-      assert spec.name == "mock_provider"
+      assert spec.name == "ext:my-ext:mock_provider"
       assert spec.base_url == "http://localhost:8000"
       assert spec.api == "openai-completions"
     end

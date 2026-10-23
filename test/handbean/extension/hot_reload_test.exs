@@ -45,6 +45,9 @@ defmodule Handbean.Extension.HotReloadTest do
     on_exit(fn ->
       if Process.whereis(Handbean.Extension.Supervisor) do
         Handbean.Extension.Supervisor.replace_workers("hotdemo", [])
+        Handbean.Extension.Supervisor.replace_workers("renamed", [])
+        Handbean.Tool.Registry.remove_owner({:extension, "hotdemo"})
+        Handbean.Tool.Registry.remove_owner({:extension, "renamed"})
       end
     end)
 
@@ -224,10 +227,11 @@ defmodule Handbean.Extension.HotReloadTest do
       pid
     )
 
-    assert %{pending_project: ^other} = :sys.get_state(pid)
+    assert MapSet.member?(:sys.get_state(pid).pending_projects, other)
     Application.put_env(:handbean, :trust_project_code, false)
     send(pid, :reload)
-    assert %{timer: nil, pending_project: nil} = :sys.get_state(pid)
+    assert %{timer: nil, pending_projects: pending} = :sys.get_state(pid)
+    assert MapSet.size(pending) == 0
 
     assert {:error, :not_found} = ExtRegistry.get(registry, "hotdemo")
   end
@@ -399,6 +403,73 @@ defmodule Handbean.Extension.HotReloadTest do
 
     assert Handbean.Tool.Registry.get("ext__hotdemo__ping") == :error
     refute Map.has_key?(ExtRegistry.list_hook_modules(registry), "hotdemo")
+  end
+
+  test "renaming a manifest at the same root retires the previous runtime owner", %{
+    tmp: tmp,
+    registry: registry
+  } do
+    ext_dir = write_combined_extension!(tmp, "hotdemo", result: ":v1", code: :v1)
+
+    assert {:ok, _} =
+             HotReloader.reload(
+               project: tmp,
+               user_home: Path.join(tmp, "no-user"),
+               ext_registry: registry
+             )
+
+    old_worker = hd(Handbean.Extension.Supervisor.workers("hotdemo"))
+
+    File.write!(
+      Path.join(ext_dir, "extension.json"),
+      Handbean.JSON.encode!(%{
+        "name" => "renamed",
+        "version" => "0.2.0",
+        "entry" => "renamed.ex",
+        "tools" => [%{"name" => "ping"}],
+        "hooks" => ["before_agent_start"]
+      })
+    )
+
+    File.write!(
+      Path.join(ext_dir, "renamed.ex"),
+      """
+      defmodule Ext.Renamed.Ping do
+        @behaviour Handbean.Agent.Tool
+        def name, do: "ext__renamed__ping"
+        def description, do: "renamed"
+        def input_schema, do: %{"type" => "object", "properties" => %{}}
+        def execute(_, _), do: {:ok, "renamed"}
+      end
+
+      defmodule Ext.Renamed.Hook do
+        @behaviour Handbean.Extension.Hook
+        def handle_event(_, _), do: :ok
+      end
+
+      defmodule Ext.Renamed.Worker do
+        use Agent
+        def child_spec(_), do: %{id: __MODULE__, start: {__MODULE__, :start_link, [[]]}}
+        def start_link(opts), do: Agent.start_link(fn -> opts end)
+      end
+      """
+    )
+
+    assert {:ok, _} =
+             HotReloader.reload(
+               project: tmp,
+               user_home: Path.join(tmp, "no-user"),
+               ext_registry: registry
+             )
+
+    assert {:error, :not_found} = ExtRegistry.get(registry, "hotdemo")
+    assert {:ok, %{name: "renamed"}} = ExtRegistry.get(registry, "renamed")
+    assert Handbean.Tool.Registry.get("ext__hotdemo__ping") == :error
+    assert {:ok, _} = Handbean.Tool.Registry.get("ext__renamed__ping")
+    refute Map.has_key?(ExtRegistry.list_hook_modules(registry), "hotdemo")
+    assert Map.has_key?(ExtRegistry.list_hook_modules(registry), "renamed")
+    refute Process.alive?(old_worker)
+    assert [_new_worker] = Handbean.Extension.Supervisor.workers("renamed")
   end
 
   test "deleting an extension directory removes its runtime resources", %{

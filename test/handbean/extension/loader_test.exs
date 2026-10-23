@@ -34,7 +34,8 @@ defmodule Handbean.Extension.LoaderTest do
       ext = hd(result.extensions)
       assert ext.name == "my-ext"
       assert ext.version == "0.1.0"
-      assert ext.root == ext_dir
+      assert {:ok, canonical_root} = Handbean.Security.PathValidator.canonicalize(ext_dir)
+      assert ext.root == canonical_root
     end
 
     test "returns empty when no .handbean/extensions directory", %{tmp: tmp} do

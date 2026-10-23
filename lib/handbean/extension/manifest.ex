@@ -49,7 +49,8 @@ defmodule Handbean.Extension.Manifest do
     with {:ok, data} <- parse_json(json),
          :ok <- validate_object(data),
          {:ok, name} <- extract_name(data),
-         :ok <- validate_name(name) do
+         :ok <- validate_name(name),
+         :ok <- validate_runtime_fields(data) do
       manifest = build_manifest(data, name)
       {:ok, manifest}
     else
@@ -116,6 +117,19 @@ defmodule Handbean.Extension.Manifest do
          type: :validation_error,
          message: "extension name is required and must be a non-empty string"
        }}
+
+  defp validate_runtime_fields(data) do
+    if is_boolean(Map.get(data, "enabled", true)) and
+         Enum.all?(["commands", "providers"], &is_list(Map.get(data, &1, []))) do
+      :ok
+    else
+      {:error,
+       %Diagnostic{
+         type: :validation_error,
+         message: "enabled must be boolean; commands and providers must be lists"
+       }}
+    end
+  end
 
   defp build_manifest(data, name) do
     known_fields =

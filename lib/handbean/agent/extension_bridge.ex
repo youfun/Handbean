@@ -20,7 +20,7 @@ defmodule Handbean.Agent.ExtensionBridge do
 
   require Logger
 
-  alias Handbean.Extension.Loader
+  alias Handbean.Extension.Capabilities
   alias Handbean.Extension.Registry, as: ExtRegistry
   alias Handbean.Extension.Diagnostic
 
@@ -39,35 +39,7 @@ defmodule Handbean.Agent.ExtensionBridge do
   """
   @spec load_and_integrate(keyword()) :: {:ok, [Diagnostic.t()]}
   def load_and_integrate(opts \\ []) do
-    project = Keyword.get(opts, :project, ".")
-    user_home = Keyword.get(opts, :user_home, Handbean.Home.path())
-    ext_registry = Keyword.get(opts, :ext_registry, ExtRegistry)
-
-    result = Loader.load(project: project, user_home: user_home)
-
-    Logger.debug("[ExtensionBridge] Found #{length(result.extensions)} extensions")
-
-    integration_diagnostics =
-      Enum.flat_map(result.extensions, fn ext ->
-        case prepare(ext) do
-          {:ok, prepared} ->
-            case commit_prepared(prepared, ext_registry: ext_registry) do
-              :ok -> prepared.diagnostics
-              {:error, reason} -> prepared.diagnostics ++ [commit_diagnostic(ext, reason)]
-            end
-
-          {:error, diags} ->
-            diags
-        end
-      end)
-
-    all_diagnostics = result.diagnostics ++ integration_diagnostics
-
-    Enum.each(all_diagnostics, fn d ->
-      Logger.warning("[ExtensionBridge] #{d.type}: #{d.message}")
-    end)
-
-    {:ok, all_diagnostics}
+    Handbean.Extension.HotReloader.reload(opts)
   end
 
   @doc "Prepare an extension without changing any runtime registry."
@@ -81,17 +53,18 @@ defmodule Handbean.Agent.ExtensionBridge do
         {:ok, compiled_modules, compile_diagnostics} ->
           case declared_tool_modules(ext, compiled_modules) do
             {:ok, tool_modules, tool_diagnostics} ->
-              case validate_worker_modules(compiled_modules) do
-                :ok ->
-                  {:ok,
-                   %{
-                     extension: ext,
-                     modules: compiled_modules,
-                     tool_modules: tool_modules,
-                     hook_module: hook_module(ext, compiled_modules),
-                     diagnostics: compile_diagnostics ++ tool_diagnostics
-                   }}
-
+              with :ok <- validate_worker_modules(compiled_modules),
+                   {:ok, capabilities} <- Capabilities.prepare(ext, compiled_modules) do
+                {:ok,
+                 %{
+                   extension: ext,
+                   modules: compiled_modules,
+                   tool_modules: tool_modules,
+                   hook_module: hook_module(ext, compiled_modules),
+                   capabilities: capabilities,
+                   diagnostics: compile_diagnostics ++ tool_diagnostics
+                 }}
+              else
                 {:error, diags} ->
                   {:error, compile_diagnostics ++ tool_diagnostics ++ diags}
               end
@@ -107,6 +80,7 @@ defmodule Handbean.Agent.ExtensionBridge do
          modules: [],
          tool_modules: [],
          hook_module: nil,
+         capabilities: %{commands: [], providers: []},
          diagnostics: []
        }}
     end
@@ -118,9 +92,28 @@ defmodule Handbean.Agent.ExtensionBridge do
     ext_registry = Keyword.get(opts, :ext_registry, ExtRegistry)
     owner = {:extension, ext.name}
 
-    with :ok <- Handbean.Tool.Registry.replace_owner(owner, prepared.tool_modules),
-         :ok <- Handbean.Extension.Supervisor.replace_workers(owner, prepared.modules) do
-      ExtRegistry.commit(ext_registry, ext, prepared.hook_module)
+    previous_tools = Handbean.Tool.Registry.owner_modules(owner)
+
+    case Handbean.Extension.Supervisor.prepare_workers(owner, prepared.modules) do
+      {:ok, worker_change} ->
+        result =
+          with :ok <- Handbean.Tool.Registry.replace_owner(owner, prepared.tool_modules),
+               :ok <- commit_registry(ext_registry, ext, prepared) do
+            Handbean.Extension.Supervisor.commit_workers(worker_change)
+          end
+
+        case result do
+          :ok ->
+            :ok
+
+          {:error, _} = error ->
+            Handbean.Extension.Supervisor.abort_workers(worker_change)
+            rollback_tools(owner, previous_tools)
+            error
+        end
+
+      {:error, _} = error ->
+        error
     end
   end
 
@@ -294,6 +287,31 @@ defmodule Handbean.Agent.ExtensionBridge do
       type: :warning,
       message: "Failed to commit extension #{ext.name}: #{inspect(reason)}"
     }
+  end
+
+  defp commit_registry(ext_registry, ext, prepared) do
+    ExtRegistry.commit(ext_registry, ext, prepared.hook_module, prepared.capabilities)
+  catch
+    :exit, reason -> {:error, {:registry_commit_failed, reason}}
+  end
+
+  defp rollback_tools(owner, previous_tools) do
+    case Handbean.Tool.Registry.replace_owner(owner, previous_tools) do
+      :ok ->
+        :ok
+
+      error ->
+        Logger.error(
+          "[ExtensionBridge] tool rollback failed owner=#{inspect(owner)} result=#{inspect(error)}"
+        )
+
+        :ok
+    end
+  end
+
+  defp compile_entry(%{commands: commands, providers: providers} = ext)
+       when commands != [] or providers != [] do
+    Capabilities.compile(ext)
   end
 
   defp compile_entry(%{entry: entry}) when is_binary(entry) do
