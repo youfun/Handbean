@@ -4,9 +4,9 @@
 #
 #   mise install    https://mise.jdx.dev  (recommended — brew install mise)
 #
-# OTP 29 matches the device runtime tarballs. Java 17 LTS is required for Gradle.
-# The exact Zig dev version is deliberate: generated native build files track it.
+# OTP 29 matches the host toolchain. Java 17 LTS is required for Gradle.
+# mob_dev 0.7.31 requires this exact stable Zig; `zig version` must match.
 erlang 29.0
 elixir 1.20.1-otp-29
 java temurin-17.0.18
-zig 0.17.0-dev.269+ebff43698
+zig 0.17.0

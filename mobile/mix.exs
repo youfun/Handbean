@@ -31,8 +31,8 @@ defmodule HandbeanProbe.MixProject do
 
   defp deps do
     [
-      {:mob, "== 0.9.21"},
-      {:mob_dev, "~> 0.7", only: :dev, runtime: false},
+      {:mob, "== 0.9.26"},
+      {:mob_dev, "== 0.7.31", only: :dev, runtime: false},
       # The native host configures its private data directory and runs root
       # migrations before starting the shared runtime explicitly.
       {:handbean, path: "..", runtime: false},
