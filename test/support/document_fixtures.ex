@@ -94,6 +94,42 @@ defmodule Handbean.DocumentFixtures do
     local <> central <> ending
   end
 
+  def inline_image_pdf do
+    "inline-image.pdf.b64"
+    |> read()
+    |> String.trim()
+    |> Base.decode64!()
+  end
+
+  def pdf_pages(contents) when is_list(contents) and contents != [] do
+    page_count = length(contents)
+    page_ids = Enum.to_list(3..(page_count + 2))
+    font_id = page_count + 3
+    content_ids = Enum.to_list((font_id + 1)..(font_id + page_count))
+    kids = Enum.map_join(page_ids, " ", &"#{&1} 0 R")
+
+    pages =
+      Enum.zip(page_ids, content_ids)
+      |> Enum.map(fn {_page_id, content_id} ->
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 #{font_id} 0 R >> >> /Contents #{content_id} 0 R >>"
+      end)
+
+    streams =
+      Enum.map(contents, fn content ->
+        "<< /Length #{byte_size(content)} >>\nstream\n#{content}\nendstream"
+      end)
+
+    assemble_pdf(
+      [
+        "<< /Type /Catalog /Pages 2 0 R >>",
+        "<< /Type /Pages /Kids [#{kids}] /Count #{page_count} >>"
+      ] ++
+        pages ++
+        ["<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"] ++
+        streams
+    )
+  end
+
   def pdf(content, opts \\ []) do
     compressed? = Keyword.get(opts, :compressed, false)
     filter = if compressed?, do: "/Filter /FlateDecode", else: ""
@@ -119,6 +155,10 @@ defmodule Handbean.DocumentFixtures do
         "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding #{font_cmap} >>"
       ] ++ streams ++ extra
 
+    assemble_pdf(objects)
+  end
+
+  defp assemble_pdf(objects) do
     {parts, offsets, position} =
       Enum.reduce(Enum.with_index(objects, 1), {["%PDF-1.7\n"], [0], 9}, fn {body, number},
                                                                             {parts, offsets,

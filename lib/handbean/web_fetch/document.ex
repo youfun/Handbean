@@ -10,15 +10,18 @@ defmodule Handbean.WebFetch.Document do
     type =
       content_type |> String.split(";", parts: 2) |> hd() |> String.trim() |> String.downcase()
 
-    format = Handbean.Documents.format(type) || download_format(type, url)
+    declared_format = Handbean.Documents.format(type) || download_format(type, url)
 
-    case format do
+    case document_format(body, declared_format, url) do
       nil ->
         with :ok <- supported_type(type),
              {:ok, body} <- decode(body, content_type),
              {:ok, title, text} <- render(body, type, url) do
           slice(text, %{title: title, content_type: type}, max_chars, opts)
         end
+
+      {:error, message} ->
+        {:error, message}
 
       format ->
         with {:ok, document} <- Handbean.Documents.extract(body, format, opts) do
@@ -33,6 +36,22 @@ defmodule Handbean.WebFetch.Document do
        do: Handbean.Documents.format(path)
 
   defp download_format(_, _), do: nil
+
+  defp document_format(<<"%PDF-", _::binary>>, _declared, _url), do: :pdf
+
+  defp document_format(<<0x50, 0x4B, 3, 4, _::binary>>, declared, url) do
+    declared || url_format(url) ||
+      {:error, "ZIP payload does not identify a supported Office format"}
+  end
+
+  defp document_format(<<0xD0, 0xCF, 0x11, 0xE0, _::binary>>, declared, _url) do
+    declared || {:error, "Binary Office payload does not match its declared Content-Type"}
+  end
+
+  defp document_format(_body, declared, _url), do: declared
+
+  defp url_format(%URI{path: path}), do: Handbean.Documents.format(path)
+  defp url_format(_), do: nil
 
   defp slice(text, metadata, max_chars, opts) do
     offset = Keyword.get(opts, :offset, 0)

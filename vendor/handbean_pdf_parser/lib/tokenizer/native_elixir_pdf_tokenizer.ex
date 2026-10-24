@@ -265,6 +265,87 @@ defmodule NativeElixirPdfUtilities.Tokenizer do
     )
   end
 
+  @doc false
+  @spec skip_inline_image(t()) :: {:ok, t()} | tokenizer_error()
+  def skip_inline_image(%__MODULE__{} = st) do
+    skip_inline_image_dictionary(st, 0)
+  end
+
+  defp skip_inline_image_dictionary(_st, count) when count >= 256 do
+    inline_image_error("inline image dictionary exceeds the token limit")
+  end
+
+  defp skip_inline_image_dictionary(st, count) do
+    case next(st) do
+      {{:op, "ID"}, st} -> skip_inline_image_data(st)
+      {{:eof, nil}, _st} -> inline_image_error("inline image is missing ID and EI markers")
+      {:error, _} = error -> error
+      {_token, st} -> skip_inline_image_dictionary(st, count + 1)
+    end
+  end
+
+  defp skip_inline_image_data(%__MODULE__{} = st) do
+    case inline_image_data_start(st) do
+      {:ok, start} -> find_inline_image_end(st, start, start)
+      :error -> inline_image_error("inline image ID marker is not followed by whitespace")
+    end
+  end
+
+  defp inline_image_data_start(%__MODULE__{pos: pos, size: size}) when pos >= size, do: :error
+
+  defp inline_image_data_start(%__MODULE__{} = st) do
+    case :binary.at(st.bin, st.pos) do
+      ?\r ->
+        if st.pos + 1 < st.size and :binary.at(st.bin, st.pos + 1) == ?\n,
+          do: {:ok, st.pos + 2},
+          else: {:ok, st.pos + 1}
+
+      byte when byte in @whitespace ->
+        {:ok, st.pos + 1}
+
+      _byte ->
+        :error
+    end
+  end
+
+  defp find_inline_image_end(%__MODULE__{} = st, start, search_from) do
+    scope = {search_from, st.size - search_from}
+
+    case :binary.match(st.bin, "EI", scope: scope) do
+      {position, 2} ->
+        if inline_image_end?(st, start, position) do
+          end_position = position + 2
+          :ok = PdfValidator.charge_reader_budget(:max_pdf_reader_work, end_position - st.pos)
+          {:ok, %{st | pos: end_position}}
+        else
+          find_inline_image_end(st, start, position + 2)
+        end
+
+      :nomatch ->
+        inline_image_error("inline image is missing its EI marker")
+    end
+  end
+
+  defp inline_image_end?(st, start, position) do
+    before =
+      if position == start,
+        do: :binary.at(st.bin, start - 1),
+        else: :binary.at(st.bin, position - 1)
+
+    after_end = position + 2
+    after_byte = if after_end < st.size, do: :binary.at(st.bin, after_end)
+
+    before in @whitespace and
+      (is_nil(after_byte) or after_byte in @whitespace or is_delim?(after_byte))
+  end
+
+  defp inline_image_error(message) do
+    Diagnostics.error(:content, :invalid_pdf_input, message,
+      operation: :extract,
+      module: __MODULE__
+    )
+  end
+
   @doc """
   If called after a `:stream` token, returns a hint for the stream length:
   - `{:direct, int}` when `/Length` was a direct integer

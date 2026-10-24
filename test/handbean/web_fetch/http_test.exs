@@ -45,6 +45,10 @@ defmodule Handbean.WebFetch.HTTPTest do
     assert request =~ "GET /guide?q=2 HTTP/1.1\r\n"
     assert request =~ "host: never-resolve.invalid:#{port}\r\n"
     assert request =~ "accept-encoding: identity\r\n"
+    assert request =~ "application/pdf"
+    assert request =~ "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    assert request =~ "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    assert request =~ "application/vnd.openxmlformats-officedocument.presentationml.presentation"
     refute String.downcase(request) =~ "cookie:"
     assert_receive {:closed, ^server, {:error, :closed}}
   end

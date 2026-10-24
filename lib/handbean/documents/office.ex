@@ -10,10 +10,10 @@ defmodule Handbean.Documents.Office do
 
   def extract(bytes, format) do
     with {:ok, archive} <- Archive.open(bytes),
-         {:ok, parts} <- xml_parts(archive),
-         {:ok, main} <- related(parts, "", "officeDocument"),
-         {:ok, root} <- part(parts, main),
-         {:ok, lines, warnings} <- render(format, root, main, parts) do
+         package = %{archive: archive, parts: %{}, budget: %{nodes: 0, text_bytes: 0}},
+         {:ok, main, package} <- related(package, "", "officeDocument"),
+         {:ok, root, package} <- part(package, main),
+         {:ok, lines, warnings, _package} <- render(format, root, main, package) do
       text = Enum.join(lines, "\n")
 
       if byte_size(text) <= 2 * 1024 * 1024 do
@@ -24,21 +24,7 @@ defmodule Handbean.Documents.Office do
     end
   end
 
-  defp xml_parts(archive) do
-    archive.entries
-    |> Map.keys()
-    |> Enum.filter(&String.ends_with?(&1, [".xml", ".rels"]))
-    |> Enum.reduce_while({:ok, %{}}, fn name, {:ok, parts} ->
-      with {:ok, bytes} <- Archive.fetch(archive, name),
-           {:ok, node} <- XML.parse(bytes) do
-        {:cont, {:ok, Map.put(parts, name, node)}}
-      else
-        error -> {:halt, error}
-      end
-    end)
-  end
-
-  defp render(:docx, {"document", _, _} = root, _main, _parts) do
+  defp render(:docx, {"document", _, _} = root, _main, package) do
     root
     |> XML.descendants("body")
     |> Enum.flat_map(&document_blocks/1)
@@ -54,44 +40,47 @@ defmodule Handbean.Documents.Office do
         {:ok, groups |> Enum.reverse() |> List.flatten(),
          [
            "DOCX body paragraph/table text only; headers, footers, printed page numbers and layout are not available."
-         ]}
+         ], package}
 
       error ->
         error
     end
   end
 
-  defp render(:pptx, {"presentation", _, _} = root, main, parts) do
+  defp render(:pptx, {"presentation", _, _} = root, main, package) do
     root
     |> XML.descendants("sldId")
     |> Enum.with_index(1)
-    |> Enum.reduce_while({:ok, [], 0}, fn {slide, index}, {:ok, sections, used} ->
-      with {:ok, target} <- related(parts, main, "slide", XML.relationship_id(slide)),
-           {:ok, node} <- part(parts, target),
+    |> Enum.reduce_while({:ok, [], 0, package}, fn {slide, index},
+                                                   {:ok, sections, used, package} ->
+      with {:ok, target, package} <-
+             related(package, main, "slide", XML.relationship_id(slide)),
+           {:ok, node, package} <- part(package, target),
            text <- node |> XML.descendants("p") |> Enum.map_join("\n", &paragraph/1),
            {:ok, lines, size} <- label_lines(text, "Slide #{index}", 2 * 1024 * 1024 - used) do
-        {:cont, {:ok, [Enum.join(lines, "\n") | sections], used + size + 1}}
+        {:cont, {:ok, [Enum.join(lines, "\n") | sections], used + size + 1, package}}
       else
         error -> {:halt, error}
       end
     end)
     |> case do
-      {:ok, sections, _} ->
+      {:ok, sections, _, package} ->
         {:ok, Enum.reverse(sections),
-         ["Slide text only; charts, images and speaker notes are not rendered."]}
+         ["Slide text only; charts, images and speaker notes are not rendered."], package}
 
       error ->
         error
     end
   end
 
-  defp render(:xlsx, {"workbook", _, _} = root, main, parts) do
-    with {:ok, shared} <- shared_strings(parts, main) do
+  defp render(:xlsx, {"workbook", _, _} = root, main, package) do
+    with {:ok, shared, package} <- shared_strings(package, main) do
       root
       |> XML.descendants("sheet")
-      |> Enum.reduce_while({:ok, [], 0}, fn sheet, {:ok, sections, used} ->
-        with {:ok, target} <- related(parts, main, "worksheet", XML.relationship_id(sheet)),
-             {:ok, node} <- part(parts, target),
+      |> Enum.reduce_while({:ok, [], 0, package}, fn sheet, {:ok, sections, used, package} ->
+        with {:ok, target, package} <-
+               related(package, main, "worksheet", XML.relationship_id(sheet)),
+             {:ok, node, package} <- part(package, target),
              {:ok, text} <- worksheet(node, shared),
              label <- XML.attr(sheet, "name") || "Unnamed",
              {:ok, lines, size} <-
@@ -100,17 +89,17 @@ defmodule Handbean.Documents.Office do
                  "Sheet #{inspect(label, printable_limit: :infinity)}",
                  2 * 1024 * 1024 - used
                ) do
-          {:cont, {:ok, [Enum.join(lines, "\n") | sections], used + size + 1}}
+          {:cont, {:ok, [Enum.join(lines, "\n") | sections], used + size + 1, package}}
         else
           error -> {:halt, error}
         end
       end)
       |> case do
-        {:ok, sections, _} ->
+        {:ok, sections, _, package} ->
           {:ok, Enum.reverse(sections),
            [
              "XLSX cells use stored values; formulas are not evaluated. Dates may be numeric serials; formatting, charts and hidden-state filtering are not applied."
-           ]}
+           ], package}
 
         error ->
           error
@@ -143,16 +132,16 @@ defmodule Handbean.Documents.Office do
   defp paragraph({name, _, _}) when name in ["br", "cr"], do: "\n"
   defp paragraph(node), do: node |> XML.children() |> Enum.map_join(&paragraph/1)
 
-  defp shared_strings(parts, main) do
-    case related(parts, main, "sharedStrings") do
-      {:ok, target} ->
-        with {:ok, root} <- part(parts, target) do
+  defp shared_strings(package, main) do
+    case do_related(package, main, "sharedStrings", nil) do
+      {:ok, target, package} ->
+        with {:ok, root, package} <- part(package, target) do
           strings = root |> XML.children("si") |> Enum.map(&paragraph/1)
-          {:ok, List.to_tuple(strings)}
+          {:ok, List.to_tuple(strings), package}
         end
 
-      {:error, :missing_relationship} ->
-        {:ok, {}}
+      {:error, :missing_relationship, package} ->
+        {:ok, {}, package}
 
       error ->
         error
@@ -225,21 +214,27 @@ defmodule Handbean.Documents.Office do
     end
   end
 
-  defp related(parts, source, type, id \\ nil) do
-    case type do
-      "slide" when is_nil(id) -> {:error, "Missing Office relationship id"}
-      "worksheet" when is_nil(id) -> {:error, "Missing Office relationship id"}
-      _ -> do_related(parts, source, type, id)
+  defp related(package, source, type, id \\ nil) do
+    result =
+      case type do
+        "slide" when is_nil(id) -> {:error, "Missing Office relationship id"}
+        "worksheet" when is_nil(id) -> {:error, "Missing Office relationship id"}
+        _ -> do_related(package, source, type, id)
+      end
+
+    case result do
+      {:error, :missing_relationship, _package} -> {:error, :missing_relationship}
+      result -> result
     end
   end
 
-  defp do_related(parts, source, type, id) do
+  defp do_related(package, source, type, id) do
     rels =
       if source == "",
         do: "_rels/.rels",
         else: Path.join([Path.dirname(source), "_rels", Path.basename(source) <> ".rels"])
 
-    with {:ok, root} <- part(parts, rels) do
+    with {:ok, root, package} <- part(package, rels) do
       matches =
         root
         |> XML.children("Relationship")
@@ -250,12 +245,16 @@ defmodule Handbean.Documents.Office do
 
       case matches do
         [] ->
-          {:error, :missing_relationship}
+          {:error, :missing_relationship, package}
 
         [rel] ->
-          if XML.attr(rel, "TargetMode") in [nil, "Internal"],
-            do: target(source, XML.attr(rel, "Target")),
-            else: {:error, "External Office relationships are not followed"}
+          if XML.attr(rel, "TargetMode") in [nil, "Internal"] do
+            with {:ok, target} <- target(source, XML.attr(rel, "Target")) do
+              {:ok, target, package}
+            end
+          else
+            {:error, "External Office relationships are not followed"}
+          end
 
         _ ->
           {:error, "Ambiguous Office relationships"}
@@ -299,10 +298,21 @@ defmodule Handbean.Documents.Office do
       else: {:error, "Extracted document exceeds the 2 MiB text limit"}
   end
 
-  defp part(parts, name) do
-    case Map.fetch(parts, name) do
-      {:ok, node} -> {:ok, node}
-      :error -> {:error, "Missing Office XML part: #{name}"}
+  defp part(package, name) do
+    case Map.fetch(package.parts, name) do
+      {:ok, node} ->
+        {:ok, node, package}
+
+      :error ->
+        with true <- String.ends_with?(name, [".xml", ".rels"]),
+             {:ok, bytes} <- Archive.fetch(package.archive, name),
+             {:ok, node, budget} <- XML.parse(bytes, package.budget) do
+          package = %{package | parts: Map.put(package.parts, name, node), budget: budget}
+          {:ok, node, package}
+        else
+          false -> {:error, "Missing Office XML part: #{name}"}
+          error -> error
+        end
     end
   end
 end

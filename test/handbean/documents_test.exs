@@ -23,6 +23,27 @@ defmodule Handbean.DocumentsTest do
     refute second =~ "[Page 1]"
   end
 
+  test "skips bounded inline image data without losing surrounding PDF text" do
+    assert {:ok, document} = Documents.extract(DocumentFixtures.inline_image_pdf(), :pdf)
+    assert document.text =~ "before inline image"
+    assert document.text =~ "after inline image"
+
+    malformed = DocumentFixtures.pdf("BI /W 1 /H 1 ID unterminated")
+    assert {:error, _} = Documents.extract(malformed, :pdf)
+  end
+
+  test "enforces the text span budget across all PDF pages" do
+    spans = String.duplicate("(x) Tj\n", 12_501)
+    page = "BT /F1 12 Tf 72 700 Td\n" <> spans <> "ET"
+
+    assert {:error, message} =
+             [page, page]
+             |> DocumentFixtures.pdf_pages()
+             |> Documents.extract(:pdf)
+
+    assert message =~ "resource limit"
+  end
+
   test "reports image-only pages and encrypted documents without pretending to understand them" do
     assert {:ok, document} = Documents.extract(DocumentFixtures.read("image-only.pdf"), :pdf)
     assert document.text =~ "No extractable text"
@@ -74,6 +95,65 @@ defmodule Handbean.DocumentsTest do
     assert {:ok, result} = Documents.extract(reordered, :pptx)
     assert result.text =~ "[Slide 1] Conclusion"
     assert result.text =~ "[Slide 2] Opening 中文"
+  end
+
+  test "Office extraction ignores malformed unrelated XML members" do
+    bytes =
+      DocumentFixtures.docx(
+        "<w:p><w:r><w:t>reachable text</w:t></w:r></w:p>",
+        [{"custom/unrelated.xml", "<malformed"}]
+      )
+
+    assert {:ok, document} = Documents.extract(bytes, :docx)
+    assert document.text =~ "reachable text"
+  end
+
+  test "Office XML node budgets are aggregate across relationship-reachable parts" do
+    paragraphs = Enum.map_join(1..26_000, &~s(<p id="#{&1}"><t/></p>))
+
+    bytes =
+      DocumentFixtures.zip([
+        {"_rels/.rels",
+         DocumentFixtures.relationships([{"main", "officeDocument", "ppt/presentation.xml"}])},
+        {"ppt/presentation.xml",
+         ~s(<presentation xmlns:r="urn:r"><sldId r:id="one"/><sldId r:id="two"/></presentation>)},
+        {"ppt/_rels/presentation.xml.rels",
+         DocumentFixtures.relationships([
+           {"one", "slide", "slides/slide1.xml"},
+           {"two", "slide", "slides/slide2.xml"}
+         ])},
+        {"ppt/slides/slide1.xml", "<slide>#{paragraphs}</slide>"},
+        {"ppt/slides/slide2.xml", "<slide>#{paragraphs}</slide>"}
+      ])
+
+    assert {:error, message} = Documents.extract(bytes, :pptx)
+    assert message =~ "oversized Office XML"
+  end
+
+  test "Office XML text budgets are aggregate across relationship-reachable parts" do
+    filler = Base.encode16(:crypto.strong_rand_bytes(2_100_000))
+
+    add_filler = fn relationships ->
+      String.replace_suffix(relationships, "</Relationships>", filler <> "</Relationships>")
+    end
+
+    bytes =
+      DocumentFixtures.zip([
+        {"_rels/.rels",
+         [{"main", "officeDocument", "ppt/presentation.xml"}]
+         |> DocumentFixtures.relationships()
+         |> add_filler.()},
+        {"ppt/presentation.xml",
+         ~s(<presentation xmlns:r="urn:r"><sldId r:id="one"/></presentation>)},
+        {"ppt/_rels/presentation.xml.rels",
+         [{"one", "slide", "slides/slide1.xml"}]
+         |> DocumentFixtures.relationships()
+         |> add_filler.()},
+        {"ppt/slides/slide1.xml", "<slide><p><t>unreachable after budget</t></p></slide>"}
+      ])
+
+    assert {:error, message} = Documents.extract(bytes, :pptx)
+    assert message =~ "oversized Office XML"
   end
 
   test "refuses malformed PDF, cyclic page trees, decompression bombs and oversized input" do

@@ -269,20 +269,21 @@ defmodule NativeElixirPdfUtilities.Text do
 
   defp extract_pages(text_context) do
     text_context.pages
-    |> Enum.reduce_while({:ok, []}, fn page, {:ok, pages} ->
-      case extract_page(page) do
-        {:ok, page} -> {:cont, {:ok, [page | pages]}}
+    |> Enum.reduce_while({:ok, [], Limits.get(:max_text_spans)}, fn page,
+                                                                    {:ok, pages, remaining} ->
+      case extract_page(page, remaining) do
+        {:ok, page, used} -> {:cont, {:ok, [page | pages], remaining - used}}
         {:error, _} = extraction_error -> {:halt, extraction_error}
       end
     end)
     |> case do
-      {:ok, pages} -> {:ok, Enum.reverse(pages)}
+      {:ok, pages, _remaining} -> {:ok, Enum.reverse(pages)}
       error -> error
     end
   end
 
-  defp extract_page(page) do
-    initial_state = text_state(page)
+  defp extract_page(page, remaining_spans) do
+    initial_state = text_state(page, remaining_spans)
 
     Enum.reduce_while(page.contents, {:ok, initial_state, []}, fn operations,
                                                                   {:ok, state, spans} ->
@@ -295,14 +296,14 @@ defmodule NativeElixirPdfUtilities.Text do
       end
     end)
     |> case do
-      {:ok, _state, spans} ->
+      {:ok, state, spans} ->
         {:ok,
          %{
            number: page.number,
            media_box: page.media_box,
            rotation: page.rotation,
            spans: Enum.reverse(spans)
-         }}
+         }, remaining_spans - state.remaining_spans}
 
       error ->
         error
@@ -492,7 +493,7 @@ defmodule NativeElixirPdfUtilities.Text do
       decoded.text == "" ->
         {:ok, state, spans}
 
-      state.next_source_index >= Limits.get(:max_text_spans) ->
+      state.remaining_spans <= 0 ->
         error(:limits, :resource_limit_exceeded, "text span count exceeds the limit", page: page)
 
       true ->
@@ -519,6 +520,7 @@ defmodule NativeElixirPdfUtilities.Text do
              state
              | text_matrix: geometry.next_text_matrix,
                next_source_index: state.next_source_index + 1,
+               remaining_spans: state.remaining_spans - 1,
                join_next_span?: true
            }, [span | spans]}
         end
@@ -542,8 +544,12 @@ defmodule NativeElixirPdfUtilities.Text do
           }
 
           with {:ok, child_state, child_spans} <- interpret(form.instructions, child_state, page) do
-            {:ok, %{state | next_source_index: child_state.next_source_index},
-             Enum.reverse(child_spans, spans)}
+            {:ok,
+             %{
+               state
+               | next_source_index: child_state.next_source_index,
+                 remaining_spans: child_state.remaining_spans
+             }, Enum.reverse(child_spans, spans)}
           end
         end
     end
@@ -642,7 +648,7 @@ defmodule NativeElixirPdfUtilities.Text do
     %{parts: Enum.reverse(parts), whitespace_bytes: whitespace_bytes}
   end
 
-  defp text_state(page) do
+  defp text_state(page, remaining_spans) do
     %{
       ctm: identity(),
       text_matrix: identity(),
@@ -659,6 +665,7 @@ defmodule NativeElixirPdfUtilities.Text do
       join_next_span?: false,
       stack: [],
       next_source_index: 0,
+      remaining_spans: remaining_spans,
       rotation: page.rotation,
       page: %{media_box: page.media_box, rotation: page.rotation}
     }

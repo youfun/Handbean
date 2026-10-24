@@ -36,6 +36,40 @@ defmodule Handbean.WebFetch.DocumentsTest do
     refute rest.truncated
   end
 
+  test "document signatures override or reject mislabeled text/plain responses" do
+    assert {:ok, result} =
+             Document.extract(
+               DocumentFixtures.read("multilingual.pdf"),
+               [{"content-type", "text/plain"}],
+               URI.parse("https://example.test/download"),
+               10_000
+             )
+
+    assert result.content =~ "Quarterly report"
+    assert result.content =~ "中文文档测试：你好世界"
+    assert result.page_count == 2
+
+    assert {:ok, office} =
+             Document.extract(
+               DocumentFixtures.read("report.docx"),
+               [{"content-type", "text/plain"}],
+               URI.parse("https://example.test/report.docx"),
+               10_000
+             )
+
+    assert office.content =~ "中文段落"
+
+    assert {:error, message} =
+             Document.extract(
+               DocumentFixtures.read("report.docx"),
+               [{"content-type", "text/plain"}],
+               URI.parse("https://example.test/download"),
+               10_000
+             )
+
+    assert message =~ "does not identify a supported Office format"
+  end
+
   test "Office MIME and octet-stream filenames bypass text charset decoding" do
     types = [
       {"report.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",

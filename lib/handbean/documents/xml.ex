@@ -2,15 +2,29 @@ defmodule Handbean.Documents.XML do
   @moduledoc false
   @behaviour Saxy.Handler
 
+  @max_nodes 100_000
+  @max_text_bytes 8 * 1024 * 1024
+
   def parse(bytes) do
+    with {:ok, root, _budget} <- parse(bytes, %{nodes: 0, text_bytes: 0}) do
+      {:ok, root}
+    end
+  end
+
+  def parse(bytes, %{nodes: nodes, text_bytes: text_bytes})
+      when is_integer(nodes) and nodes >= 0 and is_integer(text_bytes) and text_bytes >= 0 do
     if String.valid?(bytes) and :binary.match(bytes, ["<!DOCTYPE", "<!ENTITY"]) == :nomatch do
-      state = %{stack: [], root: nil, nodes: 0, depth: 0, text_bytes: 0}
+      state = %{stack: [], root: nil, nodes: nodes, depth: 0, text_bytes: text_bytes}
 
       case Saxy.parse_string(bytes, __MODULE__, state,
              expand_entity: {__MODULE__, :reject_entity, []}
            ) do
-        {:ok, %{root: root, stack: []}} when not is_nil(root) -> {:ok, root}
-        _ -> {:error, "Malformed or oversized Office XML"}
+        {:ok, %{root: root, stack: [], nodes: nodes, text_bytes: text_bytes}}
+        when not is_nil(root) ->
+          {:ok, root, %{nodes: nodes, text_bytes: text_bytes}}
+
+        _ ->
+          {:error, "Malformed or oversized Office XML"}
       end
     else
       {:error, "Office XML must be UTF-8 without DTD or entity declarations"}
@@ -23,7 +37,7 @@ defmodule Handbean.Documents.XML do
 
   @impl true
   def handle_event(:start_element, {name, attrs}, state) do
-    if state.depth >= 64 or state.nodes >= 100_000 or length(attrs) > 64 do
+    if state.depth >= 64 or state.nodes >= @max_nodes or length(attrs) > 64 do
       {:stop, :xml_limit}
     else
       node = {local(name), attrs, []}
@@ -49,7 +63,7 @@ defmodule Handbean.Documents.XML do
   def handle_event(:characters, text, %{stack: [{name, attrs, children} | rest]} = state) do
     used = state.text_bytes + byte_size(text)
 
-    if used > 8 * 1024 * 1024 or state.nodes >= 100_000 do
+    if used > @max_text_bytes or state.nodes >= @max_nodes do
       {:stop, :xml_limit}
     else
       {:ok,

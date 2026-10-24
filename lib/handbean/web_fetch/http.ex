@@ -4,7 +4,8 @@ defmodule Handbean.WebFetch.HTTP do
   @max_bytes 1_048_576
   @headers [
     {"user-agent", "Handbean/web_fetch"},
-    {"accept", "text/html, text/plain, text/markdown, application/xhtml+xml"},
+    {"accept",
+     "text/html, text/plain, text/markdown, application/xhtml+xml, application/pdf, application/vnd.openxmlformats-officedocument.wordprocessingml.document, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.openxmlformats-officedocument.presentationml.presentation"},
     {"accept-encoding", "identity"},
     {"connection", "close"}
   ]

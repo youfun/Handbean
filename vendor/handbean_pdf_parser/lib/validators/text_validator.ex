@@ -389,13 +389,14 @@ defmodule NativeElixirPdfUtilities.Validators.TextValidator do
       {{:eof, nil}, _tokenizer} ->
         {:ok, Enum.reverse(tokens)}
 
-      {{:op, "BI"}, _tokenizer} ->
-        error(
-          :content,
-          :unsupported_pdf_feature,
-          "inline images are not supported by text extraction; use an image XObject instead",
-          page: page_number
-        )
+      {{:op, "BI"}, tokenizer} ->
+        case Tokenizer.skip_inline_image(tokenizer) do
+          {:ok, tokenizer} ->
+            content_tokens(tokenizer, [{:op, "INLINE_IMAGE"} | tokens], page_number)
+
+          {:error, _} = error ->
+            error
+        end
 
       {:error, {_reason, diagnostic}} ->
         {:error,
