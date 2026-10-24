@@ -63,6 +63,33 @@ defmodule Handbean.Skills.SettingsTest do
     assert {:error, "内置 Skill 不可直接修改"} = Settings.set_enabled(bundled.name, false, opts)
   end
 
+  test "template install and import reject collisions without overwriting", %{
+    root: root,
+    opts: opts
+  } do
+    existing_dir = Path.join([Keyword.fetch!(opts, :workspace), ".handbean/skills/collision"])
+    File.mkdir_p!(existing_dir)
+    existing = "---\nname: collision\ndescription: Original.\n---\n# Original\n"
+    File.write!(Path.join(existing_dir, "SKILL.md"), existing)
+
+    template = %{
+      name: "collision",
+      content: "---\nname: collision\ndescription: Replacement.\n---\n# Replacement\n"
+    }
+
+    assert {:error, message} = Settings.install_template(template, "workspace", opts)
+    assert message =~ "同名 Skill 已存在"
+    assert File.read!(Path.join(existing_dir, "SKILL.md")) == existing
+
+    source_dir = Path.join(root, "collision-import")
+    File.mkdir_p!(source_dir)
+    File.write!(Path.join(source_dir, "SKILL.md"), template.content)
+
+    assert {:error, message} = Settings.import_from_dir(source_dir, "workspace", opts)
+    assert message =~ "同名 Skill 已存在"
+    assert File.read!(Path.join(existing_dir, "SKILL.md")) == existing
+  end
+
   test "imports skill from local directory", %{root: root, opts: opts} do
     source_dir = Path.join(root, "imported-skill")
     File.mkdir_p!(source_dir)

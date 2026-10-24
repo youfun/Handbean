@@ -103,9 +103,7 @@ defmodule Handbean.Skills.Settings do
          :ok <- ensure_safe_base_dir(base_dir),
          skill_dir = Path.join(base_dir, name),
          :ok <- PathValidator.validate_under_root(skill_dir, base_dir),
-         :ok <- ensure_not_symlink(skill_dir),
-         target_file = Path.join(skill_dir, "SKILL.md"),
-         :ok <- atomic_write(target_file, content) do
+         :ok <- publish_skill(skill_dir, content) do
       {:ok, name}
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
@@ -249,12 +247,23 @@ defmodule Handbean.Skills.Settings do
     end
   end
 
-  defp ensure_not_symlink(path) do
-    case File.lstat(path) do
-      {:ok, %{type: :symlink}} -> {:error, "不允许使用符号链接"}
-      {:ok, _} -> :ok
-      {:error, :enoent} -> :ok
-      {:error, _} -> {:error, "无法读取路径状态"}
+  defp publish_skill(skill_dir, content) do
+    case File.mkdir(skill_dir) do
+      :ok ->
+        case atomic_write(Path.join(skill_dir, "SKILL.md"), content) do
+          :ok ->
+            :ok
+
+          {:error, _} = error ->
+            File.rm_rf(skill_dir)
+            error
+        end
+
+      {:error, :eexist} ->
+        {:error, "同名 Skill 已存在；请先移除后再安装"}
+
+      {:error, _reason} ->
+        {:error, "创建 Skill 目录失败"}
     end
   end
 
