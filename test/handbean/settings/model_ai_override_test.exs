@@ -85,6 +85,35 @@ defmodule Handbean.Settings.ModelAIOverrideTest do
              Settings.advisor_resolution(ws)
   end
 
+  test "subagent model inherits, overrides, and can follow the parent run", %{ws: ws} do
+    global = %{
+      ModelAISettings.defaults()
+      | subagent_mode: :custom,
+        subagent_model: "provider/global-subagent",
+        subagent_reasoning: "high"
+    }
+
+    assert :ok = ModelAIOverride.save(:global, global)
+
+    assert {:ok, %{model: "provider/global-subagent", reasoning: "high", source: :global}} =
+             Settings.subagent_resolution(ws)
+
+    workspace = %{
+      global
+      | subagent_mode: :custom,
+        subagent_model: "provider/workspace-subagent",
+        subagent_reasoning: "low"
+    }
+
+    assert :ok = ModelAIOverride.save({:workspace, ws}, workspace)
+
+    assert {:ok, %{model: "provider/workspace-subagent", reasoning: "low", source: :workspace}} =
+             Settings.subagent_resolution(ws)
+
+    assert :ok = ModelAIOverride.save({:workspace, ws}, %{workspace | subagent_mode: :parent})
+    assert Settings.subagent_resolution(ws) == :inherit
+  end
+
   test "workspace can reset the global memory model and think level to their defaults", %{ws: ws} do
     global = %{
       ModelAISettings.defaults()
@@ -118,12 +147,13 @@ defmodule Handbean.Settings.ModelAIOverrideTest do
     sources = ModelAIOverride.sources(ws)
 
     assert sources
-           |> Map.delete(:advisor)
+           |> Map.drop([:advisor, :subagent])
            |> Enum.all?(fn {_field, source} -> source == :global end)
 
     assert sources.advisor == :none
+    assert sources.subagent == :inherit
 
     assert Map.keys(sources) |> Enum.sort() ==
-             Enum.sort([:advisor | ModelAISettings.fields()])
+             Enum.sort([:advisor, :subagent | ModelAISettings.fields()])
   end
 end

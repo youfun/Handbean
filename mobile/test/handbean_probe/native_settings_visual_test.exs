@@ -587,10 +587,14 @@ defmodule HandbeanProbe.NativeSettingsVisualTest do
 
     assert blob =~ gettext("Advisor")
     assert blob =~ gettext("Advisor model")
+    assert blob =~ gettext("Subagent")
+    assert blob =~ gettext("Subagent model")
     assert blob =~ gettext("Think level")
     assert blob =~ gettext("Enable memory reflection")
     assert find_type(tree, :settings_select, "select-advisor")
     assert find_type(tree, :settings_select, "select-advisor-reasoning")
+    assert find_type(tree, :settings_select, "select-subagent")
+    assert find_type(tree, :settings_select, "select-subagent-reasoning")
     assert find_type(tree, :settings_select, "select-memory-reasoning")
     refute find_type(tree, :settings_select, "select-provider")
 

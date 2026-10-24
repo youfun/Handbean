@@ -35,6 +35,16 @@ defmodule Handbean.Tool.Builtin.Task do
           type: "string",
           description: "Profile name. Defaults to researcher."
         },
+        model: %{
+          type: "string",
+          description:
+            "Complete model id from list_models. Omit, inherit, or current to use the subagent default (settings, then parent run)."
+        },
+        reasoning_level: %{
+          type: "string",
+          description:
+            "Optional supported reasoning level. When omitted, inherit the parent run if the model is unchanged; otherwise use the selected model's default."
+        },
         background: %{
           type: "boolean",
           description: "Default true. false blocks for a short read-only run."
@@ -66,6 +76,12 @@ defmodule Handbean.Tool.Builtin.Task do
       not is_boolean(Map.get(input, "background", true)) ->
         {:error, "background must be a boolean"}
 
+      not valid_optional_string?(Map.get(input, "model")) ->
+        {:error, "model must be a string"}
+
+      not valid_optional_string?(Map.get(input, "reasoning_level")) ->
+        {:error, "reasoning_level must be a string"}
+
       true ->
         mode = if Map.get(input, "background", true), do: :background, else: :sync
 
@@ -77,6 +93,10 @@ defmodule Handbean.Tool.Builtin.Task do
 
   def execute(_, _),
     do: {:error, "task (max 16000 bytes) and criteria (max 4000 bytes) are required"}
+
+  defp valid_optional_string?(value) when value in [nil, ""], do: true
+  defp valid_optional_string?(value) when is_binary(value), do: true
+  defp valid_optional_string?(_value), do: false
 
   @doc """
   Provider-facing definition with the profiles this run can start. The
@@ -93,7 +113,11 @@ defmodule Handbean.Tool.Builtin.Task do
 
     %{
       definition
-      | description: definition.description <> "\n\nsubagent_type values:\n" <> listing
+      | description:
+          definition.description <>
+            "\n\nsubagent_type values:\n" <>
+            listing <>
+            "\n\nUse list_models for an explicit model id. Omit model to use the subagent default."
     }
   end
 

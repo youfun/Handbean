@@ -185,7 +185,8 @@ defmodule Handbean.Settings.ModelRefs do
     [
       {:default_model, map["default_model"]},
       {:om_model, om["model"]},
-      {:advisor_model, get_in(map, ["advisor", "model"])}
+      {:advisor_model, get_in(map, ["advisor", "model"])},
+      {:subagent_model, get_in(map, ["subagent", "model"])}
     ]
     |> Enum.filter(fn {_k, v} -> is_binary(v) and v != "" end)
   end

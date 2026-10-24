@@ -187,6 +187,74 @@ defmodule HandbeanWeb.Live.Settings.ModelAIPanel do
       </section>
 
       <section class="settings-model-section">
+        <h4 class="settings-model-section-title">{gettext("Subagent")}</h4>
+        <div class="settings-card settings-card-has-model-picker">
+          <div class="settings-field-row">
+            <div class="settings-field-copy">
+              <div class="settings-field-title">{gettext("Subagent model")}</div>
+              <div class="settings-field-desc">
+                {gettext(
+                  "Used by the task tool. Does not affect create_conversation. Follow current conversation unless you pick a model."
+                )}
+              </div>
+            </div>
+            <div class="settings-field-control">
+              <ModelPicker.render
+                id="subagent-model-picker"
+                name="subagent_model"
+                value={@form.subagent_model}
+                options={
+                  model_picker_options(
+                    @available_models,
+                    @form.subagent_model,
+                    gettext("Follow current conversation")
+                  )
+                }
+                label={gettext("Subagent model")}
+                change="update_field"
+                target={@target}
+              />
+            </div>
+          </div>
+          <div class="settings-field-row">
+            <div class="settings-field-copy">
+              <div class="settings-field-title">{gettext("Think level")}</div>
+              <div class="settings-field-desc">
+                {gettext("Think level for the subagent default model.")}
+              </div>
+            </div>
+            <div class="settings-field-control">
+              <select name="subagent_reasoning" phx-change="update_field" class="settings-input">
+                <option value="" selected={is_nil(@form.subagent_reasoning)}>
+                  {gettext("Model default")}
+                </option>
+                <option
+                  :if={
+                    missing_reasoning?(
+                      @form.subagent_reasoning,
+                      @available_models,
+                      @form.subagent_model
+                    )
+                  }
+                  value={@form.subagent_reasoning}
+                  selected
+                >
+                  {unavailable_reasoning_label(@form.subagent_reasoning)}
+                </option>
+                <option
+                  :for={level <- reasoning_levels(@available_models, @form.subagent_model)}
+                  value={level}
+                  selected={@form.subagent_reasoning == level}
+                >
+                  {reasoning_label(level)}
+                </option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="settings-model-section">
         <h4 class="settings-model-section-title">
           {gettext("Memory Reflection")}
         </h4>

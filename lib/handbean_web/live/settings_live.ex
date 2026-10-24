@@ -262,7 +262,7 @@ defmodule HandbeanWeb.SettingsLive do
       current = Map.get(existing, "model_ai", %{})
       current_memory = Map.get(current, "observational_memory", %{})
 
-      if json != %{} or Map.has_key?(current, "advisor") or
+      if json != %{} or Map.has_key?(current, "advisor") or Map.has_key?(current, "subagent") or
            Map.has_key?(current_memory, "reflector_enabled") do
         Settings.save_global(json)
       end
@@ -744,6 +744,20 @@ defmodule HandbeanWeb.SettingsLive do
 
   defp update_form_field(form, "advisor_reasoning", value) do
     struct!(form, advisor_reasoning: blank_to_nil(value))
+  end
+
+  defp update_form_field(form, "subagent_model", value) do
+    case blank_to_nil(value) do
+      nil ->
+        struct!(form, subagent_mode: :inherit, subagent_model: nil, subagent_reasoning: nil)
+
+      model ->
+        struct!(form, subagent_mode: :custom, subagent_model: model, subagent_reasoning: nil)
+    end
+  end
+
+  defp update_form_field(form, "subagent_reasoning", value) do
+    struct!(form, subagent_reasoning: blank_to_nil(value))
   end
 
   defp update_form_field(form, "reasoning", value) do

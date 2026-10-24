@@ -719,6 +719,82 @@ defmodule Handbean.Agent.DelegationTest do
     assert opts[:provider_config].reasoning == %{effort: "high"}
   end
 
+  test "task model override beats settings default", %{context: context} do
+    models_path = Path.join([context.working_directory, ".handbean", "models.json"])
+    File.mkdir_p!(Path.dirname(models_path))
+    previous_models_path = System.get_env("HANDBEAN_MODELS_FILE")
+    System.put_env("HANDBEAN_MODELS_FILE", models_path)
+
+    on_exit(fn ->
+      if previous_models_path,
+        do: System.put_env("HANDBEAN_MODELS_FILE", previous_models_path),
+        else: System.delete_env("HANDBEAN_MODELS_FILE")
+    end)
+
+    File.write!(
+      models_path,
+      Handbean.JSON.encode!(%{
+        "defaultProvider" => "mg",
+        "defaultModel" => "cursor/gemini-4-argon",
+        "providers" => %{
+          "mg" => %{
+            "baseUrl" => "https://example.test",
+            "api" => "openai-responses",
+            "provider" => "mg",
+            "apiKey" => "test-key",
+            "models" => [
+              %{
+                "id" => "cursor/gemini-4-argon",
+                "reasoning" => true,
+                "reasoningLevels" => ["low", "high"]
+              },
+              %{
+                "id" => "cursor/composer-2",
+                "reasoning" => true,
+                "reasoningLevels" => ["low", "high"]
+              }
+            ]
+          }
+        }
+      })
+    )
+
+    settings_path = Path.join([context.working_directory, ".handbean", "settings.json"])
+    previous_settings = System.get_env("HANDBEAN_GLOBAL_SETTINGS_FILE")
+    System.put_env("HANDBEAN_GLOBAL_SETTINGS_FILE", settings_path)
+
+    on_exit(fn ->
+      if previous_settings,
+        do: System.put_env("HANDBEAN_GLOBAL_SETTINGS_FILE", previous_settings),
+        else: System.delete_env("HANDBEAN_GLOBAL_SETTINGS_FILE")
+    end)
+
+    assert :ok =
+             Handbean.Settings.save_global(%{
+               "subagent" => %{"model" => "mg/cursor/gemini-4-argon", "reasoning" => "low"}
+             })
+
+    assert {:ok, settings_opts} = Policy.child_opts(context, 30_000)
+    assert settings_opts[:model] == "cursor/gemini-4-argon"
+    assert settings_opts[:reasoning_level] == "low"
+
+    assert {:ok, override_opts} =
+             Policy.child_opts(context, 30_000, Profile.researcher(), %{}, %{
+               "model" => "mg/cursor/composer-2",
+               "reasoning_level" => "high"
+             })
+
+    assert override_opts[:model] == "cursor/composer-2"
+    assert override_opts[:reasoning_level] == "high"
+
+    assert {:error, reason} =
+             Policy.child_opts(context, 30_000, Profile.researcher(), %{}, %{
+               "model" => "missing/model"
+             })
+
+    assert reason =~ "not allowed" or reason =~ "not configured"
+  end
+
   test "neither delegated nor ordinary runs are restarted with the original input" do
     assert Handbean.Agent.RunSupervisor.child_spec(run_opts: [delegated?: true]).restart ==
              :temporary

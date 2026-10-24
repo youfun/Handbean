@@ -1811,6 +1811,31 @@ msgstr "主题"
 msgid "Think level"
 msgstr "思考等级"
 
+#: lib/handbean_web/live/settings/model_ai_panel.ex
+#, elixir-autogen, elixir-format
+msgid "Subagent"
+msgstr "子代理"
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex
+#, elixir-autogen, elixir-format
+msgid "Subagent model"
+msgstr "子代理模型"
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex
+#, elixir-autogen, elixir-format
+msgid "Follow current conversation"
+msgstr "跟随当前对话"
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex
+#, elixir-autogen, elixir-format
+msgid "Used by the task tool. Does not affect create_conversation. Follow current conversation unless you pick a model."
+msgstr "供 task 子代理使用，不影响 create_conversation。未选择模型时跟随当前对话。"
+
+#: lib/handbean_web/live/settings/model_ai_panel.ex
+#, elixir-autogen, elixir-format
+msgid "Think level for the subagent default model."
+msgstr "子代理默认模型使用的思考等级。"
+
 #: lib/handbean_web/live/workspace_live/message_submission/cli.ex:206
 #: lib/handbean_web/live/workspace_live/message_submission/cli.ex:209
 #, elixir-autogen, elixir-format

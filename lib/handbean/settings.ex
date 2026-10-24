@@ -182,6 +182,7 @@ defmodule Handbean.Settings do
           {key, source}
         end)
         |> Map.put(:advisor, advisor_resolution(global_model_ai, workspace_model_ai, settings))
+        |> Map.put(:subagent, subagent_resolution(global_model_ai, workspace_model_ai, settings))
 
       {:ok, %{settings: settings, sources: sources}}
     end
@@ -207,6 +208,19 @@ defmodule Handbean.Settings do
     case inspect_model_ai(workspace_root) do
       {:ok, %{sources: sources}} -> Map.get(sources, :advisor, :none)
       {:error, _reason} -> :none
+    end
+  end
+
+  @doc """
+  Subagent default resolution for a workspace.
+
+  Returns `{:ok, %{model, reasoning, source}}`, `:inherit`, or `{:error, reason}`.
+  `:inherit` means the child follows the parent run.
+  """
+  def subagent_resolution(workspace_root) when is_binary(workspace_root) do
+    case inspect_model_ai(workspace_root) do
+      {:ok, %{sources: sources}} -> Map.get(sources, :subagent, :inherit)
+      {:error, _reason} -> :inherit
     end
   end
 
@@ -246,6 +260,45 @@ defmodule Handbean.Settings do
 
       true ->
         :none
+    end
+  end
+
+  defp subagent_resolution(global_override, workspace_override, settings) do
+    cond do
+      Map.get(workspace_override, :subagent_mode) == :parent ->
+        :inherit
+
+      Map.get(workspace_override, :subagent_mode) == :invalid ->
+        {:error, :invalid_subagent}
+
+      Map.get(workspace_override, :subagent_mode) == :custom ->
+        case ModelAISettings.resolve_subagent(%{
+               settings
+               | subagent_mode: :custom,
+                 subagent_model: workspace_override[:subagent_model],
+                 subagent_reasoning: workspace_override[:subagent_reasoning]
+             }) do
+          {:ok, info} -> {:ok, %{info | source: :workspace}}
+          other -> other
+        end
+
+      Map.get(global_override, :subagent_mode) in [:custom, :inherit] and
+          is_binary(global_override[:subagent_model]) ->
+        case ModelAISettings.resolve_subagent(%{
+               settings
+               | subagent_mode: :custom,
+                 subagent_model: global_override[:subagent_model],
+                 subagent_reasoning: global_override[:subagent_reasoning]
+             }) do
+          {:ok, info} -> {:ok, %{info | source: :global}}
+          other -> other
+        end
+
+      Map.get(global_override, :subagent_mode) == :invalid ->
+        {:error, :invalid_subagent}
+
+      true ->
+        :inherit
     end
   end
 end

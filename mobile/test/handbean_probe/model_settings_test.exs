@@ -266,6 +266,20 @@ defmodule HandbeanProbe.ModelSettingsTest do
     assert find_type(tree, :settings_select, "select-memory-reasoning")
   end
 
+  test "subagent model persists through ModelAIOverride", %{ws_a: ws} do
+    save_named(ws, "alpha", "one")
+    state = ModelSettings.action({:scope, :global}, ModelSettings.load(ws), ws)
+    state = ModelSettings.action({:subagent_model, "alpha/one"}, state, ws)
+    state = ModelSettings.action({:subagent_reasoning, "low"}, state, ws)
+
+    settings = Handbean.Settings.effective_model_ai(ws["path"])
+    assert settings.subagent_model == "alpha/one"
+    assert settings.subagent_reasoning == "low"
+
+    tree = ModelSettings.render_model_ai(ModelSettings.load(ws))
+    assert find_type(tree, :settings_select, "select-subagent")
+  end
+
   test "workspace builtin memory rows come from WorkspaceStore", %{ws_a: ws_a, ws_b: ws_b} do
     state = ModelSettings.load(ws_a)
     ids = Enum.map(state.memory_workspaces, & &1.id)
@@ -618,8 +632,9 @@ defmodule HandbeanProbe.ModelSettingsTest do
     # breakage does not leak into sources/policy.
     state = ModelSettings.load(ws_a)
     assert state.sources.advisor == :none
+    assert state.sources.subagent == :inherit
 
-    assert Enum.all?(Map.delete(state.sources, :advisor), fn {_field, source} ->
+    assert Enum.all?(Map.drop(state.sources, [:advisor, :subagent]), fn {_field, source} ->
              source == :global
            end)
 
@@ -630,8 +645,9 @@ defmodule HandbeanProbe.ModelSettingsTest do
     assert broken.policy.mode == :invalid
     assert broken.chat_blocked
     assert broken.sources.advisor == :none
+    assert broken.sources.subagent == :inherit
 
-    assert Enum.all?(Map.delete(broken.sources, :advisor), fn {_field, source} ->
+    assert Enum.all?(Map.drop(broken.sources, [:advisor, :subagent]), fn {_field, source} ->
              source == :global
            end)
 

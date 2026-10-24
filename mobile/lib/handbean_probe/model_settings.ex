@@ -241,6 +241,25 @@ defmodule HandbeanProbe.ModelSettings do
   def action({:advisor_mode, mode}, state, ws) when mode in [:inherit, :custom, :disabled],
     do: Defaults.save_field(state, ws, :advisor_mode, mode)
 
+  def action({:subagent_model, model}, state, ws) do
+    value = Defaults.blank_to_nil(model)
+
+    form =
+      if is_nil(value) do
+        %{state.defaults | subagent_mode: :inherit, subagent_model: nil, subagent_reasoning: nil}
+      else
+        %{state.defaults | subagent_mode: :custom, subagent_model: value, subagent_reasoning: nil}
+      end
+
+    Defaults.save_form(state, ws, form)
+  end
+
+  def action({:subagent_reasoning, level}, state, ws),
+    do: Defaults.save_field(state, ws, :subagent_reasoning, Defaults.blank_to_nil(level))
+
+  def action({:subagent_mode, mode}, state, ws) when mode in [:inherit, :custom, :parent],
+    do: Defaults.save_field(state, ws, :subagent_mode, mode)
+
   def action({:om_model, model}, state, ws), do: Memory.set_model(state, model, ws)
   def action({:om_memory_scope, scope}, state, ws), do: Memory.set_scope(state, scope, ws)
   def action({:om_privacy_mode, mode}, state, ws), do: Memory.set_privacy(state, mode, ws)
@@ -333,6 +352,7 @@ defmodule HandbeanProbe.ModelSettings do
     ModelAISettings.fields()
     |> Map.new(&{&1, :global})
     |> Map.put(:advisor, :global)
+    |> Map.put(:subagent, :global)
   end
 
   defp memory_workspace_rows do

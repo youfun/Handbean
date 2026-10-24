@@ -75,6 +75,10 @@ defmodule HandbeanProbe.ModelSettings.Labels do
   def advisor_mode(:disabled), do: gettext("Disabled")
   def advisor_mode(_), do: gettext("Use global")
 
+  def subagent_mode(:custom), do: gettext("Use the model selected above")
+  def subagent_mode(:parent), do: gettext("Follow current conversation")
+  def subagent_mode(_), do: gettext("Use global")
+
   def think_level(level) when level in [nil, ""], do: gettext("Model default")
   def think_level(level), do: reasoning(level)
 

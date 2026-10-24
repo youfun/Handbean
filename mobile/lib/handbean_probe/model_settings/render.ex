@@ -32,7 +32,7 @@ defmodule HandbeanProbe.ModelSettings.Render do
     Process.put({__MODULE__, :select_open}, state.select_open)
 
     [scope_bar(state), notice(state.notice)] ++
-      defaults_card(state) ++ advisor_card(state) ++ memory_card(state)
+      defaults_card(state) ++ advisor_card(state) ++ subagent_card(state) ++ memory_card(state)
   end
 
   @doc "Web Workspace Models panel: allowlist and policy default."
@@ -99,6 +99,7 @@ defmodule HandbeanProbe.ModelSettings.Render do
   defp overview(state) do
     defaults_card(state) ++
       advisor_card(state) ++
+      subagent_card(state) ++
       memory_card(state) ++
       policy_card(state) ++
       SubscriptionRender.section(state) ++
@@ -235,6 +236,65 @@ defmodule HandbeanProbe.ModelSettings.Render do
       end
 
     [settings_section(gettext("Advisor")), settings_group(fields)]
+  end
+
+  defp subagent_card(state) do
+    d = state.defaults
+    follow = gettext("Follow current conversation")
+
+    fields = [
+      settings_form_field(
+        gettext("Subagent model"),
+        settings_select(
+          Labels.follow_label(d.subagent_model, state, follow),
+          follow_options(state, :subagent_model, follow),
+          "select-subagent"
+        )
+      ),
+      settings_form_field(
+        gettext("Think level"),
+        settings_select(
+          Labels.think_level(d.subagent_reasoning),
+          think_options(:subagent_reasoning, d.subagent_reasoning),
+          "select-subagent-reasoning"
+        )
+      )
+    ]
+
+    fields =
+      if state.scope == :workspace do
+        fields ++
+          [
+            settings_form_field(
+              gettext("Workspace subagent"),
+              settings_select(
+                Labels.subagent_mode(d.subagent_mode),
+                [
+                  select_option(
+                    Labels.subagent_mode(:inherit),
+                    {:subagent_mode, :inherit},
+                    d.subagent_mode == :inherit
+                  ),
+                  select_option(
+                    Labels.subagent_mode(:custom),
+                    {:subagent_mode, :custom},
+                    d.subagent_mode == :custom
+                  ),
+                  select_option(
+                    Labels.subagent_mode(:parent),
+                    {:subagent_mode, :parent},
+                    d.subagent_mode == :parent
+                  )
+                ],
+                "select-subagent-mode"
+              )
+            )
+          ]
+      else
+        fields
+      end
+
+    [settings_section(gettext("Subagent")), settings_group(fields)]
   end
 
   defp memory_card(state) do

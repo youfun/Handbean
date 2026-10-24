@@ -2761,6 +2761,18 @@ msgstr "Advisor"
 msgid "Advisor model"
 msgstr "Advisor 模型"
 
+msgid "Subagent"
+msgstr "子代理"
+
+msgid "Subagent model"
+msgstr "子代理模型"
+
+msgid "Follow current conversation"
+msgstr "跟随当前对话"
+
+msgid "Workspace subagent"
+msgstr "工作区子代理"
+
 #: lib/handbean_probe/workspace_memory.ex:534
 #: lib/handbean_probe/workspace_memory.ex:570
 #, elixir-autogen, elixir-format

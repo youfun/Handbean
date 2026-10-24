@@ -35,6 +35,7 @@ defmodule Handbean.Settings.ModelAIOverride do
       {field, if(Map.has_key?(override, field), do: :workspace, else: :global)}
     end)
     |> Map.put(:advisor, Settings.advisor_resolution(workspace_root))
+    |> Map.put(:subagent, Settings.subagent_resolution(workspace_root))
   end
 
   @doc """
@@ -57,7 +58,17 @@ defmodule Handbean.Settings.ModelAIOverride do
           nil
       end
     end)
-    |> drop_nil_advisor()
+    |> Map.update("subagent", nil, fn subagent ->
+      case subagent do
+        %{"model" => model} = value when is_binary(model) and model != "" ->
+          Map.take(value, ["model", "reasoning"])
+
+        _ ->
+          nil
+      end
+    end)
+    |> drop_nil_nested("advisor")
+    |> drop_nil_nested("subagent")
     |> Settings.save_global()
   end
 
@@ -67,12 +78,13 @@ defmodule Handbean.Settings.ModelAIOverride do
     global
     |> ModelAISettings.diff(form)
     |> Map.merge(advisor_workspace_override(form))
+    |> Map.merge(subagent_workspace_override(form))
     |> ModelAISettings.override_to_json_map()
     |> then(&Settings.save_workspace_model_ai(path, &1))
   end
 
-  defp drop_nil_advisor(map) do
-    if Map.get(map, "advisor") == nil, do: Map.delete(map, "advisor"), else: map
+  defp drop_nil_nested(map, key) do
+    if Map.get(map, key) == nil, do: Map.delete(map, key), else: map
   end
 
   @doc """
@@ -87,10 +99,10 @@ defmodule Handbean.Settings.ModelAIOverride do
 
     updated =
       Enum.reduce(fields, effective, fn field, acc ->
-        if field == :advisor do
-          ModelAISettings.clear_advisor(acc)
-        else
-          Map.put(acc, field, Map.get(global, field))
+        cond do
+          field == :advisor -> ModelAISettings.clear_advisor(acc)
+          field == :subagent -> ModelAISettings.clear_subagent(acc)
+          true -> Map.put(acc, field, Map.get(global, field))
         end
       end)
 
@@ -110,6 +122,23 @@ defmodule Handbean.Settings.ModelAIOverride do
           advisor_mode: :custom,
           advisor_model: form.advisor_model,
           advisor_reasoning: form.advisor_reasoning
+        }
+    end
+  end
+
+  defp subagent_workspace_override(form) do
+    case form.subagent_mode do
+      :inherit ->
+        %{}
+
+      :parent ->
+        %{subagent_mode: :parent, subagent_model: nil, subagent_reasoning: nil}
+
+      :custom ->
+        %{
+          subagent_mode: :custom,
+          subagent_model: form.subagent_model,
+          subagent_reasoning: form.subagent_reasoning
         }
     end
   end

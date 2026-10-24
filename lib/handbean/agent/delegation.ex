@@ -50,7 +50,7 @@ defmodule Handbean.Agent.Delegation do
   end
 
   def run(input, context, %Profile{} = profile, mode) when mode in [:sync, :background] do
-    with {:ok, budget, profile} <- Policy.validate(context, profile, mode) do
+    with {:ok, budget, profile} <- Policy.validate(context, profile, mode, input) do
       call({:run, input, context, budget, profile, mode})
     end
   end
@@ -599,7 +599,7 @@ defmodule Handbean.Agent.Delegation do
 
     {:ok, starter} =
       Task.Supervisor.start_child(Handbean.AgentRunTaskSupervisor, fn ->
-        result = start_initial_child(job, context, prompt, owner)
+        result = start_initial_child(job, context, prompt, owner, input)
         send(owner, {:started, id, job.run_id, result})
       end)
 
@@ -617,7 +617,7 @@ defmodule Handbean.Agent.Delegation do
     end
   end
 
-  defp start_initial_child(job, context, prompt, owner) do
+  defp start_initial_child(job, context, prompt, owner, input) do
     with {:ok, worktree} <-
            startup_step(:worktree, fn ->
              if job.profile.isolation == :worktree,
@@ -643,7 +643,8 @@ defmodule Handbean.Agent.Delegation do
                %{context | working_directory: workspace},
                job.budget,
                job.profile,
-               %{mode: job.mode, child_id: job.id}
+               %{mode: job.mode, child_id: job.id},
+               input
              )
            end) do
       send(owner, {:prepared, job.id, child_opts, worktree})

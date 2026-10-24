@@ -15,7 +15,7 @@ defmodule Handbean.Tool.Builtin.ListModels do
 
   @impl true
   def description do
-    "Search workspace-allowed models when create_conversation needs an explicit model. " <>
+    "Search workspace-allowed models when create_conversation or task needs an explicit model. " <>
       "Omit workspace for the current workspace. An exact different workspace id requires boundary approval. " <>
       "Results include supported and default reasoning levels, are bounded and paginated, and expose no provider credentials."
   end

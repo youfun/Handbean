@@ -9,6 +9,7 @@ defmodule Handbean.Agent.Delegation.Policy do
 
   alias Handbean.Agent.Subagent.Profile
   alias Handbean.Agent.{Config, ModelConfig, Reasoning}
+  alias Handbean.Settings
 
   @delegation_tools Profile.delegation_tools()
 
@@ -23,12 +24,13 @@ defmodule Handbean.Agent.Delegation.Policy do
   def validate(context), do: validate(context, Profile.researcher(), :sync)
 
   @doc "Returns `{:ok, budget_ms, profile}` or `{:error, reason}`."
-  def validate(context, %Profile{} = profile, mode) when mode in [:sync, :background] do
+  def validate(context, %Profile{} = profile, mode, selection \\ %{})
+      when mode in [:sync, :background] do
     with :ok <- parent_shape(context, mode),
          :ok <- reject_recursion(context),
          :ok <- reject_budget(context),
          :ok <- reject_write_sync(profile, mode),
-         :ok <- resolve_model(context, profile),
+         :ok <- resolve_model(context, profile, selection),
          {:ok, budget} <- mode_budget(profile, mode, context[:tool_timeout]) do
       {:ok, budget, profile}
     end
@@ -113,9 +115,9 @@ defmodule Handbean.Agent.Delegation.Policy do
   Runner opts for a child run. `parent` identifies the authority the child's
   tools depend on (see `authorized_child?/2`).
   """
-  def child_opts(context, budget, %Profile{} = profile, parent \\ %{}) do
+  def child_opts(context, budget, %Profile{} = profile, parent \\ %{}, selection \\ %{}) do
     with {:ok, model, provider, provider_config, reasoning_level} <-
-           model_opts(context, profile) do
+           model_opts(context, profile, selection) do
       delegation_parent =
         context
         |> Map.take([:conversation_id, :run_id, :runner_pid])
@@ -186,10 +188,8 @@ defmodule Handbean.Agent.Delegation.Policy do
 
   defp reject_write_sync(_, _), do: :ok
 
-  defp resolve_model(_context, %Profile{model: :inherit}), do: :ok
-
-  defp resolve_model(context, %Profile{} = profile) do
-    case model_opts(context, profile) do
+  defp resolve_model(context, profile, selection) do
+    case model_opts(context, profile, selection) do
       {:ok, _, _, _, _} -> :ok
       error -> error
     end
@@ -202,51 +202,172 @@ defmodule Handbean.Agent.Delegation.Policy do
          do: {:ok, min(profile.timeout_ms, parent_budget)}
   end
 
-  defp model_opts(context, %Profile{model: :inherit, name: "advisor", source: :builtin}) do
-    advisor = context.delegation_config.advisor
+  defp model_opts(context, profile, selection) do
+    with {:ok, requested} <- requested_model(selection),
+         {:ok, requested_reasoning} <- requested_reasoning(selection) do
+      cond do
+        match?(%Profile{name: "advisor", source: :builtin}, profile) ->
+          advisor_model_opts(context, requested, requested_reasoning)
 
-    if is_map(advisor) and is_binary(advisor[:provider_id]) do
-      configured_model(context, advisor.provider_id, advisor.model_id, advisor[:reasoning])
-    else
-      inherit_model(context)
+        is_binary(requested) ->
+          configured_model(context, requested, requested_reasoning, :explicit)
+
+        match?(%Profile{model: {_, _}}, profile) ->
+          {provider_id, model_id} = profile.model
+          configured_model(context, "#{provider_id}/#{model_id}", requested_reasoning, :profile)
+
+        true ->
+          settings_or_parent_model(context, requested_reasoning)
+      end
     end
   end
 
-  defp model_opts(context, %Profile{model: :inherit}), do: inherit_model(context)
+  defp requested_model(selection) when is_map(selection) do
+    case Map.get(selection, "model") || Map.get(selection, :model) do
+      value when value in [nil, "", "inherit", "current"] -> {:ok, nil}
+      value when is_binary(value) -> catalog_ref(value)
+      _ -> {:error, "model must be a complete provider/model id"}
+    end
+  end
 
-  defp model_opts(context, %Profile{model: {provider_id, model_id}}),
-    do: configured_model(context, provider_id, model_id)
+  defp requested_model(_selection), do: {:ok, nil}
 
-  defp configured_model(context, provider_id, model_id, selected_reasoning \\ nil) do
-    case ModelConfig.provider_config_for(policy_workspace(context), provider_id, model_id) do
-      {:ok, provider_config} ->
-        entry =
-          Enum.find(ModelConfig.all_global_models(), &(&1.id == "#{provider_id}/#{model_id}"))
+  defp requested_reasoning(selection) when is_map(selection) do
+    case Map.get(selection, "reasoning_level") || Map.get(selection, :reasoning_level) do
+      value when value in [nil, ""] -> {:ok, nil}
+      value when is_binary(value) -> {:ok, value}
+      _ -> {:error, "reasoning_level must be a string"}
+    end
+  end
 
-        reasoning_level = if is_binary(selected_reasoning), do: selected_reasoning
+  defp requested_reasoning(_selection), do: {:ok, nil}
 
-        provider =
-          Config.resolve_provider_from_api(
-            provider_config[:api],
-            model_id,
-            provider_config[:provider]
-          )
+  defp catalog_ref(value) do
+    if is_binary(value) and String.valid?(value) and String.length(value) <= 256 and
+         String.contains?(value, "/") and not String.contains?(value, ["\n", "\r", "\0"]) do
+      {:ok, value}
+    else
+      {:error, "model must be a complete provider/model id"}
+    end
+  end
 
-        provider_config =
-          if is_binary(reasoning_level),
-            do: Reasoning.apply_provider_options(provider_config, entry, reasoning_level),
-            else: provider_config
+  defp advisor_model_opts(context, requested, requested_reasoning) do
+    advisor = context.delegation_config.advisor
 
-        {:ok, model_id, provider, provider_config, reasoning_level}
+    cond do
+      is_binary(requested) ->
+        configured_model(context, requested, requested_reasoning, :explicit)
+
+      is_map(advisor) and is_binary(advisor[:provider_id]) ->
+        configured_model(
+          context,
+          "#{advisor.provider_id}/#{advisor.model_id}",
+          requested_reasoning || advisor[:reasoning],
+          :advisor
+        )
+
+      true ->
+        inherit_model(context, requested_reasoning)
+    end
+  end
+
+  defp settings_or_parent_model(context, requested_reasoning) do
+    case Settings.subagent_resolution(policy_workspace(context)) do
+      {:ok, %{model: model} = info} ->
+        configured_model(context, model, requested_reasoning || info[:reasoning], :settings)
+
+      :inherit ->
+        inherit_model(context, requested_reasoning)
 
       {:error, reason} ->
         {:error, model_error(reason)}
     end
   end
 
-  defp inherit_model(context) do
+  defp configured_model(context, composite_id, selected_reasoning, origin) do
+    workspace = policy_workspace(context)
+
+    case ModelConfig.resolve_model_for_workspace(workspace, composite_id) do
+      {:ok, provider_config, model_id} ->
+        entry = Enum.find(ModelConfig.all_global_models(), &(&1.id == composite_id))
+
+        with {:ok, reasoning_level} <-
+               resolve_reasoning(context, entry, selected_reasoning, origin, composite_id) do
+          provider =
+            Config.resolve_provider_from_api(
+              provider_config[:api],
+              model_id,
+              provider_config[:provider]
+            )
+
+          provider_config =
+            if is_binary(reasoning_level),
+              do: Reasoning.apply_provider_options(provider_config, entry, reasoning_level),
+              else: provider_config
+
+          {:ok, model_id, provider, provider_config, reasoning_level}
+        end
+
+      {:error, reason} ->
+        {:error, model_error(reason)}
+    end
+  end
+
+  defp resolve_reasoning(context, entry, selected_reasoning, origin, composite_id) do
+    supported = if is_map(entry), do: Reasoning.supported_levels(entry), else: []
+
+    cond do
+      is_binary(selected_reasoning) and selected_reasoning != "" ->
+        if selected_reasoning in supported do
+          {:ok, selected_reasoning}
+        else
+          {:error,
+           "reasoning_level #{inspect(selected_reasoning)} is not supported by #{composite_id}"}
+        end
+
+      origin == :explicit or origin == :settings or origin == :profile ->
+        {:ok, if(is_map(entry), do: Reasoning.default_level(entry))}
+
+      origin == :advisor ->
+        {:ok, if(is_binary(selected_reasoning), do: selected_reasoning)}
+
+      true ->
+        inherit_reasoning(context, supported)
+    end
+  end
+
+  defp inherit_reasoning(context, supported) do
+    parent_level = context.delegation_config.reasoning_level
+
+    cond do
+      supported == [] -> {:ok, nil}
+      parent_level in supported -> {:ok, parent_level}
+      true -> {:ok, nil}
+    end
+  end
+
+  defp inherit_model(context, requested_reasoning) do
     config = context.delegation_config
-    {:ok, config.model, config.provider, config.provider_config, config.reasoning_level}
+    parent_id = parent_composite_id(config)
+
+    cond do
+      is_binary(requested_reasoning) and is_binary(parent_id) ->
+        configured_model(context, parent_id, requested_reasoning, :explicit)
+
+      true ->
+        {:ok, config.model, config.provider, config.provider_config, config.reasoning_level}
+    end
+  end
+
+  defp parent_composite_id(config) do
+    model = config.model
+    provider = config.provider_config[:provider] || config.provider_config["provider"]
+
+    cond do
+      is_binary(model) and String.contains?(model, "/") -> model
+      is_binary(provider) and is_binary(model) -> "#{provider}/#{model}"
+      true -> nil
+    end
   end
 
   defp policy_workspace(context) do

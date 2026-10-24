@@ -60,7 +60,8 @@ defmodule Handbean.Settings.ModelAISettingsTest do
             "reasoning" => "low",
             "memory_scope" => "global"
           },
-          "advisor" => %{"model" => "anthropic/claude-opus", "reasoning" => "high"}
+          "advisor" => %{"model" => "anthropic/claude-opus", "reasoning" => "high"},
+          "subagent" => %{"model" => "openai/gpt-5", "reasoning" => "low"}
         })
 
       assert settings.default_model == "claude-sonnet-4"
@@ -71,6 +72,9 @@ defmodule Handbean.Settings.ModelAISettingsTest do
       assert settings.om_reflector_enabled
       assert settings.advisor_model == "anthropic/claude-opus"
       assert settings.advisor_reasoning == "high"
+      assert settings.subagent_model == "openai/gpt-5"
+      assert settings.subagent_reasoning == "low"
+      assert settings.subagent_mode == :custom
     end
 
     test "does not read removed memory processing fields" do
@@ -194,7 +198,8 @@ defmodule Handbean.Settings.ModelAISettingsTest do
             "model" => "anthropic/claude-haiku",
             "reasoning" => "low"
           },
-          "advisor" => %{"model" => "openai/gpt-5", "reasoning" => "high"}
+          "advisor" => %{"model" => "openai/gpt-5", "reasoning" => "high"},
+          "subagent" => %{"model" => "anthropic/claude-haiku", "reasoning" => "low"}
         })
 
       json_map = ModelAISettings.to_json_map(original)
@@ -207,6 +212,8 @@ defmodule Handbean.Settings.ModelAISettingsTest do
       assert reloaded.om_reflector_enabled == original.om_reflector_enabled
       assert reloaded.advisor_model == original.advisor_model
       assert reloaded.advisor_reasoning == original.advisor_reasoning
+      assert reloaded.subagent_model == original.subagent_model
+      assert reloaded.subagent_reasoning == original.subagent_reasoning
     end
 
     test "excludes nil default and memory models" do

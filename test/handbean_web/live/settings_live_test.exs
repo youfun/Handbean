@@ -143,6 +143,8 @@ defmodule HandbeanWeb.SettingsLiveTest do
       assert html =~ ~s(name="reasoning")
       assert html =~ ~s(name="advisor_model")
       assert html =~ ~s(name="advisor_reasoning")
+      assert html =~ ~s(name="subagent_model")
+      assert html =~ ~s(name="subagent_reasoning")
       assert html =~ ~s(name="om_model")
       assert html =~ ~s(id="default-model-picker-trigger")
       refute html =~ ~s(name="om_enabled")
@@ -154,6 +156,7 @@ defmodule HandbeanWeb.SettingsLiveTest do
       {:ok, view, _html} = live(conn, "/settings")
 
       render_change(view, "update_field", %{"advisor_model" => "stepfun/step-router-v1"})
+      render_change(view, "update_field", %{"subagent_model" => "stepfun/step-router-v1"})
 
       assert has_element?(
                view,
@@ -174,6 +177,7 @@ defmodule HandbeanWeb.SettingsLiveTest do
       saved = Handbean.Settings.global_model_ai()
       assert saved.advisor_model == "stepfun/step-router-v1"
       assert saved.advisor_reasoning == "high"
+      assert saved.subagent_model == "stepfun/step-router-v1"
       assert saved.om_model == "stepfun/step-router-v1"
       assert saved.om_reasoning == "low"
     end
