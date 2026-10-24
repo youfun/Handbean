@@ -10,10 +10,15 @@ defmodule Handbean.MCP.OAuth do
 
   def status(%ServerConfig{} = cfg) do
     case load(cfg) do
-      {:ok, %{"token" => token}} ->
-        if token["expires_at"] > now() or is_binary(token["refresh_token"]),
-          do: :authorized,
-          else: :authorization_required
+      {:ok, %{"authorization_required" => true}} ->
+        :authorization_required
+
+      {:ok, %{"token" => %{"access_token" => access} = token}} when is_binary(access) ->
+        if is_nil(token["expires_at"]) or
+             (is_integer(token["expires_at"]) and token["expires_at"] > now()) or
+             is_binary(token["refresh_token"]),
+           do: :authorized,
+           else: :authorization_required
 
       _ ->
         :authorization_required
@@ -28,6 +33,8 @@ defmodule Handbean.MCP.OAuth do
         with :ok <- current(cfg),
              {:ok, existing} <- load(cfg),
              {:ok, previous} <- stored_or_empty(credential_key(cfg)) do
+          metadata = challenged_metadata(metadata, existing["challenged_scopes"])
+
           if previous["binding"] != config_binding(cfg) do
             if pending = previous["pending"], do: Store.delete("state:" <> pending["state"])
             revoke_stored(previous)
@@ -129,28 +136,144 @@ defmodule Handbean.MCP.OAuth do
 
   # Keeps credentials inside the transport owner and scrubs reflected credentials
   # before either success data or error bodies reach the MCP runtime/trajectory.
-  def request(%ServerConfig{} = cfg, payload, headers, timeout) do
+  def request(%ServerConfig{} = cfg, payload, headers, timeout),
+    do: request(cfg, :post, payload, headers, timeout)
+
+  def request(%ServerConfig{} = cfg, method, payload, headers, timeout) do
     Store.lock(credential_key(cfg), fn ->
       with :ok <- current(cfg),
            {:ok, token} <- access_token(cfg),
            :ok <- current(cfg),
            {:ok, response} <-
-             Network.request(:post, cfg.url, cfg.url,
-               body: Handbean.JSON.encode!(payload),
+             Network.request(method, cfg.url, cfg.url,
+               body: if(is_nil(payload), do: nil, else: Handbean.JSON.encode!(payload)),
                headers: Map.put(headers, "authorization", "Bearer " <> token["access_token"]),
                receive_timeout: timeout,
                max_response_bytes: 12 * 1024 * 1024
              ) do
-        response = %{
-          response
-          | body: scrub_body(response.body, token),
-            headers: scrub(response.headers, token)
-        }
-
-        if response.status == 401, do: {:error, :authorization_required}, else: {:ok, response}
+        response = scrub_response(response, token)
+        handle_resource_response(cfg, response)
       end
     end)
   end
+
+  @doc false
+  def cleanup_delete(%ServerConfig{} = cfg, headers, timeout) do
+    Store.lock(credential_key(cfg), fn ->
+      with {:ok, data} <- load(cfg),
+           {:ok, token} <- cleanup_access_token(data),
+           {:ok, response} <-
+             Network.request(:delete, cfg.url, cfg.url,
+               headers: Map.put(headers, "authorization", "Bearer " <> token["access_token"]),
+               receive_timeout: timeout,
+               max_response_bytes: 1_048_576
+             ) do
+        {:ok, scrub_response(response, token)}
+      end
+    end)
+  end
+
+  defp cleanup_access_token(%{"token" => %{"access_token" => access} = token})
+       when is_binary(access) do
+    case token["expires_at"] do
+      nil ->
+        {:ok, token}
+
+      expiry when is_integer(expiry) ->
+        if expiry > now(), do: {:ok, token}, else: {:error, :authorization_required}
+
+      _invalid ->
+        {:error, :authorization_required}
+    end
+  end
+
+  defp cleanup_access_token(_data), do: {:error, :authorization_required}
+
+  defp scrub_response(response, token) do
+    body = if is_binary(response.body), do: scrub_body(response.body, token), else: response.body
+    %{response | body: body, headers: scrub(response.headers, token)}
+  end
+
+  defp handle_resource_response(cfg, %{status: 401} = response) do
+    case bearer_challenge(response, :unauthorized) do
+      {:ok, scopes} -> remember_challenged_scopes(cfg, scopes)
+      :error -> remember_challenged_scopes(cfg, [])
+    end
+
+    {:error, :authorization_required}
+  end
+
+  defp handle_resource_response(cfg, %{status: 403} = response) do
+    case bearer_challenge(response, :insufficient_scope) do
+      {:ok, scopes} when scopes != [] ->
+        remember_challenged_scopes(cfg, scopes)
+        {:error, :authorization_required}
+
+      _ ->
+        {:ok, response}
+    end
+  end
+
+  defp handle_resource_response(_cfg, response), do: {:ok, response}
+
+  defp bearer_challenge(response, required) do
+    response
+    |> Req.Response.get_header("www-authenticate")
+    |> Enum.find_value(:error, fn header ->
+      if String.match?(header, ~r/^Bearer(?:\s|$)/i) do
+        error = challenge_parameter(header, "error")
+        scope = challenge_parameter(header, "scope")
+        scopes = if is_binary(scope), do: String.split(scope), else: []
+
+        valid_required = required == :unauthorized or error == "insufficient_scope"
+        if valid_required and valid_scopes?(scopes), do: {:ok, scopes}
+      end
+    end)
+  end
+
+  defp challenge_parameter(header, name) do
+    # RFC 7235 auth-param values may be either token or quoted-string. Scope
+    # challenges normally need quotes because they contain spaces, while error
+    # values are commonly emitted as bare tokens.
+    token = "[!#$%&'*+.^_`|~0-9A-Za-z-]+"
+
+    pattern =
+      "(?:^Bearer\\s+|,\\s*)" <>
+        Regex.escape(name) <> "\\s*=\\s*(?:\\\"([^\\\"\\\\]*)\\\"|(" <> token <> "))"
+
+    case Regex.run(Regex.compile!(pattern, "i"), header) do
+      [_, quoted] -> quoted
+      [_, "", bare] -> bare
+      _ -> nil
+    end
+  end
+
+  defp valid_scopes?(scopes) do
+    length(scopes) <= 100 and
+      Enum.all?(
+        scopes,
+        &(byte_size(&1) in 1..2048 and String.match?(&1, ~r/^[\x21\x23-\x5B\x5D-\x7E]+$/))
+      )
+  end
+
+  defp remember_challenged_scopes(cfg, scopes) do
+    with {:ok, data} <- load(cfg) do
+      existing = if is_list(data["challenged_scopes"]), do: data["challenged_scopes"], else: []
+
+      data =
+        data
+        |> Map.put("authorization_required", true)
+        |> Map.put("challenged_scopes", Enum.uniq(existing ++ scopes))
+
+      save(cfg, data)
+    end
+  end
+
+  defp challenged_metadata(metadata, scopes) when is_list(scopes) and scopes != [] do
+    Map.update(metadata, "scopes", Enum.uniq(scopes), &Enum.uniq(&1 ++ scopes))
+  end
+
+  defp challenged_metadata(metadata, _scopes), do: metadata
 
   def config(workspace_id, server) do
     with {:ok, workspace} <- Handbean.WorkspaceStore.get(workspace_id) do
@@ -258,18 +381,31 @@ defmodule Handbean.MCP.OAuth do
 
   defp access_token(cfg) do
     with {:ok, data} <- load(cfg) do
-      case data["token"] do
-        %{"expires_at" => expiry} = token when expiry > 0 ->
-          cond do
-            expiry > now() + 30 -> {:ok, token}
-            is_binary(token["refresh_token"]) -> refresh(cfg, data)
-            expiry > now() -> {:ok, token}
-            true -> {:error, :authorization_required}
-          end
+      case data do
+        %{"authorization_required" => true} ->
+          {:error, :authorization_required}
 
         _ ->
-          {:error, :authorization_required}
+          access_token_value(cfg, data)
       end
+    end
+  end
+
+  defp access_token_value(cfg, data) do
+    case data["token"] do
+      %{"access_token" => access, "expires_at" => nil} = token when is_binary(access) ->
+        {:ok, token}
+
+      %{"expires_at" => expiry} = token when is_integer(expiry) and expiry > 0 ->
+        cond do
+          expiry > now() + 30 -> {:ok, token}
+          is_binary(token["refresh_token"]) -> refresh(cfg, data)
+          expiry > now() -> {:ok, token}
+          true -> {:error, :authorization_required}
+        end
+
+      _ ->
+        {:error, :authorization_required}
     end
   end
 
@@ -313,17 +449,18 @@ defmodule Handbean.MCP.OAuth do
     end
   end
 
-  defp validate_token(
-         %{"access_token" => access, "token_type" => type, "expires_in" => expires} = token
-       )
-       when is_binary(access) and is_binary(type) and is_integer(expires) and expires > 0 do
+  defp validate_token(%{"access_token" => access, "token_type" => type} = token)
+       when is_binary(access) and is_binary(type) do
+    expires = token["expires_in"]
+
     if String.downcase(type) == "bearer" and valid_token?(access) and
-         (is_nil(token["refresh_token"]) or valid_token?(token["refresh_token"])) do
+         (is_nil(token["refresh_token"]) or valid_token?(token["refresh_token"])) and
+         (is_nil(expires) or (is_integer(expires) and expires > 0)) do
       {:ok,
        token
        |> Map.take(["access_token", "refresh_token"])
        |> Map.reject(fn {_key, value} -> is_nil(value) end)
-       |> Map.put("expires_at", now() + expires)}
+       |> Map.put("expires_at", if(is_integer(expires), do: now() + expires, else: nil))}
     else
       {:error, :invalid_token_response}
     end
@@ -338,10 +475,16 @@ defmodule Handbean.MCP.OAuth do
 
   defp callback_result(%{"code" => code} = params, pending)
        when is_binary(code) and byte_size(code) in 1..8192 do
-    if is_nil(params["error"]) and
-         params["iss"] == pending["metadata"]["issuer"],
-       do: :ok,
-       else: {:error, :authorization_denied}
+    metadata = pending["metadata"]
+
+    valid_issuer =
+      if metadata["authorization_response_iss_parameter_supported"] == true,
+        do: params["iss"] == metadata["issuer"],
+        else: is_nil(params["iss"])
+
+    if is_nil(params["error"]) and valid_issuer,
+      do: :ok,
+      else: {:error, :authorization_denied}
   end
 
   defp callback_result(_, _), do: {:error, :authorization_denied}

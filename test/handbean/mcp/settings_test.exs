@@ -147,6 +147,33 @@ defmodule Handbean.MCP.SettingsTest do
     assert length(entries) == 8
   end
 
+  test "connected status fingerprints the actual catalog path", %{opts: opts} do
+    form =
+      Settings.new_form("a")
+      |> Map.merge(%{"name" => "Docs", "url" => "https://docs.example/mcp"})
+
+    assert {:ok, id} = Settings.save(form, opts)
+    assert {:ok, data} = Settings.read(opts)
+
+    assert {:ok, cfg} =
+             ConfigLoader.validate_server(id, data["mcpServers"][id], Settings.path(opts))
+
+    name = "mcp__settings_source_test__echo"
+
+    :ok =
+      Handbean.Tool.Registry.register_virtual(name, "echo", %{}, fn _, _ -> {:ok, "ok"} end,
+        meta: %{
+          server: id,
+          fingerprint: Access.fingerprint(cfg),
+          runtime_pid: self(),
+          remote_name: "echo"
+        }
+      )
+
+    on_exit(fn -> Handbean.Tool.Registry.unregister(name) end)
+    assert {:ok, [%{id: ^id, status: :connected, tool_count: 1}]} = Settings.list(opts)
+  end
+
   test "toggle_disabled flips disabled state while preserving saved credentials", %{opts: opts} do
     form =
       Settings.new_form("a")

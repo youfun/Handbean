@@ -31,6 +31,42 @@ defmodule Handbean.MCP.ServerRuntimeTest do
       assert {:ok, [%{name: "echo"}]} = Task.await(tools_task, 5_000)
     end
 
+    test "an expired call queued in the runtime never reaches stdio" do
+      marker =
+        Path.join(System.tmp_dir!(), "mcp_stdio_call_#{System.unique_integer([:positive])}")
+
+      {cfg, dir} = stdio_config("record_call", [marker])
+      {:ok, pid} = ServerRuntime.start_link(server_config: cfg)
+
+      on_exit(fn ->
+        if Process.alive?(pid), do: :sys.resume(pid)
+        ServerRuntime.shutdown(pid)
+        File.rm_rf!(dir)
+        File.rm(marker)
+      end)
+
+      assert {:ok, _} = ServerRuntime.tools(pid)
+      :ok = :sys.suspend(pid)
+      deadline = System.monotonic_time(:millisecond) + 20
+
+      call =
+        Task.async(fn ->
+          ServerRuntime.call_tool(pid, "echo", %{}, 100, deadline: deadline)
+        end)
+
+      wait_for_runtime_call(pid)
+
+      receive do
+      after
+        30 -> :ok
+      end
+
+      :ok = :sys.resume(pid)
+      assert {:error, error} = Task.await(call, 1_000)
+      assert error =~ "mcp_timeout"
+      refute File.exists?(marker)
+    end
+
     test "routes concurrent out-of-order responses to their JSON-RPC callers" do
       pid = start_stdio_runtime!("out_of_order")
 
@@ -303,6 +339,22 @@ defmodule Handbean.MCP.ServerRuntimeTest do
     {cfg, dir}
   end
 
+  defp wait_for_runtime_call(runtime, attempts \\ 100)
+  defp wait_for_runtime_call(_runtime, 0), do: flunk("tool call was not queued")
+
+  defp wait_for_runtime_call(runtime, attempts) do
+    case Process.info(runtime, :message_queue_len) do
+      {:message_queue_len, count} when count > 0 ->
+        :ok
+
+      _ ->
+        receive do
+        after
+          1 -> wait_for_runtime_call(runtime, attempts - 1)
+        end
+    end
+  end
+
   defp stdio_server_script do
     ~S"""
     #!/bin/sh
@@ -333,6 +385,10 @@ defmodule Handbean.MCP.ServerRuntimeTest do
           ;;
         *'"method":"tools/call"'*)
           case "$scenario" in
+            record_call)
+              printf 'called' > "$gate"
+              printf '{"jsonrpc":"2.0","id":"%s","result":{"content":"late"}}\n' "$id"
+              ;;
             out_of_order)
               value=$(printf '%s\n' "$line" | sed -n 's/.*"value":"\([^"]*\)".*/\1/p')
               call_count=$((call_count + 1))

@@ -62,7 +62,7 @@ defmodule Handbean.MCP.Settings do
        data["mcpServers"]
        |> Enum.sort_by(&elem(&1, 0))
        |> Enum.map(fn {id, raw} ->
-         tools = connected_tools(entries, id, raw)
+         tools = connected_tools(entries, id, raw, path(opts))
 
          %{
            id: id,
@@ -83,8 +83,8 @@ defmodule Handbean.MCP.Settings do
     end
   end
 
-  defp connected_tools(entries, id, raw) do
-    case ConfigLoader.validate_server(id, raw, :user) do
+  defp connected_tools(entries, id, raw, source) do
+    case ConfigLoader.validate_server(id, raw, source) do
       {:ok, cfg} ->
         fingerprint = Handbean.MCP.Access.fingerprint(cfg)
 

@@ -47,8 +47,12 @@ defmodule Handbean.MCP.ToolBridge do
 
       executor = fn input, context ->
         if Handbean.MCP.Access.allowed?(config, opts, context) do
-          timeout_ms = mcp_timeout(context)
-          Handbean.MCP.ServerRuntime.call_tool(runtime_pid, tool.name, input, timeout_ms)
+          {timeout_ms, deadline} = mcp_deadline(context)
+
+          Handbean.MCP.ServerRuntime.call_tool(runtime_pid, tool.name, input, timeout_ms,
+            deadline: deadline,
+            authorization: {config, opts}
+          )
         else
           {:error, "MCP server is disabled, changed, or not allowed in this workspace"}
         end
@@ -99,21 +103,24 @@ defmodule Handbean.MCP.ToolBridge do
     end
   end
 
-  defp mcp_timeout(context) when is_map(context) do
-    remaining =
-      case context[:run_deadline] do
-        deadline when is_integer(deadline) ->
-          max(deadline - System.monotonic_time(:millisecond), 1)
+  defp mcp_deadline(context) when is_map(context) do
+    now = System.monotonic_time(:millisecond)
+    tool_cap = context[:tool_timeout] || 60_000
+    tool_deadline = now + tool_cap
 
-        _ ->
-          nil
+    deadline =
+      case context[:run_deadline] do
+        run_deadline when is_integer(run_deadline) -> min(tool_deadline, run_deadline)
+        _ -> tool_deadline
       end
 
-    tool_cap = context[:tool_timeout] || 60_000
-    if is_integer(remaining), do: min(tool_cap, remaining), else: tool_cap
+    {max(deadline - now, 1), deadline}
   end
 
-  defp mcp_timeout(_context), do: 60_000
+  defp mcp_deadline(_context) do
+    timeout_ms = 60_000
+    {timeout_ms, System.monotonic_time(:millisecond) + timeout_ms}
+  end
 
   def namespaced_name(server_name, tool_name) do
     "mcp__#{server_name}__#{tool_name}"

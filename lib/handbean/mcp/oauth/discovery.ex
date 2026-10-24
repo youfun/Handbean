@@ -17,6 +17,8 @@ defmodule Handbean.MCP.OAuth.Discovery do
          "authorization_endpoint" => metadata["authorization_endpoint"],
          "token_endpoint" => metadata["token_endpoint"],
          "revocation_endpoint" => metadata["revocation_endpoint"],
+         "authorization_response_iss_parameter_supported" =>
+           metadata["authorization_response_iss_parameter_supported"] == true,
          "scopes" =>
            Map.get(
              cfg.oauth,
@@ -136,9 +138,10 @@ defmodule Handbean.MCP.OAuth.Discovery do
         &is_nil/1
       )
 
+    iss_supported = metadata["authorization_response_iss_parameter_supported"]
+
     if metadata["issuer"] == issuer and is_binary(metadata["authorization_endpoint"]) and
-         is_binary(metadata["token_endpoint"]) and
-         metadata["authorization_response_iss_parameter_supported"] == true and
+         is_binary(metadata["token_endpoint"]) and iss_supported in [nil, false, true] and
          supported?(metadata["code_challenge_methods_supported"], "S256") and
          supported?(metadata["response_types_supported"], "code") and
          supported?(metadata["token_endpoint_auth_methods_supported"], "none") and

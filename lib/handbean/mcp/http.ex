@@ -39,10 +39,30 @@ defmodule Handbean.MCP.HTTP do
          do: response(response.body, id, method)
   end
 
-  defp connect_modern(cfg, versions) do
-    version = Enum.find(versions, &Protocol.supported_version?/1)
+  @doc "Best-effort, bounded termination for legacy Streamable HTTP sessions."
+  def terminate_session(%ServerConfig{protocol_era: :legacy} = cfg) do
+    if session_header?(cfg.runtime_headers) do
+      headers =
+        cfg.runtime_headers
+        |> normalize_headers()
+        |> Map.put("accept", "application/json, text/event-stream")
 
-    if version == Protocol.modern_version() do
+      task = Task.async(fn -> send_termination_request(cfg, headers, 750) end)
+
+      if is_nil(Task.yield(task, 1_000)), do: Task.shutdown(task, :brutal_kill)
+    end
+
+    :ok
+  rescue
+    _ -> :ok
+  catch
+    _, _ -> :ok
+  end
+
+  def terminate_session(%ServerConfig{}), do: :ok
+
+  defp connect_modern(cfg, versions) do
+    if Protocol.modern_version() in versions do
       cfg = %{cfg | protocol_era: :modern}
 
       with {:ok, tools} <- list_tools(cfg, nil, [], MapSet.new()) do
@@ -162,14 +182,14 @@ defmodule Handbean.MCP.HTTP do
   defp post(cfg, payload, method \\ nil, timeout_ms \\ 60_000) do
     headers =
       cfg.runtime_headers
-      |> Map.new(fn {key, value} -> {String.downcase(key), value} end)
+      |> normalize_headers()
       |> Map.merge(%{
         "content-type" => "application/json",
         "accept" => "application/json, text/event-stream"
       })
       |> maybe_put_modern_headers(cfg, payload, method)
 
-    case send_request(cfg, payload, headers, timeout_ms) do
+    case send_request(cfg, :post, payload, headers, timeout_ms) do
       {:ok, %{status: 599}} ->
         {:error, "MCP HTTP response exceeded size limit"}
 
@@ -192,15 +212,24 @@ defmodule Handbean.MCP.HTTP do
     end
   end
 
-  defp send_request(%ServerConfig{oauth: oauth} = cfg, payload, headers, timeout_ms)
+  defp send_termination_request(%ServerConfig{oauth: oauth} = cfg, headers, timeout_ms)
        when is_map(oauth),
-       do: Handbean.MCP.OAuth.request(cfg, payload, headers, timeout_ms)
+       do: Handbean.MCP.OAuth.cleanup_delete(cfg, headers, timeout_ms)
 
-  defp send_request(cfg, payload, headers, timeout_ms) do
+  defp send_termination_request(cfg, headers, timeout_ms),
+    do: send_request(cfg, :delete, nil, headers, timeout_ms)
+
+  defp send_request(%ServerConfig{oauth: oauth} = cfg, method, payload, headers, timeout_ms)
+       when is_map(oauth),
+       do: Handbean.MCP.OAuth.request(cfg, method, payload, headers, timeout_ms)
+
+  defp send_request(cfg, method, payload, headers, timeout_ms) do
     req = Application.get_env(:handbean, :mcp_http_req, Req)
 
-    req.post(cfg.url,
-      body: Handbean.JSON.encode!(payload),
+    options = [
+      method: method,
+      url: cfg.url,
+      body: if(is_nil(payload), do: nil, else: Handbean.JSON.encode!(payload)),
       headers: headers,
       decode_body: false,
       redirect: false,
@@ -208,8 +237,19 @@ defmodule Handbean.MCP.HTTP do
       into: &receive_chunk/2,
       request_timeout: timeout_ms,
       receive_timeout: timeout_ms
-    )
+    ]
+
+    if req == Req, do: Req.request(options), else: apply(req, method, [cfg.url, options])
   end
+
+  defp normalize_headers(headers),
+    do: Map.new(headers, fn {key, value} -> {String.downcase(key), value} end)
+
+  defp session_header?(headers),
+    do:
+      Enum.any?(headers, fn {key, value} ->
+        String.downcase(key) == "mcp-session-id" and value != ""
+      end)
 
   defp receive_chunk({:data, chunk}, {request, response}) do
     body = (response.body || "") <> chunk

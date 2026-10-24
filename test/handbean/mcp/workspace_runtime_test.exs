@@ -13,91 +13,100 @@ defmodule Handbean.MCP.WorkspaceRuntimeTest do
     owner = self()
 
     Req.Test.stub(__MODULE__, fn conn ->
-      {:ok, body, conn} = Plug.Conn.read_body(conn)
-      message = Jason.decode!(body)
-      send(owner, {:request, conn.host, message["method"]})
-      assert Plug.Conn.get_req_header(conn, "accept") == ["application/json, text/event-stream"]
+      if conn.method == "DELETE" do
+        send(
+          owner,
+          {:session_delete, conn.host, Plug.Conn.get_req_header(conn, "mcp-session-id")}
+        )
 
-      case message["method"] do
-        "server/discover" ->
-          if conn.host == "slow.example" do
-            send(owner, {:slow_discovery, self()})
+        Plug.Conn.send_resp(conn, 405, "")
+      else
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+        message = Jason.decode!(body)
+        send(owner, {:request, conn.host, message["method"]})
+        assert Plug.Conn.get_req_header(conn, "accept") == ["application/json, text/event-stream"]
 
-            receive do
-              :release_slow_discovery -> :ok
+        case message["method"] do
+          "server/discover" ->
+            if conn.host == "slow.example" do
+              send(owner, {:slow_discovery, self()})
+
+              receive do
+                :release_slow_discovery -> :ok
+              end
             end
-          end
 
-          if conn.host == "modern.example" do
-            assert Plug.Conn.get_req_header(conn, "mcp-protocol-version") == ["2026-07-28"]
-            assert Plug.Conn.get_req_header(conn, "mcp-method") == ["server/discover"]
+            if conn.host == "modern.example" do
+              assert Plug.Conn.get_req_header(conn, "mcp-protocol-version") == ["2026-07-28"]
+              assert Plug.Conn.get_req_header(conn, "mcp-method") == ["server/discover"]
+
+              Req.Test.json(conn, %{
+                jsonrpc: "2.0",
+                id: message["id"],
+                result: %{
+                  resultType: "complete",
+                  supportedVersions: ["2025-11-25", "2026-07-28"]
+                }
+              })
+            else
+              Plug.Conn.send_resp(conn, 400, "")
+            end
+
+          "initialize" ->
+            conn
+            |> Plug.Conn.put_resp_header("mcp-session-id", "session-#{conn.host}")
+            |> Req.Test.json(%{
+              jsonrpc: "2.0",
+              id: message["id"],
+              result: %{protocolVersion: "2025-11-25"}
+            })
+
+          "notifications/initialized" ->
+            assert Plug.Conn.get_req_header(conn, "mcp-session-id") == ["session-#{conn.host}"]
+            Plug.Conn.send_resp(conn, 202, "")
+
+          "tools/list" ->
+            version =
+              if conn.host == "modern.example", do: "2026-07-28", else: "2025-11-25"
+
+            assert Plug.Conn.get_req_header(conn, "mcp-protocol-version") == [version]
 
             Req.Test.json(conn, %{
               jsonrpc: "2.0",
               id: message["id"],
               result: %{
-                resultType: "complete",
-                supportedVersions: ["2026-07-28"]
+                tools: [%{name: "echo", description: "Echo", inputSchema: %{type: "object"}}]
               }
             })
-          else
-            Plug.Conn.send_resp(conn, 400, "")
-          end
 
-        "initialize" ->
-          conn
-          |> Plug.Conn.put_resp_header("mcp-session-id", "session-#{conn.host}")
-          |> Req.Test.json(%{
-            jsonrpc: "2.0",
-            id: message["id"],
-            result: %{protocolVersion: "2025-11-25"}
-          })
+          "tools/call" ->
+            if conn.host == "modern.example" do
+              assert Plug.Conn.get_req_header(conn, "mcp-protocol-version") == ["2026-07-28"]
+              assert Plug.Conn.get_req_header(conn, "mcp-method") == ["tools/call"]
+              assert Plug.Conn.get_req_header(conn, "mcp-name") == ["echo"]
 
-        "notifications/initialized" ->
-          assert Plug.Conn.get_req_header(conn, "mcp-session-id") == ["session-#{conn.host}"]
-          Plug.Conn.send_resp(conn, 202, "")
+              assert message["params"]["_meta"]["io.modelcontextprotocol/protocolVersion"] ==
+                       "2026-07-28"
+            else
+              assert Plug.Conn.get_req_header(conn, "mcp-session-id") == ["session-#{conn.host}"]
+            end
 
-        "tools/list" ->
-          version =
-            if conn.host == "modern.example", do: "2026-07-28", else: "2025-11-25"
-
-          assert Plug.Conn.get_req_header(conn, "mcp-protocol-version") == [version]
-
-          Req.Test.json(conn, %{
-            jsonrpc: "2.0",
-            id: message["id"],
-            result: %{
-              tools: [%{name: "echo", description: "Echo", inputSchema: %{type: "object"}}]
+            result = %{
+              content: [%{type: "text", text: conn.host}],
+              isError: message["params"]["arguments"]["fail"] == true
             }
-          })
 
-        "tools/call" ->
-          if conn.host == "modern.example" do
-            assert Plug.Conn.get_req_header(conn, "mcp-protocol-version") == ["2026-07-28"]
-            assert Plug.Conn.get_req_header(conn, "mcp-method") == ["tools/call"]
-            assert Plug.Conn.get_req_header(conn, "mcp-name") == ["echo"]
+            body =
+              "event: message\ndata: " <>
+                Jason.encode!(%{jsonrpc: "2.0", method: "notifications/progress"}) <>
+                "\n\n" <>
+                "data: " <>
+                Jason.encode!(%{jsonrpc: "2.0", id: message["id"], result: result}) <> "\n\n"
 
-            assert message["params"]["_meta"]["io.modelcontextprotocol/protocolVersion"] ==
-                     "2026-07-28"
-          else
-            assert Plug.Conn.get_req_header(conn, "mcp-session-id") == ["session-#{conn.host}"]
-          end
-
-          result = %{
-            content: [%{type: "text", text: conn.host}],
-            isError: message["params"]["arguments"]["fail"] == true
-          }
-
-          body =
-            "event: message\ndata: " <>
-              Jason.encode!(%{jsonrpc: "2.0", method: "notifications/progress"}) <>
-              "\n\n" <>
-              "data: " <>
-              Jason.encode!(%{jsonrpc: "2.0", id: message["id"], result: result}) <> "\n\n"
-
-          conn
-          |> Plug.Conn.put_resp_content_type("text/event-stream")
-          |> Plug.Conn.send_resp(200, body)
+            conn
+            |> Plug.Conn.put_resp_content_type("text/event-stream")
+            |> Plug.Conn.send_resp(200, body)
+        end
       end
     end)
 
@@ -181,6 +190,57 @@ defmodule Handbean.MCP.WorkspaceRuntimeTest do
     {:ok, empty} = Handbean.MCP.bootstrap(a)
     assert empty.registered == []
     assert Enum.all?(second.runtime_pids, &Process.alive?/1)
+  end
+
+  test "queued tool calls recheck their absolute deadline and current access before dispatch", %{
+    opts: opts
+  } do
+    form =
+      Settings.new_form("a")
+      |> Map.merge(%{
+        "name" => "Docs",
+        "url" => "https://one.example/mcp",
+        "auth" => "headers",
+        "headers_json" => ~s({"x-api-key":"old-secret"})
+      })
+
+    {:ok, id} = Settings.save(form, opts)
+    scope_opts = Keyword.put(opts, :workspace_id, "a")
+    {:ok, boot} = Handbean.MCP.bootstrap(scope_opts)
+    [runtime] = boot.runtime_pids
+    [name] = boot.registered
+    {:ok, tool} = Handbean.Tool.Registry.get(name)
+    drain_requests()
+
+    :ok = :sys.suspend(runtime)
+
+    expired =
+      Task.async(fn -> tool.executor.(%{}, %{mcp_scope: scope_opts, tool_timeout: 30}) end)
+
+    wait_for_runtime_call(runtime)
+
+    receive do
+    after
+      50 -> :ok
+    end
+
+    :ok = :sys.resume(runtime)
+    assert {:error, error} = Task.await(expired, 1_000)
+    assert error =~ "mcp_timeout"
+    refute_receive {:request, "one.example", "tools/call"}, 50
+
+    :ok = :sys.suspend(runtime)
+    revoked = Task.async(fn -> tool.executor.(%{}, %{mcp_scope: scope_opts}) end)
+    wait_for_runtime_call(runtime)
+    assert {:ok, edit} = Settings.edit(id, opts)
+
+    assert {:ok, ^id} =
+             Settings.save(Map.put(edit, "headers_json", ~s({"x-api-key":"new-secret"})), opts)
+
+    :ok = :sys.resume(runtime)
+    assert {:error, error} = Task.await(revoked, 1_000)
+    assert error =~ "mcp_access_revoked"
+    refute_receive {:request, "one.example", "tools/call"}, 50
   end
 
   test "bootstrap is single-flight per scope and a slow workspace does not block another", %{
@@ -416,6 +476,18 @@ defmodule Handbean.MCP.WorkspaceRuntimeTest do
     assert {:error, "two.example", _} = ServerRuntime.call_tool(pid, "echo", %{"fail" => true})
   end
 
+  test "shutting down a legacy runtime best-effort deletes its HTTP session", %{opts: opts} do
+    form =
+      Settings.new_form("a")
+      |> Map.merge(%{"name" => "Legacy", "url" => "https://terminate.example/mcp"})
+
+    {:ok, _} = Settings.save(form, opts)
+    {:ok, result} = Handbean.MCP.bootstrap(Keyword.put(opts, :workspace_id, "a"))
+    [pid] = result.runtime_pids
+    assert :ok = ServerRuntime.shutdown(pid)
+    assert_receive {:session_delete, "terminate.example", ["session-terminate.example"]}
+  end
+
   test "a 2026-07-28 server is used without the initialize handshake", %{opts: opts} do
     form =
       Settings.new_form("a")
@@ -464,6 +536,30 @@ defmodule Handbean.MCP.WorkspaceRuntimeTest do
              Handbean.MCP.start_runtime(
                server_config: %Handbean.MCP.ServerConfig{name: "local", command: "echo"}
              )
+  end
+
+  defp drain_requests do
+    receive do
+      {:request, _, _} -> drain_requests()
+    after
+      0 -> :ok
+    end
+  end
+
+  defp wait_for_runtime_call(runtime, attempts \\ 100)
+  defp wait_for_runtime_call(_runtime, 0), do: flunk("tool call was not queued")
+
+  defp wait_for_runtime_call(runtime, attempts) do
+    case Process.info(runtime, :message_queue_len) do
+      {:message_queue_len, count} when count > 0 ->
+        :ok
+
+      _ ->
+        receive do
+        after
+          1 -> wait_for_runtime_call(runtime, attempts - 1)
+        end
+    end
   end
 
   defp write_server!(opts, name, url) do

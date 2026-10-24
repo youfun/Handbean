@@ -63,11 +63,21 @@ defmodule Handbean.MCP.ServerRuntime do
     :exit, reason -> {:error, {:runtime_unavailable, reason}}
   end
 
-  @spec call_tool(pid(), String.t(), map()) ::
+  @spec call_tool(pid(), String.t(), map(), pos_integer(), keyword()) ::
           {:ok, String.t(), map()} | {:ok, String.t()} | {:error, String.t()}
-  def call_tool(pid, tool_name, input, timeout_ms \\ 60_000)
+  def call_tool(pid, tool_name, input, timeout_ms \\ 60_000, opts \\ [])
       when is_integer(timeout_ms) and timeout_ms > 0 do
-    GenServer.call(pid, {:call_tool, tool_name, input, timeout_ms}, timeout_ms + 1_000)
+    deadline = Keyword.get(opts, :deadline, System.monotonic_time(:millisecond) + timeout_ms)
+    authorization = Keyword.get(opts, :authorization)
+
+    GenServer.call(
+      pid,
+      {:call_tool, tool_name, input, deadline, authorization},
+      timeout_ms + 1_000
+    )
+  catch
+    :exit, {:timeout, _} -> {:error, format_error(timeout_reason())}
+    :exit, reason -> {:error, format_error({:runtime_unavailable, reason})}
   end
 
   @doc "Requests one resource page or resource contents over the existing transport."
@@ -233,57 +243,72 @@ defmodule Handbean.MCP.ServerRuntime do
     {:noreply, {:http, %{state | tools_waiters: [from | state.tools_waiters]}}}
   end
 
-  def handle_call({:call_tool, tool_name, input}, from, state),
-    do: handle_call({:call_tool, tool_name, input, 15_000}, from, state)
-
   def handle_call(
-        {:call_tool, tool_name, input, timeout_ms},
+        {:call_tool, tool_name, input, deadline, authorization},
         from,
         {:stdio, %{status: :ready} = state}
-      )
-      when is_integer(timeout_ms) do
-    params = %{name: tool_name, arguments: input || %{}}
-    state = start_stdio_request(state, "tools/call", params, {:call_tool, from}, timeout_ms)
-    {:noreply, {:stdio, state}}
+      ) do
+    with {:ok, _effective} <- dispatch_authorized(authorization),
+         {:ok, _remaining} <- resource_budget(deadline),
+         params = %{name: tool_name, arguments: input || %{}},
+         {:ok, state} <-
+           start_stdio_request(
+             state,
+             "tools/call",
+             params,
+             {:call_tool, from},
+             deadline,
+             :absolute
+           ) do
+      {:noreply, {:stdio, state}}
+    else
+      {:error, reason} -> {:reply, {:error, format_error(reason)}, {:stdio, state}}
+    end
   end
 
   def handle_call(
-        {:call_tool, _tool_name, _input, _timeout_ms},
+        {:call_tool, _tool_name, _input, _deadline, _authorization},
         _from,
         {:stdio, %{status: {:failed, reason}} = state}
       ) do
     {:reply, {:error, format_error(reason)}, {:stdio, state}}
   end
 
-  def handle_call({:call_tool, _tool_name, _input, _timeout_ms}, _from, {:stdio, state}) do
+  def handle_call({:call_tool, _, _, _, _}, _from, {:stdio, state}) do
     {:reply, {:error, "MCP server is still initializing"}, {:stdio, state}}
   end
 
   def handle_call(
-        {:call_tool, tool_name, input, timeout_ms},
+        {:call_tool, tool_name, input, deadline, authorization},
         _from,
         {:http, %{status: :ready} = state}
       ) do
-    case Handbean.MCP.HTTP.call(
-           state.cfg,
-           "tools/call",
-           %{name: tool_name, arguments: input || %{}},
-           timeout_ms
-         ) do
-      {:ok, result} -> {:reply, normalize_tool_result(result), {:http, state}}
-      {:error, reason} -> {:reply, {:error, format_error(reason)}, {:http, state}}
-    end
+    result =
+      call_tool_http(
+        state.cfg,
+        %{name: tool_name, arguments: input || %{}},
+        deadline,
+        authorization
+      )
+
+    reply =
+      case result do
+        {:ok, value} -> normalize_tool_result(value)
+        {:error, reason} -> {:error, format_error(reason)}
+      end
+
+    {:reply, reply, {:http, state}}
   end
 
   def handle_call(
-        {:call_tool, _tool_name, _input, _timeout_ms},
+        {:call_tool, _tool_name, _input, _deadline, _authorization},
         _from,
         {:http, %{status: {:failed, reason}} = state}
       ) do
     {:reply, {:error, format_error(reason)}, {:http, state}}
   end
 
-  def handle_call({:call_tool, _tool_name, _input, _timeout_ms}, _from, {:http, state}) do
+  def handle_call({:call_tool, _, _, _, _}, _from, {:http, state}) do
     {:reply, {:error, "MCP server is still initializing"}, {:http, state}}
   end
 
@@ -293,9 +318,17 @@ defmodule Handbean.MCP.ServerRuntime do
         {:stdio, %{status: :ready} = state}
       ) do
     with :ok <- resource_authorized(authorization),
-         {:ok, remaining} <- resource_budget(deadline),
-         :ok <- resource_capability(state.capabilities) do
-      state = start_stdio_request(state, method, params, {:resource, from}, remaining)
+         {:ok, _remaining} <- resource_budget(deadline),
+         :ok <- resource_capability(state.capabilities),
+         {:ok, state} <-
+           start_stdio_request(
+             state,
+             method,
+             params,
+             {:resource, from},
+             deadline,
+             :absolute
+           ) do
       {:noreply, {:stdio, state}}
     else
       {:error, _} = error -> {:reply, error, {:stdio, state}}
@@ -323,7 +356,7 @@ defmodule Handbean.MCP.ServerRuntime do
 
   @impl true
   def terminate(_reason, {:stdio, %{port: port}}), do: safe_close_port(port)
-  def terminate(_reason, {:http, _state}), do: :ok
+  def terminate(_reason, {:http, %{cfg: cfg}}), do: Handbean.MCP.HTTP.terminate_session(cfg)
 
   # ---------------------------------------------------------------------------
   # stdio transport
@@ -358,19 +391,34 @@ defmodule Handbean.MCP.ServerRuntime do
   end
 
   defp start_stdio_request(state, method, params, kind, timeout_ms) do
-    id = Integer.to_string(state.next_id)
     deadline = System.monotonic_time(:millisecond) + timeout_ms
-    timer_ref = Process.send_after(self(), {:stdio_request_timeout, id, deadline}, timeout_ms)
+
+    case start_stdio_request(state, method, params, kind, deadline, :absolute) do
+      {:ok, state} -> state
+      {:error, reason} -> fail_stdio(state, reason)
+    end
+  end
+
+  defp start_stdio_request(state, method, params, kind, deadline, :absolute) do
+    id = Integer.to_string(state.next_id)
     payload = %{"jsonrpc" => "2.0", "id" => id, "method" => method, "params" => params}
-    send_port(state.port, payload)
+    bytes = encode_port_payload(payload)
+    remaining = deadline - System.monotonic_time(:millisecond)
 
-    request = %{kind: kind, deadline: deadline, timer_ref: timer_ref}
+    if remaining <= 0 do
+      {:error, timeout_reason()}
+    else
+      timer_ref = Process.send_after(self(), {:stdio_request_timeout, id, deadline}, remaining)
+      Port.command(state.port, bytes)
+      request = %{kind: kind, deadline: deadline, timer_ref: timer_ref}
 
-    %{
-      state
-      | next_id: state.next_id + 1,
-        pending: Map.put(state.pending, id, request)
-    }
+      {:ok,
+       %{
+         state
+         | next_id: state.next_id + 1,
+           pending: Map.put(state.pending, id, request)
+       }}
+    end
   end
 
   defp stdio_notify(%{port: port}, method, params) do
@@ -378,10 +426,9 @@ defmodule Handbean.MCP.ServerRuntime do
     :ok
   end
 
-  defp send_port(port, payload) do
-    bytes = Handbean.JSON.encode!(payload) <> "\n"
-    Port.command(port, bytes)
-  end
+  defp send_port(port, payload), do: Port.command(port, encode_port_payload(payload))
+
+  defp encode_port_payload(payload), do: Handbean.JSON.encode!(payload) <> "\n"
 
   @impl true
   def handle_info({port, {:data, data}}, {:stdio, %{port: port} = state}) do
@@ -511,12 +558,18 @@ defmodule Handbean.MCP.ServerRuntime do
     state
   end
 
-  defp call_resource_http(cfg, method, params, deadline, authorization) do
+  defp call_tool_http(cfg, params, deadline, authorization),
+    do: bounded_http_call(cfg, "tools/call", params, deadline, authorization)
+
+  defp call_resource_http(cfg, method, params, deadline, authorization),
+    do: bounded_http_call(cfg, method, params, deadline, authorization)
+
+  defp bounded_http_call(cfg, method, params, deadline, authorization) do
     task =
       Task.Supervisor.async_nolink(Handbean.AgentRunTaskSupervisor, fn ->
-        with :ok <- resource_authorized(authorization),
+        with {:ok, effective} <- dispatch_authorized(authorization),
              {:ok, remaining} <- resource_budget(deadline) do
-          Handbean.MCP.HTTP.call(cfg, method, params, remaining)
+          Handbean.MCP.HTTP.call(current_http_config(cfg, effective), method, params, remaining)
         end
       end)
 
@@ -543,13 +596,39 @@ defmodule Handbean.MCP.ServerRuntime do
   end
 
   # Low-level runtime callers are trusted application code. Model tools always
-  # supply the original effective config and scope through Resources.
+  # supply the original effective config and scope through their bridge.
+  defp dispatch_authorized(nil), do: {:ok, nil}
+
+  defp dispatch_authorized({config, opts}) do
+    case Handbean.MCP.Access.current(config, opts, %{mcp_scope: opts}) do
+      {:ok, effective} -> {:ok, effective}
+      {:error, _} -> {:error, :mcp_access_revoked}
+    end
+  end
+
   defp resource_authorized(nil), do: :ok
 
-  defp resource_authorized({config, opts}) do
-    if Handbean.MCP.Access.allowed?(config, opts, %{mcp_scope: opts}),
-      do: :ok,
-      else: {:error, :resource_access_revoked}
+  defp resource_authorized(authorization) do
+    case dispatch_authorized(authorization) do
+      {:ok, _effective} -> :ok
+      {:error, _} -> {:error, :resource_access_revoked}
+    end
+  end
+
+  defp current_http_config(runtime, nil), do: runtime
+
+  defp current_http_config(runtime, effective) do
+    transport_headers =
+      Map.filter(runtime.runtime_headers, fn {key, _value} ->
+        String.starts_with?(String.downcase(key), "mcp-")
+      end)
+
+    %{
+      effective
+      | runtime_headers: Map.merge(effective.runtime_headers, transport_headers),
+        protocol_era: runtime.protocol_era,
+        runtime_capabilities: runtime.runtime_capabilities
+    }
   end
 
   defp resource_capability(capabilities) do

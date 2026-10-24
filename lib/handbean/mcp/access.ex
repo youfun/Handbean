@@ -51,10 +51,19 @@ defmodule Handbean.MCP.Access do
   end
 
   def allowed?(server, opts, context) do
+    match?({:ok, _}, current(server, opts, context))
+  end
+
+  @doc "Returns the current effective server only while the captured authorization is still valid."
+  def current(server, opts, context) do
     caller = context[:mcp_scope]
 
-    caller != nil and scope(caller) == scope(opts) and
-      matches?(config(opts).servers[server.name], fingerprint(server))
+    effective =
+      if caller != nil and scope(caller) == scope(opts), do: config(opts).servers[server.name]
+
+    if matches?(effective, fingerprint(server)),
+      do: {:ok, effective},
+      else: {:error, :mcp_access_revoked}
   end
 
   defp matches?(nil, _), do: false

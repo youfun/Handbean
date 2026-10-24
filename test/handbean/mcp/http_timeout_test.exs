@@ -12,6 +12,12 @@ defmodule Handbean.MCP.HTTPTimeoutTest do
       Process.sleep(opts[:receive_timeout] || 30)
       {:error, :timeout}
     end
+
+    def delete(url, opts) do
+      parent = :persistent_term.get({__MODULE__, :parent})
+      send(parent, {:mcp_delete, url, opts[:headers], opts[:receive_timeout]})
+      {:ok, %{status: 405, body: "", headers: %{}}}
+    end
   end
 
   setup do
@@ -30,6 +36,25 @@ defmodule Handbean.MCP.HTTPTimeoutTest do
     end)
 
     {:ok, calls: calls}
+  end
+
+  test "legacy session termination is bounded and tolerates method-not-allowed" do
+    cfg = %ServerConfig{
+      name: "legacy-mcp",
+      transport: "http",
+      url: "http://127.0.0.1:9/mcp",
+      protocol_era: :legacy,
+      runtime_headers: %{
+        "mcp-session-id" => "session-123",
+        "mcp-protocol-version" => "2025-11-25"
+      }
+    }
+
+    assert :ok = HTTP.terminate_session(cfg)
+
+    assert_receive {:mcp_delete, "http://127.0.0.1:9/mcp", headers, 750}
+    assert headers["mcp-session-id"] == "session-123"
+    assert headers["mcp-protocol-version"] == "2025-11-25"
   end
 
   test "a timed-out MCP HTTP call is not resent", %{calls: calls} do

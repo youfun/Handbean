@@ -67,6 +67,11 @@ defmodule Handbean.MCP.OAuthTest do
               },
               config[:metadata] || %{}
             )
+            |> then(fn metadata ->
+              if config[:omit_iss_support],
+                do: Map.delete(metadata, "authorization_response_iss_parameter_supported"),
+                else: metadata
+            end)
           )
 
         {"GET", "/authorize"} ->
@@ -121,7 +126,13 @@ defmodule Handbean.MCP.OAuthTest do
 
               if challenge == config.authorization["code_challenge"] and
                    params["redirect_uri"] == config.authorization["redirect_uri"],
-                 do: token(conn, config[:expires] || 3600, "access-secret", "refresh-secret"),
+                 do:
+                   token(
+                     conn,
+                     if(config[:omit_expiry], do: nil, else: config[:expires] || 3600),
+                     "access-secret",
+                     "refresh-secret"
+                   ),
                  else: send_resp(conn, 400, "bad pkce")
 
             true ->
@@ -134,9 +145,30 @@ defmodule Handbean.MCP.OAuthTest do
           send(config.owner, {:revoked, URI.decode_query(body)})
           send_resp(conn, 200, "")
 
+        {"DELETE", "/mcp"} ->
+          send(
+            config.owner,
+            {:session_deleted, get_req_header(conn, "authorization"),
+             get_req_header(conn, "mcp-session-id")}
+          )
+
+          send_resp(conn, 200, "")
+
         {"POST", "/mcp"} when is_map_key(config, :slow) ->
           send(config.owner, :streaming)
           conn |> send_chunked(200) |> trickle()
+
+        {"POST", "/mcp"} when is_map_key(config, :resource_status) ->
+          error = config[:resource_error] || "invalid_token"
+
+          challenge =
+            if config[:unquoted_resource_error],
+              do: ~s(Bearer error=#{error}, scope="#{config[:resource_scope] || "read"}"),
+              else: ~s(Bearer error="#{error}", scope="#{config[:resource_scope] || "read"}")
+
+          conn
+          |> put_resp_header("www-authenticate", challenge)
+          |> send_resp(config.resource_status, "access-secret refresh-secret")
 
         {"POST", "/mcp"} ->
           {:ok, body, conn} = read_body(conn)
@@ -219,14 +251,15 @@ defmodule Handbean.MCP.OAuthTest do
       end
     end
 
-    defp token(conn, expires, access, refresh),
-      do:
-        json(conn, %{
-          "access_token" => access,
-          "refresh_token" => refresh,
-          "token_type" => "Bearer",
-          "expires_in" => expires
-        })
+    defp token(conn, expires, access, refresh) do
+      token = %{
+        "access_token" => access,
+        "refresh_token" => refresh,
+        "token_type" => "Bearer"
+      }
+
+      json(conn, if(is_integer(expires), do: Map.put(token, "expires_in", expires), else: token))
+    end
 
     defp json(conn, data),
       do:
@@ -338,6 +371,107 @@ defmodule Handbean.MCP.OAuthTest do
     assert {:error, _} = OAuth.complete(params["state"], "browser", params)
   end
 
+  test "token responses without expires_in remain usable until the resource rejects them", ctx do
+    Agent.update(ctx.state, &Map.put(&1, :omit_expiry, true))
+    params = authorize(ctx.cfg)
+    assert {:ok, _, _} = OAuth.complete(params["state"], "browser", params)
+    assert OAuth.status(ctx.cfg) == :authorized
+    assert {:ok, _} = HTTP.call(ctx.cfg, "tools/call", %{})
+    assert {:ok, _} = HTTP.call(ctx.cfg, "tools/call", %{})
+    refute Agent.get(ctx.state, &Map.has_key?(&1, :refreshes))
+
+    Agent.update(ctx.state, &Map.merge(&1, %{resource_status: 401, resource_scope: "read write"}))
+    assert {:error, message} = HTTP.call(ctx.cfg, "tools/call", %{})
+    assert message =~ "authorization required"
+    assert OAuth.status(ctx.cfg) == :authorization_required
+  end
+
+  test "401 and insufficient_scope 403 challenges drive scope step-up without leaking tokens",
+       ctx do
+    params = authorize(ctx.cfg)
+    assert {:ok, _, _} = OAuth.complete(params["state"], "browser", params)
+
+    for status <- [401, 403] do
+      error = if status == 403, do: "insufficient_scope", else: "invalid_token"
+
+      Agent.update(ctx.state, fn state ->
+        Map.merge(state, %{
+          resource_status: status,
+          resource_error: error,
+          resource_scope: "read write"
+        })
+      end)
+
+      assert {:error, message} = HTTP.call(ctx.cfg, "tools/call", %{})
+      refute message =~ "access-secret"
+      refute message =~ "refresh-secret"
+      Agent.update(ctx.state, &Map.drop(&1, [:resource_status, :resource_error, :resource_scope]))
+
+      assert {:ok, url} =
+               OAuth.begin(ctx.cfg, "browser", "http://localhost/mcp/oauth/callback")
+
+      query = URI.parse(url).query |> URI.decode_query()
+      assert Enum.sort(String.split(query["scope"])) == ["read", "write"]
+      assert {:ok, consent} = Req.get(url, redirect: false, retry: false)
+      [location] = Req.Response.get_header(consent, "location")
+      callback = URI.parse(location).query |> URI.decode_query()
+      assert {:ok, _, _} = OAuth.complete(callback["state"], "browser", callback)
+    end
+  end
+
+  test "an unquoted insufficient_scope auth-param still drives scope step-up", ctx do
+    params = authorize(ctx.cfg)
+    assert {:ok, _, _} = OAuth.complete(params["state"], "browser", params)
+
+    Agent.update(ctx.state, fn state ->
+      Map.merge(state, %{
+        resource_status: 403,
+        resource_error: "insufficient_scope",
+        resource_scope: "read write",
+        unquoted_resource_error: true
+      })
+    end)
+
+    assert {:error, message} = HTTP.call(ctx.cfg, "tools/call", %{})
+    assert message =~ "authorization required"
+    assert OAuth.status(ctx.cfg) == :authorization_required
+
+    Agent.update(
+      ctx.state,
+      &Map.drop(&1, [
+        :resource_status,
+        :resource_error,
+        :resource_scope,
+        :unquoted_resource_error
+      ])
+    )
+
+    assert {:ok, url} = OAuth.begin(ctx.cfg, "browser", "http://localhost/mcp/oauth/callback")
+    query = URI.parse(url).query |> URI.decode_query()
+    assert Enum.sort(String.split(query["scope"])) == ["read", "write"]
+  end
+
+  test "RFC 9207 issuer validation follows advertised support", ctx do
+    Agent.update(ctx.state, &Map.put(&1, :omit_iss_support, true))
+    params = authorize(ctx.cfg)
+    assert {:ok, _, _} = OAuth.complete(params["state"], "browser", Map.delete(params, "iss"))
+
+    params = authorize(ctx.cfg)
+    assert {:error, _} = OAuth.complete(params["state"], "browser", params)
+
+    Agent.update(ctx.state, &Map.delete(&1, :omit_iss_support))
+    params = authorize(ctx.cfg)
+    assert {:error, _} = OAuth.complete(params["state"], "browser", Map.delete(params, "iss"))
+    params = authorize(ctx.cfg)
+
+    assert {:error, _} =
+             OAuth.complete(
+               params["state"],
+               "browser",
+               Map.put(params, "iss", ctx.base <> "/other")
+             )
+  end
+
   test "wrong browser, issuer, denied authorization and replay fail closed", ctx do
     params = authorize(ctx.cfg)
     assert {:error, _} = OAuth.complete(params["state"], "other-browser", params)
@@ -370,6 +504,39 @@ defmodule Handbean.MCP.OAuthTest do
     assert :ok = OAuth.disconnect(ctx.workspace["id"], ctx.id)
     assert_receive {:revoked, %{"token" => "refresh-secret"}}
     assert OAuth.status(ctx.cfg) == :authorization_required
+  end
+
+  test "legacy session cleanup uses only the captured bound token after configuration removal",
+       ctx do
+    params = authorize(ctx.cfg)
+    assert {:ok, _, _} = OAuth.complete(params["state"], "browser", params)
+    assert :ok = Settings.delete(ctx.id)
+
+    cfg = %{
+      ctx.cfg
+      | protocol_era: :legacy,
+        runtime_headers: %{"mcp-session-id" => "legacy-session"}
+    }
+
+    assert :ok = HTTP.terminate_session(cfg)
+
+    assert_receive {:session_deleted, ["Bearer access-secret"], ["legacy-session"]}, 1_000
+  end
+
+  test "explicit OAuth disconnect prevents later session cleanup from reusing the token", ctx do
+    params = authorize(ctx.cfg)
+    assert {:ok, _, _} = OAuth.complete(params["state"], "browser", params)
+    assert :ok = OAuth.disconnect(ctx.cfg)
+    assert_receive {:revoked, %{"token" => "refresh-secret"}}
+
+    cfg = %{
+      ctx.cfg
+      | protocol_era: :legacy,
+        runtime_headers: %{"mcp-session-id" => "disconnected-session"}
+    }
+
+    assert :ok = HTTP.terminate_session(cfg)
+    refute_receive {:session_deleted, _authorization, ["disconnected-session"]}, 100
   end
 
   test "concurrent refresh rotates once and disconnect prevents resurrection", ctx do
@@ -413,11 +580,11 @@ defmodule Handbean.MCP.OAuthTest do
     refute inspect(response.headers) =~ "access-secret"
   end
 
-  test "unsafe discovery, malformed metadata, missing issuer support and redirect token endpoint fail closed",
+  test "unsafe discovery, malformed metadata and redirect token endpoint fail closed",
        ctx do
     for metadata <- [
           %{"token_endpoint_auth_methods_supported" => "none"},
-          %{"authorization_response_iss_parameter_supported" => false},
+          %{"authorization_response_iss_parameter_supported" => "yes"},
           %{"token_endpoint" => "http://169.254.169.254/latest"}
         ] do
       Agent.update(ctx.state, &Map.put(&1, :metadata, metadata))
