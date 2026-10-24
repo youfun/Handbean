@@ -142,6 +142,9 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRenderingTest do
 
       assert has_element?(view, "#workspace-sheet[aria-hidden='true'][inert]")
 
+      view |> element("#mobile-tab-files") |> render_click()
+      assert has_element?(view, "#workspace-panel.mobile-panel-open")
+
       view
       |> element("button[phx-click='open_sheet'][phx-value-type='workspace']")
       |> render_click()
@@ -182,6 +185,13 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRenderingTest do
       |> render_click()
 
       assert has_element?(view, "#new-conversation-page")
+
+      assert has_element?(
+               view,
+               ".chat-panel:not(.mobile-right-panel-open) #new-conversation-page"
+             )
+
+      refute has_element?(view, "#workspace-panel.mobile-panel-open")
       refute has_element?(view, "#workspace-sheet.open")
       refute render(view) =~ "conversation-row"
 

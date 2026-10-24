@@ -7,13 +7,27 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRouting do
 
   alias HandbeanWeb.WorkspaceLive.CliSelection
   alias HandbeanWeb.WorkspaceLive.Composer
+  alias HandbeanWeb.WorkspaceLive.ConversationState
   alias HandbeanWeb.WorkspaceLive.ConversationSwitching
   alias HandbeanWeb.WorkspaceLive.MessageSubmission
   alias HandbeanWeb.WorkspaceLive.ModelSelection
   alias HandbeanWeb.WorkspaceLive.NewConversationDraft
   alias HandbeanWeb.WorkspaceLive.RuntimeProjection
   alias HandbeanWeb.WorkspaceLive.Schedules
+  alias HandbeanWeb.WorkspaceLive.Skills
   alias HandbeanWeb.WorkspaceLive.WorkspaceNavigation
+
+  @pending_message_source "new_conversation_draft"
+  @transient_delivery_errors [
+    :busy,
+    :delivery_unknown,
+    :no_active_run,
+    :persistence_unavailable,
+    :queue_full,
+    :run_in_progress,
+    :sealed,
+    :stale_run
+  ]
 
   def ask_schedule_in_place(socket, text) do
     conv_id =
@@ -162,7 +176,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRouting do
       |> assign(:new_conversation_draft, nil)
       |> assign(:input_value, "")
       |> assign(:permission_mode, draft.permission_mode)
-      |> assign(:pending_new_conversation_message, draft.message)
+      |> stage_pending_new_conversation_message(conv_id, draft)
 
     {:noreply, push_patch(socket, to: "/w/#{draft.workspace_id}/c/#{conv_id}")}
   end
@@ -186,7 +200,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRouting do
       |> assign(:new_conversation_draft, nil)
       |> assign(:input_value, "")
       |> assign(:permission_mode, draft.permission_mode)
-      |> assign(:pending_new_conversation_message, draft.message)
+      |> stage_pending_new_conversation_message(conv_id, draft)
 
     {:noreply, push_patch(socket, to: "/c/#{conv_id}")}
   end
@@ -271,14 +285,229 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRouting do
   end
 
   def flush_pending_new_conversation_message(socket) do
-    case socket.assigns[:pending_new_conversation_message] do
-      message when is_binary(message) and message != "" ->
-        socket = assign(socket, :pending_new_conversation_message, nil)
-        {:noreply, socket} = MessageSubmission.send_conversation_message(socket, message)
-        socket
+    current_conversation_id = socket.assigns[:current_conversation_id]
+
+    case pending_new_conversation_message(socket) do
+      %{conversation_id: ^current_conversation_id} = pending ->
+        with_pending_delivery_lock(socket, pending)
 
       _missing ->
         socket
+    end
+  end
+
+  defp stage_pending_new_conversation_message(socket, conversation_id, draft) do
+    request_id = "new-conversation-message-#{draft.id}"
+    message_id = request_id
+    dispatch_content = Skills.expand(draft.message, socket.assigns[:available_skills] || [])
+
+    entry = %{
+      "id" => message_id,
+      "content_type" => "user_msg",
+      "message_type" => "user",
+      "role" => "user",
+      "direction" => "inbound",
+      "content" => draft.message,
+      "dispatch_content" => dispatch_content,
+      "delivery_status" => "pending",
+      "request_id" => request_id,
+      "source" => @pending_message_source,
+      "created_at" => DateTime.utc_now() |> DateTime.to_iso8601()
+    }
+
+    case Handbean.ConversationTranscriptStore.append(conversation_id, entry) do
+      {:ok, persisted} ->
+        assign(
+          socket,
+          :pending_new_conversation_message,
+          pending_from_entry(conversation_id, persisted)
+        )
+
+      {:error, reason} ->
+        socket
+        |> Composer.prefill_text(draft.message)
+        |> assign(:pending_new_conversation_message, nil)
+        |> assign(:composer_error, "Message not saved: #{inspect(reason)}")
+    end
+  end
+
+  defp pending_new_conversation_message(socket) do
+    socket.assigns[:pending_new_conversation_message] ||
+      load_pending_new_conversation_message(socket.assigns[:current_conversation_id])
+  end
+
+  defp load_pending_new_conversation_message(conversation_id) when is_binary(conversation_id) do
+    case Handbean.ConversationTranscriptStore.list(conversation_id) do
+      {:ok, entries} ->
+        entries
+        |> Enum.reverse()
+        |> Enum.find(&pending_new_conversation_entry?/1)
+        |> then(&if(&1, do: pending_from_entry(conversation_id, &1)))
+
+      {:error, _reason} ->
+        nil
+    end
+  end
+
+  defp load_pending_new_conversation_message(_conversation_id), do: nil
+
+  defp pending_new_conversation_entry?(entry) do
+    entry["source"] == @pending_message_source and entry["delivery_status"] == "pending" and
+      is_binary(entry["request_id"])
+  end
+
+  defp pending_from_entry(conversation_id, entry) do
+    %{
+      conversation_id: conversation_id,
+      message_id: entry["id"],
+      request_id: entry["request_id"],
+      message: entry["content"],
+      dispatch_content: entry["dispatch_content"] || entry["content"]
+    }
+  end
+
+  defp with_pending_delivery_lock(socket, pending) do
+    lock =
+      {{__MODULE__, :pending_new_conversation_delivery, pending.conversation_id,
+        pending.request_id}, self()}
+
+    case :global.trans(lock, fn -> reload_and_deliver_pending_message(socket, pending) end) do
+      :aborted ->
+        put_flash(socket, :error, gettext("Message delivery is still pending"))
+
+      %Phoenix.LiveView.Socket{} = updated_socket ->
+        updated_socket
+    end
+  end
+
+  defp reload_and_deliver_pending_message(socket, pending) do
+    case load_pending_new_conversation_message(pending.conversation_id) do
+      %{request_id: request_id} = current when request_id == pending.request_id ->
+        deliver_pending_new_conversation_message(socket, current)
+
+      _already_settled_or_replaced ->
+        assign(socket, :pending_new_conversation_message, nil)
+    end
+  end
+
+  defp deliver_pending_new_conversation_message(socket, pending) do
+    case pending_run_opts(socket, pending) do
+      {:ok, opts} ->
+        case Handbean.Agent.Coordinator.add_message(
+               pending.conversation_id,
+               pending.dispatch_content,
+               opts
+             ) do
+          {:ok, _ack} -> accept_pending_new_conversation_message(socket, pending)
+          {:error, reason} -> handle_pending_delivery_error(socket, pending, reason)
+        end
+
+      {:error, reason} ->
+        handle_pending_delivery_error(socket, pending, reason)
+    end
+  end
+
+  defp pending_run_opts(socket, pending) do
+    workspace_path = ConversationState.current_workspace_path(socket)
+    checkout_path = ConversationState.current_checkout_path(socket)
+
+    with {:ok, built} <-
+           Handbean.Agent.RunOpts.for_selection(
+             workspace_path,
+             socket.assigns.selected_model,
+             socket.assigns.selected_reasoning_level,
+             socket.assigns.effective_settings,
+             checkout_path: checkout_path
+           ) do
+      base =
+        if ConversationState.free_chat?(socket) do
+          [
+            chat_scope: :free,
+            tools: Handbean.Agent.free_chat_tools(),
+            workspace_id: nil,
+            workspace_path: nil,
+            mcp: false
+          ]
+        else
+          [
+            chat_scope: :workspace,
+            tools: Handbean.Agent.default_tools(),
+            workspace_id: socket.assigns.current_workspace_id,
+            workspace_path: workspace_path,
+            working_directory: checkout_path
+          ]
+        end
+
+      {:ok,
+       Keyword.merge(
+         built,
+         base ++
+           [
+             source: :live_view,
+             streaming: true,
+             persist_inbound?: false,
+             transcript_id: pending.message_id,
+             message_id: pending.message_id,
+             inbound_id: pending.message_id,
+             request_id: pending.request_id,
+             user_time_zone: socket.assigns[:user_time_zone],
+             origin: %{
+               "kind" => @pending_message_source,
+               "request_id" => pending.request_id
+             }
+           ]
+       )}
+    end
+  end
+
+  defp accept_pending_new_conversation_message(socket, pending) do
+    case Handbean.ConversationTranscriptStore.update(
+           pending.conversation_id,
+           pending.message_id,
+           %{"delivery_status" => "accepted"}
+         ) do
+      {:ok, _entry} ->
+        send(self(), {:schedule_auto_title, pending.conversation_id, pending.message})
+
+        socket
+        |> assign(:pending_new_conversation_message, nil)
+        |> assign(:composer_error, nil)
+        |> RuntimeProjection.restore_active_session()
+        |> push_event("user-message-sent", %{})
+
+      {:error, reason} ->
+        socket
+        |> assign(:pending_new_conversation_message, pending)
+        |> assign(
+          :composer_error,
+          "Message accepted; acknowledgment save failed: #{inspect(reason)}"
+        )
+    end
+  end
+
+  defp handle_pending_delivery_error(socket, pending, reason)
+       when reason in @transient_delivery_errors do
+    socket
+    |> assign(:pending_new_conversation_message, pending)
+    |> assign(:composer_error, "Message delivery pending: #{inspect(reason)}")
+  end
+
+  defp handle_pending_delivery_error(socket, pending, reason) do
+    case Handbean.ConversationTranscriptStore.delete(pending.conversation_id, pending.message_id) do
+      :ok ->
+        socket
+        |> assign(:pending_new_conversation_message, nil)
+        |> RuntimeProjection.restore_active_session()
+        |> Composer.prefill_text(pending.message)
+        |> assign(:composer_error, "Message not delivered: #{inspect(reason)}")
+
+      {:error, cleanup_reason} ->
+        socket
+        |> assign(:pending_new_conversation_message, pending)
+        |> assign(
+          :composer_error,
+          "Message not delivered; cleanup pending: #{inspect(cleanup_reason)}"
+        )
     end
   end
 end

@@ -268,9 +268,6 @@ defmodule Handbean.Conversations.Trajectory do
           |> Map.put("baseline_changed", true)
           |> Map.put("previous_head_sha", prev_sha)
 
-        is_binary(curr_sha) ->
-          Map.put(sanitized, "baseline_changed", false)
-
         true ->
           sanitized
       end

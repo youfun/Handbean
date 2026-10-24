@@ -16,9 +16,16 @@ defmodule Handbean.Agent.Runner.ModelSelection do
   def new(opts) do
     provider_config = Keyword.get(opts, :provider_config, %{})
 
+    revision =
+      case Keyword.get(opts, :model_selection_revision, 0) do
+        value when is_integer(value) and value >= 0 -> value
+        _invalid -> 0
+      end
+
     %__MODULE__{
+      revision: revision,
       active: %{
-        revision: 0,
+        revision: revision,
         model_ref: Keyword.get(opts, :selected_model) || Keyword.get(opts, :model),
         model: Keyword.get(opts, :model),
         reasoning_level: Keyword.get(opts, :reasoning_level),
@@ -32,7 +39,8 @@ defmodule Handbean.Agent.Runner.ModelSelection do
   @spec request(t(), map(), keyword()) ::
           {:ok, :accepted | :cancelled, t(), map()} | {:error, term()}
   def request(%__MODULE__{} = current, selection, opts) do
-    with {:ok, normalized} <- normalize(selection) do
+    with :ok <- validate_expected_revision(current, selection),
+         {:ok, normalized} <- normalize(selection) do
       revision = current.revision + 1
 
       if same_model?(current.active, normalized) do
@@ -63,6 +71,17 @@ defmodule Handbean.Agent.Runner.ModelSelection do
     end
   end
 
+  defp validate_expected_revision(%__MODULE__{revision: revision}, %{expected_revision: revision}),
+       do: :ok
+
+  defp validate_expected_revision(%__MODULE__{revision: revision}, %{
+         expected_revision: expected
+       })
+       when is_integer(expected),
+       do: {:error, {:stale_model_selection, revision}}
+
+  defp validate_expected_revision(%__MODULE__{}, _selection), do: :ok
+
   @spec commit(t(), non_neg_integer(), map()) ::
           {:ok, t(), keyword()} | {:error, :stale_revision}
   def commit(%__MODULE__{pending: %{revision: revision} = pending} = current, revision, public) do
@@ -81,7 +100,14 @@ defmodule Handbean.Agent.Runner.ModelSelection do
   @spec fail(t(), non_neg_integer(), term()) ::
           {:ok, t(), map()} | {:error, :stale_revision}
   def fail(%__MODULE__{pending: %{revision: revision} = pending} = current, revision, reason) do
-    public = pending |> public_selection() |> Map.put(:error, inspect(reason))
+    public =
+      current.active
+      |> public_selection()
+      |> Map.put(:revision, revision)
+      |> Map.put(:error, inspect(reason))
+      |> Map.put(:failed_model_ref, pending.model_ref)
+      |> Map.put(:failed_reasoning_level, pending.reasoning_level)
+
     {:ok, %{current | pending: nil}, public}
   end
 

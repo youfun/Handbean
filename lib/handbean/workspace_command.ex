@@ -27,6 +27,15 @@ defmodule Handbean.WorkspaceCommand do
   @max_global 8
   @timeout_seconds 120
   @response_retry_ms 5_000
+  @transient_agent_response_errors [
+    :busy,
+    :no_active_run,
+    :persistence_unavailable,
+    :queue_full,
+    :run_in_progress,
+    :sealed,
+    :stale_run
+  ]
 
   @type command :: String.t() | {:extension, String.t(), String.t()}
 
@@ -800,15 +809,21 @@ defmodule Handbean.WorkspaceCommand do
             "agent_response_error" => error_text(:idempotency_conflict)
           }
 
-        {:error, reason} ->
+        {:error, reason} when reason in @transient_agent_response_errors ->
           %{
             "agent_response_status" => "pending",
             "agent_response_error" => error_text(reason)
           }
 
+        {:error, reason} ->
+          %{
+            "agent_response_status" => "failed",
+            "agent_response_error" => error_text(reason)
+          }
+
         other ->
           %{
-            "agent_response_status" => "pending",
+            "agent_response_status" => "failed",
             "agent_response_error" => "Unexpected Agent response result: #{inspect(other)}"
           }
       end

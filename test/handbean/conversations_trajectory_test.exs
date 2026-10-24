@@ -347,7 +347,7 @@ defmodule Handbean.ConversationsTrajectoryTest do
     assert [run_1, run_2] = summary.runs
     assert run_1.code_baseline["head_sha"] == baseline_1["head_sha"]
     assert run_1.code_baseline["dirty_count"] == 2
-    assert run_1.code_baseline["baseline_changed"] == false
+    refute Map.has_key?(run_1.code_baseline, "baseline_changed")
     refute Map.has_key?(run_1.code_baseline, "dirty_files")
 
     assert run_2.code_baseline["head_sha"] == baseline_2["head_sha"]
@@ -387,6 +387,22 @@ defmodule Handbean.ConversationsTrajectoryTest do
 
     assert [filtered_run] = filtered_summary.runs
     assert filtered_run.code_baseline["dirty_files"] == ["lib/a.ex", "lib/b.ex"]
+    refute Map.has_key?(filtered_run.code_baseline, "baseline_changed")
+
+    assert {:ok, filtered_second_summary} =
+             Conversations.trajectory(
+               %{
+                 "conversation" => c.target,
+                 "run_id" => "run-baseline-2",
+                 "detail_level" => "summary",
+                 "max_chars" => 16_000
+               },
+               c.context
+             )
+
+    assert [filtered_second_run] = filtered_second_summary.runs
+    refute Map.has_key?(filtered_second_run.code_baseline, "baseline_changed")
+    refute Map.has_key?(filtered_second_run.code_baseline, "previous_head_sha")
 
     {:ok, persisted_entries} = ConversationTranscriptStore.list(c.target)
 

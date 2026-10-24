@@ -273,10 +273,13 @@ defmodule Handbean.Agent.Runner do
       when state.status in [:running, :awaiting_approval] do
     with :ok <- validate_model_switch_identity(state, expected_run_id),
          {:ok, status, model_selection, public} <-
-           ModelSelection.request(state.model_selection, selection, state.opts) do
+           ModelSelection.request(state.model_selection, selection, state.opts),
+         :ok <- persist_model_selection(state.conversation_id, public) do
       state = %{state | model_selection: model_selection}
       project_model_switch(state, state.opts[:run_id], status, public)
-      {:reply, {:ok, %{revision: model_selection.revision, status: status}}, state}
+
+      {:reply, {:ok, %{revision: model_selection.revision, status: status, selection: public}},
+       state}
     else
       {:error, reason} -> {:reply, {:error, reason}, state}
     end
@@ -323,9 +326,24 @@ defmodule Handbean.Agent.Runner do
     if caller == task_pid and owns_task?(state, task_pid, run_id) do
       case ModelSelection.fail(state.model_selection, revision, reason) do
         {:ok, model_selection, public} ->
+          persistence = rollback_model_selection(state.conversation_id, public)
           state = %{state | model_selection: model_selection}
           project_model_switch(state, run_id, :failed, public)
-          {:reply, :ok, state}
+
+          reply =
+            case persistence do
+              :ok ->
+                :ok
+
+              {:error, persist_reason} ->
+                Logger.error(
+                  "[Runner] failed to persist model-switch rollback: #{inspect(persist_reason)}"
+                )
+
+                {:error, persist_reason}
+            end
+
+          {:reply, reply, state}
 
         {:error, reason} ->
           {:reply, {:error, reason}, state}
@@ -1061,6 +1079,30 @@ defmodule Handbean.Agent.Runner do
     end)
 
     Session.project_model_switch(state.conversation_id, run_id, status, public)
+  end
+
+  defp persist_model_selection(conversation_id, public) do
+    case Handbean.ConversationStore.update_model_selection(
+           conversation_id,
+           public.model_ref,
+           public.reasoning_level,
+           public.revision - 1
+         ) do
+      {:ok, _metadata} -> :ok
+      {:error, reason} -> {:error, {:model_selection_persistence_failed, reason}}
+    end
+  end
+
+  defp rollback_model_selection(conversation_id, public) do
+    case Handbean.ConversationStore.rollback_model_selection(
+           conversation_id,
+           public.model_ref,
+           public.reasoning_level,
+           public.revision
+         ) do
+      {:ok, _metadata} -> :ok
+      {:error, reason} -> {:error, {:model_selection_persistence_failed, reason}}
+    end
   end
 
   defp call_runner(conversation_id, message) do

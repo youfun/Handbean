@@ -450,6 +450,7 @@ defmodule HandbeanWeb.WorkspaceLive.WorkspaceNavigation do
     |> assign(:show_reasoning_sheet, false)
     |> assign(:show_permission_menu, false)
     |> assign(:show_file_drawer, false)
+    |> assign(:mobile_right_panel_open, false)
     |> assign(:conversation_menu_id, nil)
     |> assign(:new_conversation_draft, nil)
   end

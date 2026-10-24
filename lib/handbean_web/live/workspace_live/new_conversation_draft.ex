@@ -105,9 +105,14 @@ defmodule HandbeanWeb.WorkspaceLive.NewConversationDraft do
   end
 
   def apply_model_selection(socket, draft) do
+    socket =
+      if free_draft?(draft),
+        do: ModelSelection.reload_free_models(socket),
+        else: ModelSelection.initialize_workspace_conversation_model(socket)
+
     socket
-    |> ModelSelection.initialize_workspace_conversation_model()
     |> assign(:selected_model, draft.model)
+    |> assign(:model_selection_revision, 0)
     |> ModelSelection.sync_reasoning_for_model(draft.model)
     |> assign(:selected_reasoning_level, draft.reasoning)
   end
@@ -147,10 +152,7 @@ defmodule HandbeanWeb.WorkspaceLive.NewConversationDraft do
   end
 
   defp build_free_draft(socket, source) do
-    default_ws = default_workspace(socket)
-    model_root = if default_ws, do: default_ws["path"], else: ""
-
-    models = model_defaults_for_root(socket, model_root)
+    models = free_model_defaults(socket)
     permission_mode = default_free_permission_mode()
 
     {:ok,
@@ -161,7 +163,7 @@ defmodule HandbeanWeb.WorkspaceLive.NewConversationDraft do
        project_menu_open?: false,
        workspace_id: @free_workspace_id,
        workspace_name: gettext("自由对话"),
-       workspace_path: model_root,
+       workspace_path: nil,
        checkouts: [],
        checkout_path: nil,
        models: models.available_models,
@@ -174,48 +176,34 @@ defmodule HandbeanWeb.WorkspaceLive.NewConversationDraft do
      }}
   end
 
-  defp default_workspace(socket) do
-    workspaces = socket.assigns[:workspaces] || []
-    current = socket.assigns[:current_workspace_id]
-
-    cond do
-      Enum.any?(workspaces, &(&1["id"] == current)) ->
-        Enum.find(workspaces, &(&1["id"] == current))
-
-      true ->
-        List.first(workspaces)
-    end
-  end
-
-  defp model_defaults_for_root(socket, nil), do: model_defaults_for_root(socket, "")
-
-  defp model_defaults_for_root(socket, model_root) do
-    boot = ModelSelection.boot(model_root)
+  defp free_model_defaults(socket) do
+    available = Handbean.Agent.ModelConfig.all_global_models()
+    settings = Handbean.Settings.global_model_ai()
 
     selected =
       cond do
+        is_binary(settings.default_model) and
+            Enum.any?(available, &(&1.id == settings.default_model)) ->
+          settings.default_model
+
         is_binary(socket.assigns[:selected_model]) and
-            Enum.any?(boot.available_models, &(&1.id == socket.assigns[:selected_model])) ->
+            Enum.any?(available, &(&1.id == socket.assigns[:selected_model])) ->
           socket.assigns[:selected_model]
 
         true ->
-          boot.selected_model
+          available |> List.first() |> then(&if(&1, do: &1.id))
       end
 
-    entry = ModelSelection.model_entry_for(selected, boot.available_models)
+    entry = ModelSelection.model_entry_for(selected, available)
     levels = Handbean.Agent.Reasoning.supported_levels(entry)
 
     reasoning =
-      cond do
-        socket.assigns[:selected_reasoning_level] in levels ->
-          socket.assigns[:selected_reasoning_level]
-
-        true ->
-          Handbean.Agent.Reasoning.default_level(entry)
-      end
+      if settings.reasoning in levels,
+        do: settings.reasoning,
+        else: Handbean.Agent.Reasoning.default_level(entry)
 
     %{
-      available_models: boot.available_models,
+      available_models: available,
       selected_model: selected,
       available_reasoning_levels: levels,
       selected_reasoning_level: reasoning
@@ -295,8 +283,8 @@ defmodule HandbeanWeb.WorkspaceLive.NewConversationDraft do
     validate_free_model("", model)
   end
 
-  defp validate_free_model(model_root, model) do
-    models = Handbean.Agent.ModelConfig.available_models_for_workspace(model_root)
+  defp validate_free_model(_model_root, model) do
+    models = Handbean.Agent.ModelConfig.all_global_models()
 
     cond do
       models == [] ->

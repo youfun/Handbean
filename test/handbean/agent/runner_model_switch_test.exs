@@ -105,6 +105,16 @@ defmodule Handbean.Agent.RunnerModelSwitchTest do
     def stream(messages, tool_defs, config, _on_chunk), do: complete(messages, tool_defs, config)
   end
 
+  defmodule InvalidSwitchProvider do
+    @behaviour Handbean.Agent.Provider
+
+    @impl true
+    def context_editing?, do: raise("invalid switched provider")
+
+    @impl true
+    def complete(_messages, _tool_defs, _config), do: {:error, "must not be called"}
+  end
+
   defmodule RetryProvider do
     @behaviour Handbean.Agent.Provider
 
@@ -171,6 +181,24 @@ defmodule Handbean.Agent.RunnerModelSwitchTest do
     assert switched.allowed_tools == ["read"]
     assert switched.system_prompt =~ "runtime-marker"
     assert switched.system_prompt =~ "startup-transform"
+  end
+
+  test "run options read the durable model revision instead of stale caller reasoning", %{
+    sid: sid
+  } do
+    assert {:ok, persisted} =
+             Handbean.ConversationStore.update_model_selection(sid, "sol/ref", nil, 0)
+
+    stale_opts =
+      opts(BoundaryProvider)
+      |> Keyword.put(:reasoning_level, "high")
+      |> Keyword.put(:chat_scope, :free)
+
+    run_opts = Handbean.Agent.Coordinator.RunOptions.build(sid, stale_opts)
+    assert run_opts[:selected_model] == "sol/ref"
+    assert run_opts[:reasoning_level] == nil
+    assert run_opts[:model_selection_revision] == 1
+    assert persisted["model_selection_revision"] == 1
   end
 
   test "switch keeps the in-flight request and applies to the next provider request", %{sid: sid} do
@@ -282,6 +310,12 @@ defmodule Handbean.Agent.RunnerModelSwitchTest do
     assert {:ok, %{revision: 1}} = request_switch(sid, run_id, "grok")
     assert {:ok, %{revision: 2}} = request_switch(sid, run_id, "opus")
 
+    assert {:ok,
+            %{
+              "selected_model" => "opus/ref",
+              "selected_reasoning_level" => "high"
+            }} = Handbean.ConversationStore.get_metadata(sid)
+
     send(task, :continue)
     assert_receive {:model_switch_provider_request, "opus", "opus-model", same_task}, 2_000
     assert same_task == task
@@ -291,6 +325,87 @@ defmodule Handbean.Agent.RunnerModelSwitchTest do
 
     send(same_task, :finish)
     assert_eventually(fn -> refute Process.alive?(runner) end)
+  end
+
+  test "a switch that fails at the provider boundary rolls durable selection back to active", %{
+    sid: sid
+  } do
+    assert {:ok, %{run_pid: runner}} = Coordinator.start_run(sid, "start", opts(BoundaryProvider))
+    assert_receive {:model_switch_provider_request, "sol", "sol-model", task}, 2_000
+    assert {:ok, %{run_id: run_id}} = Runner.status(sid)
+
+    assert {:ok, %{status: :accepted, revision: 1}} =
+             Runner.request_model_switch(sid, run_id, %{
+               model_ref: "invalid/ref",
+               reasoning_level: "high",
+               expected_revision: 0,
+               run_opts: [
+                 selected_model: "invalid/ref",
+                 model: "invalid-model",
+                 reasoning_level: "high",
+                 provider: InvalidSwitchProvider,
+                 provider_config: %{provider: "invalid"}
+               ]
+             })
+
+    assert {:ok, %{"selected_model" => "invalid/ref"}} =
+             Handbean.ConversationStore.get_metadata(sid)
+
+    monitor = Process.monitor(runner)
+    send(task, :continue)
+
+    assert_eventually(fn ->
+      assert {:ok,
+              %{
+                "selected_model" => "sol/ref",
+                "selected_reasoning_level" => "medium"
+              }} = Handbean.ConversationStore.get_metadata(sid)
+    end)
+
+    assert_receive {:DOWN, ^monitor, :process, ^runner, _reason}, 2_000
+  end
+
+  test "stale selection revisions cannot cancel a newer persisted switch", %{sid: sid} do
+    assert {:ok, %{run_pid: runner}} = Coordinator.start_run(sid, "start", opts(BoundaryProvider))
+    assert_receive {:model_switch_provider_request, "sol", "sol-model", task}, 2_000
+    assert {:ok, %{run_id: run_id}} = Runner.status(sid)
+
+    assert {:ok, %{status: :accepted, revision: 1}} =
+             Runner.request_model_switch(sid, run_id, %{
+               model_ref: "grok/ref",
+               reasoning_level: "high",
+               expected_revision: 0,
+               run_opts: [
+                 selected_model: "grok/ref",
+                 model: "grok-model",
+                 reasoning_level: "high",
+                 provider: BoundaryProvider,
+                 provider_config: %{notify: self(), label: "grok"}
+               ]
+             })
+
+    assert {:error, {:stale_model_selection, 1}} =
+             Runner.request_model_switch(sid, run_id, %{
+               model_ref: "sol/ref",
+               reasoning_level: "medium",
+               expected_revision: 0,
+               run_opts: opts(BoundaryProvider)
+             })
+
+    assert {:ok, %{pending_model_switch: %{model_ref: "grok/ref", revision: 1}}} =
+             Runner.status(sid)
+
+    assert {:ok,
+            %{
+              "selected_model" => "grok/ref",
+              "selected_reasoning_level" => "high"
+            }} = Handbean.ConversationStore.get_metadata(sid)
+
+    monitor = Process.monitor(runner)
+    send(task, :continue)
+    assert_receive {:model_switch_provider_request, "grok", "grok-model", ^task}, 2_000
+    send(task, :finish)
+    assert_receive {:DOWN, ^monitor, :process, ^runner, _reason}, 2_000
   end
 
   test "selecting the active model cancels a pending switch before the next request", %{sid: sid} do

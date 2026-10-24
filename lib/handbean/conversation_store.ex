@@ -27,6 +27,7 @@ defmodule Handbean.ConversationStore do
     :title_source,
     :selected_model,
     :selected_reasoning_level,
+    :model_selection_revision,
     :permission_mode,
     :permission_revision,
     :channel_binding,
@@ -44,6 +45,9 @@ defmodule Handbean.ConversationStore do
                       :scope,
                       :workspace_id,
                       :checkout_path,
+                      :selected_model,
+                      :selected_reasoning_level,
+                      :model_selection_revision,
                       :permission_mode,
                       :permission_revision,
                       :channel_binding,
@@ -51,7 +55,7 @@ defmodule Handbean.ConversationStore do
                       :created_at,
                       :updated_at
                     ]
-  @owned_on_upsert ~w(collaboration visibility last_run_result parent_conversation_id parent_run_id parent_tool_call_id pinned_at)
+  @owned_on_upsert ~w(collaboration visibility last_run_result parent_conversation_id parent_run_id parent_tool_call_id pinned_at selected_model selected_reasoning_level model_selection_revision)
   @usage_meta_keys ~w(token_usage run_usage usage_legacy run_usage_replace delegated_usage)
   @channel_name ~r/\A[a-z][a-z0-9_-]{0,31}\z/
   @channel_label_max_length 24
@@ -501,7 +505,7 @@ defmodule Handbean.ConversationStore do
   def update_meta(id, updates) when is_binary(id) and is_list(updates) do
     {touch?, updates} = Keyword.pop(updates, :touch, true)
 
-    with false <- Enum.any?(updates, fn {key, _value} -> to_string(key) == "permission_mode" end),
+    with :ok <- validate_update_owners(updates),
          {:ok, row} <- fetch_row(id) do
       attrs =
         updates
@@ -519,11 +523,97 @@ defmodule Handbean.ConversationStore do
         {:error, reason} -> {:error, reason}
       end
     else
-      true -> {:error, :permission_mode_owned}
       {:error, reason} -> {:error, reason}
     end
   rescue
     ArgumentError -> {:error, :invalid_field}
+  end
+
+  defp validate_update_owners(updates) do
+    keys = MapSet.new(updates, fn {key, _value} -> to_string(key) end)
+
+    cond do
+      MapSet.member?(keys, "permission_mode") ->
+        {:error, :permission_mode_owned}
+
+      not MapSet.disjoint?(
+        keys,
+        MapSet.new(~w(selected_model selected_reasoning_level model_selection_revision))
+      ) ->
+        {:error, :model_selection_owned}
+
+      true ->
+        :ok
+    end
+  end
+
+  @doc "Atomically replace the selected model when the caller owns the current revision."
+  def update_model_selection(id, model, reasoning, expected_revision)
+      when is_binary(id) and is_binary(model) and model != "" and
+             (is_binary(reasoning) or is_nil(reasoning)) and is_integer(expected_revision) and
+             expected_revision >= 0 do
+    write_model_selection(id, model, reasoning, expected_revision, expected_revision + 1)
+  end
+
+  @doc false
+  def rollback_model_selection(id, model, reasoning, revision)
+      when is_binary(id) and is_binary(model) and model != "" and
+             (is_binary(reasoning) or is_nil(reasoning)) and is_integer(revision) and
+             revision >= 0 do
+    write_model_selection(id, model, reasoning, revision, revision)
+  end
+
+  @doc false
+  def with_model_selection_lock(id, fun) when is_binary(id) and is_function(fun, 0) do
+    case :global.trans({{__MODULE__, :model_selection, id}, self()}, fun) do
+      :aborted -> {:error, :model_selection_lock_unavailable}
+      result -> result
+    end
+  end
+
+  defp write_model_selection(id, model, reasoning, expected_revision, next_revision) do
+    result =
+      WriteTransaction.run(fn ->
+        query =
+          from conversation in Conversation,
+            where:
+              conversation.id == ^id and conversation.status == "active" and
+                conversation.model_selection_revision == ^expected_revision
+
+        case Repo.update_all(query,
+               set: [
+                 selected_model: model,
+                 selected_reasoning_level: reasoning,
+                 model_selection_revision: next_revision
+               ]
+             ) do
+          {1, _rows} ->
+            case fetch_row(id) do
+              {:ok, row} -> metadata_map(row)
+              {:error, reason} -> Repo.rollback(reason)
+            end
+
+          {0, _rows} ->
+            case fetch_row(id) do
+              {:ok, row} ->
+                Repo.rollback(
+                  {:stale_model_selection, row.model_selection_revision || 0, metadata_map(row)}
+                )
+
+              {:error, reason} ->
+                Repo.rollback(reason)
+            end
+        end
+      end)
+
+    case result do
+      {:ok, metadata} ->
+        :ok = broadcast_updated(id)
+        {:ok, metadata}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   def get_token_usage(conversation_id), do: Usage.get_token_usage(conversation_id)
@@ -560,6 +650,7 @@ defmodule Handbean.ConversationStore do
         title_source: Keyword.get(opts, :title_source, "manual"),
         selected_model: Keyword.get(opts, :selected_model),
         selected_reasoning_level: Keyword.get(opts, :selected_reasoning_level),
+        model_selection_revision: Keyword.get(opts, :model_selection_revision, 0),
         permission_mode: permission_mode,
         channel_binding: channel_binding,
         collaboration: Keyword.get(opts, :collaboration),
@@ -811,6 +902,8 @@ defmodule Handbean.ConversationStore do
       title_source: string_value(conversation, "title_source") || "manual",
       selected_model: string_value(conversation, "selected_model"),
       selected_reasoning_level: string_value(conversation, "selected_reasoning_level"),
+      model_selection_revision:
+        non_negative_integer_value(conversation, "model_selection_revision", 0),
       permission_mode:
         string_value(conversation, "permission_mode") ||
           if(scope == "free", do: "prompt", else: "auto_review"),
@@ -944,6 +1037,14 @@ defmodule Handbean.ConversationStore do
   defp map_value(map, key), do: Codec.map_value(map, key)
   defp string_value(map, key), do: Codec.string_value(map, key)
   defp list_value(map, key), do: Codec.list_value(map, key)
+
+  defp non_negative_integer_value(map, key, default) do
+    case map_value(map, key) do
+      value when is_integer(value) and value >= 0 -> value
+      _invalid_or_missing -> default
+    end
+  end
+
   defp encode_json!(value), do: Codec.encode_json!(value)
   defp decode_list(value), do: Codec.decode_list(value)
   defp encode_nullable(value), do: Codec.encode_nullable(value)

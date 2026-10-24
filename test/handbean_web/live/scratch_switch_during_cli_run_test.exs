@@ -32,13 +32,14 @@ defmodule HandbeanWeb.ScratchSwitchDuringCliRunTest do
   end
 
   defp create_default_conversation(view) do
-    view
-    |> element("#new-conversation-picker-toggle")
-    |> render_click()
+    {:ok, conversation} = Handbean.ConversationStore.create("default", title: "New chat")
 
-    view
-    |> element("#new-conversation-project-default")
-    |> render_click()
+    render_click(view, "select_conversation", %{
+      "id" => conversation["id"],
+      "ws_id" => "default"
+    })
+
+    conversation["id"]
   end
 
   test "switching to an existing conversation while a CLI run is active", %{conn: conn} do
@@ -84,24 +85,18 @@ defmodule HandbeanWeb.ScratchSwitchDuringCliRunTest do
       |> element("#conversation-#{conv_b} button[phx-click='select_conversation']")
       |> render_click()
 
-    current = first_conversation_id(view)
-
-    IO.inspect(
-      {:switched_to, current, :expected, conv_b, :path_patched?, html =~ "prior exchange"},
-      label: "switch-result"
-    )
+    assert first_conversation_id(view) == conv_b
+    assert html =~ "prior exchange"
 
     # Switching back to A must also work and show the still-running state.
-    html =
-      view
-      |> element("#conversation-#{conv_a} button[phx-click='select_conversation']")
-      |> render_click()
+    view
+    |> element("#conversation-#{conv_a} button[phx-click='select_conversation']")
+    |> render_click()
 
-    IO.inspect({:switched_back_to, first_conversation_id(view)}, label: "switch-back-result")
+    assert first_conversation_id(view) == conv_a
     assert has_element?(view, "#agent-working")
 
     send(task, :finish_fake_cli)
     assert_receive {:DOWN, ^task_ref, :process, ^task, _reason}, 1_000
-    _ = html
   end
 end

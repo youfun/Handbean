@@ -1,6 +1,45 @@
 defmodule HandbeanWeb.WorkspaceLive.NavigationAndFreeChatTest do
   use HandbeanWeb.WorkspaceLiveCase
 
+  defmodule RefusingTranscriptStore do
+    @behaviour Handbean.ConversationTranscriptStore
+
+    alias Handbean.ConversationTranscriptStore.ConversationStore
+
+    def list(conversation_id, opts), do: ConversationStore.list(conversation_id, opts)
+    def page(conversation_id, opts), do: ConversationStore.page(conversation_id, opts)
+    def append(_conversation_id, _entry, _opts), do: {:error, :storage_unavailable}
+
+    def update(conversation_id, entry_id, patch, opts),
+      do: ConversationStore.update(conversation_id, entry_id, patch, opts)
+
+    def delete(conversation_id, entry_id, opts),
+      do: ConversationStore.delete(conversation_id, entry_id, opts)
+
+    def replace_all(conversation_id, entries, opts),
+      do: ConversationStore.replace_all(conversation_id, entries, opts)
+  end
+
+  defmodule RefusingDeleteTranscriptStore do
+    @behaviour Handbean.ConversationTranscriptStore
+
+    alias Handbean.ConversationTranscriptStore.ConversationStore
+
+    def list(conversation_id, opts), do: ConversationStore.list(conversation_id, opts)
+    def page(conversation_id, opts), do: ConversationStore.page(conversation_id, opts)
+
+    def append(conversation_id, entry, opts),
+      do: ConversationStore.append(conversation_id, entry, opts)
+
+    def update(conversation_id, entry_id, patch, opts),
+      do: ConversationStore.update(conversation_id, entry_id, patch, opts)
+
+    def delete(_conversation_id, _entry_id, _opts), do: {:error, :storage_unavailable}
+
+    def replace_all(conversation_id, entries, opts),
+      do: ConversationStore.replace_all(conversation_id, entries, opts)
+  end
+
   describe "skill autocomplete" do
     setup do
       on_exit(fn ->
@@ -537,11 +576,80 @@ defmodule HandbeanWeb.WorkspaceLive.NavigationAndFreeChatTest do
     end
   end
 
+  describe "new conversation first message" do
+    test "a terminal staging failure restores the submitted text", %{conn: conn} do
+      configure_test_models!()
+      {:ok, view, _html} = live(conn, "/")
+
+      view |> element("#new-conversation-picker-toggle") |> render_click()
+      html = render(view)
+      [draft_id] = Regex.run(~r/name="draft_id" value="([^"]+)"/, html, capture: :all_but_first)
+      previous = Application.get_env(:handbean, :conversation_transcript_store)
+      Application.put_env(:handbean, :conversation_transcript_store, RefusingTranscriptStore)
+
+      try do
+        view
+        |> form("#new-conversation-composer", %{
+          "draft_id" => draft_id,
+          "message" => "restore this first message"
+        })
+        |> render_submit()
+
+        assigns = :sys.get_state(view.pid).socket.assigns
+        assert assigns.input_value == "restore this first message"
+        assert assigns.composer_error =~ "Message not saved"
+        assert assigns.pending_new_conversation_message == nil
+      after
+        if previous,
+          do: Application.put_env(:handbean, :conversation_transcript_store, previous),
+          else: Application.delete_env(:handbean, :conversation_transcript_store)
+      end
+    end
+  end
+
   describe "free chat send" do
+    test "free-chat draft uses the global catalog despite workspace restrictions", %{
+      conn: conn
+    } do
+      configure_test_models!()
+      :ok = Handbean.Settings.save_global(%{"default_model" => "sui2api/gpt-5.5"})
+      workspace_path = Handbean.WorkspaceStore.list() |> List.first() |> Map.fetch!("path")
+
+      settings_path = Handbean.WorkspaceSettings.path(workspace_path)
+      File.mkdir_p!(Path.dirname(settings_path))
+
+      File.write!(
+        settings_path,
+        Handbean.JSON.encode!(%{
+          "models" => %{
+            "allow" => %{
+              "providers" => %{"stepfun" => %{"models" => ["step-router-v1"]}}
+            }
+          }
+        })
+      )
+
+      {:ok, view, _html} = live(conn, "/")
+      view |> element("#new-free-conversation") |> render_click()
+
+      assert has_element?(
+               view,
+               "#new-conversation-model-picker option[value='sui2api/gpt-5.5'][selected]"
+             )
+
+      assert has_element?(
+               view,
+               "#new-conversation-model-picker option[value='stepfun/step-router-v1']"
+             )
+    end
+
     test "sending in a new free chat replies before the run starts", %{conn: conn} do
       isolate_conversation_home!()
 
       {:ok, view, _html} = live(conn, "/")
+
+      view |> element("#mobile-tab-files") |> render_click()
+      assert has_element?(view, "#workspace-panel.mobile-panel-open")
 
       view
       |> element("button[phx-click='open_sheet'][phx-value-type='workspace']")
@@ -552,6 +660,13 @@ defmodule HandbeanWeb.WorkspaceLive.NavigationAndFreeChatTest do
       html = view |> element("#new-free-conversation") |> render_click()
 
       assert has_element?(view, "#workspace-sheet[aria-hidden='true']")
+
+      assert has_element?(
+               view,
+               ".chat-panel:not(.mobile-right-panel-open) #new-conversation-page"
+             )
+
+      refute has_element?(view, "#workspace-panel.mobile-panel-open")
       assert has_element?(view, ".mobile-workspace", "Free chats")
       refute has_element?(view, ".mobile-workspace-tabs")
       assert html =~ "Start with a message"
@@ -565,6 +680,284 @@ defmodule HandbeanWeb.WorkspaceLive.NavigationAndFreeChatTest do
       assert html =~ "hello free chat"
       assert render(view) =~ "hello free chat"
       refute render(view) =~ "Message not delivered"
+
+      conversation_id = :sys.get_state(view.pid).socket.assigns.current_conversation_id
+      assert {:ok, entries} = Handbean.ConversationTranscriptStore.list(conversation_id)
+      entry = Enum.find(entries, &(&1["source"] == "new_conversation_draft"))
+      assert entry["source"] == "new_conversation_draft"
+      assert entry["delivery_status"] == "accepted"
+      assert entry["request_id"] == entry["id"]
+
+      assert {:ok, %{"status" => "completed"}} =
+               Handbean.Agent.OperationReceipt.lookup(
+                 {:message, conversation_id},
+                 entry["request_id"]
+               )
+    end
+
+    test "a pending first message survives admission failure and reconnect", %{conn: conn} do
+      configure_test_models!()
+      workspace = Handbean.WorkspaceStore.list() |> List.first()
+
+      assert {:ok, conversation} =
+               Handbean.ConversationStore.create(workspace["id"],
+                 selected_model: "stepfun/step-router-v1",
+                 selected_reasoning_level: "medium"
+               )
+
+      conversation_id = conversation["id"]
+      request_id = "new-conversation-message-reconnect"
+
+      assert {:ok, _entry} =
+               Handbean.ConversationTranscriptStore.append(conversation_id, %{
+                 "id" => request_id,
+                 "content_type" => "user_msg",
+                 "message_type" => "user",
+                 "role" => "user",
+                 "direction" => "inbound",
+                 "content" => "survive reconnect",
+                 "dispatch_content" => "survive reconnect",
+                 "delivery_status" => "pending",
+                 "request_id" => request_id,
+                 "source" => "new_conversation_draft"
+               })
+
+      assert {:ok, _session} = Handbean.PubSub.Session.start_or_get(session_id: conversation_id)
+
+      assert {:ok, queue} =
+               Handbean.Agent.CandidateQueue.start_link(
+                 session_id: conversation_id,
+                 owner: self(),
+                 max_size: 1
+               )
+
+      assert :ok =
+               Handbean.PubSub.Session.attach_run(conversation_id, self(), queue,
+                 run_id: "pending-draft-run"
+               )
+
+      assert :ok =
+               Handbean.Agent.CandidateQueue.enqueue(queue, "occupied",
+                 message_id: "occupied",
+                 deliver_as: :follow_up
+               )
+
+      path = "/w/#{workspace["id"]}/c/#{conversation_id}"
+      {:ok, first_view, _html} = live(conn, path)
+
+      assert {:ok, [pending_entry]} =
+               Handbean.ConversationTranscriptStore.list(conversation_id)
+
+      assert pending_entry["delivery_status"] == "pending"
+
+      assert :error =
+               Handbean.Agent.OperationReceipt.lookup({:message, conversation_id}, request_id)
+
+      assert {:ok, _deleted} =
+               Handbean.Agent.CandidateQueue.delete_message(queue, "occupied")
+
+      {:ok, second_view, _html} = live(recycle(conn), path)
+
+      assert {:ok, [accepted_entry]} =
+               Handbean.ConversationTranscriptStore.list(conversation_id)
+
+      assert accepted_entry["delivery_status"] == "accepted"
+
+      assert {:ok, %{"status" => "completed"}} =
+               Handbean.Agent.OperationReceipt.lookup({:message, conversation_id}, request_id)
+
+      assert length(Handbean.Agent.CandidateQueue.get_messages(queue)) == 1
+      assert render(first_view) =~ "survive reconnect"
+      assert render(second_view) =~ "survive reconnect"
+    end
+
+    test "concurrent reconnects serialize the same pending first-message delivery", %{conn: conn} do
+      configure_test_models!()
+      workspace = Handbean.WorkspaceStore.list() |> List.first()
+
+      assert {:ok, conversation} =
+               Handbean.ConversationStore.create(workspace["id"],
+                 selected_model: "stepfun/step-router-v1",
+                 selected_reasoning_level: "medium"
+               )
+
+      conversation_id = conversation["id"]
+      request_id = "new-conversation-message-concurrent"
+
+      assert {:ok, _entry} =
+               Handbean.ConversationTranscriptStore.append(conversation_id, %{
+                 "id" => request_id,
+                 "content_type" => "user_msg",
+                 "message_type" => "user",
+                 "role" => "user",
+                 "direction" => "inbound",
+                 "content" => "deliver exactly once",
+                 "dispatch_content" => "deliver exactly once",
+                 "delivery_status" => "pending",
+                 "request_id" => request_id,
+                 "source" => "new_conversation_draft"
+               })
+
+      assert {:ok, _session} = Handbean.PubSub.Session.start_or_get(session_id: conversation_id)
+
+      assert {:ok, queue} =
+               Handbean.Agent.CandidateQueue.start_link(
+                 session_id: conversation_id,
+                 owner: self(),
+                 max_size: 1
+               )
+
+      assert :ok =
+               Handbean.PubSub.Session.attach_run(conversation_id, self(), queue,
+                 run_id: "concurrent-draft-run"
+               )
+
+      assert :ok =
+               Handbean.Agent.CandidateQueue.enqueue(queue, "occupied",
+                 message_id: "occupied",
+                 deliver_as: :follow_up
+               )
+
+      path = "/w/#{workspace["id"]}/c/#{conversation_id}"
+      {:ok, first_view, _html} = live(recycle(conn), path)
+      {:ok, second_view, _html} = live(recycle(conn), path)
+      assert {:ok, _deleted} = Handbean.Agent.CandidateQueue.delete_message(queue, "occupied")
+
+      first_socket = :sys.get_state(first_view.pid).socket
+      second_socket = :sys.get_state(second_view.pid).socket
+      :ok = :sys.suspend(queue)
+
+      first =
+        Task.async(fn ->
+          HandbeanWeb.WorkspaceLive.ConversationRouting.flush_pending_new_conversation_message(
+            first_socket
+          )
+        end)
+
+      assert_eventually(fn ->
+        assert {:ok, %{"status" => "reserved"}} =
+                 Handbean.Agent.OperationReceipt.lookup(
+                   {:message, conversation_id},
+                   request_id
+                 )
+      end)
+
+      second =
+        Task.async(fn ->
+          HandbeanWeb.WorkspaceLive.ConversationRouting.flush_pending_new_conversation_message(
+            second_socket
+          )
+        end)
+
+      assert Task.yield(second, 200) == nil
+
+      assert {:ok, %{"status" => "reserved"}} =
+               Handbean.Agent.OperationReceipt.lookup({:message, conversation_id}, request_id)
+
+      :ok = :sys.resume(queue)
+      assert %Phoenix.LiveView.Socket{} = Task.await(first, 2_000)
+      assert %Phoenix.LiveView.Socket{} = Task.await(second, 2_000)
+
+      assert {:ok, %{"status" => "completed"}} =
+               Handbean.Agent.OperationReceipt.lookup({:message, conversation_id}, request_id)
+
+      assert [queued] = Handbean.Agent.CandidateQueue.get_messages(queue)
+      assert Handbean.Agent.Message.text(queued.message) == "deliver exactly once"
+
+      assert {:ok, [entry]} = Handbean.ConversationTranscriptStore.list(conversation_id)
+      assert entry["delivery_status"] == "accepted"
+    end
+
+    test "a permanently rejected first message is removed and restored to the composer", %{
+      conn: conn
+    } do
+      configure_test_models!()
+      workspace = Handbean.WorkspaceStore.list() |> List.first()
+
+      assert {:ok, conversation} =
+               Handbean.ConversationStore.create(workspace["id"],
+                 selected_model: "stepfun/step-router-v1",
+                 selected_reasoning_level: "medium"
+               )
+
+      conversation_id = conversation["id"]
+      request_id = "new-conversation-message-terminal"
+
+      assert {:ok, _entry} =
+               Handbean.ConversationTranscriptStore.append(conversation_id, %{
+                 "id" => request_id,
+                 "content_type" => "user_msg",
+                 "message_type" => "user",
+                 "role" => "user",
+                 "direction" => "inbound",
+                 "content" => "restore terminal failure",
+                 "dispatch_content" => "restore terminal failure",
+                 "delivery_status" => "pending",
+                 "request_id" => request_id,
+                 "source" => "new_conversation_draft"
+               })
+
+      assert {:ok, _session} = Handbean.PubSub.Session.start_or_get(session_id: conversation_id)
+
+      assert {:ok, queue} =
+               Handbean.Agent.CandidateQueue.start_link(
+                 session_id: conversation_id,
+                 owner: self(),
+                 max_size: 1
+               )
+
+      assert :ok =
+               Handbean.PubSub.Session.attach_run(conversation_id, self(), queue,
+                 run_id: "terminal-draft-run"
+               )
+
+      assert :ok =
+               Handbean.Agent.CandidateQueue.enqueue(queue, "occupied",
+                 message_id: "occupied",
+                 deliver_as: :follow_up
+               )
+
+      path = "/w/#{workspace["id"]}/c/#{conversation_id}"
+      {:ok, view, _html} = live(conn, path)
+
+      assert Enum.any?(
+               :sys.get_state(view.pid).socket.assigns.timeline,
+               &(&1["id"] == request_id)
+             )
+
+      :sys.replace_state(view.pid, fn %{socket: socket} = state ->
+        %{state | socket: Phoenix.Component.assign(socket, :selected_model, "missing/model")}
+      end)
+
+      previous = Application.get_env(:handbean, :conversation_transcript_store)
+
+      Application.put_env(
+        :handbean,
+        :conversation_transcript_store,
+        RefusingDeleteTranscriptStore
+      )
+
+      try do
+        render_patch(view, path)
+        blocked = :sys.get_state(view.pid).socket.assigns
+        assert blocked.composer_error =~ "cleanup pending"
+        assert blocked.pending_new_conversation_message.request_id == request_id
+        refute blocked.input_value == "restore terminal failure"
+        assert {:ok, [_pending]} = Handbean.ConversationTranscriptStore.list(conversation_id)
+      after
+        if previous,
+          do: Application.put_env(:handbean, :conversation_transcript_store, previous),
+          else: Application.delete_env(:handbean, :conversation_transcript_store)
+      end
+
+      render_patch(view, path)
+      assigns = :sys.get_state(view.pid).socket.assigns
+
+      assert assigns.composer_error =~ "Message not delivered"
+      assert assigns.input_value == "restore terminal failure"
+      assert assigns.pending_new_conversation_message == nil
+      refute Enum.any?(assigns.timeline, &(&1["id"] == request_id))
+      assert {:ok, []} = Handbean.ConversationTranscriptStore.list(conversation_id)
     end
 
     test "mobile current conversation menu pins and renames the selected conversation", %{
@@ -673,5 +1066,18 @@ defmodule HandbeanWeb.WorkspaceLive.NavigationAndFreeChatTest do
       view |> element("#mobile-delete-conversation") |> render_click()
       assert has_element?(view, "#delete-conversation-dialog")
     end
+  end
+
+  defp assert_eventually(assertion, attempts \\ 100)
+  defp assert_eventually(assertion, 0), do: assertion.()
+
+  defp assert_eventually(assertion, attempts) do
+    assertion.()
+  rescue
+    ExUnit.AssertionError ->
+      receive do
+      after
+        10 -> assert_eventually(assertion, attempts - 1)
+      end
   end
 end

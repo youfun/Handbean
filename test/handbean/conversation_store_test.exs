@@ -626,7 +626,7 @@ defmodule Handbean.ConversationStoreTest do
 
     assert {:ok, _} =
              ConversationStore.update_meta(conversation["id"],
-               selected_model: "fake",
+               title: "Metadata edit",
                touch: false
              )
 
@@ -649,6 +649,81 @@ defmodule Handbean.ConversationStoreTest do
 
     assert {:ok, touched} = ConversationStore.get(conversation["id"], include_timeline?: false)
     assert touched["updated_at"] > original
+  end
+
+  test "model selection updates use a durable revision and reject stale writers" do
+    assert {:ok, conversation} =
+             ConversationStore.create("workspace-a",
+               selected_model: "provider/model-a",
+               selected_reasoning_level: "medium"
+             )
+
+    assert conversation["model_selection_revision"] == 0
+
+    assert {:error, :model_selection_owned} =
+             ConversationStore.update_meta(conversation["id"],
+               selected_model: "provider/bypass"
+             )
+
+    assert {:error, :model_selection_owned} =
+             ConversationStore.update_meta(conversation["id"],
+               model_selection_revision: 99
+             )
+
+    assert {:ok, updated} =
+             ConversationStore.update_model_selection(
+               conversation["id"],
+               "provider/model-b",
+               "high",
+               0
+             )
+
+    assert updated["selected_model"] == "provider/model-b"
+    assert updated["selected_reasoning_level"] == "high"
+    assert updated["model_selection_revision"] == 1
+
+    assert {:error, {:stale_model_selection, 1, authoritative}} =
+             ConversationStore.update_model_selection(
+               conversation["id"],
+               "provider/model-c",
+               nil,
+               0
+             )
+
+    assert authoritative["selected_model"] == "provider/model-b"
+    assert authoritative["model_selection_revision"] == 1
+  end
+
+  test "generic upsert cannot overwrite the model selection owner" do
+    assert {:ok, conversation} =
+             ConversationStore.create("workspace-a",
+               selected_model: "provider/model-a",
+               selected_reasoning_level: "medium"
+             )
+
+    assert {:ok, selected} =
+             ConversationStore.update_model_selection(
+               conversation["id"],
+               "provider/model-b",
+               "high",
+               0
+             )
+
+    assert {:ok, upserted} =
+             ConversationStore.upsert(%{
+               "id" => conversation["id"],
+               "scope" => "workspace",
+               "workspace_id" => "workspace-a",
+               "title" => "Renamed",
+               "selected_model" => "provider/stale",
+               "selected_reasoning_level" => nil,
+               "model_selection_revision" => 0
+             })
+
+    assert upserted["title"] == "Renamed"
+    assert upserted["selected_model"] == selected["selected_model"]
+    assert upserted["selected_reasoning_level"] == selected["selected_reasoning_level"]
+    assert upserted["model_selection_revision"] == selected["model_selection_revision"]
   end
 
   test "upsert preserves owned metadata and does not erase an existing transcript with an omitted timeline" do

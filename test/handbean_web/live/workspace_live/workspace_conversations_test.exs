@@ -180,18 +180,56 @@ defmodule HandbeanWeb.WorkspaceLive.WorkspaceConversationsTest do
       assert after_selection["selected_model"] == before["selected_model"]
     end
 
-    test "submitted model requests the active Runner switch before persistence", %{
+    test "durable model startup replaces stale caller provider config and fails when removed", %{
+      ws_dir: ws_dir
+    } do
+      models_path = configure_test_models!()
+
+      assert {:ok, conversation} =
+               Handbean.ConversationStore.create("default",
+                 selected_model: "sui2api/gpt-5.5",
+                 selected_reasoning_level: nil
+               )
+
+      stale_opts = [
+        workspace_path: ws_dir,
+        working_directory: ws_dir,
+        selected_model: "sui2api/gpt-5.5",
+        model: "gpt-5.5",
+        provider: BlockingModelProvider,
+        provider_config: %{stale_marker: true},
+        tools: [],
+        source: :web
+      ]
+
+      run_opts =
+        Handbean.Agent.Coordinator.RunOptions.build(conversation["id"], stale_opts)
+
+      refute Keyword.has_key?(run_opts, :provider)
+      refute run_opts[:provider_config][:stale_marker]
+      assert run_opts[:provider_config][:model] == "gpt-5.5"
+      assert :ok = Handbean.Agent.Coordinator.RunOptions.validate(run_opts)
+
+      config = models_path |> File.read!() |> Handbean.JSON.decode!()
+      config = update_in(config, ["providers"], &Map.delete(&1, "sui2api"))
+      File.write!(models_path, Handbean.JSON.encode!(config))
+
+      removed_opts =
+        Handbean.Agent.Coordinator.RunOptions.build(conversation["id"], stale_opts)
+
+      refute Keyword.has_key?(removed_opts, :provider)
+      assert {:error, error} = Handbean.Agent.Coordinator.RunOptions.validate(removed_opts)
+      assert error =~ "not allowed"
+    end
+
+    test "selected model requests the active Runner switch before persistence", %{
       conn: conn,
       ws_dir: ws_dir
     } do
       configure_test_models!()
 
       {:ok, conversation} =
-        Handbean.ConversationStore.create("default",
-          title: "Active model submission",
-          selected_model: "stepfun/step-router-v1",
-          selected_reasoning_level: "medium"
-        )
+        Handbean.ConversationStore.create("default", title: "Active model submission")
 
       assert {:ok, _} =
                Handbean.Permissions.ConversationMode.update(conversation["id"], :yolo,
@@ -216,13 +254,9 @@ defmodule HandbeanWeb.WorkspaceLive.WorkspaceConversationsTest do
 
       assert_receive {:model_submission_blocked, task}, 2_000
       {:ok, view, _html} = live(conn, "/w/default/c/#{conversation["id"]}")
+      {:ok, stale_view, _html} = live(conn, "/w/default/c/#{conversation["id"]}")
 
-      view
-      |> form("#composer", %{
-        "message" => "",
-        "model" => "sui2api/gpt-5.5"
-      })
-      |> render_submit()
+      render_change(view, "select_model", %{"model" => "sui2api/gpt-5.5"})
 
       assert {:ok, %{pending_model_switch: %{model_ref: "sui2api/gpt-5.5", revision: revision}}} =
                Handbean.Agent.Runner.status(conversation["id"])
@@ -230,6 +264,25 @@ defmodule HandbeanWeb.WorkspaceLive.WorkspaceConversationsTest do
       render_change(view, "select_model", %{"model" => "sui2api/gpt-5.5"})
 
       assert {:ok, %{pending_model_switch: %{revision: ^revision}}} =
+               Handbean.Agent.Runner.status(conversation["id"])
+
+      stale_view
+      |> element("#composer")
+      |> render_change(%{
+        "_target" => ["message"],
+        "message" => "stale draft",
+        "model" => "stepfun/step-router-v1",
+        "reasoning" => "medium"
+      })
+
+      stale_view
+      |> form("#composer", %{
+        "message" => "",
+        "model" => "stepfun/step-router-v1"
+      })
+      |> render_submit()
+
+      assert {:ok, %{pending_model_switch: %{model_ref: "sui2api/gpt-5.5", revision: ^revision}}} =
                Handbean.Agent.Runner.status(conversation["id"])
 
       assert {:ok, %{"selected_model" => "sui2api/gpt-5.5"}} =

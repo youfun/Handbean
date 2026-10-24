@@ -141,6 +141,7 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
         ),
       pending_model: nil,
       pending_model_revision: nil,
+      model_switch_revision: payload_value(payload, :config_revision, 0),
       status: :running,
       status_detail: nil,
       input_tokens: 0,
@@ -194,9 +195,14 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
   end
 
   def handle_agent_event(%{kind: :model_switch_accepted, payload: payload}, socket) do
-    update_status(socket, %{
+    revision = payload_value(payload, :revision)
+
+    socket
+    |> ModelSelection.apply_runtime_selection(payload)
+    |> update_status(%{
       pending_model: model_display_from_payload(payload, socket),
-      pending_model_revision: payload_value(payload, :revision),
+      pending_model_revision: revision,
+      model_switch_revision: revision,
       model_switch_status: :accepted,
       status_detail: nil
     })
@@ -205,11 +211,14 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
   def handle_agent_event(%{kind: :model_switch_applied, payload: payload}, socket) do
     model = model_display_from_payload(payload, socket)
 
-    update_status(socket, %{
+    socket
+    |> ModelSelection.apply_runtime_selection(payload)
+    |> update_status(%{
       model: model,
       active_model: model,
       pending_model: nil,
       pending_model_revision: nil,
+      model_switch_revision: payload_value(payload, :revision),
       model_switch_status: :applied,
       status_detail: nil
     })
@@ -223,20 +232,23 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
     })
   end
 
-  def handle_agent_event(%{kind: kind, payload: payload}, socket)
-      when kind in [:model_switch_cancelled, :model_switch_expired] do
-    update_status(socket, %{
-      pending_model: nil,
-      pending_model_revision: nil,
-      model_switch_status: payload_value(payload, :status, kind),
-      status_detail: nil
-    })
+  def handle_agent_event(%{kind: :model_switch_cancelled, payload: payload}, socket) do
+    socket
+    |> ModelSelection.apply_runtime_selection(payload)
+    |> clear_pending_model_status(payload, :model_switch_cancelled)
+  end
+
+  def handle_agent_event(%{kind: :model_switch_expired, payload: payload}, socket) do
+    clear_pending_model_status(socket, payload, :model_switch_expired)
   end
 
   def handle_agent_event(%{kind: :model_switch_failed, payload: payload}, socket) do
-    update_status(socket, %{
+    socket
+    |> ModelSelection.apply_runtime_selection(payload)
+    |> update_status(%{
       pending_model: nil,
       pending_model_revision: nil,
+      model_switch_revision: payload_value(payload, :revision),
       model_switch_status: :failed,
       status_detail: "Model switch failed: #{payload_value(payload, :error, "unknown error")}"
     })
@@ -428,6 +440,16 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
   end
 
   def handle_agent_event(_event, socket), do: socket
+
+  defp clear_pending_model_status(socket, payload, fallback_status) do
+    update_status(socket, %{
+      pending_model: nil,
+      pending_model_revision: nil,
+      model_switch_revision: payload_value(payload, :revision),
+      model_switch_status: payload_value(payload, :status, fallback_status),
+      status_detail: nil
+    })
+  end
 
   defp update_request_model_status(socket, payload, model, overrides) do
     request_revision = payload_value(payload, :config_revision)
@@ -693,7 +715,11 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
 
   @doc false
   def reconcile_model_status(socket, _meta, false) do
-    update_status(socket, %{pending_model: nil, pending_model_revision: nil})
+    update_status(socket, %{
+      pending_model: nil,
+      pending_model_revision: nil,
+      model_switch_revision: 0
+    })
   end
 
   def reconcile_model_status(socket, meta, true) do
@@ -714,6 +740,7 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
     overrides = %{
       pending_model: pending,
       pending_model_revision: pending_revision,
+      model_switch_revision: meta[:model_switch_revision] || 0,
       model_switch_status: meta[:model_switch_status]
     }
 

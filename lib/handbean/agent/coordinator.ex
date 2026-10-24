@@ -19,6 +19,12 @@ defmodule Handbean.Agent.Coordinator do
       when is_binary(conversation_id) and
              (is_binary(content) or is_struct(content, Handbean.Agent.Message)) and
              is_list(opts) do
+    Handbean.ConversationStore.with_model_selection_lock(conversation_id, fn ->
+      do_add_message(conversation_id, content, opts)
+    end)
+  end
+
+  defp do_add_message(conversation_id, content, opts) do
     {content, opts} = stamp_message_ids(content, opts)
 
     with :ok <- Handbean.Storage.Health.check_write(),
@@ -53,7 +59,7 @@ defmodule Handbean.Agent.Coordinator do
 
       {:ok, %{running?: false} = inactive} ->
         with :ok <- await_run_exit(inactive[:run_supervisor]),
-             result <- start_run(id, content, opts) do
+             result <- do_start_run(id, content, opts) do
           case result do
             {:error, :run_in_progress} -> release_idle_busy(id, content, opts)
             other -> other
@@ -61,7 +67,7 @@ defmodule Handbean.Agent.Coordinator do
         end
 
       {:error, :not_found} ->
-        case start_run(id, content, opts) do
+        case do_start_run(id, content, opts) do
           {:error, :run_in_progress} -> release_idle_busy(id, content, opts)
           result -> result
         end
@@ -87,7 +93,7 @@ defmodule Handbean.Agent.Coordinator do
           {:error, :no_active_run}
         else
           with :ok <- await_run_exit(inactive[:run_supervisor]) do
-            case start_run(id, content, opts) do
+            case do_start_run(id, content, opts) do
               {:error, :run_in_progress} ->
                 admit_message(id, content, opts, attempts - 1)
 
@@ -101,7 +107,7 @@ defmodule Handbean.Agent.Coordinator do
         if Keyword.get(opts, :require_running?, false) do
           {:error, :no_active_run}
         else
-          case start_run(id, content, opts) do
+          case do_start_run(id, content, opts) do
             {:error, :run_in_progress} ->
               admit_message(id, content, opts, attempts - 1)
 
@@ -235,15 +241,22 @@ defmodule Handbean.Agent.Coordinator do
       when is_binary(conversation_id) and
              (is_binary(content) or is_struct(content, Handbean.Agent.Message)) and
              is_list(opts) do
+    Handbean.ConversationStore.with_model_selection_lock(conversation_id, fn ->
+      do_start_run(conversation_id, content, opts)
+    end)
+  end
+
+  defp do_start_run(conversation_id, content, opts) do
+    {content, opts} = stamp_message_ids(content, ensure_run_id(opts))
+
     with :ok <- Handbean.Storage.Health.check_write(),
-         :ok <- validate_conversation_access(conversation_id, opts),
-         :ok <- RunOptions.validate(opts),
-         opts <- ensure_run_id(opts),
-         {:ok, _pid} <- Session.start_or_get(session_id: conversation_id, model: opts[:model]) do
-      {content, opts} = stamp_message_ids(content, opts)
+         :ok <- validate_conversation_access(conversation_id, opts) do
       run_opts = RunOptions.build(conversation_id, opts)
 
-      with :ok <- RunOptions.validate_checkout(run_opts) do
+      with :ok <- RunOptions.validate(run_opts),
+           :ok <- RunOptions.validate_checkout(run_opts),
+           {:ok, _pid} <-
+             Session.start_or_get(session_id: conversation_id, model: run_opts[:model]) do
         case Handbean.Agent.Runner.start_run(conversation_id, content, run_opts) do
           {:ok, pid} ->
             runner_pid = wait_until_registered(conversation_id)

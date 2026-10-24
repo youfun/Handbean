@@ -579,8 +579,11 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSwitching do
         do: socket.assigns[:current_conversation_id]
 
     conversation =
-      build_conversation(workspace_id, length(conversations) + 1, checkout_path,
-        inherit_from: inherit_from
+      build_conversation(
+        workspace_id,
+        length(conversations) + 1,
+        checkout_path,
+        Keyword.put(opts, :inherit_from, inherit_from)
       )
 
     conversations_by_ws =

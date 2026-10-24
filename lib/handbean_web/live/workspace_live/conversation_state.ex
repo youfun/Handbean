@@ -117,6 +117,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationState do
 
     socket
     |> assign(:selected_model, selected_model)
+    |> assign(:model_selection_revision, conv_value(conv, "model_selection_revision", 0))
     |> assign(:channel_binding, conv_value(conv, "channel_binding", nil))
     |> sync_reasoning_for_conversation(conv, selected_model, opts)
     |> maybe_update_status(status_overrides, opts)
@@ -125,7 +126,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationState do
     |> load_effective_settings(opts)
   end
 
-  def sync_conv_to(socket) do
+  def sync_conv_to(socket, opts \\ []) do
     conv_id = socket.assigns.current_conversation_id
     ws_id = conversation_bucket(socket)
     convs = socket.assigns.conversations_by_workspace
@@ -144,7 +145,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationState do
       socket
       |> assign(:conversations_by_workspace, Map.put(convs, ws_id, updated))
 
-    persist_current_conversation(socket)
+    if Keyword.get(opts, :persist?, true), do: persist_current_conversation(socket)
     socket
   end
 
@@ -479,6 +480,10 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationState do
     |> put_conversation_value("active_file", socket.assigns.active_file)
     |> put_conversation_value("selected_model", socket.assigns.selected_model)
     |> put_conversation_value("selected_reasoning_level", socket.assigns.selected_reasoning_level)
+    |> put_conversation_value(
+      "model_selection_revision",
+      socket.assigns[:model_selection_revision] || 0
+    )
   end
 
   def put_conversation_value(conversation, key, value)
@@ -545,13 +550,6 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationState do
           "editor_files" => socket.assigns.editor_files,
           "active_file" => socket.assigns.active_file
         })
-
-      _ =
-        Handbean.ConversationStore.update_meta(conv_id,
-          selected_model: socket.assigns.selected_model,
-          selected_reasoning_level: socket.assigns.selected_reasoning_level,
-          touch: false
-        )
 
       :ok
     else

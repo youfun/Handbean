@@ -7,10 +7,18 @@ defmodule Handbean.Agent.Coordinator.RunOptions do
 
   @spec validate(keyword()) :: :ok | {:error, term()}
   def validate(opts) when is_list(opts) do
-    with :ok <- validate_required_opts(opts),
+    with :ok <- validate_model_resolution(opts),
+         :ok <- validate_required_opts(opts),
          :ok <- validate_model_policy(opts),
          :ok <- validate_advisor_policy(opts) do
       :ok
+    end
+  end
+
+  defp validate_model_resolution(opts) do
+    case Keyword.get(opts, :model_resolution_error) do
+      nil -> :ok
+      reason -> {:error, reason}
     end
   end
 
@@ -40,6 +48,7 @@ defmodule Handbean.Agent.Coordinator.RunOptions do
             |> put_created_by(meta)
             |> put_checkout_path(meta)
             |> put_permission_mode(meta)
+            |> put_model_selection(meta)
 
           if get_in(meta, ["collaboration", "read_only"]) == true,
             do: Keyword.put(opts, :delegated_read_only, true),
@@ -184,6 +193,31 @@ defmodule Handbean.Agent.Coordinator.RunOptions do
     |> Keyword.put(:permission_source, :conversation)
   end
 
+  defp put_model_selection(opts, meta) do
+    revision = meta["model_selection_revision"] || 0
+
+    case meta["selected_model"] do
+      model when is_binary(model) and model != "" ->
+        opts =
+          opts
+          |> Keyword.put(:selected_model, model)
+          |> Keyword.put(:model, model)
+          |> Keyword.put(:model_selection_revision, revision)
+          |> Keyword.put(:durable_model_selection, true)
+          |> then(fn selected ->
+            case meta["selected_reasoning_level"] do
+              level when is_binary(level) -> Keyword.put(selected, :reasoning_level, level)
+              _missing -> Keyword.delete(selected, :reasoning_level)
+            end
+          end)
+
+        opts |> Keyword.delete(:provider) |> Keyword.put(:provider_config, %{})
+
+      _missing ->
+        Keyword.put(opts, :model_selection_revision, revision)
+    end
+  end
+
   defp put_checkout_path(opts, meta) do
     if Keyword.has_key?(opts, :working_directory) do
       opts
@@ -217,17 +251,30 @@ defmodule Handbean.Agent.Coordinator.RunOptions do
   defp put_saved_provider(opts) do
     model = Keyword.get(opts, :model)
 
-    with true <- is_binary(model) and String.contains?(model, "/"),
-         {:ok, saved, model_id} <- saved_provider_config(opts, model) do
-      caller = Keyword.get(opts, :provider_config, %{})
+    if is_binary(model) and String.contains?(model, "/") do
+      case saved_provider_config(opts, model) do
+        {:ok, saved, model_id} ->
+          provider_config =
+            if durable_provider_authority?(opts),
+              do: saved,
+              else: Map.merge(saved, Keyword.get(opts, :provider_config, %{}))
 
-      opts
-      |> Keyword.put(:model, model_id)
-      |> Keyword.put(:provider_config, Map.merge(saved, caller))
+          opts
+          |> Keyword.put(:model, model_id)
+          |> Keyword.put(:provider_config, provider_config)
+
+        {:error, reason} ->
+          if Keyword.get(opts, :durable_model_selection, false),
+            do: Keyword.put(opts, :model_resolution_error, reason),
+            else: opts
+      end
     else
-      _ -> opts
+      opts
     end
   end
+
+  defp durable_provider_authority?(opts),
+    do: Keyword.get(opts, :durable_model_selection, false)
 
   defp saved_provider_config(opts, model) do
     cond do

@@ -104,12 +104,14 @@ defmodule HandbeanWeb.WorkspaceLive.Bootstrap do
       |> assign(:selected_model, selected_model)
       |> assign(:available_models, available_models)
       |> assign(:selected_reasoning_level, selected_reasoning_level)
+      |> assign(:model_selection_revision, 0)
       |> assign(:available_reasoning_levels, available_reasoning_levels)
       |> assign(:status_info, %{
         model: models.status_model,
         active_model: models.status_model,
         pending_model: nil,
         pending_model_revision: nil,
+        model_switch_revision: 0,
         future_model: models.status_model,
         model_switch_status: nil,
         input_tokens: 0,

@@ -211,13 +211,16 @@ defmodule Handbean.Conversations.Collaboration do
     inherited_request? = Map.get(input, "model") in [nil, "", "current"]
     reasoning_omitted? = Map.get(input, "reasoning_level") in [nil, ""]
     inherited_model = inherited_model_candidate(source, workspace, context)
+    checkout = workspace["selected_checkout_path"]
 
     with {:ok, requested_model} <- model_selection(input),
          {:ok, model_ref} <-
            selected_model_ref(requested_model, same_workspace?, source, workspace, context),
-         {:ok, model} <- available_model(workspace["path"], model_ref),
+         {:ok, model} <- available_model(workspace["path"], checkout, model_ref),
          {:ok, _provider_config, model_id} <-
-           ModelConfig.resolve_model_for_workspace(workspace["path"], model_ref),
+           ModelConfig.resolve_model_for_workspace(workspace["path"], model_ref,
+             checkout_path: checkout
+           ),
          {:ok, reasoning_level} <-
            selected_reasoning_level(input, model, same_workspace?, source, context) do
       {:ok,
@@ -279,7 +282,9 @@ defmodule Handbean.Conversations.Collaboration do
 
   defp selected_model_ref(nil, false, _source, workspace, _context) do
     workspace["path"]
-    |> ModelConfig.strict_default_model_for_workspace()
+    |> ModelConfig.strict_default_model_for_workspace(
+      checkout_path: workspace["selected_checkout_path"]
+    )
     |> present_model_ref()
   end
 
@@ -289,8 +294,13 @@ defmodule Handbean.Conversations.Collaboration do
   defp inherited_model_candidate(source, workspace, context) do
     default =
       case workspace["path"] do
-        path when is_binary(path) and path != "" -> ModelConfig.default_model_for_workspace(path)
-        _ -> nil
+        path when is_binary(path) and path != "" ->
+          ModelConfig.default_model_for_workspace(path,
+            checkout_path: workspace["selected_checkout_path"]
+          )
+
+        _ ->
+          nil
       end
 
     source["selected_model"] || inherited_model_ref(context[:conversation_run_opts]) || default
@@ -301,8 +311,11 @@ defmodule Handbean.Conversations.Collaboration do
 
   defp present_model_ref(_model_ref), do: {:error, :target_model_unavailable}
 
-  defp available_model(path, model_ref) do
-    case Enum.find(ModelConfig.available_models_for_workspace(path), &(&1.id == model_ref)) do
+  defp available_model(path, checkout, model_ref) do
+    case Enum.find(
+           ModelConfig.available_models_for_workspace(path, checkout_path: checkout),
+           &(&1.id == model_ref)
+         ) do
       nil -> {:error, :target_model_unavailable}
       model -> {:ok, model}
     end
@@ -683,7 +696,7 @@ defmodule Handbean.Conversations.Collaboration do
       model_ref = target_model_ref(target, base)
 
       if is_binary(model_ref) do
-        case ModelConfig.resolve_model_for_workspace(path, model_ref) do
+        case ModelConfig.resolve_model_for_workspace(path, model_ref, checkout_path: checkout) do
           {:ok, provider_config, model_id} ->
             {:ok,
              base
@@ -714,9 +727,9 @@ defmodule Handbean.Conversations.Collaboration do
         target["selected_model"]
 
       true ->
-        base
-        |> Keyword.get(:workspace_path)
-        |> Handbean.Agent.ModelConfig.default_model_for_workspace()
+        ModelConfig.default_model_for_workspace(Keyword.get(base, :workspace_path),
+          checkout_path: Keyword.get(base, :working_directory)
+        )
     end
   end
 

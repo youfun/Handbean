@@ -344,6 +344,31 @@ defmodule Handbean.WorkspaceCommandTest do
            end)
   end
 
+  test "a permanent Agent authorization failure settles the response as failed", context do
+    assert {:ok, %{state: :started}} =
+             WorkspaceCommand.submit(context.conversation["id"], "pwd",
+               operation_id: "permanent-response-failure",
+               executor: fn _, _, _ -> {:ok, "workspace", %{exit_code: 0}} end,
+               responder: fn _, _ -> {:error, :not_workspace_conversation} end
+             )
+
+    assert eventually(fn ->
+             terminal = Enum.at(transcript(context.conversation["id"]), 1)
+
+             terminal["tool_status"] == "done" and
+               terminal["agent_response_status"] == "failed" and
+               terminal["agent_response_error"] == ":not_workspace_conversation"
+           end)
+
+    assert {:ok, pending} =
+             ConversationTranscriptStore.pending_workspace_command_responses()
+
+    refute Enum.any?(pending, fn {conversation_id, entry} ->
+             conversation_id == context.conversation["id"] and
+               entry["id"] == "workspace-command-tool-permanent-response-failure"
+           end)
+  end
+
   test "a queue-full Agent delivery keeps its attempt id and recovers after capacity returns",
        context do
     conversation_id = context.conversation["id"]

@@ -294,7 +294,23 @@ defmodule HandbeanWeb.WorkspaceLive.PolicyAndControlsTest do
       # the picker's own select_reasoning event.
       view
       |> element("#composer")
-      |> render_change(%{"reasoning" => "high", "model" => "stepfun/step-router-v1"})
+      |> render_change(%{
+        "_target" => ["reasoning"],
+        "reasoning" => "high",
+        "model" => "stepfun/step-router-v1"
+      })
+
+      html = render(view)
+      assert html =~ ~s(option selected value="high") or html =~ ~s(value="high" selected)
+
+      view
+      |> element("#composer")
+      |> render_change(%{
+        "_target" => ["message"],
+        "message" => "draft",
+        "reasoning" => "medium",
+        "model" => "stepfun/step-router-v1"
+      })
 
       html = render(view)
       assert html =~ ~s(option selected value="high") or html =~ ~s(value="high" selected)
