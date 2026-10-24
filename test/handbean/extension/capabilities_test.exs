@@ -2,6 +2,7 @@ defmodule Handbean.Extension.CapabilitiesTest do
   use Handbean.DataCase, async: false
 
   alias Handbean.Agent.{Config, ModelConfig, RunOpts}
+  alias Handbean.Conversations.Collaboration
   alias Handbean.Extension.{Command, HotReloader, Provider, Registry}
   alias Handbean.WorkspaceCommand
 
@@ -306,6 +307,20 @@ defmodule Handbean.Extension.CapabilitiesTest do
     assert is_binary(operation_id)
   end
 
+  test "command output normalizes invalid UTF-8 before applying the byte bound", ctx do
+    fixture(ctx.a, "output")
+    assert {:ok, []} = reload(ctx)
+
+    assert {:ok, output, %{truncated: true}} =
+             Command.execute({:extension, "/ext:sample:echo", "large-invalid"}, %{
+               working_directory: ctx.a
+             })
+
+    assert String.valid?(output)
+    assert byte_size(output) <= 100_000
+    assert output =~ "�"
+  end
+
   test "callback errors and deadlines become durable command errors", ctx do
     fixture(ctx.a, "errors")
     assert {:ok, []} = reload(ctx)
@@ -396,6 +411,99 @@ defmodule Handbean.Extension.CapabilitiesTest do
     assert {:ok, [_ | _]} = reload(ctx)
     assert ExistingImplementation.value() == :original
     assert command_result(ctx.a) == "old:x"
+  end
+
+  test "global generation budget is measured in worst-case atom allocations", ctx do
+    root = Path.join(ctx.a, "atom-budget-probe")
+
+    assert {:error, :global_atom_budget} =
+             Handbean.Extension.Capabilities.reserve_generation(
+               root,
+               "oversized-generation",
+               Handbean.Extension.Capabilities.generation_atom_budget() + 1
+             )
+  end
+
+  test "source validation bounds generated module atoms per revision", ctx do
+    dir = fixture(ctx.a, "old")
+    assert {:ok, []} = reload(ctx)
+
+    nested_modules =
+      Enum.map_join(1..65, "\n", fn index ->
+        "  defmodule Generated#{index} do\n    def value, do: #{index}\n  end"
+      end)
+
+    source = "defmodule AtomBoundedRoot do\n#{nested_modules}\nend\n"
+    File.write!(Path.join(dir, "extension.ex"), source)
+
+    assert {:ok, diagnostics} = reload(ctx)
+    assert Enum.any?(diagnostics, &String.contains?(&1.message, "more than 64"))
+    assert command_result(ctx.a) == "old:x"
+  end
+
+  test "static identifier validation rejects source before allocating its atoms", ctx do
+    dir = fixture(ctx.a, "old")
+    assert {:ok, []} = reload(ctx)
+
+    for generation <- 1..(Handbean.Extension.Capabilities.generation_limit() - 2) do
+      assert :ok =
+               Handbean.Extension.Capabilities.reserve_generation(
+                 dir,
+                 "static-validation-reserved-#{generation}"
+               )
+    end
+
+    prefix = "handbean_atom_budget_#{System.unique_integer([:positive])}"
+    marker = "#{prefix}_257"
+
+    assert_raise ArgumentError, fn -> String.to_existing_atom(marker) end
+
+    functions =
+      Enum.map_join(1..257, "\n", fn index ->
+        "  def #{prefix}_#{index}, do: #{index}"
+      end)
+
+    File.write!(
+      Path.join(dir, "extension.ex"),
+      "defmodule Ext.Sample.AtomBudget do\n#{functions}\nend\n"
+    )
+
+    assert {:ok, diagnostics} = reload(ctx)
+    assert Enum.any?(diagnostics, &String.contains?(&1.message, "static identifiers"))
+    assert_raise ArgumentError, fn -> String.to_existing_atom(marker) end
+    assert command_result(ctx.a) == "old:x"
+
+    fixture(ctx.a, "new")
+    assert {:ok, []} = reload(ctx)
+    assert command_result(ctx.a) == "new:x"
+  end
+
+  test "invalid module shape does not consume a generation", ctx do
+    dir = fixture(ctx.a, "old")
+    assert {:ok, []} = reload(ctx)
+
+    for generation <- 1..(Handbean.Extension.Capabilities.generation_limit() - 2) do
+      assert :ok =
+               Handbean.Extension.Capabilities.reserve_generation(
+                 dir,
+                 "shape-validation-reserved-#{generation}"
+               )
+    end
+
+    File.write!(Path.join(dir, "extension.ex"), "# no module declarations\n")
+
+    assert {:ok, diagnostics} = reload(ctx)
+
+    assert Enum.any?(
+             diagnostics,
+             &String.contains?(&1.message, "expected_literal_top_level_modules")
+           )
+
+    assert command_result(ctx.a) == "old:x"
+
+    fixture(ctx.a, "new")
+    assert {:ok, []} = reload(ctx)
+    assert command_result(ctx.a) == "new:x"
   end
 
   test "canonical source identity survives alias reload and manifest-only changes invalidate selection",
@@ -490,15 +598,18 @@ defmodule Handbean.Extension.CapabilitiesTest do
              System.cmd("git", ["worktree", "add", "-qb", "fixture-worktree", worktree], cd: repo)
 
     {:ok, workspace} = Handbean.WorkspaceStore.add(repo, name: "Worktree provider")
+    id = "ext:sample:model/chat"
 
     {:ok, conversation} =
-      Handbean.ConversationStore.create(workspace["id"], checkout_path: worktree)
+      Handbean.ConversationStore.create(workspace["id"],
+        checkout_path: worktree,
+        selected_model: id
+      )
 
     fixture(repo, "main")
     fixture(worktree, "worktree")
     assert {:ok, []} = reload(ctx, project: repo)
     assert {:ok, []} = reload(ctx, project: worktree)
-    id = "ext:sample:model/chat"
     assert {:ok, opts} = RunOpts.for_workspace(repo, id, checkout_path: worktree)
     assert opts[:provider_config].extension_scope == worktree
     Handbean.PubSub.Session.subscribe(conversation["id"])
@@ -521,6 +632,50 @@ defmodule Handbean.Extension.CapabilitiesTest do
     assert_receive {:agent_event, %{kind: :run_end, payload: %{status: :completed}}}, 5_000
     assert File.read!(Path.join(worktree, "provider-result")) == "chat"
     refute File.exists?(Path.join(repo, "provider-result"))
+
+    File.rm!(Path.join(worktree, "provider-result"))
+
+    context = %{
+      conversation_id: conversation["id"],
+      workspace_id: workspace["id"],
+      run_id: "worktree-collaboration",
+      approval_mode: :yolo,
+      conversation_run_opts:
+        Keyword.merge(opts,
+          workspace_path: repo,
+          working_directory: worktree,
+          model: id,
+          tools: [],
+          source: :cli,
+          streaming: false
+        )
+    }
+
+    child_id =
+      "delegated-" <>
+        (:crypto.hash(:sha256, :erlang.term_to_binary({conversation["id"], "worktree-provider"}))
+         |> Base.encode16(case: :lower))
+
+    Handbean.PubSub.Session.subscribe(child_id)
+
+    assert {:ok, receipt} =
+             Collaboration.create(
+               %{
+                 "title" => "Worktree child",
+                 "message" => "Use the checkout provider",
+                 "request_id" => "worktree-provider",
+                 "model" => "current"
+               },
+               context
+             )
+
+    assert receipt.conversation == child_id
+    on_exit(fn -> Handbean.TestSupport.RuntimeLifecycle.stop_run!(receipt.conversation) end)
+    assert_receive {:agent_event, %{kind: :run_end, payload: %{status: :completed}}}, 5_000
+    assert File.read!(Path.join(worktree, "provider-result")) == "chat"
+    refute File.exists?(Path.join(repo, "provider-result"))
+    assert {:ok, child} = Handbean.ConversationStore.get_metadata(receipt.conversation)
+    assert child["checkout_path"] == worktree
 
     File.write!(
       Path.join(repo, ".handbean/settings.jsonc"),
@@ -570,6 +725,7 @@ defmodule Handbean.Extension.CapabilitiesTest do
       def name, do: #{inspect(Keyword.get(opts, :command_name, "/ext:sample:echo"))}
       def execute("raise", _context), do: raise("fixture failure")
       def execute("block", _context), do: receive(do: (:release -> {:ok, "released"}))
+      def execute("large-invalid", _context), do: {:ok, :binary.copy(<<255>>, 100_000)}
       def execute(args, context) do
         result = #{inspect(result)} <> ":" <> args
         File.write!(Path.join(context.working_directory, "command-result"), result)

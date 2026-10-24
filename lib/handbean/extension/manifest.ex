@@ -5,7 +5,7 @@ defmodule Handbean.Extension.Manifest do
   Does NOT execute any code. Only parses metadata.
   """
 
-  alias Handbean.Extension.Diagnostic
+  alias Handbean.Extension.{Diagnostic, Permission}
 
   defstruct [
     :name,
@@ -119,17 +119,71 @@ defmodule Handbean.Extension.Manifest do
        }}
 
   defp validate_runtime_fields(data) do
-    if is_boolean(Map.get(data, "enabled", true)) and
-         Enum.all?(["commands", "providers"], &is_list(Map.get(data, &1, []))) do
+    with :ok <- validate_optional_strings(data),
+         :ok <- validate_enabled(data),
+         :ok <- validate_permissions(data),
+         :ok <- validate_hooks(data),
+         :ok <- validate_declaration_lists(data) do
       :ok
-    else
-      {:error,
-       %Diagnostic{
-         type: :validation_error,
-         message: "enabled must be boolean; commands and providers must be lists"
-       }}
     end
   end
+
+  defp validate_optional_strings(data) do
+    invalid =
+      Enum.find(["entry", "version", "description"], fn field ->
+        case Map.fetch(data, field) do
+          :error -> false
+          {:ok, nil} -> false
+          {:ok, value} -> not (is_binary(value) and String.valid?(value))
+        end
+      end)
+
+    if invalid,
+      do: validation_error("#{invalid} must be a string when present"),
+      else: :ok
+  end
+
+  defp validate_enabled(data) do
+    if is_boolean(Map.get(data, "enabled", true)),
+      do: :ok,
+      else: validation_error("enabled must be boolean")
+  end
+
+  defp validate_permissions(data) do
+    case Permission.validate(Map.get(data, "permissions", %{})) do
+      :ok -> :ok
+      {:error, %Diagnostic{} = diagnostic} -> {:error, diagnostic}
+    end
+  end
+
+  defp validate_hooks(data) do
+    case Map.get(data, "hooks", []) do
+      hooks when is_list(hooks) ->
+        if Enum.all?(hooks, &(is_binary(&1) and String.valid?(&1))),
+          do: :ok,
+          else: validation_error("hooks must be a list of strings")
+
+      _ ->
+        validation_error("hooks must be a list of strings")
+    end
+  end
+
+  defp validate_declaration_lists(data) do
+    invalid =
+      Enum.find(["tools", "commands", "providers"], fn field ->
+        case Map.get(data, field, []) do
+          values when is_list(values) -> not Enum.all?(values, &is_map/1)
+          _ -> true
+        end
+      end)
+
+    if invalid,
+      do: validation_error("#{invalid} must be a list of objects"),
+      else: :ok
+  end
+
+  defp validation_error(message),
+    do: {:error, %Diagnostic{type: :validation_error, message: message}}
 
   defp build_manifest(data, name) do
     known_fields =

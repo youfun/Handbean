@@ -131,7 +131,7 @@
         <div :if={exts != []} class="plugins-card-grid">
           <article
             :for={ext <- exts}
-            id={"ext-card-#{ext.name}"}
+            id={"ext-card-#{ext.source}-#{ext.name}"}
             class={["plugin-card", if(!ext.enabled, do: "is-disabled")]}
           >
             <div>
@@ -158,7 +158,7 @@
                 <button
                   type="button"
                   phx-click="inspect_ext"
-                  phx-value-name={ext.name}
+                  phx-value-id={ext.id}
                   class={[
                     "plugin-text-action",
                     if(ext.status == :error, do: "delete", else: "primary")
@@ -172,7 +172,7 @@
                   aria-checked={to_string(ext.enabled)}
                   aria-label={ext.name}
                   phx-click="toggle_ext"
-                  phx-value-name={ext.name}
+                  phx-value-id={ext.id}
                   class={["plugin-switch", if(ext.enabled, do: "on")]}
                 ></button>
               </div>

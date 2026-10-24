@@ -34,7 +34,8 @@ defmodule Handbean.Extension.Command do
     with {:ok, command} <- resolve(context.working_directory, name) do
       case command.module.execute(args, context) do
         {status, text} when status in [:ok, :error] and is_binary(text) ->
-          truncated = Handbean.Utils.Truncate.truncate_head_tail(text, max_bytes: 100_000)
+          normalized = String.replace_invalid(text, "�")
+          truncated = Handbean.Utils.Truncate.truncate_head_tail(normalized, max_bytes: 100_000)
           {status, truncated.content, %{truncated: truncated.truncated}}
 
         _ ->

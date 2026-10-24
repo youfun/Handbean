@@ -3,11 +3,10 @@ defmodule Handbean.Extension.Supervisor do
   Dynamic supervisor for long-lived processes started by loaded extensions.
 
   Modules compiled from an extension `entry` that export `child_spec/1`
-  are started here. A later successful reload that still lists the same
-  module keeps the pid (BEAM picks up new function clauses). Workers are
-  stopped only when the module disappears from a successful compile, or
-  when `restart: true` is passed. A failed compile must not call this
-  with an empty module list.
+  are started here. Entry source generations use distinct module identities,
+  so a successful source change starts the candidate worker before retiring
+  the previous generation. An unchanged source keeps its pid. A failed compile
+  must not call this with an empty module list.
   """
 
   use DynamicSupervisor

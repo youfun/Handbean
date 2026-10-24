@@ -11,7 +11,8 @@ defmodule Handbean.Agent.ExtensionBridge do
 
   Extension tools must:
   1. Implement `Handbean.Agent.Tool` behaviour
-  2. Come from the extension `entry` (`Code.compile_file/1`) or already be on the BEAM
+  2. Come from the extension `entry` compiled into a content-addressed generation,
+     or already be on the BEAM
   3. Use the naming convention `ext__<extension_name>__<tool_name>`
      as return value of `name/0`
   """
@@ -223,7 +224,7 @@ defmodule Handbean.Agent.ExtensionBridge do
       tool_name = Handbean.Utils.SafeMap.get_any(tool_decl, ["name", :name])
       expected_name = "ext__#{ext.name}__#{tool_name}"
 
-      case find_tool_module(expected_name, compiled_modules) do
+      case find_tool_module(expected_name, compiled_modules, ext.entry) do
         {:ok, mod} ->
           case validate_extension_tool(mod) do
             :ok ->
@@ -309,58 +310,19 @@ defmodule Handbean.Agent.ExtensionBridge do
     end
   end
 
-  defp compile_entry(%{commands: commands, providers: providers} = ext)
-       when commands != [] or providers != [] do
+  defp compile_entry(%{entry: entry} = ext) when is_binary(entry) do
     Capabilities.compile(ext)
-  end
-
-  defp compile_entry(%{entry: entry}) when is_binary(entry) do
-    if File.exists?(entry) do
-      case Code.compile_file(entry) do
-        modules when is_list(modules) ->
-          {:ok, Enum.map(modules, &elem(&1, 0)), []}
-
-        _other ->
-          {:error,
-           [
-             %Diagnostic{
-               type: :warning,
-               message: "Failed to compile extension entry #{entry}"
-             }
-           ]}
-      end
-    else
-      {:error,
-       [
-         %Diagnostic{
-           type: :warning,
-           message: "Extension entry does not exist: #{entry}"
-         }
-       ]}
-    end
-  rescue
-    e ->
-      {:error,
-       [
-         %Diagnostic{
-           type: :warning,
-           message: "Failed to compile extension entry #{entry}: #{Exception.message(e)}"
-         }
-       ]}
   end
 
   defp compile_entry(_ext), do: {:ok, [], []}
 
-  defp find_tool_module(expected_name, compiled_modules) do
-    compiled =
-      Enum.find(compiled_modules, fn mod ->
-        function_exported?(mod, :name, 0) and mod.name() == expected_name
-      end)
-
-    if compiled do
-      {:ok, compiled}
-    else
-      find_compiled_tool_module(expected_name)
+  defp find_tool_module(expected_name, compiled_modules, entry) do
+    case Enum.find(compiled_modules, fn mod ->
+           function_exported?(mod, :name, 0) and mod.name() == expected_name
+         end) do
+      nil when is_nil(entry) -> find_compiled_tool_module(expected_name)
+      nil -> {:error, :not_found}
+      compiled -> {:ok, compiled}
     end
   end
 

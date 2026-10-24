@@ -227,6 +227,35 @@ defmodule Handbean.Extension.ManifestTest do
       assert {:error, diagnostic} = Manifest.from_json(json)
       assert diagnostic.type == :validation_error
     end
+
+    test "invalid optional runtime strings return diagnostics instead of raising" do
+      for field <- ["entry", "version", "description"] do
+        json = Handbean.JSON.encode!(%{"name" => "test-ext", field => %{"invalid" => true}})
+
+        assert {:error, diagnostic} = Manifest.from_json(json)
+        assert diagnostic.type == :validation_error
+        assert diagnostic.message =~ field
+      end
+    end
+
+    test "invalid runtime containers return diagnostics instead of being discarded" do
+      cases = [
+        {%{"permissions" => []}, "permissions"},
+        {%{"hooks" => %{}}, "hooks"},
+        {%{"hooks" => ["agent_start", 42]}, "hooks"},
+        {%{"tools" => ["not-an-object"]}, "tools"},
+        {%{"commands" => %{}}, "commands"},
+        {%{"providers" => [nil]}, "providers"}
+      ]
+
+      for {fields, expected} <- cases do
+        json = Handbean.JSON.encode!(Map.put(fields, "name", "test-ext"))
+
+        assert {:error, diagnostic} = Manifest.from_json(json)
+        assert diagnostic.type == :validation_error
+        assert diagnostic.message =~ expected
+      end
+    end
   end
 
   describe "validate_name/1" do

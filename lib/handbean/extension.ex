@@ -71,7 +71,7 @@ defmodule Handbean.Extension do
   @spec active?(t()) :: boolean()
   def active?(%__MODULE__{enabled: enabled}), do: enabled
 
-  defp validate_root(root) do
+  defp validate_root(root) when is_binary(root) do
     if Path.type(root) == :absolute do
       :ok
     else
@@ -83,9 +83,17 @@ defmodule Handbean.Extension do
     end
   end
 
+  defp validate_root(root) do
+    {:error,
+     %Diagnostic{
+       type: :validation_error,
+       message: "extension root must be an absolute path, got: #{inspect(root)}"
+     }}
+  end
+
   defp resolve_entry(nil, _root), do: {:ok, nil}
 
-  defp resolve_entry(entry, root) do
+  defp resolve_entry(entry, root) when is_binary(entry) do
     resolved = Path.expand(entry, root)
 
     if resolved == root or String.starts_with?(resolved, root <> "/") do
@@ -98,5 +106,13 @@ defmodule Handbean.Extension do
            "extension entry path resolves outside root: #{inspect(entry)} -> #{resolved} (root: #{root})"
        }}
     end
+  end
+
+  defp resolve_entry(entry, _root) do
+    {:error,
+     %Diagnostic{
+       type: :validation_error,
+       message: "extension entry must be a string when present, got: #{inspect(entry)}"
+     }}
   end
 end

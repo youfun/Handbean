@@ -1,7 +1,7 @@
 defmodule Handbean.Extension.SettingsTest do
   use ExUnit.Case, async: false
 
-  alias Handbean.Extension.Settings
+  alias Handbean.Extension.{HotReloader, Registry, Settings}
   alias Handbean.Plugins.Catalog
 
   setup do
@@ -85,6 +85,60 @@ defmodule Handbean.Extension.SettingsTest do
     assert item.status == :inactive
     assert is_binary(item.diagnostic)
     refute File.exists?(marker)
+  end
+
+  test "untrusted project collision keeps the active user extension visible and mutations scoped",
+       %{project_dir: project_dir, user_dir: user_dir} do
+    project_ext = Path.join(project_dir, ".handbean/extensions/shared")
+    user_ext = Path.join(user_dir, ".handbean/extensions/shared")
+    File.mkdir_p!(project_ext)
+    File.mkdir_p!(user_ext)
+
+    File.write!(
+      Path.join(project_ext, "extension.json"),
+      Handbean.JSON.encode!(%{"name" => "shared", "description" => "project"})
+    )
+
+    File.write!(
+      Path.join(user_ext, "extension.json"),
+      Handbean.JSON.encode!(%{"name" => "shared", "description" => "user"})
+    )
+
+    registry = :"extension_settings_#{System.unique_integer([:positive])}"
+    start_supervised!({Registry, name: registry})
+
+    opts = [
+      project: project_dir,
+      user_home: user_dir,
+      ext_registry: registry,
+      trusted_project?: false
+    ]
+
+    assert {:ok, []} = HotReloader.reload(opts)
+    assert {:ok, items} = Settings.list(opts)
+
+    assert Enum.map(items, &{&1.source, &1.status}) == [
+             project: :untrusted_project,
+             user: :enabled
+           ]
+
+    project = Enum.find(items, &(&1.source == :project))
+    user = Enum.find(items, &(&1.source == :user))
+    assert project.id != user.id
+
+    assert :ok = Settings.set_enabled(project.id, false, opts)
+
+    assert Handbean.JSON.decode!(File.read!(Path.join(project_ext, "extension.json")))["enabled"] ==
+             false
+
+    refute Map.has_key?(
+             Handbean.JSON.decode!(File.read!(Path.join(user_ext, "extension.json"))),
+             "enabled"
+           )
+
+    assert {:ok, %{item: inspected, code: code}} = Settings.inspect_extension(user.id, opts)
+    assert inspected.source == :user
+    assert code =~ "user"
   end
 
   test "failed staged import publishes no target or staging directory", %{

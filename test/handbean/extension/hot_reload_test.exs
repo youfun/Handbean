@@ -10,7 +10,7 @@ defmodule Handbean.Extension.HotReloadTest do
 
   alias Handbean.Agent.Coordinator
   alias Handbean.Agent.ExtensionBridge
-  alias Handbean.Extension.HotReloader
+  alias Handbean.Extension.{Capabilities, HotReloader, Loader}
   alias Handbean.Extension.Registry, as: ExtRegistry
 
   @tmp_base Path.join(System.tmp_dir!(), "sigil_hot_reload_test")
@@ -46,8 +46,12 @@ defmodule Handbean.Extension.HotReloadTest do
       if Process.whereis(Handbean.Extension.Supervisor) do
         Handbean.Extension.Supervisor.replace_workers("hotdemo", [])
         Handbean.Extension.Supervisor.replace_workers("renamed", [])
+        Handbean.Extension.Supervisor.replace_workers("userdemo", [])
+        Handbean.Extension.Supervisor.replace_workers("shared", [])
         Handbean.Tool.Registry.remove_owner({:extension, "hotdemo"})
         Handbean.Tool.Registry.remove_owner({:extension, "renamed"})
+        Handbean.Tool.Registry.remove_owner({:extension, "userdemo"})
+        Handbean.Tool.Registry.remove_owner({:extension, "shared"})
       end
     end)
 
@@ -86,6 +90,51 @@ defmodule Handbean.Extension.HotReloadTest do
     assert reloaded.root == ext_dir
     assert {:ok, new_entry} = Handbean.Tool.Registry.get("ext__hotdemo__ping")
     assert {:ok, ":v2"} = new_entry.executor.(%{}, %{})
+  end
+
+  test "generation budget reuses unchanged source and rejects the next unique edit", %{
+    tmp: tmp,
+    registry: registry
+  } do
+    ext_dir = write_entry_extension!(tmp, "hotdemo", version: "0.1.0", result: ":v1")
+
+    for generation <- 1..(Capabilities.generation_limit() - 1) do
+      assert :ok = Capabilities.reserve_generation(ext_dir, "reserved-#{generation}")
+    end
+
+    assert {:ok, []} =
+             HotReloader.reload(
+               project: tmp,
+               user_home: Path.join(tmp, "no-user"),
+               ext_registry: registry
+             )
+
+    assert {:ok, []} =
+             HotReloader.reload(
+               project: tmp,
+               user_home: Path.join(tmp, "no-user"),
+               ext_registry: registry
+             )
+
+    write_entry_extension!(tmp, "hotdemo", version: "0.2.0", result: ":v2")
+
+    assert {:ok, diagnostics} =
+             HotReloader.reload(
+               project: tmp,
+               user_home: Path.join(tmp, "no-user"),
+               ext_registry: registry
+             )
+
+    assert Enum.any?(diagnostics, fn diagnostic ->
+             diagnostic.type == :validation_error and
+               String.contains?(diagnostic.message, "generation limit") and
+               String.contains?(diagnostic.message, "restart Handbean")
+           end)
+
+    assert {:ok, extension} = ExtRegistry.get(registry, "hotdemo")
+    assert extension.version == "0.1.0"
+    assert {:ok, entry} = Handbean.Tool.Registry.get("ext__hotdemo__ping")
+    assert {:ok, ":v1"} = entry.executor.(%{}, %{})
   end
 
   test "reload does not stop an active RunSupervisor", %{tmp: tmp, registry: registry} do
@@ -194,6 +243,119 @@ defmodule Handbean.Extension.HotReloadTest do
     assert {:error, :not_found} = ExtRegistry.get(registry, "hotdemo")
   end
 
+  test "trust revocation unregisters every project runtime resource and preserves user extensions",
+       %{tmp: tmp, registry: registry} do
+    user_home = Path.join(tmp, "user-home")
+    File.mkdir_p!(user_home)
+    write_full_extension!(tmp, "hotdemo", ":project")
+    write_full_extension!(user_home, "userdemo", ":user")
+
+    assert {:ok, []} =
+             HotReloader.reload(
+               project: tmp,
+               user_home: user_home,
+               ext_registry: registry,
+               trusted_project?: true
+             )
+
+    assert {:ok, _} = ExtRegistry.get(registry, "hotdemo")
+    assert {:ok, _} = ExtRegistry.get(registry, "userdemo")
+    assert {:ok, _} = Handbean.Tool.Registry.get("ext__hotdemo__ping")
+    assert {:ok, user_tool} = Handbean.Tool.Registry.get("ext__userdemo__ping")
+    assert {:ok, ":user"} = user_tool.executor.(%{}, %{})
+    assert Map.has_key?(ExtRegistry.list_hook_modules(registry), "hotdemo")
+    assert [_] = Handbean.Extension.Supervisor.workers("hotdemo")
+
+    assert Enum.any?(
+             ExtRegistry.capabilities(:commands, tmp, registry),
+             &(&1.extension == "hotdemo")
+           )
+
+    assert Enum.any?(
+             ExtRegistry.capabilities(:providers, tmp, registry),
+             &(&1.extension == "hotdemo")
+           )
+
+    assert {:ok, []} =
+             HotReloader.reload(
+               project: tmp,
+               user_home: user_home,
+               ext_registry: registry,
+               trusted_project?: false
+             )
+
+    assert {:error, :not_found} = ExtRegistry.get(registry, "hotdemo")
+    assert Handbean.Tool.Registry.get("ext__hotdemo__ping") == :error
+    refute Map.has_key?(ExtRegistry.list_hook_modules(registry), "hotdemo")
+    assert Handbean.Extension.Supervisor.workers("hotdemo") == []
+
+    refute Enum.any?(
+             ExtRegistry.capabilities(:commands, tmp, registry),
+             &(&1.extension == "hotdemo")
+           )
+
+    refute Enum.any?(
+             ExtRegistry.capabilities(:providers, tmp, registry),
+             &(&1.extension == "hotdemo")
+           )
+
+    assert {:ok, _} = ExtRegistry.get(registry, "userdemo")
+    assert {:ok, preserved} = Handbean.Tool.Registry.get("ext__userdemo__ping")
+    assert {:ok, ":user"} = preserved.executor.(%{}, %{})
+    assert Map.has_key?(ExtRegistry.list_hook_modules(registry), "userdemo")
+    assert [_] = Handbean.Extension.Supervisor.workers("userdemo")
+    assert [_] = ExtRegistry.capabilities(:commands, :global, registry)
+    assert [_] = ExtRegistry.capabilities(:providers, :global, registry)
+  end
+
+  test "trust revocation restores a shadowed same-name user generation", %{
+    tmp: tmp,
+    registry: registry
+  } do
+    user_home = Path.join(tmp, "collision-user-home")
+    File.mkdir_p!(user_home)
+    project_root = write_full_extension!(tmp, "shared", ":project")
+    user_root = write_full_extension!(user_home, "shared", ":user")
+
+    assert {:ok, []} =
+             HotReloader.reload(
+               project: tmp,
+               user_home: user_home,
+               ext_registry: registry,
+               trusted_project?: true
+             )
+
+    assert {:ok, %{root: ^project_root}} = ExtRegistry.get(registry, "shared")
+    assert {:ok, project_tool} = Handbean.Tool.Registry.get("ext__shared__ping")
+    assert {:ok, ":project"} = project_tool.executor.(%{}, %{})
+    project_hook = ExtRegistry.list_hook_modules(registry)["shared"]
+    [project_worker] = Handbean.Extension.Supervisor.workers("shared")
+
+    assert {:ok, []} =
+             HotReloader.reload(
+               project: tmp,
+               user_home: user_home,
+               ext_registry: registry,
+               trusted_project?: false
+             )
+
+    assert {:ok, %{root: ^user_root, scope: :user}} = ExtRegistry.get(registry, "shared")
+    assert {:ok, user_tool} = Handbean.Tool.Registry.get("ext__shared__ping")
+    assert {:ok, ":user"} = user_tool.executor.(%{}, %{})
+    refute ExtRegistry.list_hook_modules(registry)["shared"] == project_hook
+    assert [user_worker] = Handbean.Extension.Supervisor.workers("shared")
+    refute user_worker == project_worker
+    refute Process.alive?(project_worker)
+    assert Process.alive?(user_worker)
+
+    assert [%{scope: :user}] = ExtRegistry.capabilities(:commands, tmp, registry)
+    assert [%{scope: :user}] = ExtRegistry.capabilities(:providers, tmp, registry)
+
+    assert Enum.all?(ExtRegistry.capability_extensions(registry), fn ext ->
+             ext.name != "shared" or ext.scope == :user
+           end)
+  end
+
   test "pending path reload rechecks project trust before compiling", %{
     tmp: tmp,
     registry: registry
@@ -281,10 +443,11 @@ defmodule Handbean.Extension.HotReloadTest do
              )
 
     hooks = ExtRegistry.list_hook_modules(registry)
-    assert hooks["hotdemo"] == Ext.Hotdemo.Hook
+    assert is_atom(hooks["hotdemo"])
+    assert function_exported?(hooks["hotdemo"], :handle_event, 2)
   end
 
-  test "reload keeps the worker pid when only module code changes", %{
+  test "successful source reload swaps the worker generation", %{
     tmp: tmp,
     registry: registry
   } do
@@ -297,12 +460,11 @@ defmodule Handbean.Extension.HotReloadTest do
                ext_registry: registry
              )
 
-    workers = Handbean.Extension.Supervisor.workers("hotdemo")
-    assert length(workers) == 1
-    pid = hd(workers)
+    [pid] = Handbean.Extension.Supervisor.workers("hotdemo")
+    [v1_module] = Handbean.Extension.Supervisor.worker_modules("hotdemo")
     assert Process.alive?(pid)
-    assert Ext.Hotdemo.Worker.started_as() == :v1
-    assert Ext.Hotdemo.Worker.code_version() == :v1
+    assert v1_module.started_as() == :v1
+    assert v1_module.code_version() == :v1
 
     write_worker_extension!(tmp, "hotdemo", code: :v2)
 
@@ -313,10 +475,14 @@ defmodule Handbean.Extension.HotReloadTest do
                ext_registry: registry
              )
 
-    assert Handbean.Extension.Supervisor.workers("hotdemo") == [pid]
-    assert Process.alive?(pid)
-    assert Ext.Hotdemo.Worker.started_as() == :v1
-    assert Ext.Hotdemo.Worker.code_version() == :v2
+    [new_pid] = Handbean.Extension.Supervisor.workers("hotdemo")
+    [v2_module] = Handbean.Extension.Supervisor.worker_modules("hotdemo")
+    refute new_pid == pid
+    refute v2_module == v1_module
+    refute Process.alive?(pid)
+    assert Process.alive?(new_pid)
+    assert v2_module.started_as() == :v2
+    assert v2_module.code_version() == :v2
   end
 
   test "reload does not drop a running worker when the next compile fails", %{
@@ -333,6 +499,7 @@ defmodule Handbean.Extension.HotReloadTest do
              )
 
     pid = hd(Handbean.Extension.Supervisor.workers("hotdemo"))
+    [worker_module] = Handbean.Extension.Supervisor.worker_modules("hotdemo")
     assert {:ok, entry} = Handbean.Tool.Registry.get("ext__hotdemo__ping")
     assert {:ok, ":v1"} = entry.executor.(%{}, %{})
 
@@ -348,12 +515,96 @@ defmodule Handbean.Extension.HotReloadTest do
                ext_registry: registry
              )
 
-    assert Enum.any?(diags, &(&1.type == :warning))
+    assert Enum.any?(diags, &(&1.type in [:warning, :validation_error]))
     assert Process.alive?(pid)
     assert Handbean.Extension.Supervisor.workers("hotdemo") == [pid]
     assert {:ok, still} = Handbean.Tool.Registry.get("ext__hotdemo__ping")
     assert {:ok, ":v1"} = still.executor.(%{}, %{})
-    assert Ext.Hotdemo.Worker.started_as() == :v1
+    assert worker_module.started_as() == :v1
+  end
+
+  test "failed worker preparation does not activate newly compiled legacy code", %{
+    tmp: tmp,
+    registry: registry
+  } do
+    ext_dir = write_combined_extension!(tmp, "hotdemo", result: ":v1", code: :v1)
+
+    assert {:ok, []} =
+             HotReloader.reload(
+               project: tmp,
+               user_home: Path.join(tmp, "no-user"),
+               ext_registry: registry
+             )
+
+    [old_pid] = Handbean.Extension.Supervisor.workers("hotdemo")
+    [old_module] = Handbean.Extension.Supervisor.worker_modules("hotdemo")
+    assert old_module.code_version() == :v1
+
+    File.write!(Path.join(ext_dir, "hot_combo.ex"), """
+    defmodule Ext.Hotdemo.Ping do
+      @behaviour Handbean.Agent.Tool
+      def name, do: "ext__hotdemo__ping"
+      def description, do: "candidate"
+      def input_schema, do: %{"type" => "object", "properties" => %{}}
+      def execute(_input, _context), do: {:ok, ":v2"}
+    end
+
+    defmodule Ext.Hotdemo.Worker do
+      def child_spec(_opts), do: %{id: __MODULE__, start: {__MODULE__, :start_link, [[]]}}
+      def start_link(_opts), do: {:error, :candidate_failed}
+      def code_version, do: :v2
+    end
+    """)
+
+    assert {:ok, diagnostics} =
+             HotReloader.reload(
+               project: tmp,
+               user_home: Path.join(tmp, "no-user"),
+               ext_registry: registry
+             )
+
+    assert Enum.any?(diagnostics, &String.contains?(&1.message, "Failed to commit"))
+    assert Handbean.Extension.Supervisor.workers("hotdemo") == [old_pid]
+    assert Handbean.Extension.Supervisor.worker_modules("hotdemo") == [old_module]
+    assert Process.alive?(old_pid)
+    assert old_module.code_version() == :v1
+    assert {:ok, tool} = Handbean.Tool.Registry.get("ext__hotdemo__ping")
+    assert {:ok, ":v1"} = tool.executor.(%{}, %{})
+  end
+
+  test "failed registry commit keeps the previous generated executable code", %{
+    tmp: tmp,
+    registry: registry
+  } do
+    write_combined_extension!(tmp, "hotdemo", result: ":v1", code: :v1)
+
+    assert {:ok, []} =
+             HotReloader.reload(
+               project: tmp,
+               user_home: Path.join(tmp, "no-user"),
+               ext_registry: registry
+             )
+
+    [old_pid] = Handbean.Extension.Supervisor.workers("hotdemo")
+    [old_module] = Handbean.Extension.Supervisor.worker_modules("hotdemo")
+    write_combined_extension!(tmp, "hotdemo", result: ":v2", code: :v2)
+    [candidate] = Loader.from_project(tmp).extensions
+    assert {:ok, prepared} = ExtensionBridge.prepare(candidate)
+    refute old_module in prepared.modules
+
+    dead_registry = spawn(fn -> :ok end)
+    monitor = Process.monitor(dead_registry)
+    assert_receive {:DOWN, ^monitor, :process, ^dead_registry, _down_reason}
+
+    assert {:error, {:registry_commit_failed, _commit_reason}} =
+             ExtensionBridge.commit_prepared(prepared, ext_registry: dead_registry)
+
+    assert Handbean.Extension.Supervisor.workers("hotdemo") == [old_pid]
+    assert Handbean.Extension.Supervisor.worker_modules("hotdemo") == [old_module]
+    assert Process.alive?(old_pid)
+    assert old_module.code_version() == :v1
+    assert {:ok, tool} = Handbean.Tool.Registry.get("ext__hotdemo__ping")
+    assert {:ok, ":v1"} = tool.executor.(%{}, %{})
   end
 
   test "successful reload removes stale tools and hooks", %{tmp: tmp, registry: registry} do
@@ -679,6 +930,59 @@ defmodule Handbean.Extension.HotReloadTest do
     def stream(messages, tool_defs, config, _on_chunk), do: complete(messages, tool_defs, config)
   end
 
+  defp write_full_extension!(tmp, name, result) do
+    ext_dir = Path.join(tmp, ".handbean/extensions/#{name}")
+    module_name = Macro.camelize(name)
+    File.mkdir_p!(ext_dir)
+
+    File.write!(
+      Path.join(ext_dir, "extension.json"),
+      Handbean.JSON.encode!(%{
+        "name" => name,
+        "entry" => "full.ex",
+        "tools" => [%{"name" => "ping"}],
+        "hooks" => ["before_agent_start"],
+        "commands" => [%{"name" => "echo"}],
+        "providers" => [%{"name" => "model", "models" => [%{"id" => "chat"}]}]
+      })
+    )
+
+    File.write!(Path.join(ext_dir, "full.ex"), """
+    defmodule Ext.#{module_name}.Ping do
+      @behaviour Handbean.Agent.Tool
+      def name, do: "ext__#{name}__ping"
+      def description, do: "full fixture"
+      def input_schema, do: %{"type" => "object", "properties" => %{}}
+      def execute(_input, _context), do: {:ok, #{inspect(result)}}
+    end
+
+    defmodule Ext.#{module_name}.Hook do
+      @behaviour Handbean.Extension.Hook
+      def handle_event(_event, _context), do: :ok
+    end
+
+    defmodule Ext.#{module_name}.Worker do
+      use Agent
+      def child_spec(_opts), do: %{id: __MODULE__, start: {__MODULE__, :start_link, [[]]}}
+      def start_link(opts), do: Agent.start_link(fn -> opts end)
+    end
+
+    defmodule Ext.#{module_name}.Command do
+      @behaviour Handbean.Extension.Command
+      def name, do: "/ext:#{name}:echo"
+      def execute(args, _context), do: {:ok, args}
+    end
+
+    defmodule Ext.#{module_name}.Provider do
+      @behaviour Handbean.Extension.Provider
+      def name, do: "ext:#{name}:model"
+      def complete(_messages, _tools, _config), do: {:error, "unused"}
+    end
+    """)
+
+    ext_dir
+  end
+
   defp write_entry_extension!(tmp, name, opts) do
     version = Keyword.fetch!(opts, :version)
     result = Keyword.fetch!(opts, :result)
@@ -827,6 +1131,7 @@ defmodule Handbean.Extension.HotReloadTest do
 
         def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
         def started_as, do: GenServer.call(__MODULE__, :started_as)
+        def code_version, do: #{inspect(code)}
         def init(_opts), do: {:ok, #{inspect(code)}}
         def handle_call(:started_as, _from, state), do: {:reply, state, state}
       end

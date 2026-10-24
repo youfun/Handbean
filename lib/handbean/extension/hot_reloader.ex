@@ -33,7 +33,8 @@ defmodule Handbean.Extension.HotReloader do
   end
 
   defp reload_unlocked(opts) do
-    project = trusted_project(opts)
+    trusted_project? = ProjectTrust.enabled?(opts)
+    project = if trusted_project?, do: trusted_project(opts)
     user_home = Keyword.get(opts, :user_home, default_user_home()) |> canonical_root()
     ext_registry = Keyword.get(opts, :ext_registry, ExtRegistry)
 
@@ -67,12 +68,15 @@ defmodule Handbean.Extension.HotReloader do
       reconcile_removed(previous, result.extensions,
         project: project,
         user_home: user_home,
-        ext_registry: ext_registry
+        ext_registry: ext_registry,
+        trusted_project?: trusted_project?
       )
 
     Enum.each(previous_capabilities, fn ext ->
-      if removed_from_scanned_roots?(ext, project, user_home),
-        do: ExtRegistry.remove_capabilities(ext_registry, ext.root)
+      if revoked_project?(ext, trusted_project?) or
+           removed_from_scanned_roots?(ext, project, user_home) do
+        ExtRegistry.remove_capabilities(ext_registry, ext.root)
+      end
     end)
 
     {:ok, result.diagnostics ++ integration_diagnostics ++ removed_diagnostics}
@@ -337,20 +341,26 @@ defmodule Handbean.Extension.HotReloader do
     project = Keyword.fetch!(opts, :project)
     user_home = Keyword.fetch!(opts, :user_home)
     ext_registry = Keyword.fetch!(opts, :ext_registry)
-    loaded_names = MapSet.new(loaded, & &1.name)
+    trusted_project? = Keyword.fetch!(opts, :trusted_project?)
 
     previous
-    |> Enum.reject(&MapSet.member?(loaded_names, &1.name))
     |> Enum.filter(fn ext ->
-      removed_from_scanned_roots?(ext, project, user_home) or
+      revoked_project?(ext, trusted_project?) or
+        removed_from_scanned_roots?(ext, project, user_home) or
         successfully_replaced_at_root?(ext, loaded, ext_registry)
     end)
     |> Enum.flat_map(fn ext ->
-      owner = {:extension, ext.name}
-      _ = Handbean.Tool.Registry.remove_owner(owner)
-      _ = Handbean.Extension.Supervisor.replace_workers(owner, [])
-      :ok = ExtRegistry.unregister(ext_registry, ext.name)
-      []
+      case ExtRegistry.get(ext_registry, ext.name) do
+        {:ok, current} when current.root == ext.root ->
+          owner = {:extension, ext.name}
+          _ = Handbean.Tool.Registry.remove_owner(owner)
+          _ = Handbean.Extension.Supervisor.replace_workers(owner, [])
+          :ok = ExtRegistry.unregister(ext_registry, ext.name)
+          []
+
+        _replacement_or_missing ->
+          []
+      end
     end)
   end
 
@@ -371,6 +381,9 @@ defmodule Handbean.Extension.HotReloader do
         end
     end
   end
+
+  defp revoked_project?(%{scope: {:project, _path}}, false), do: true
+  defp revoked_project?(_ext, _trusted_project?), do: false
 
   defp removed_from_scanned_roots?(ext, project, user_home) do
     root = Path.expand(ext.root)

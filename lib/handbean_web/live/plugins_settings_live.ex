@@ -85,13 +85,13 @@ defmodule HandbeanWeb.PluginsSettingsLive do
 
   # ── Extension Events ──
 
-  def handle_event("toggle_ext", %{"name" => name}, socket) do
-    case Enum.find(socket.assigns.extensions, &(&1.name == name)) do
+  def handle_event("toggle_ext", %{"id" => id}, socket) do
+    case Enum.find(socket.assigns.extensions, &(&1.id == id)) do
       nil ->
         {:noreply, socket}
 
       ext ->
-        case ExtensionSettings.set_enabled(name, not ext.enabled,
+        case ExtensionSettings.set_enabled(id, not ext.enabled,
                project: socket.assigns.workspace_root
              ) do
           :ok ->
@@ -103,8 +103,8 @@ defmodule HandbeanWeb.PluginsSettingsLive do
     end
   end
 
-  def handle_event("inspect_ext", %{"name" => name}, socket) do
-    case ExtensionSettings.inspect_extension(name, project: socket.assigns.workspace_root) do
+  def handle_event("inspect_ext", %{"id" => id}, socket) do
+    case ExtensionSettings.inspect_extension(id, project: socket.assigns.workspace_root) do
       {:ok, %{item: item, code: code, diagnostic: diagnostic}} ->
         modal = %{
           kind: :view,

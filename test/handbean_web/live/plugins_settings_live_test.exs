@@ -120,11 +120,11 @@ defmodule HandbeanWeb.PluginsSettingsLiveTest do
       "scope" => "user"
     })
 
-    assert has_element?(plugins, "#ext-card-workspace-ping")
+    assert has_element?(plugins, "#ext-card-user-workspace-ping")
 
     # Toggle extension off
-    render_click(element(plugins, "#ext-card-workspace-ping button[phx-click=toggle_ext]"))
-    assert has_element?(plugins, "#ext-card-workspace-ping.is-disabled")
+    render_click(element(plugins, "#ext-card-user-workspace-ping button[phx-click=toggle_ext]"))
+    assert has_element?(plugins, "#ext-card-user-workspace-ping.is-disabled")
 
     # Filter by mechanism and search
     render_click(element(plugins, "#plugins-filter-ext"))
@@ -134,7 +134,7 @@ defmodule HandbeanWeb.PluginsSettingsLiveTest do
 
     render_click(element(plugins, "#plugins-filter-all"))
     render_change(element(plugins, "#plugins-search-form"), %{"query" => "workspace-ping"})
-    assert has_element?(plugins, "#ext-card-workspace-ping")
+    assert has_element?(plugins, "#ext-card-user-workspace-ping")
     refute has_element?(plugins, "#skill-card-code-review-checklist")
     # Sections without matches stay hidden instead of showing their empty state
     assert has_element?(plugins, "#plugins-section-ext")

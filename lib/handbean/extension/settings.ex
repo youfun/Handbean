@@ -37,7 +37,10 @@ defmodule Handbean.Extension.Settings do
         []
       end
 
-    project_names = MapSet.new(project_exts, fn {ext, _source} -> ext.name end)
+    project_names =
+      if trusted_project?,
+        do: MapSet.new(project_exts, fn {ext, _source} -> ext.name end),
+        else: MapSet.new()
 
     user_exts =
       if is_binary(user_home) and user_home != "" do
@@ -64,10 +67,10 @@ defmodule Handbean.Extension.Settings do
   Reads source/manifest details and diagnostics for a single extension by name.
   """
   @spec inspect_extension(String.t(), keyword()) :: {:ok, map()} | {:error, String.t()}
-  def inspect_extension(name, opts \\ []) when is_binary(name) do
+  def inspect_extension(identifier, opts \\ []) when is_binary(identifier) do
     {:ok, items} = list(opts)
 
-    case Enum.find(items, &(&1.name == name)) do
+    case find_item(items, identifier) do
       nil ->
         {:error, "扩展不存在"}
 
@@ -85,10 +88,11 @@ defmodule Handbean.Extension.Settings do
   Updates the `"enabled"` flag in an extension's manifest file and reloads runtime state.
   """
   @spec set_enabled(String.t(), boolean(), keyword()) :: :ok | {:error, String.t()}
-  def set_enabled(name, enabled, opts \\ []) when is_binary(name) and is_boolean(enabled) do
+  def set_enabled(identifier, enabled, opts \\ [])
+      when is_binary(identifier) and is_boolean(enabled) do
     {:ok, items} = list(opts)
 
-    case Enum.find(items, &(&1.name == name)) do
+    case find_item(items, identifier) do
       nil ->
         {:error, "扩展不存在"}
 
@@ -176,6 +180,12 @@ defmodule Handbean.Extension.Settings do
   end
 
   # ── Internal helpers ──
+
+  defp find_item(items, identifier) do
+    Enum.find(items, &(&1.id == identifier)) ||
+      Enum.find(items, &(&1.name == identifier and &1.status == :enabled)) ||
+      Enum.find(items, &(&1.name == identifier))
+  end
 
   defp source_rank(:project), do: 0
   defp source_rank(:user), do: 1
