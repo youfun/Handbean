@@ -22,8 +22,9 @@ defmodule HandbeanWeb.SettingsLive do
   alias Handbean.Settings
   alias Handbean.Settings.ModelAISettings
   alias Handbean.Agent.ModelConfig
-  alias HandbeanWeb.Components.ModelPicker
+  alias HandbeanWeb.Live.Settings.ComputerUsePanel
   alias HandbeanWeb.Live.Settings.ModelAIPanel
+  alias HandbeanWeb.Live.Settings.WorkspaceModelsPanel
 
   @tabs [
     %{id: :model_ai, label_key: "Model / AI"},
@@ -70,27 +71,20 @@ defmodule HandbeanWeb.SettingsLive do
       |> assign(:return_workspace_id, workspace["id"])
       |> assign(:workspace_root, workspace_root)
       |> assign(:conversation_id, conversation_id)
-      |> assign(:all_models, ModelConfig.all_global_models())
       |> assign(:available_models, available_models)
-      |> assign(:workspace_model_policy, load_workspace_model_policy_form(workspace_root))
-      |> assign(:workspace_model_query, "")
       |> assign(:form, form)
       |> assign(:errors, %{})
       |> assign(:saving, false)
-      |> assign(:workspace_models_saving, false)
       |> assign(:toast, nil)
       |> assign(:runtime_banner, nil)
       |> assign(:speech_enabled, Handbean.Speech.enabled?())
       |> assign(:speech_supported, Handbean.Speech.supported?())
       |> assign(:speech_status, Handbean.Speech.status())
       |> assign(:speech_model, Handbean.Speech.model_info())
-      |> assign(:computer_use_status, initial_computer_use_status())
-      |> assign(:browser_extension_status, Handbean.Browser.Chrome.status())
+      |> WorkspaceModelsPanel.init(workspace_root)
+      |> ComputerUsePanel.init()
       |> subscribe_to_runtime_tasks()
       |> subscribe_to_speech()
-      |> subscribe_to_computer_use()
-      |> subscribe_to_chrome_browser()
-      |> maybe_refresh_computer_use_status()
 
     {:ok, socket}
   end
@@ -105,7 +99,7 @@ defmodule HandbeanWeb.SettingsLive do
     {:noreply,
      socket
      |> assign(:active_tab, active_tab)
-     |> assign_workspace_model_context(workspace)}
+     |> WorkspaceModelsPanel.assign_context(workspace)}
   end
 
   @impl true
@@ -124,48 +118,14 @@ defmodule HandbeanWeb.SettingsLive do
      |> push_patch(to: ~p"/settings?#{query}")}
   end
 
-  def handle_event("toggle_computer_use", _params, socket) do
-    enabled = not socket.assigns.computer_use_status.enabled
-
-    case Handbean.ComputerUse.set_enabled(enabled) do
-      :ok ->
-        {:noreply,
-         socket
-         |> update(:computer_use_status, &Map.put(&1, :enabled, enabled))
-         |> refresh_computer_use_status()}
-
-      {:error, :unavailable} ->
-        {:noreply,
-         put_flash(socket, :error, gettext("Computer control is unavailable in this host."))}
-
-      {:error, _reason} ->
-        {:noreply, put_flash(socket, :error, gettext("Could not save computer control setting."))}
-    end
-  end
-
-  def handle_event("refresh_computer_use_status", _params, socket) do
-    {:noreply, refresh_computer_use_status(socket)}
-  end
-
-  def handle_event("toggle_chrome_browser", _params, socket) do
-    enabled = not socket.assigns.browser_extension_status.enabled
-
-    case Handbean.Browser.Chrome.set_enabled(enabled) do
-      :ok ->
-        {:noreply, assign(socket, :browser_extension_status, Handbean.Browser.Chrome.status())}
-
-      {:error, :unavailable} ->
-        {:noreply,
-         put_flash(socket, :error, gettext("Chrome control is unavailable in this host."))}
-
-      {:error, _reason} ->
-        {:noreply, put_flash(socket, :error, gettext("Could not save Chrome control setting."))}
-    end
-  end
-
-  def handle_event("refresh_chrome_browser_status", _params, socket) do
-    {:noreply, assign(socket, :browser_extension_status, Handbean.Browser.Chrome.status())}
-  end
+  def handle_event(event, params, socket)
+      when event in ~w(
+             toggle_computer_use
+             refresh_computer_use_status
+             toggle_chrome_browser
+             refresh_chrome_browser_status
+           ),
+      do: ComputerUsePanel.handle_event(event, params, socket)
 
   def handle_event("toggle_speech", _params, socket) do
     if speech_status_busy?(socket.assigns.speech_status) do
@@ -287,151 +247,20 @@ defmodule HandbeanWeb.SettingsLive do
     end
   end
 
-  def handle_event("set_workspace_model_mode", %{"mode" => mode}, socket) do
-    policy = socket.assigns.workspace_model_policy
+  def handle_event(event, params, socket)
+      when event in ~w(
+             set_workspace_model_mode
+             select_workspace_models
+             filter_workspace_models
+             set_workspace_provider_models
+             toggle_workspace_model
+             set_workspace_default_model
+             save_workspace_models
+           ),
+      do: WorkspaceModelsPanel.handle_event(event, params, socket)
 
-    policy =
-      case mode do
-        "restricted" -> Map.put(policy, :mode, :restricted)
-        _ -> Map.put(policy, :mode, :unrestricted)
-      end
-
-    {:noreply, assign(socket, :workspace_model_policy, policy)}
-  end
-
-  def handle_event(
-        "select_workspace_models",
-        %{"workspace" => %{"id" => workspace_id}},
-        socket
-      ) do
-    case Enum.find(socket.assigns.workspaces, &(&1["id"] == workspace_id)) do
-      nil ->
-        {:noreply, socket}
-
-      workspace ->
-        query =
-          %{
-            "tab" => "workspace_models",
-            "workspace_id" => workspace["id"],
-            "conversation_id" => socket.assigns.conversation_id
-          }
-          |> Map.reject(fn {_key, value} -> is_nil(value) end)
-
-        {:noreply, push_patch(socket, to: ~p"/settings?#{query}")}
-    end
-  end
-
-  def handle_event("filter_workspace_models", %{"query" => query}, socket) do
-    {:noreply, assign(socket, :workspace_model_query, String.trim(query))}
-  end
-
-  def handle_event(
-        "set_workspace_provider_models",
-        %{"provider" => provider, "action" => action},
-        socket
-      ) do
-    policy = socket.assigns.workspace_model_policy
-    allowed = Map.get(policy, :allowed, %{})
-
-    allowed =
-      case action do
-        "all" ->
-          model_ids =
-            socket.assigns.all_models
-            |> Enum.filter(&(&1.provider_id == provider))
-            |> Enum.map(& &1.model_id)
-            |> MapSet.new()
-
-          if MapSet.size(model_ids) == 0,
-            do: Map.delete(allowed, provider),
-            else: Map.put(allowed, provider, model_ids)
-
-        _ ->
-          Map.delete(allowed, provider)
-      end
-
-    policy =
-      policy
-      |> Map.put(:mode, :restricted)
-      |> Map.put(:allowed, allowed)
-      |> clear_invalid_workspace_default()
-
-    {:noreply, assign(socket, :workspace_model_policy, policy)}
-  end
-
-  def handle_event("toggle_workspace_model", %{"provider" => provider, "model" => model}, socket) do
-    policy = socket.assigns.workspace_model_policy
-    allowed = Map.get(policy, :allowed, %{})
-    models = Map.get(allowed, provider, MapSet.new())
-
-    models =
-      if MapSet.member?(models, model),
-        do: MapSet.delete(models, model),
-        else: MapSet.put(models, model)
-
-    allowed =
-      if MapSet.size(models) == 0,
-        do: Map.delete(allowed, provider),
-        else: Map.put(allowed, provider, models)
-
-    policy =
-      policy
-      |> Map.put(:mode, :restricted)
-      |> Map.put(:allowed, allowed)
-      |> clear_invalid_workspace_default()
-
-    {:noreply, assign(socket, :workspace_model_policy, policy)}
-  end
-
-  def handle_event("set_workspace_default_model", %{"default_model" => default_model}, socket) do
-    policy =
-      socket.assigns.workspace_model_policy
-      |> Map.put(:default_model, blank_to_nil(default_model))
-
-    {:noreply, assign(socket, :workspace_model_policy, policy)}
-  end
-
-  def handle_event("save_workspace_models", _params, socket) do
-    socket = assign(socket, :workspace_models_saving, true)
-
-    case save_workspace_model_policy(
-           socket.assigns.workspace_root,
-           socket.assigns.workspace_model_policy
-         ) do
-      :ok ->
-        workspace_root = socket.assigns.workspace_root
-
-        toast = %{
-          type: :success,
-          message: gettext("工作区模型保存成功"),
-          id: System.unique_integer([:positive])
-        }
-
-        Process.send_after(self(), :clear_toast, 3000)
-
-        {:noreply,
-         socket
-         |> assign(:workspace_models_saving, false)
-         |> assign(:available_models, ModelConfig.all_global_models())
-         |> assign(:workspace_model_policy, load_workspace_model_policy_form(workspace_root))
-         |> assign(:toast, toast)}
-
-      {:error, reason} ->
-        {:noreply,
-         socket
-         |> assign(:workspace_models_saving, false)
-         |> assign(:errors, %{general: format_error(reason)})}
-    end
-  end
-
-  def handle_async(:computer_use_status, {:ok, status}, socket) when is_map(status) do
-    {:noreply, assign(socket, :computer_use_status, status)}
-  end
-
-  def handle_async(:computer_use_status, {:exit, _reason}, socket) do
-    {:noreply,
-     update(socket, :computer_use_status, &Map.put(&1, :error, :native_host_unavailable))}
-  end
+  def handle_async(:computer_use_status, result, socket),
+    do: ComputerUsePanel.handle_async(:computer_use_status, result, socket)
 
   @impl true
   def handle_async(:prepare_speech, {:ok, :ok}, socket) do
@@ -468,20 +297,14 @@ defmodule HandbeanWeb.SettingsLive do
     {:noreply, assign_runtime_banner(socket, snapshot)}
   end
 
-  def handle_info({:computer_use_enabled, enabled}, socket) do
-    {:noreply,
-     socket
-     |> update(:computer_use_status, &Map.put(&1, :enabled, enabled))
-     |> refresh_computer_use_status()}
-  end
+  def handle_info({:computer_use_enabled, _enabled} = message, socket),
+    do: ComputerUsePanel.handle_info(message, socket)
 
-  def handle_info({:chrome_browser_enabled, _enabled}, socket) do
-    {:noreply, assign(socket, :browser_extension_status, Handbean.Browser.Chrome.status())}
-  end
+  def handle_info({:chrome_browser_enabled, _enabled} = message, socket),
+    do: ComputerUsePanel.handle_info(message, socket)
 
-  def handle_info({:chrome_browser_status, _status}, socket) do
-    {:noreply, assign(socket, :browser_extension_status, Handbean.Browser.Chrome.status())}
-  end
+  def handle_info({:chrome_browser_status, _status} = message, socket),
+    do: ComputerUsePanel.handle_info(message, socket)
 
   def handle_info({:speech_enabled, enabled}, socket) do
     if socket.assigns.speech_enabled == enabled do
@@ -593,55 +416,11 @@ defmodule HandbeanWeb.SettingsLive do
   def tab_icon(:tools), do: "🔒"
   def tab_icon(:security), do: "🛡️"
 
-  def computer_permission_label(true), do: gettext("Allowed")
-  def computer_permission_label(false), do: gettext("Permission required")
-  def computer_permission_label(_unknown), do: gettext("Unknown")
-
-  def computer_action_label(status, action) do
-    case get_in(status, [:actions, action]) do
-      true -> gettext("Ready")
-      false -> gettext("In verification")
-      _ -> gettext("Unavailable")
-    end
-  end
-
   defp application_version do
     case Application.spec(:handbean, :vsn) do
       nil -> "unknown"
       version -> to_string(version)
     end
-  end
-
-  defp initial_computer_use_status do
-    %{
-      supported: Handbean.ComputerUse.supported?(),
-      enabled: Handbean.ComputerUse.enabled?(),
-      backend: if(Handbean.ComputerUse.supported?(), do: :native_macos, else: :none),
-      permissions: :unknown,
-      actions: %{}
-    }
-  end
-
-  defp maybe_refresh_computer_use_status(socket) do
-    if connected?(socket) and socket.assigns.computer_use_status.supported,
-      do: refresh_computer_use_status(socket),
-      else: socket
-  end
-
-  defp refresh_computer_use_status(socket) do
-    if socket.assigns.computer_use_status.supported,
-      do: start_async(socket, :computer_use_status, &Handbean.ComputerUse.status/0),
-      else: socket
-  end
-
-  defp subscribe_to_computer_use(socket) do
-    if connected?(socket), do: Handbean.ComputerUse.subscribe()
-    socket
-  end
-
-  defp subscribe_to_chrome_browser(socket) do
-    if connected?(socket), do: Handbean.Browser.Chrome.subscribe()
-    socket
   end
 
   def speech_status_label(_enabled, false, _status), do: gettext("Unavailable on this platform")
@@ -692,22 +471,6 @@ defmodule HandbeanWeb.SettingsLive do
 
       _ ->
         default_workspace
-    end
-  end
-
-  defp assign_workspace_model_context(socket, workspace) do
-    if socket.assigns.workspace["id"] == workspace["id"] do
-      socket
-    else
-      workspace_root = workspace["path"] || Path.expand(".")
-
-      socket
-      |> assign(:workspace, workspace)
-      |> assign(:workspace_root, workspace_root)
-      |> assign(:workspace_model_policy, load_workspace_model_policy_form(workspace_root))
-      |> assign(:workspace_model_query, "")
-      |> assign(:workspace_models_saving, false)
-      |> update(:errors, &Map.delete(&1, :general))
     end
   end
 
@@ -797,164 +560,4 @@ defmodule HandbeanWeb.SettingsLive do
       {:error, reason} -> %{general: reason}
     end
   end
-
-  defp load_workspace_model_policy_form(workspace_root) do
-    case ModelConfig.load_workspace_policy(workspace_root) do
-      :unrestricted ->
-        %{mode: :unrestricted, allowed: %{}, default_model: nil}
-
-      {:ok, policy} ->
-        allow = Map.get(policy, "allow", %{})
-        providers = allowed_providers_from_allow(allow)
-
-        %{
-          mode: if(providers == %{}, do: :unrestricted, else: :restricted),
-          allowed: allowed_model_sets(providers),
-          default_model: default_model_from_policy(policy)
-        }
-
-      {:error, _reason} ->
-        %{mode: :unrestricted, allowed: %{}, default_model: nil}
-    end
-  end
-
-  defp allowed_providers_from_allow(%{"providers" => providers}) when is_map(providers),
-    do: providers
-
-  defp allowed_providers_from_allow(allow) when is_map(allow), do: allow
-  defp allowed_providers_from_allow(_allow), do: %{}
-
-  defp allowed_model_sets(providers) do
-    Map.new(providers, fn {provider, config} ->
-      models =
-        config
-        |> Map.get("models", [])
-        |> Enum.filter(&is_binary/1)
-        |> MapSet.new()
-
-      {provider, models}
-    end)
-  end
-
-  defp default_model_from_policy(policy) do
-    default = Map.get(policy, "default", %{})
-    provider = Map.get(default, "provider")
-    model = Map.get(default, "model")
-
-    if is_binary(provider) and is_binary(model), do: "#{provider}/#{model}"
-  end
-
-  defp clear_invalid_workspace_default(%{default_model: nil} = policy), do: policy
-
-  defp clear_invalid_workspace_default(%{default_model: default_model} = policy) do
-    if workspace_model_allowed?(policy, default_model),
-      do: policy,
-      else: Map.put(policy, :default_model, nil)
-  end
-
-  defp workspace_model_allowed?(%{mode: :unrestricted}, model_id) when is_binary(model_id),
-    do: true
-
-  defp workspace_model_allowed?(%{allowed: allowed}, model_id) when is_binary(model_id) do
-    case String.split(model_id, "/", parts: 2) do
-      [provider, model] -> allowed |> Map.get(provider, MapSet.new()) |> MapSet.member?(model)
-      _ -> false
-    end
-  end
-
-  defp workspace_model_allowed?(_policy, _model_id), do: false
-
-  defp workspace_model_checked?(policy, provider, model) do
-    policy.mode == :unrestricted or
-      policy.allowed
-      |> Map.get(provider, MapSet.new())
-      |> MapSet.member?(model)
-  end
-
-  defp workspace_default_options(policy, all_models) do
-    all_models
-    |> Enum.filter(fn model -> workspace_model_allowed?(policy, model.id) end)
-  end
-
-  defp workspace_default_picker_options(policy, all_models) do
-    [ModelPicker.option("", gettext("使用供应商默认"))] ++
-      Enum.map(workspace_default_options(policy, all_models), fn model ->
-        ModelPicker.option(model.id, model.name || model.model_id, model.provider_id)
-      end)
-  end
-
-  defp filtered_models_grouped_by_provider(models, query) do
-    normalized_query = query |> to_string() |> String.downcase()
-
-    models
-    |> Enum.filter(fn model ->
-      normalized_query == "" or
-        Enum.any?([model.provider_id, model.model_id, model.name], fn value ->
-          is_binary(value) and String.contains?(String.downcase(value), normalized_query)
-        end)
-    end)
-    |> models_grouped_by_provider()
-  end
-
-  defp workspace_provider_selected_count(policy, provider_id) do
-    policy.allowed
-    |> Map.get(provider_id, MapSet.new())
-    |> MapSet.size()
-  end
-
-  defp workspace_provider_model_count(models, provider_id) do
-    Enum.count(models, &(&1.provider_id == provider_id))
-  end
-
-  defp models_grouped_by_provider(models) do
-    models
-    |> Enum.group_by(& &1.provider_id)
-    |> Enum.sort_by(fn {provider_id, _models} -> provider_id end)
-  end
-
-  defp save_workspace_model_policy(workspace_root, policy) do
-    with {:ok, settings} <- Handbean.WorkspaceSettings.load(workspace_root),
-         :ok <- File.mkdir_p(Path.dirname(Handbean.WorkspaceSettings.path(workspace_root))) do
-      settings
-      |> Map.put("models", workspace_model_policy_to_json(policy))
-      |> then(
-        &File.write(
-          Handbean.WorkspaceSettings.path(workspace_root),
-          Handbean.JSON.encode!(&1, pretty: true)
-        )
-      )
-      |> case do
-        :ok -> :ok
-        {:error, reason} -> {:error, "Failed to write workspace settings: #{inspect(reason)}"}
-      end
-    end
-  end
-
-  defp workspace_model_policy_to_json(%{mode: :unrestricted}) do
-    %{"allow" => %{"providers" => %{}}}
-  end
-
-  defp workspace_model_policy_to_json(policy) do
-    providers =
-      policy.allowed
-      |> Enum.reject(fn {_provider, models} -> MapSet.size(models) == 0 end)
-      |> Map.new(fn {provider, models} ->
-        {provider, %{"models" => models |> MapSet.to_list() |> Enum.sort()}}
-      end)
-
-    %{"allow" => %{"providers" => providers}}
-    |> maybe_put_workspace_default(policy.default_model)
-  end
-
-  defp maybe_put_workspace_default(json, nil), do: json
-
-  defp maybe_put_workspace_default(json, default_model) do
-    case String.split(default_model, "/", parts: 2) do
-      [provider, model] -> Map.put(json, "default", %{"provider" => provider, "model" => model})
-      _ -> json
-    end
-  end
-
-  defp format_error(reason) when is_binary(reason), do: reason
-  defp format_error(reason), do: inspect(reason)
 end
