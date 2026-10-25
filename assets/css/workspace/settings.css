@@ -993,25 +993,6 @@ select.settings-input {
   line-height: 1.45;
 }
 
-.pwa-ios-guide {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin-top: 10px;
-  color: var(--sig-text-secondary);
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-.pwa-ios-guide[hidden] {
-  display: none;
-}
-
-.pwa-ios-guide span:nth-child(even) {
-  color: var(--sig-text-tertiary);
-}
-
 .settings-field-control {
   display: flex;
   align-items: center;

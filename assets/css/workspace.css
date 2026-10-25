@@ -1,4 +1,5 @@
 /* Workspace stylesheet entry point. Keep imports ordered to preserve the cascade. */
+@import "phoenix-colocated/handbean/colocated.css";
 @import "./workspace/foundation.css";
 @import "./workspace/conversation.css";
 @import "./workspace/conversation-search.css";

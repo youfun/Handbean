@@ -1,5 +1,6 @@
 import { Socket } from "phoenix";
 import { LiveSocket } from "phoenix_live_view";
+import { hooks as colocatedHooks } from "phoenix-colocated/handbean";
 import { StreamingMarkdown } from "./hooks/streaming_markdown.js";
 import { ChatScroll } from "./hooks/chat_scroll.js";
 import { ConversationNav } from "./hooks/conversation_nav.js";
@@ -16,7 +17,6 @@ import { ScheduleCountdown } from "./hooks/schedule_countdown.js";
 import { BoundSelect, ModelPicker } from "./hooks/model_picker.js";
 import { SettingsNav } from "./hooks/settings_nav.js";
 import { PushNotifications } from "./hooks/push_notifications.js";
-import { PWAInstall } from "./hooks/pwa_install.js";
 import { bootWebPush } from "./web_push.js";
 import { bootPWAInstall } from "./pwa_install.js";
 import { createConnectionStatus } from "./connection_status.js";
@@ -91,7 +91,7 @@ const MobHook = {
 }
 
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content");
-let Hooks = { StreamingMarkdown, ChatScroll, ConversationNav, ConversationSearch, ComposerPasteUpload, ComposerSpeech, WorkspacePanel, FilePreview, FileTabs, FileImage, CopyText, ConversationContextMenu, ConversationActivity, ConversationSidebar, LocalWebGPUProbe, GhosttyTerminal, ThemeBridge, MobHook, BrowserSurface, ScheduleCountdown, ModelPicker, BoundSelect, SettingsNav, PushNotifications, PWAInstall };
+let Hooks = { ...colocatedHooks, StreamingMarkdown, ChatScroll, ConversationNav, ConversationSearch, ComposerPasteUpload, ComposerSpeech, WorkspacePanel, FilePreview, FileTabs, FileImage, CopyText, ConversationContextMenu, ConversationActivity, ConversationSidebar, LocalWebGPUProbe, GhosttyTerminal, ThemeBridge, MobHook, BrowserSurface, ScheduleCountdown, ModelPicker, BoundSelect, SettingsNav, PushNotifications };
 
 try {
   let liveSocket = new LiveSocket("/live", Socket, {

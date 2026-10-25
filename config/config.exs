@@ -35,14 +35,18 @@ config :handbean, HandbeanWeb.Endpoint,
   pubsub_server: Handbean.PubSub,
   live_view: [signing_salt: "Wkzn+39Y"]
 
+config :phoenix_live_view, root_tag_attribute: "data-hb-root"
+
 # Keep the existing stylesheet order in the layout; build each source separately.
 config :esbuild,
   version: "0.25.12",
   handbean: [
     args:
-      ~w(js/app.js js/webgpu_probe_worker.js js/streaming_markdown/pele.worker.js css/app.css css/theme-system.css css/theme-light.css css/theme-dark.css css/workspace.css css/composer.css css/motion.css default.css --bundle --target=es2020 --outbase=. --outdir=../priv/static/assets --external:/fonts/* --external:/images/*),
+      ~w(js/app.js js/webgpu_probe_worker.js js/streaming_markdown/pele.worker.js css/app.css css/theme-system.css css/theme-light.css css/theme-dark.css css/workspace.css css/composer.css css/motion.css default.css --bundle --target=es2020 --outbase=. --outdir=../priv/static/assets --external:/fonts/* --external:/images/* --alias:@=.),
     cd: Path.expand("../assets", __DIR__),
-    env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
+    env: %{
+      "NODE_PATH" => [Path.expand("../deps", __DIR__), Mix.Project.build_path()]
+    }
   ]
 
 # Configure Elixir's Logger

@@ -5,10 +5,30 @@ defmodule HandbeanWeb.Components.PWAInstall do
 
   def render(assigns) do
     ~H"""
+    <style :type={HandbeanWeb.ColocatedCSS}>
+      .pwa-ios-guide {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        margin-top: 10px;
+        color: var(--sig-text-secondary);
+        font-size: 11px;
+        line-height: 1.45;
+      }
+
+      .pwa-ios-guide[hidden] {
+        display: none;
+      }
+
+      .pwa-ios-guide span:nth-child(even) {
+        color: var(--sig-text-tertiary);
+      }
+    </style>
     <section
       id="pwa-install"
       class="settings-form-section"
-      phx-hook="PWAInstall"
+      phx-hook=".Install"
       aria-labelledby="pwa-install-title"
       aria-busy="false"
     >
@@ -67,6 +87,33 @@ defmodule HandbeanWeb.Components.PWAInstall do
         </span>
       </div>
     </section>
+    <script :type={Phoenix.LiveView.ColocatedHook} name=".Install">
+      import { pwaInstall } from "@/js/pwa_install.js"
+      import { renderPWAInstall } from "@/js/hooks/pwa_install.js"
+
+      export default {
+        mounted() {
+          this.install = pwaInstall()
+          this.stopListening = this.install.subscribe((state) => renderPWAInstall(this.el, state))
+          this.onInstallClick = (event) => {
+            const button = event.target.closest("[data-pwa-install-action]")
+            if (!button || !this.el.contains(button) || button.disabled) return
+            void this.install.install()
+          }
+          this.el.addEventListener("click", this.onInstallClick)
+          this.install.start()
+        },
+
+        updated() {
+          renderPWAInstall(this.el, this.install.state)
+        },
+
+        destroyed() {
+          this.stopListening?.()
+          this.el.removeEventListener("click", this.onInstallClick)
+        }
+      }
+    </script>
     """
   end
 end
