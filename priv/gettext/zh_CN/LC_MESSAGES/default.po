@@ -4154,3 +4154,39 @@ msgstr "Handbean 已安装。请从系统中的 Handbean 图标打开独立窗�
 #, elixir-autogen, elixir-format
 msgid "Handbean 正以独立窗口运行。"
 msgstr "Handbean 正以独立窗口运行。"
+
+#: lib/handbean_web/live/settings_live.ex:182
+#, elixir-autogen, elixir-format
+msgid "Could not save local secret masking setting."
+msgstr "无法保存本地密钥脱敏设置。"
+
+#: lib/handbean_web/live/settings_live.html.heex:151
+#, elixir-autogen, elixir-format
+msgid "Local secret masking"
+msgstr "本地密钥脱敏"
+
+#: lib/handbean_web/live/settings_live.html.heex:152
+#, elixir-autogen, elixir-format
+msgid "Experimental"
+msgstr "实验性"
+
+#: lib/handbean_web/live/settings_live.html.heex:156
+#, elixir-autogen, elixir-format
+msgid "Replaces detected API keys, tokens, passwords and private keys before Handbean sends prompts to a model provider, then restores them locally."
+msgstr "在 Handbean 将提示词发送给模型供应商之前，替换检测到的 API 密钥、令牌、密码和私钥，然后在本地恢复。"
+
+#: lib/handbean_web/live/settings_live.html.heex:166
+#: lib/handbean_web/live/settings_live.html.heex:184
+#, elixir-autogen, elixir-format
+msgid "Enable local secret masking"
+msgstr "启用本地密钥脱敏"
+
+#: lib/handbean_web/live/settings_live.html.heex:169
+#, elixir-autogen, elixir-format
+msgid "May mask text that resembles a secret. If masking cannot run safely, the provider request is blocked. This does not prevent local tools from sending restored values elsewhere."
+msgstr "可能会遮蔽形似密钥的文本。如果无法安全执行脱敏，将阻止向供应商发送请求。这无法阻止本地工具将恢复后的值发送到其他位置。"
+
+#: lib/handbean_web/live/settings_live.html.heex:174
+#, elixir-autogen, elixir-format
+msgid "The security setting could not be read. Provider requests are blocked until it is repaired."
+msgstr "无法读取安全设置。修复之前，向模型供应商发送的请求将被阻止。"

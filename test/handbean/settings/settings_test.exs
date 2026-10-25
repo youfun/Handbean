@@ -36,6 +36,8 @@ defmodule Handbean.SettingsTest do
       File.write!(file, "{not json}")
 
       assert {:ok, %{}} = Settings.load_global(global_dir: global_dir)
+      assert {:error, reason} = Settings.load_global_strict(global_dir: global_dir)
+      assert reason =~ "Failed to parse"
     end
 
     test "save_global creates file with model_ai section", %{global_dir: global_dir} do
@@ -64,6 +66,37 @@ defmodule Handbean.SettingsTest do
       parsed = Jason.decode!(content)
       assert parsed["ui"]["theme"] == "dark"
       assert parsed["model_ai"]["default_model"] == "claude-sonnet-4"
+    end
+
+    test "concurrent section saves preserve both updates", %{global_dir: global_dir} do
+      tasks = [
+        Task.async(fn ->
+          Settings.save_global_section("security", %{"secret_masking" => true},
+            global_dir: global_dir
+          )
+        end),
+        Task.async(fn ->
+          Settings.save_global_section("speech", %{"enabled" => true}, global_dir: global_dir)
+        end)
+      ]
+
+      assert [:ok, :ok] = Task.await_many(tasks)
+      assert {:ok, settings} = Settings.load_global_strict(global_dir: global_dir)
+      assert settings["security"] == %{"secret_masking" => true}
+      assert settings["speech"] == %{"enabled" => true}
+    end
+
+    test "save refuses to overwrite malformed settings", %{global_dir: global_dir} do
+      file = Path.join(global_dir, "settings.json")
+      File.write!(file, "{broken")
+
+      assert {:error, reason} =
+               Settings.save_global_section("security", %{"secret_masking" => true},
+                 global_dir: global_dir
+               )
+
+      assert reason =~ "Failed to parse"
+      assert File.read!(file) == "{broken"
     end
   end
 

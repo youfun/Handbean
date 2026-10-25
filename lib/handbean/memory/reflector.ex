@@ -15,7 +15,15 @@ defmodule Handbean.Memory.Reflector do
 
   require Logger
 
-  alias Handbean.Agent.{CompactionCheckpoint, Config, Message, ModelConfig, Reasoning}
+  alias Handbean.Agent.{
+    CompactionCheckpoint,
+    Config,
+    Message,
+    ModelConfig,
+    ProviderGateway,
+    Reasoning
+  }
+
   alias Handbean.ConversationTranscriptStore
   alias Handbean.Memory.{MemoryStore, Policy}
   alias Handbean.Repo
@@ -497,7 +505,7 @@ defmodule Handbean.Memory.Reflector do
     task =
       Task.async(fn ->
         try do
-          provider.complete([Message.user(prompt)], [], config)
+          ProviderGateway.complete(provider, [Message.user(prompt)], [], config)
         rescue
           error -> {:error, {:provider_exception, error}}
         catch

@@ -19,7 +19,7 @@ defmodule Handbean.ConversationTitleGenerator do
 
   require Logger
 
-  alias Handbean.Agent.Message
+  alias Handbean.Agent.{Message, ProviderGateway}
 
   @system_prompt """
   Generate a extremely concise title for the given AI coding conversation.
@@ -383,7 +383,7 @@ defmodule Handbean.ConversationTitleGenerator do
       spawn(fn ->
         result =
           try do
-            provider.complete(messages, [], Map.put(config, :stream, false))
+            ProviderGateway.complete(provider, messages, [], Map.put(config, :stream, false))
           catch
             kind, reason -> {:error, {kind, reason}}
           end

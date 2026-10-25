@@ -4131,3 +4131,39 @@ msgstr ""
 #, elixir-autogen, elixir-format
 msgid "Handbean 正以独立窗口运行。"
 msgstr ""
+
+#: lib/handbean_web/live/settings_live.ex:182
+#, elixir-autogen, elixir-format
+msgid "Could not save local secret masking setting."
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:151
+#, elixir-autogen, elixir-format
+msgid "Local secret masking"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:152
+#, elixir-autogen, elixir-format
+msgid "Experimental"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:156
+#, elixir-autogen, elixir-format
+msgid "Replaces detected API keys, tokens, passwords and private keys before Handbean sends prompts to a model provider, then restores them locally."
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:166
+#: lib/handbean_web/live/settings_live.html.heex:184
+#, elixir-autogen, elixir-format
+msgid "Enable local secret masking"
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:169
+#, elixir-autogen, elixir-format
+msgid "May mask text that resembles a secret. If masking cannot run safely, the provider request is blocked. This does not prevent local tools from sending restored values elsewhere."
+msgstr ""
+
+#: lib/handbean_web/live/settings_live.html.heex:174
+#, elixir-autogen, elixir-format
+msgid "The security setting could not be read. Provider requests are blocked until it is repaired."
+msgstr ""

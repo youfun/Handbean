@@ -4,7 +4,7 @@ defmodule Handbean.Agent.Compactor do
   token limits, with fallback truncation.
   """
 
-  alias Handbean.Agent.{Message, State}
+  alias Handbean.Agent.{Message, ProviderGateway, State}
 
   require Logger
 
@@ -248,7 +248,7 @@ defmodule Handbean.Agent.Compactor do
         "messages=#{length(request_messages)}"
     )
 
-    with {:ok, response} <- provider.complete(request_messages, [], config),
+    with {:ok, response} <- ProviderGateway.complete(provider, request_messages, [], config),
          :ok <- log_summary_usage(response),
          :ok <- reject_tool_calls(response),
          {:ok, summary_text} <- extract_summary_text(response) do

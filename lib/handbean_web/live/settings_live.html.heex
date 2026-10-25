@@ -146,6 +146,51 @@
       <div :if={@active_tab == :local_webgpu} class="settings-content-wrap">
         <div class="settings-content-card settings-form-section">
           <div class="settings-section-heading">
+            <div class="settings-section-title">
+              {gettext("Local secret masking")}
+              <span class="settings-badge-experimental">{gettext("Experimental")}</span>
+            </div>
+            <div class="settings-help-text">
+              {gettext(
+                "Replaces detected API keys, tokens, passwords and private keys before Handbean sends prompts to a model provider, then restores them locally."
+              )}
+            </div>
+          </div>
+
+          <div id="secret-masking-settings" class="settings-card">
+            <div class="settings-field-row">
+              <div class="settings-field-copy">
+                <div class="settings-field-title">{gettext("Enable local secret masking")}</div>
+                <div class="settings-field-desc">
+                  {gettext(
+                    "May mask text that resembles a secret. If masking cannot run safely, the provider request is blocked. This does not prevent local tools from sending restored values elsewhere."
+                  )}
+                </div>
+                <div :if={@secret_masking_error} class="settings-field-desc" role="alert">
+                  {gettext(
+                    "The security setting could not be read. Provider requests are blocked until it is repaired."
+                  )}
+                </div>
+              </div>
+              <div class="settings-field-control">
+                <button
+                  id="secret-masking-toggle"
+                  type="button"
+                  phx-click="toggle_secret_masking"
+                  class="settings-toggle-button"
+                  role="switch"
+                  aria-checked={to_string(@secret_masking_enabled)}
+                  aria-label={gettext("Enable local secret masking")}
+                >
+                  <span class="settings-toggle-track" aria-hidden="true">
+                    <span class="settings-toggle-thumb"></span>
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-section-heading settings-advanced-divider">
             <div class="settings-section-title">{gettext("Local voice input")}</div>
             <div class="settings-help-text">
               {gettext(

@@ -10,7 +10,7 @@ defmodule Handbean.Permissions.AutoReview do
 
   require Logger
 
-  alias Handbean.Agent.{Config, Message, ModelConfig}
+  alias Handbean.Agent.{Config, Message, ModelConfig, ProviderGateway}
   alias Handbean.Permissions.{Boundary, InterruptData}
   alias Handbean.WorkspaceSettings
 
@@ -263,7 +263,7 @@ defmodule Handbean.Permissions.AutoReview do
 
   defp model_transport(%{prompt: prompt} = request) do
     with {:ok, provider, config} <- review_provider(request),
-         {:ok, response} <- provider.complete([Message.user(prompt)], [], config),
+         {:ok, response} <- ProviderGateway.complete(provider, [Message.user(prompt)], [], config),
          text when is_binary(text) and text != "" <- response_text(response) do
       {:ok, text}
     else

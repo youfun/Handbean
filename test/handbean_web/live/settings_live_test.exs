@@ -376,6 +376,10 @@ defmodule HandbeanWeb.SettingsLiveTest do
       |> render_click()
 
       html = render(view)
+      assert html =~ "Local secret masking"
+      assert html =~ "Experimental"
+      assert has_element?(view, "#secret-masking-settings")
+      assert has_element?(view, "#secret-masking-toggle[role='switch'][aria-checked='false']")
       assert html =~ "Local voice input"
       assert has_element?(view, "#speech-settings")
       assert has_element?(view, "#speech-enabled-toggle[aria-checked='false']")
@@ -387,6 +391,24 @@ defmodule HandbeanWeb.SettingsLiveTest do
       assert html =~ ~s(phx-hook="LocalWebGPUProbe")
       assert html =~ ~s(data-probe-check="compute")
       assert html =~ "does not download or run a model"
+    end
+
+    test "Advanced tab persists the local secret masking toggle", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/settings?tab=local_webgpu")
+
+      view
+      |> element("#secret-masking-toggle")
+      |> render_click()
+
+      assert has_element?(view, "#secret-masking-toggle[aria-checked='true']")
+      assert {:ok, true} = Handbean.Settings.Security.secret_masking_enabled?()
+
+      view
+      |> element("#secret-masking-toggle")
+      |> render_click()
+
+      assert has_element?(view, "#secret-masking-toggle[aria-checked='false']")
+      assert {:ok, false} = Handbean.Settings.Security.secret_masking_enabled?()
     end
 
     test "completed model setup does not re-enable a disabled setting" do

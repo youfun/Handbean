@@ -21,6 +21,7 @@ defmodule HandbeanWeb.SettingsLive do
 
   alias Handbean.Settings
   alias Handbean.Settings.ModelAISettings
+  alias Handbean.Settings.Security
   alias Handbean.Agent.ModelConfig
   alias HandbeanWeb.Live.Settings.ComputerUsePanel
   alias HandbeanWeb.Live.Settings.ModelAIPanel
@@ -59,6 +60,7 @@ defmodule HandbeanWeb.SettingsLive do
     # Load Model/AI settings
     {:ok, global} = Settings.load_global()
     form = ModelAISettings.new(Map.get(global, "model_ai", %{}))
+    {secret_masking_enabled, secret_masking_error} = secret_masking_state()
 
     socket =
       socket
@@ -81,6 +83,8 @@ defmodule HandbeanWeb.SettingsLive do
       |> assign(:speech_supported, Handbean.Speech.supported?())
       |> assign(:speech_status, Handbean.Speech.status())
       |> assign(:speech_model, Handbean.Speech.model_info())
+      |> assign(:secret_masking_enabled, secret_masking_enabled)
+      |> assign(:secret_masking_error, secret_masking_error)
       |> WorkspaceModelsPanel.init(workspace_root)
       |> ComputerUsePanel.init()
       |> subscribe_to_runtime_tasks()
@@ -160,6 +164,24 @@ defmodule HandbeanWeb.SettingsLive do
        |> start_async(:prepare_speech, &Handbean.Speech.prepare/0)}
     else
       {:noreply, socket}
+    end
+  end
+
+  def handle_event("toggle_secret_masking", _params, socket) do
+    enabled = not socket.assigns.secret_masking_enabled
+
+    case Security.set_secret_masking(enabled) do
+      :ok ->
+        {:noreply,
+         socket
+         |> assign(:secret_masking_enabled, enabled)
+         |> assign(:secret_masking_error, nil)}
+
+      {:error, reason} ->
+        {:noreply,
+         socket
+         |> assign(:secret_masking_error, reason)
+         |> put_flash(:error, gettext("Could not save local secret masking setting."))}
     end
   end
 
@@ -406,6 +428,13 @@ defmodule HandbeanWeb.SettingsLive do
   def tab_label(:sns), do: gettext("SNS")
   def tab_label(:tools), do: gettext("Tools")
   def tab_label(:security), do: gettext("Security")
+
+  defp secret_masking_state do
+    case Security.secret_masking_enabled?() do
+      {:ok, enabled} -> {enabled, nil}
+      {:error, reason} -> {false, reason}
+    end
+  end
 
   def tab_icon(:model_ai), do: "🧠"
   def tab_icon(:workspace_models), do: "▦"

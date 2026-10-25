@@ -43,17 +43,30 @@ defmodule Handbean.Settings do
   """
   @spec load_global(keyword()) :: {:ok, map()}
   def load_global(opts \\ []) do
+    case load_global_strict(opts) do
+      {:ok, settings} -> {:ok, settings}
+      {:error, _reason} -> {:ok, %{}}
+    end
+  end
+
+  @doc "Load global settings without hiding read or parse failures."
+  @spec load_global_strict(keyword()) :: {:ok, map()} | {:error, term()}
+  def load_global_strict(opts \\ []) do
     path = global_settings_path(opts)
 
     case File.read(path) do
       {:ok, content} ->
         case Handbean.JSON.decode(content) do
           {:ok, settings} when is_map(settings) -> {:ok, settings}
-          _ -> {:ok, %{}}
+          {:ok, _other} -> {:error, "Failed to parse #{path}: expected a JSON object"}
+          {:error, reason} -> {:error, "Failed to parse #{path}: #{inspect(reason)}"}
         end
 
-      {:error, _reason} ->
+      {:error, :enoent} ->
         {:ok, %{}}
+
+      {:error, reason} ->
+        {:error, "Failed to read #{path}: #{inspect(reason)}"}
     end
   end
 
@@ -62,15 +75,15 @@ defmodule Handbean.Settings do
   def save_global_section(section, value, opts \\ []) when is_binary(section) do
     path = global_settings_path(opts)
 
-    with {:ok, existing} <- load_global(opts),
-         :ok <- File.mkdir_p(Path.dirname(path)) do
-      updated = Map.put(existing, section, value)
-
-      case File.write(path, Handbean.JSON.encode!(updated)) do
-        :ok -> :ok
-        {:error, reason} -> {:error, "Failed to write #{path}: #{inspect(reason)}"}
+    with_global_settings_lock(path, fn ->
+      with {:ok, existing} <- load_global_strict(opts),
+           :ok <- File.mkdir_p(Path.dirname(path)) do
+        existing
+        |> Map.put(section, value)
+        |> Handbean.JSON.encode!()
+        |> atomic_write(path)
       end
-    end
+    end)
   end
 
   @doc """
@@ -299,6 +312,42 @@ defmodule Handbean.Settings do
 
       true ->
         :inherit
+    end
+  end
+
+  defp with_global_settings_lock(path, fun) when is_function(fun, 0) do
+    resource = {:handbean_global_settings, Path.expand(path)}
+
+    case :global.trans({resource, self()}, fun, [node()]) do
+      :aborted -> {:error, "Global settings are busy"}
+      result -> result
+    end
+  end
+
+  defp atomic_write(bytes, path) when is_binary(bytes) do
+    temp = path <> "." <> Ecto.UUID.generate() <> ".tmp"
+
+    try do
+      with {:ok, io} <- File.open(temp, [:write, :binary, :exclusive]) do
+        result =
+          with :ok <- File.chmod(temp, 0o600),
+               :ok <- IO.binwrite(io, bytes),
+               :ok <- :file.sync(io),
+               do: :ok
+
+        File.close(io)
+
+        with :ok <- result,
+             :ok <- File.rename(temp, path) do
+          :ok
+        end
+      end
+      |> case do
+        :ok -> :ok
+        {:error, reason} -> {:error, "Failed to write #{path}: #{inspect(reason)}"}
+      end
+    after
+      File.rm(temp)
     end
   end
 end

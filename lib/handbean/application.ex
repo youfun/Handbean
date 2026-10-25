@@ -32,6 +32,7 @@ defmodule Handbean.Application do
         {Registry, keys: :unique, name: Handbean.AgentRunQueueRegistry},
         {Registry, keys: :unique, name: Handbean.CursorSessionRegistry},
         Handbean.Agent.Auth.Epoch,
+        Handbean.Agent.SecretMasking.Store,
         Handbean.Agent.Provider.Cursor.Supervisor,
         Handbean.Preview.Store,
         Handbean.ExportSnapshot.Binding,

@@ -1,7 +1,7 @@
 defmodule Handbean.Agent.Turn.ProviderInvocation do
   @moduledoc false
 
-  alias Handbean.Agent.{Reasoning, State}
+  alias Handbean.Agent.{ProviderGateway, Reasoning, State}
   alias Handbean.Agent.Provider.Retry
   alias Handbean.Agent.Turn.{Events, StreamTracker}
 
@@ -238,16 +238,12 @@ defmodule Handbean.Agent.Turn.ProviderInvocation do
 
   defp call_provider(provider, messages, tool_defs, provider_config, true, on_chunk)
        when is_list(messages) and is_function(on_chunk, 1) do
-    if Code.ensure_loaded?(provider) and function_exported?(provider, :stream, 4) do
-      provider.stream(messages, tool_defs, provider_config, on_chunk)
-    else
-      provider.complete(messages, tool_defs, provider_config)
-    end
+    ProviderGateway.stream(provider, messages, tool_defs, provider_config, on_chunk)
   end
 
   defp call_provider(provider, messages, tool_defs, provider_config, _streaming?, _on_chunk)
        when is_list(messages) do
-    provider.complete(messages, tool_defs, provider_config)
+    ProviderGateway.complete(provider, messages, tool_defs, provider_config)
   end
 
   defp retry_config(%State{config: config}, provider_config) do
