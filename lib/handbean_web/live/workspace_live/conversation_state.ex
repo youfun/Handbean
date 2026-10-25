@@ -6,7 +6,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationState do
 
   require Logger
 
-  alias Handbean.Security.PathValidator
+  alias HandbeanWeb.WorkspaceLive.ConversationState.{AutoTitle, EditorState, History}
   alias HandbeanWeb.WorkspaceLive.ConversationSwitching
   alias HandbeanWeb.WorkspaceLive.ModelSelection
 
@@ -81,7 +81,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationState do
     token_usage = load_conversation_token_usage(conv_id)
     running_for_conversation? = running_for_conversation?(socket, conv_id)
     workspace_root = Map.get(socket.assigns, :workspace_root)
-    {editor_files, active_file} = normalize_editor_state(socket, conv, workspace_root)
+    {editor_files, active_file} = EditorState.normalize(socket, conv, workspace_root)
 
     socket =
       socket
@@ -89,9 +89,12 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationState do
       |> assign(:active_file, active_file)
       |> assign(
         :editor_state_key,
-        {editor_state_key(conv, workspace_root), editor_files, active_file}
+        {EditorState.state_key(conv, workspace_root), editor_files, active_file}
       )
-      |> refresh_file_preview(workspace_root, Keyword.get(opts, :refresh_preview?, false))
+      |> EditorState.refresh_preview(
+        workspace_root,
+        Keyword.get(opts, :refresh_preview?, false)
+      )
 
     status_overrides =
       %{model: model_display_name(selected_model, available_models, opts)}
@@ -170,94 +173,19 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationState do
   end
 
   def select_file(socket, path, workspace_root, _opts \\ []) do
-    open_editor_file(socket, path, workspace_root, :user)
+    EditorState.select_file(socket, path, workspace_root, &sync_conv_to/1)
   end
 
   def select_editor_file(socket, path, workspace_root, _opts \\ []) do
-    with true <- editor_available?(socket),
-         true <- is_binary(path) and Path.type(path) == :relative,
-         {:ok, relative} <- relative_editor_path(path, workspace_root),
-         true <- Enum.any?(socket.assigns.editor_files, &(file_path_value(&1) == relative)) do
-      socket
-      |> assign(:active_file, relative)
-      |> refresh_file_preview(workspace_root, true)
-      |> sync_conv_to()
-    else
-      _ -> socket
-    end
+    EditorState.select(socket, path, workspace_root, &sync_conv_to/1)
   end
 
   def open_editor_file(socket, path, workspace_root, source) do
-    if editor_available?(socket) do
-      case resolve_editor_file(path, workspace_root) do
-        {:ok, relative} ->
-          files = socket.assigns.editor_files
-          active = socket.assigns.active_file
-
-          exists? = Enum.any?(files, &(file_path_value(&1) == relative))
-
-          if not exists? and length(files) >= 20 do
-            if source == :user,
-              do:
-                Phoenix.LiveView.put_flash(
-                  socket,
-                  :error,
-                  "You can open up to 20 files. Close a tab first."
-                ),
-              else: socket
-          else
-            files = if exists?, do: files, else: files ++ [%{path: relative, name: relative}]
-            active = if source == :user or is_nil(active), do: relative, else: active
-
-            if source == :user,
-              do: Handbean.Search.touch(workspace_root, Path.expand(relative, workspace_root))
-
-            socket
-            |> assign(:editor_files, files)
-            |> assign(:active_file, active)
-            |> refresh_file_preview(workspace_root, active == relative)
-            |> sync_conv_to()
-          end
-
-        {:error, reason} ->
-          if source == :user do
-            Phoenix.LiveView.put_flash(socket, :error, error_text(reason))
-          else
-            case relative_editor_path(path, workspace_root) do
-              {:ok, relative} when relative == socket.assigns.active_file ->
-                refresh_file_preview(socket, workspace_root, true)
-
-              _ ->
-                socket
-            end
-          end
-      end
-    else
-      socket
-    end
+    EditorState.open(socket, path, workspace_root, source, &sync_conv_to/1)
   end
 
   def close_file(socket, path, workspace_root, _opts \\ []) do
-    with true <- editor_available?(socket),
-         {:ok, relative} <- relative_editor_path(path, workspace_root),
-         files = socket.assigns.editor_files,
-         index when is_integer(index) <-
-           Enum.find_index(files, &(file_path_value(&1) == relative)) do
-      remaining = List.delete_at(files, index)
-
-      active =
-        if socket.assigns.active_file == relative,
-          do: file_path_value(Enum.at(remaining, index) || List.last(remaining)),
-          else: socket.assigns.active_file
-
-      socket
-      |> assign(:editor_files, remaining)
-      |> assign(:active_file, active)
-      |> refresh_file_preview(workspace_root)
-      |> sync_conv_to()
-    else
-      _ -> socket
-    end
+    EditorState.close(socket, path, workspace_root, &sync_conv_to/1)
   end
 
   def current_conv_map(socket) do
@@ -299,138 +227,20 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationState do
     end
   end
 
-  def load_transcript_entries(conversation_id, fallback) when is_binary(conversation_id) do
-    case Handbean.ConversationTranscriptStore.list(conversation_id) do
-      {:ok, entries} -> Handbean.PubSub.Projection.visible_entries(entries)
-      {:error, _reason} -> fallback
-    end
-  end
+  defdelegate load_transcript_entries(conversation_id, fallback), to: History
 
-  def load_transcript_entries(_conversation_id, fallback), do: fallback
+  def load_transcript_page(conversation_id, fallback, count \\ 100),
+    do: History.load_transcript_page(conversation_id, fallback, count)
 
-  def load_transcript_page(conversation_id, fallback, count \\ 100)
+  defdelegate load_older_history(socket), to: History, as: :load_older
 
-  def load_transcript_page(conversation_id, fallback, count) when is_binary(conversation_id) do
-    case Handbean.PubSub.Projection.history(conversation_id, count) do
-      {:ok, %{entries: entries, before: before, has_more?: has_more?}} ->
-        {entries, before, has_more?}
+  defdelegate load_around_history(socket, page, anchor_id), to: History, as: :load_around
 
-      {:error, _reason} ->
-        {fallback, nil, false}
-    end
-  end
-
-  def load_transcript_page(_conversation_id, fallback, _count), do: {fallback, nil, false}
-
-  def load_older_history(socket) do
-    conv_id = socket.assigns.current_conversation_id
-    before = Map.get(socket.assigns, :history_before)
-
-    with true <- is_binary(conv_id) and is_binary(before),
-         {:ok, %{entries: entries, before: next_before, has_more?: has_more?}} <-
-           Handbean.ConversationTranscriptStore.page(conv_id, limit: 100, before: before) do
-      entries = Handbean.PubSub.Projection.visible_entries(entries)
-      loaded_ids = MapSet.new(socket.assigns.timeline, &conv_value(&1, "id", nil))
-      entries = Enum.reject(entries, &MapSet.member?(loaded_ids, conv_value(&1, "id", nil)))
-
-      timeline =
-        entries
-        |> Kernel.++(socket.assigns.timeline)
-        |> deduplicate_entries()
-        |> HandbeanWeb.WorkspaceHelper.apply_tool_work_collapse(
-          Map.get(socket.assigns, :expanded_tool_groups, MapSet.new())
-        )
-
-      pending =
-        Handbean.Agent.PendingMessages.reconcile(
-          socket.assigns.pending_messages,
-          HandbeanWeb.WorkspaceLive.RuntimeProjection.session_pending_messages(conv_id),
-          socket.assigns.running,
-          timeline
-        )
-
-      timeline =
-        if Map.get(socket.assigns, :history_window) == :around,
-          do: timeline,
-          else: Handbean.Agent.PendingMessages.pin_pending(timeline, pending)
-
-      socket
-      |> assign(:timeline, timeline)
-      |> assign(:pending_messages, pending)
-      |> assign(:history_before, next_before)
-      |> assign(:history_has_more?, has_more?)
-      |> stream(:timeline, timeline, reset: true)
-    else
-      _ -> socket
-    end
-  end
-
-  def load_around_history(socket, page, anchor_id)
-      when is_map(page) and is_binary(anchor_id) do
-    entries = Handbean.PubSub.Projection.visible_entries(page.entries)
-
-    timeline =
-      HandbeanWeb.WorkspaceHelper.apply_tool_work_collapse(
-        entries,
-        Map.get(socket.assigns, :expanded_tool_groups, MapSet.new())
-      )
-
-    pending =
-      Handbean.Agent.PendingMessages.reconcile(
-        socket.assigns.pending_messages,
-        HandbeanWeb.WorkspaceLive.RuntimeProjection.session_pending_messages(
-          socket.assigns.current_conversation_id
-        ),
-        socket.assigns.running,
-        timeline
-      )
-
-    socket
-    |> assign(:timeline, timeline)
-    |> assign(:pending_messages, pending)
-    |> assign(:history_before, page.before)
-    |> assign(:history_has_more?, page.has_more_before?)
-    |> assign(:history_after, page.after)
-    |> assign(:history_has_newer?, page.has_more_after?)
-    |> assign(:history_window, :around)
-    |> assign(:history_anchor_entry_id, anchor_id)
-    |> stream(:timeline, timeline, reset: true)
-    |> Phoenix.LiveView.push_event("focus-conversation-entry", %{id: anchor_id})
-  end
-
-  def load_newer_history(socket) do
-    conv_id = socket.assigns.current_conversation_id
-    after_cursor = Map.get(socket.assigns, :history_after)
-
-    with true <- is_binary(conv_id) and is_binary(after_cursor),
-         {:ok, %{entries: entries, after: next_after, has_more?: has_more?}} <-
-           Handbean.ConversationTranscriptStore.page(conv_id, limit: 100, after: after_cursor) do
-      entries = Handbean.PubSub.Projection.visible_entries(entries)
-      loaded_ids = MapSet.new(socket.assigns.timeline, &conv_value(&1, "id", nil))
-      entries = Enum.reject(entries, &MapSet.member?(loaded_ids, conv_value(&1, "id", nil)))
-
-      timeline =
-        socket.assigns.timeline
-        |> Kernel.++(entries)
-        |> deduplicate_entries()
-        |> HandbeanWeb.WorkspaceHelper.apply_tool_work_collapse(
-          Map.get(socket.assigns, :expanded_tool_groups, MapSet.new())
-        )
-
-      socket
-      |> assign(:timeline, timeline)
-      |> assign(:history_after, next_after)
-      |> assign(:history_has_newer?, has_more?)
-      |> stream(:timeline, timeline, reset: true)
-    else
-      _ -> socket
-    end
-  end
+  defdelegate load_newer_history(socket), to: History, as: :load_newer
 
   def return_to_latest_history(socket) do
     socket
-    |> assign(:history_window, :latest)
-    |> assign(:history_anchor_entry_id, nil)
+    |> History.prepare_latest()
     |> sync_conv_state(force_transcript?: true)
     |> Phoenix.LiveView.push_event("scroll_chat_to_bottom", %{})
   end
@@ -640,173 +450,8 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationState do
   defp load_or_build_current_conversation(_conv_id, ws_id),
     do: build_memory_conversation(ws_id, 1)
 
-  defp editor_available?(socket) do
-    Map.get(socket.assigns, :chat_scope) != :free and
-      is_binary(Map.get(socket.assigns, :current_conversation_id))
-  end
-
-  defp editor_state_key(conv, root) do
-    {conversation_id(conv), root, conv_value(conv, "editor_files", []),
-     conv_value(conv, "active_file", nil)}
-  end
-
-  defp normalize_editor_state(socket, conv, root) do
-    editor_files = Map.get(socket.assigns, :editor_files, [])
-    active_file = Map.get(socket.assigns, :active_file)
-
-    cond do
-      not editor_available?(socket) ->
-        {[], nil}
-
-      Map.get(socket.assigns, :editor_state_key) ==
-          {editor_state_key(conv, root), editor_files, active_file} ->
-        {editor_files, active_file}
-
-      true ->
-        normalize_stored_editor_state(conv, root)
-    end
-  end
-
-  defp normalize_stored_editor_state(conv, root) do
-    files =
-      (conv_value(conv, "editor_files", []) || [])
-      |> Enum.flat_map(fn file ->
-        case normalize_stored_path(file_path_value(file), root) do
-          {:ok, relative} -> [%{path: relative, name: relative}]
-          _ -> []
-        end
-      end)
-      |> Enum.uniq_by(& &1.path)
-      |> Enum.take(20)
-
-    active =
-      case normalize_stored_path(conv_value(conv, "active_file", nil), root) do
-        {:ok, relative} -> relative
-        _ -> nil
-      end
-
-    cond do
-      is_nil(active) -> {files, nil}
-      Enum.any?(files, &(&1.path == active)) -> {files, active}
-      true -> {Enum.take(files, 19) ++ [%{path: active, name: active}], active}
-    end
-  end
-
-  defp relative_editor_path(path, root) when is_binary(path) and is_binary(root) do
-    with true <- path != "" and not String.contains?(path, <<0>>),
-         false <- ".." in Path.split(path),
-         {:ok, canonical_root} <- PathValidator.canonicalize(root),
-         {:ok, relative} <- relative_from_workspace(Path.expand(path, root), canonical_root),
-         false <- ".." in Path.split(relative),
-         :relative <- Path.type(relative),
-         false <- relative == "." do
-      {:ok, relative}
-    else
-      _ -> {:error, :invalid_path}
-    end
-  end
-
-  defp relative_editor_path(_, _), do: {:error, :invalid_path}
-
-  defp relative_from_workspace(absolute, canonical_root),
-    do: relative_from_workspace(Path.expand(absolute), canonical_root, [])
-
-  defp relative_from_workspace(absolute, canonical_root, parts) do
-    parent = Path.dirname(absolute)
-
-    if parent == absolute do
-      {:error, :outside_workspace}
-    else
-      parts = [Path.basename(absolute) | parts]
-
-      case PathValidator.canonicalize(parent) do
-        {:ok, ^canonical_root} ->
-          case File.lstat(parent) do
-            {:ok, %File.Stat{type: :directory}} -> {:ok, Path.join(parts)}
-            _ -> {:error, :invalid_workspace_alias}
-          end
-
-        {:ok, _other} ->
-          relative_from_workspace(parent, canonical_root, parts)
-
-        {:error, reason} ->
-          {:error, reason}
-      end
-    end
-  end
-
-  defp resolve_editor_file(path, root) do
-    with {:ok, relative} <- relative_editor_path(path, root),
-         :ok <- Handbean.Security.PathValidator.reject_resolved(Path.expand(relative, root)),
-         {:ok, _absolute} <- Handbean.WorkspaceFiles.resolve(root, relative, :file) do
-      {:ok, relative}
-    end
-  end
-
-  defp normalize_stored_path(path, root) when is_binary(path) do
-    if Path.type(path) == :relative do
-      with {:ok, relative} <- relative_editor_path(path, root),
-           :ok <- Handbean.Security.PathValidator.reject_resolved(Path.expand(relative, root)) do
-        case Handbean.WorkspaceFiles.resolve(root, relative, :file) do
-          {:ok, _} -> {:ok, relative}
-          {:error, :enoent} -> {:ok, relative}
-          error -> error
-        end
-      end
-    else
-      {:error, :invalid_path}
-    end
-  end
-
-  defp normalize_stored_path(_path, _root), do: {:error, :invalid_path}
-
-  def refresh_file_preview(socket, root, force? \\ false) do
-    active = Map.get(socket.assigns, :active_file)
-    key = {root, active}
-
-    if force? or Map.get(socket.assigns, :file_preview_key) != key or
-         (is_binary(active) and is_nil(Map.get(socket.assigns, :file_preview))) do
-      preview = load_file_preview(active, root)
-
-      socket
-      |> assign(:file_preview_key, key)
-      |> assign(:file_preview, preview)
-      |> assign(:file_preview_error, preview_error(preview))
-    else
-      socket
-    end
-  end
-
-  defp load_file_preview(nil, _workspace_root), do: nil
-
-  defp load_file_preview(path, workspace_root)
-       when is_binary(path) and is_binary(workspace_root) do
-    with {:ok, relative} <- resolve_editor_file(path, workspace_root),
-         {:ok, preview} <- Handbean.WorkspaceFiles.preview(workspace_root, relative) do
-      preview
-    else
-      {:error, reason} -> {:error, error_text(reason)}
-    end
-  end
-
-  defp load_file_preview(_, _), do: {:error, "Invalid file path"}
-
-  defp error_text(reason) when is_binary(reason), do: reason
-  defp error_text(:enoent), do: "File no longer exists"
-  defp error_text(:symlink), do: "Symbolic links cannot be previewed"
-  defp error_text(:invalid_path), do: "Invalid file path"
-  defp error_text(reason), do: "Unable to preview file: #{inspect(reason)}"
-
-  defp preview_error({:error, reason}), do: error_text(reason)
-  defp preview_error(_), do: nil
-
-  defp file_path_value(nil), do: nil
-  defp file_path_value(file) when is_map(file), do: conv_value(file, "path", nil)
-  defp file_path_value(_), do: nil
-
-  defp deduplicate_entries(entries) do
-    Enum.uniq_by(entries, &conv_value(&1, "id", nil))
-  end
+  def refresh_file_preview(socket, root, force? \\ false),
+    do: EditorState.refresh_preview(socket, root, force?)
 
   defp conversation_selected_model(_socket, conv, available) do
     pinned_model = collaboration_model(conv)
@@ -913,135 +558,34 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationState do
   defp conversation_title(1), do: "New chat"
   defp conversation_title(num), do: "New chat ##{num}"
 
-  def schedule_auto_title(socket, message) when is_binary(message) do
-    trigger_auto_title(socket, message)
-  end
+  def schedule_auto_title(socket, message) when is_binary(message),
+    do: AutoTitle.schedule(socket, message, current_conv_map(socket))
 
   def schedule_auto_title(socket, _message), do: socket
 
   def maybe_auto_title(socket, :completed) do
     conversation_id = socket.assigns.current_conversation_id
-
-    timeline =
-      conversation_id
-      |> load_transcript_entries(socket.assigns.timeline)
-
-    first_user_msg =
-      Enum.find_value(timeline, fn entry ->
-        if entry["role"] == "user" and not is_nil(entry["content"]) do
-          entry["content"]
-        end
-      end)
-
-    if first_user_msg do
-      trigger_auto_title(socket, first_user_msg)
-    else
-      Logger.debug(
-        "[WorkspaceLive] maybe_auto_title skip — no user message found in timeline conv_id=#{conversation_id}"
-      )
-
-      socket
-    end
+    timeline = load_transcript_entries(conversation_id, socket.assigns.timeline)
+    AutoTitle.maybe(socket, :completed, timeline, fn -> current_conv_map(socket) end)
   end
 
   def maybe_auto_title(socket, _not_completed), do: socket
 
   def trigger_auto_title(socket, message) when is_binary(message) do
-    conv = current_conv_map(socket)
-    title = conv_value(conv, "title", "")
-    title_source = conv_value(conv, "title_source", nil)
-    conversation_id = socket.assigns.current_conversation_id
-
-    Logger.debug(
-      "[WorkspaceLive] maybe_auto_title entry conv_id=#{conversation_id} title=#{inspect(title)} title_source=#{inspect(title_source)}"
-    )
-
-    cond do
-      titled?(title, title_source) ->
-        Logger.debug(
-          "[WorkspaceLive] maybe_auto_title skip — title already set conv_id=#{conversation_id} title=#{inspect(title)} title_source=#{inspect(title_source)}"
-        )
-
-        socket
-
-      String.trim(message) == "" ->
-        socket
-
-      true ->
-        socket = show_provisional_title(socket, conversation_id, message)
-
-        case ModelSelection.resolve_auto_title_model(socket, conv) do
-          {:ok, provider_config, selected_model} ->
-            provider_config = Map.put(provider_config, :notify_pid, self())
-
-            case Handbean.ConversationTitleGenerator.maybe_generate(
-                   conversation_id,
-                   message,
-                   provider_config
-                 ) do
-              {:ok, pid} ->
-                Logger.debug(
-                  "[WorkspaceLive] Triggered auto-title generation conv_id=#{conversation_id} model=#{inspect(selected_model)} task_pid=#{inspect(pid)}"
-                )
-
-              :skip ->
-                Logger.debug(
-                  "[WorkspaceLive] TitleGenerator.maybe_generate returned :skip conv_id=#{conversation_id}"
-                )
-
-              other ->
-                Logger.debug(
-                  "[WorkspaceLive] TitleGenerator.maybe_generate failed conv_id=#{conversation_id} result=#{inspect(other)}"
-                )
-            end
-
-            socket
-
-          {:error, reason, selected_model} ->
-            Logger.debug(
-              "[WorkspaceLive] Skipped model title model=#{inspect(selected_model)} reason=#{inspect(reason)}"
-            )
-
-            socket
-        end
-    end
+    AutoTitle.trigger(socket, message, current_conv_map(socket))
   end
 
-  def titled?(title, source) do
-    not Handbean.ConversationTitleGenerator.default_title?(title) and source != "fallback"
-  end
+  defdelegate titled?(title, source), to: AutoTitle
 
-  def show_provisional_title(socket, conversation_id, message) do
-    case Handbean.ConversationTitleGenerator.publish_provisional(conversation_id, message) do
-      {:ok, title} ->
-        socket
-        |> ConversationSwitching.apply_sidebar_title(conversation_id, title, "fallback")
-        |> maybe_patch_page_title(conversation_id, title)
+  defdelegate show_provisional_title(socket, conversation_id, message),
+    to: AutoTitle,
+    as: :show_provisional
 
-      :skip ->
-        socket
-    end
-  end
+  defdelegate maybe_patch_page_title(socket, conv_id, title),
+    to: AutoTitle,
+    as: :patch_page_title
 
-  def maybe_patch_page_title(socket, conv_id, title) do
-    if socket.assigns.current_conversation_id == conv_id and is_binary(title) and title != "" do
-      assign(socket, :page_title, title)
-    else
-      socket
-    end
-  end
-
-  def maybe_patch_current_page_title(socket, conv_id) do
-    title =
-      socket.assigns.conversations_by_workspace
-      |> Map.values()
-      |> List.flatten()
-      |> Enum.find_value(fn conv ->
-        if conversation_id(conv) == conv_id do
-          conv_value(conv, "title", nil)
-        end
-      end)
-
-    maybe_patch_page_title(socket, conv_id, title)
-  end
+  defdelegate maybe_patch_current_page_title(socket, conv_id),
+    to: AutoTitle,
+    as: :patch_current_page_title
 end
