@@ -44,7 +44,7 @@
     <div
       id="settings-menu"
       class="settings-sidebar flex-shrink-0 border-r bg-surface flex flex-col"
-      phx-hook="SettingsNav"
+      phx-hook=".SettingsNav"
     >
       <div class="pt-3 pb-2 px-3">
         <h2 class="projects-panel-title">{gettext("Settings")}</h2>
@@ -466,4 +466,25 @@
       </div>
     </div>
   </div>
+  <script :type={Phoenix.LiveView.ColocatedHook} name=".SettingsNav">
+    export default {
+      mounted() {
+        this.revealActiveTab()
+      },
+
+      updated() {
+        this.revealActiveTab()
+      },
+
+      revealActiveTab() {
+        const active = this.el.querySelector("[aria-current='page']")
+        if (!active || active === this.activeTab) return
+
+        this.activeTab = active
+        requestAnimationFrame(() => {
+          active.scrollIntoView({ block: "nearest", inline: "center" })
+        })
+      }
+    }
+  </script>
 </div>

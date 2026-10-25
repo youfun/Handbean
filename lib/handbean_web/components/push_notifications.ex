@@ -10,7 +10,7 @@ defmodule HandbeanWeb.Components.PushNotifications do
     <section
       id="push-notifications"
       class="settings-form-section"
-      phx-hook="PushNotifications"
+      phx-hook=".Notifications"
       data-locale={@locale}
       aria-labelledby="push-notifications-title"
       aria-busy="true"
@@ -82,6 +82,46 @@ defmodule HandbeanWeb.Components.PushNotifications do
         <span data-push-message="renewal">{gettext("通知配置已更新，请点击开启通知重新连接此浏览器。")}</span>
       </div>
     </section>
+    <script :type={Phoenix.LiveView.ColocatedHook} name=".Notifications">
+      import { webPush } from "@/js/web_push.js"
+      import { renderPushNotifications } from "@/js/hooks/push_notifications.js"
+
+      export default {
+        mounted() {
+          this.push = webPush()
+          this.push.setLocale(this.el.dataset.locale)
+          this.stopListening = this.push.subscribe((state) => this.renderPush(state))
+          this.onPushClick = (event) => {
+            const button = event.target.closest("[data-push-action]")
+            if (!button || !this.el.contains(button) || button.disabled) return
+            const action = button.dataset.pushAction
+            if (["enable", "disable", "test", "reconcile"].includes(action)) {
+              // Keep enable() in the click stack to preserve notification permission's user gesture.
+              void this.push[action]()
+            }
+          }
+          this.el.addEventListener("click", this.onPushClick)
+          void this.push.reconcile()
+        },
+
+        updated() {
+          const changed = this.el.dataset.locale !== this.pushLocale
+          this.push.setLocale(this.el.dataset.locale)
+          this.renderPush(this.push.state)
+          if (changed) void this.push.reconcile()
+        },
+
+        renderPush(state) {
+          this.pushLocale = this.el.dataset.locale
+          renderPushNotifications(this.el, state)
+        },
+
+        destroyed() {
+          this.stopListening?.()
+          this.el.removeEventListener("click", this.onPushClick)
+        }
+      }
+    </script>
     """
   end
 end

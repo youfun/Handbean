@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { JSDOM } from "jsdom";
 import { createWebPush, pushSupport, applicationServerKey } from "../js/web_push.js";
-import { PushNotifications } from "../js/hooks/push_notifications.js";
+import { renderPushNotifications } from "../js/hooks/push_notifications.js";
 
 function fixture(options = {}) {
   const calls = [];
@@ -472,18 +472,17 @@ test("settings controls expose busy state, denied permission and specific recove
     <span data-push-message="subscription_conflict">Disable then enable</span></div>
   </section>`);
   const el = dom.window.document.querySelector("section");
-  const hook = {...PushNotifications, el};
-  hook.renderPush({status: "denied", configured: true, busy: false});
+  renderPushNotifications(el, {status: "denied", configured: true, busy: false});
   assert.equal(el.querySelector('[data-push-action="enable"]').disabled, true);
   assert.equal(el.querySelector('[role="status"]').textContent, "Allow notifications in browser settings");
-  hook.renderPush({status: "enabled", configured: true, subscribed: true, busy: true});
+  renderPushNotifications(el, {status: "enabled", configured: true, subscribed: true, busy: true});
   assert.equal(el.getAttribute("aria-busy"), "true");
   assert.equal(el.querySelector('[data-push-action="disable"]').disabled, true);
   assert.equal(el.querySelector('[data-push-action="test"]').disabled, true);
-  hook.renderPush({status: "checking", configured: true, subscribed: true, error: "subscription_conflict"});
+  renderPushNotifications(el, {status: "checking", configured: true, subscribed: true, error: "subscription_conflict"});
   assert.equal(el.querySelector('[role="alert"]').textContent, "Disable then enable");
   assert.equal(el.querySelector('[data-push-action="disable"]').hidden, false);
-  hook.renderPush({status: "subscription_expired", configured: true, busy: false, subscribed: false, error: "subscription_expired"});
+  renderPushNotifications(el, {status: "subscription_expired", configured: true, busy: false, subscribed: false, error: "subscription_expired"});
   assert.equal(el.querySelector('[role="alert"]').textContent, "Subscription expired; enable again");
   assert.equal(el.querySelector('[data-push-action="enable"]').hidden, false);
   assert.equal(el.querySelector('[data-push-action="enable"]').disabled, false);

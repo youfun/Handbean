@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { JSDOM } from "jsdom";
-import { SettingsNav } from "../js/hooks/settings_nav.js";
+
+const template = await readFile(new URL("../../lib/handbean_web/live/settings_live.html.heex", import.meta.url), "utf8");
+const source = template.match(/<script\b[^>]*name="\.SettingsNav"[^>]*>([\s\S]*?)<\/script>/)[1];
+const { default: SettingsNav } = await import(`data:text/javascript,${encodeURIComponent(source)}`);
 
 const dom = new JSDOM(`<!doctype html><div id="settings-menu">
   <button>Models</button>
