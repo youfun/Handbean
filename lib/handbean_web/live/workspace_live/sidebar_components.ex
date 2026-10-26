@@ -44,6 +44,7 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarComponents do
   attr :sidebar_visible_limits, :map, default: %{}
   attr :show_schedules, :boolean, default: false
   attr :schedule_count, :integer, default: 0
+  attr :sandbox_workspace?, :boolean, default: false
 
   def projects_sidebar(assigns), do: SidebarListComponents.projects_sidebar(assigns)
 

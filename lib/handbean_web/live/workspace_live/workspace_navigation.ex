@@ -35,6 +35,22 @@ defmodule HandbeanWeb.WorkspaceLive.WorkspaceNavigation do
     |> assign(:show_file_browser, false)
   end
 
+  def drop_workspace_path(socket, path) when is_binary(path) do
+    if socket.assigns.sandbox_workspace? do
+      socket
+    else
+      path = String.trim(path)
+
+      socket =
+        socket
+        |> open_add_project()
+
+      if path == "", do: socket, else: update_add_path(socket, path)
+    end
+  end
+
+  def drop_workspace_path(socket, _path), do: socket
+
   def confirm_add_event(socket) do
     if socket.assigns.sandbox_workspace? and
          String.trim(socket.assigns.add_project_form["path"] || "") == "" do

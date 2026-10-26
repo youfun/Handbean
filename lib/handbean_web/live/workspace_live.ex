@@ -515,6 +515,9 @@ defmodule HandbeanWeb.WorkspaceLive do
   def handle_event("browse_folder", params, socket),
     do: ConversationEvents.handle("browse_folder", params, socket)
 
+  def handle_event("drop_workspace_path", params, socket),
+    do: ConversationEvents.handle("drop_workspace_path", params, socket)
+
   def handle_event("select_workspace", params, socket),
     do: ConversationEvents.handle("select_workspace", params, socket)
 

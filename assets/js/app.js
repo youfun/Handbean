@@ -8,6 +8,7 @@ import { ConversationSearch } from "./hooks/conversation_search.js";
 import { ComposerPasteUpload } from "./hooks/composer_paste_upload.js";
 import { ComposerSpeech } from "./hooks/composer_speech.js";
 import { WorkspacePanel } from "./hooks/workspace_panel.js";
+import { WorkspaceAddDrop } from "./hooks/workspace_add_drop.js";
 import { FilePreview, FileTabs, FileImage } from "./hooks/file_preview.js";
 import { CopyText } from "./hooks/copy_text.js";
 import { ConversationContextMenu } from "./hooks/conversation_context_menu.js";
@@ -89,7 +90,7 @@ const MobHook = {
 }
 
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content");
-let Hooks = { ...colocatedHooks, StreamingMarkdown, ChatScroll, ConversationNav, ConversationSearch, ComposerPasteUpload, ComposerSpeech, WorkspacePanel, FilePreview, FileTabs, FileImage, CopyText, ConversationContextMenu, ConversationActivity, ConversationSidebar, LocalWebGPUProbe, GhosttyTerminal, ThemeBridge, MobHook, BrowserSurface, ScheduleCountdown, ModelPicker, BoundSelect };
+let Hooks = { ...colocatedHooks, StreamingMarkdown, ChatScroll, ConversationNav, ConversationSearch, ComposerPasteUpload, ComposerSpeech, WorkspacePanel, WorkspaceAddDrop, FilePreview, FileTabs, FileImage, CopyText, ConversationContextMenu, ConversationActivity, ConversationSidebar, LocalWebGPUProbe, GhosttyTerminal, ThemeBridge, MobHook, BrowserSurface, ScheduleCountdown, ModelPicker, BoundSelect };
 
 try {
   let liveSocket = new LiveSocket("/live", Socket, {

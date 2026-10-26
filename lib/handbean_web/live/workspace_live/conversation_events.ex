@@ -45,6 +45,12 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationEvents do
     {:noreply, WorkspaceNavigation.browse_folder(socket)}
   end
 
+  def handle("drop_workspace_path", %{"path" => path}, socket) when is_binary(path) do
+    {:noreply, WorkspaceNavigation.drop_workspace_path(socket, path)}
+  end
+
+  def handle("drop_workspace_path", _params, socket), do: {:noreply, socket}
+
   def handle("select_workspace", %{"id" => ws_id}, socket) do
     socket = ConversationRouting.drop_composer_for_switch(socket)
     socket = WorkspaceNavigation.expand_group(socket, ws_id)

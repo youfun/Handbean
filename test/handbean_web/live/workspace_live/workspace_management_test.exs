@@ -226,6 +226,34 @@ defmodule HandbeanWeb.WorkspaceLive.WorkspaceManagementTest do
       refute has_element?(view, "#new-conversation-page")
     end
 
+    test "dropping a folder onto add workspace opens the dialog with that path", %{conn: conn} do
+      project_dir =
+        Path.join(System.tmp_dir!(), "sigil_drop_project_#{System.unique_integer([:positive])}")
+
+      File.mkdir_p!(project_dir)
+
+      try do
+        {:ok, view, html} = live(conn, "/")
+        assert html =~ "id=\"add-workspace-drop\""
+        assert html =~ "phx-hook=\"WorkspaceAddDrop\""
+
+        render_hook(view, "drop_workspace_path", %{"path" => project_dir})
+        rendered = render(view)
+
+        assert has_element?(view, "#add-project-overlay")
+        assert rendered =~ project_dir
+        assert has_element?(view, "#add-project-builtin-memory[checked]")
+      after
+        File.rm_rf!(project_dir)
+      end
+    end
+
+    test "dropping an empty path still opens the add workspace dialog", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/")
+      render_hook(view, "drop_workspace_path", %{"path" => ""})
+      assert has_element?(view, "#add-project-overlay")
+    end
+
     test "adding a workspace creates a checkout-bound first conversation", %{conn: conn} do
       project_dir =
         Path.join(System.tmp_dir!(), "sigil_added_project_#{System.unique_integer([:positive])}")

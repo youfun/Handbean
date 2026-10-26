@@ -30,6 +30,7 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarListComponents do
   attr :sidebar_visible_limits, :map, default: %{}
   attr :show_schedules, :boolean, default: false
   attr :schedule_count, :integer, default: 0
+  attr :sandbox_workspace?, :boolean, default: false
 
   def projects_sidebar(assigns) do
     assigns =
@@ -605,13 +606,17 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarListComponents do
           </div>
         </div>
 
-        <div class="workspace-group workspace-add-entry">
+        <div
+          class="workspace-group workspace-add-entry"
+          id="add-workspace-drop"
+          phx-hook={if(@sandbox_workspace?, do: nil, else: "WorkspaceAddDrop")}
+        >
           <button
             id="add-workspace"
             type="button"
             phx-click="open_add_project"
             class="workspace-add-entry-button"
-            title={gettext("添加工作区")}
+            title={gettext("添加工作区，或把文件夹拖到这里")}
           >
             <svg
               width="20"

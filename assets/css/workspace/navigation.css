@@ -90,6 +90,29 @@
 .workspace-add-entry {
   padding-top: 0.25rem;
   padding-bottom: 0.35rem;
+  border: 1.5px dashed transparent;
+  border-radius: var(--radius-md);
+}
+
+.workspace-add-entry.is-dragover {
+  border-color: var(--sig-accent);
+  background: var(--sig-accent-subtle);
+}
+
+.workspace-add-entry.is-dragover.is-reject {
+  border-color: var(--color-error);
+  background: var(--color-error-bg);
+}
+
+.workspace-add-entry.is-dragover .workspace-add-entry-button,
+.workspace-add-entry.is-dragover .workspace-add-entry-button:hover {
+  background: transparent;
+  color: var(--sig-accent);
+}
+
+.workspace-add-entry.is-reject.is-dragover .workspace-add-entry-button,
+.workspace-add-entry.is-reject.is-dragover .workspace-add-entry-button:hover {
+  color: var(--color-error);
 }
 
 .workspace-add-entry-button {
