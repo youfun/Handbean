@@ -194,8 +194,8 @@ defmodule Handbean.Agent.CompactorTest do
       assert_received {:summary_request, request_messages, [], config}
       assert [%Message{role: :user, content: prompt}] = request_messages
       assert prompt =~ String.duplicate("a", 900)
-      refute prompt =~ "original request"
-      refute prompt =~ "latest"
+      assert prompt =~ "original request"
+      assert prompt =~ "latest"
       refute config.system_prompt == state.config.system_prompt
       refute Map.has_key?(config, :cache_fork)
       assert prompt =~ "<conversation>"
@@ -294,7 +294,8 @@ defmodule Handbean.Agent.CompactorTest do
       refute prompt =~ encrypted
       refute prompt =~ "private-anthropic-reasoning"
       refute prompt =~ "old-image"
-      refute prompt =~ "-tool-tail"
+      assert prompt =~ "-tool-tail"
+      refute prompt =~ "recent-cipher"
       assert prompt =~ "[Assistant tool call] read("
       assert prompt =~ "[Tool result]\ntool-prefix-"
       assert prompt =~ "[truncated for compaction]"
@@ -608,6 +609,116 @@ defmodule Handbean.Agent.CompactorTest do
                )
 
       assert_received {:summary_request, _, _, _}
+    end
+  end
+
+  describe "evidence preservation" do
+    test "bounds and sanitizes task references without changing retained messages or provenance" do
+      first =
+        Message.user([
+          %{
+            type: "text",
+            text: "ORIGINAL-GOAL " <> String.duplicate("a", 6_000) <> " FIRST-CONSTRAINT"
+          },
+          %{type: "image", data: "private-first-image"}
+        ])
+
+      latest =
+        Message.user([
+          %{
+            type: "text",
+            text: "LATEST-CORRECTION " <> String.duplicate("b", 6_000) <> " LAST-CONSTRAINT"
+          },
+          %{type: "thinking", thinking: "private-reference-thinking"},
+          %{type: "image", data: "private-latest-image"}
+        ])
+
+      old = Message.assistant("OLD-EVIDENCE " <> String.duplicate("c", 12_000))
+
+      recent_call =
+        Message.assistant_blocks([
+          %{type: "tool_use", id: "recent", name: "read", input: %{file_path: "recent.txt"}}
+        ])
+
+      recent_result =
+        Message.user([
+          %{
+            "type" => "tool_result",
+            "tool_use_id" => "recent",
+            "content" => "RECENT-RESULT-NOT-COVERED"
+          }
+        ])
+
+      messages = [first, old, latest, recent_call, recent_result]
+      parent = self()
+
+      state =
+        build_state(messages,
+          max_tokens: 3_000,
+          compaction: [reserve_tokens: 100, keep_recent_tokens: 2_000],
+          provider_config: %{
+            summary_response: {:ok, summary_text("References")},
+            test_pid: self()
+          },
+          on_compaction_complete: fn event, _ ->
+            send(parent, {:covered, event})
+            :ok
+          end
+        )
+
+      {:compacted, compacted} = Compactor.maybe_compact(state)
+      assert_received {:summary_request, [%Message{content: prompt}], [], _}
+      assert prompt =~ "ORIGINAL-GOAL"
+      assert prompt =~ "FIRST-CONSTRAINT"
+      assert prompt =~ "LATEST-CORRECTION"
+      assert prompt =~ "LAST-CONSTRAINT"
+      assert prompt =~ "OLD-EVIDENCE"
+      refute prompt =~ "private-first-image"
+      refute prompt =~ "private-latest-image"
+      refute prompt =~ "private-reference-thinking"
+      refute prompt =~ "RECENT-RESULT-NOT-COVERED"
+      assert String.length(prompt) < 23_000
+
+      for tag <- ["original-request-reference", "latest-request-reference"] do
+        [_, remaining] = String.split(prompt, "<#{tag}>\n", parts: 2)
+        [reference, _] = String.split(remaining, "\n</#{tag}>", parts: 2)
+        assert String.length(reference) <= 4_000
+      end
+
+      assert hd(compacted.messages) == first
+      assert Enum.take(compacted.messages, -3) == [latest, recent_call, recent_result]
+      assert_received {:covered, %{messages_to_summarize: [^old], first: ^first}}
+    end
+
+    test "fallback keeps command headers and trailing failures within its existing output budget" do
+      output =
+        "COMMAND mix test at revision abc123\n" <>
+          String.duplicate("日志🙂", 2_000) <> "\nFAILED 2 tests; exit code 1"
+
+      first = Message.user("fix failing tests")
+      recent = Message.user("continue")
+
+      for type <- ["tool_result", "server_tool_result"], keys <- [:atoms, :strings] do
+        block = %{type: type, tool_use_id: "test", content: output}
+
+        block =
+          if keys == :strings,
+            do: Map.new(block, fn {key, value} -> {to_string(key), value} end),
+            else: block
+
+        message = Message.tool_results([block])
+
+        [^first, compacted, ^recent] =
+          Compactor.compact_messages([first, message, recent], keep_recent: 1)
+
+        [result] = compacted.content
+        content = result[:content] || result["content"]
+        assert content =~ "COMMAND mix test at revision abc123"
+        assert content =~ "FAILED 2 tests; exit code 1"
+        assert content =~ "[truncated for compaction]"
+        assert String.valid?(content)
+        assert String.length(content) <= 2_000
+      end
     end
   end
 
