@@ -57,12 +57,21 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 1.375rem;
-  height: 1.375rem;
-  border-radius: var(--radius-sm);
+  width: 1.875rem;
+  height: 1.875rem;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--sig-bg-elevated);
+  color: var(--color-text-secondary);
   font-size: 0.85rem;
   line-height: 1;
-  transition: color 0.15s ease, background-color 0.15s ease;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+}
+
+#activity-bar > .p-3 button svg,
+.projects-panel-header button svg {
+  width: 16px;
+  height: 16px;
 }
 
 #activity-bar > .p-3 button:hover,
@@ -73,6 +82,9 @@
 
 .projects-panel-new-conversation {
   position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .workspace-add-entry {
@@ -90,8 +102,8 @@
   border: 0;
   border-radius: var(--radius-md);
   background: transparent;
-  color: var(--color-text-tertiary);
-  font-size: var(--font-size-xs);
+  color: color-mix(in srgb, var(--color-text-primary) 18%, var(--color-text-secondary));
+  font-size: 13px;
   text-align: left;
   cursor: pointer;
 }
@@ -165,7 +177,8 @@
   max-width: calc(100% - 4.5rem);
   min-width: 0;
   min-height: 2rem;
-  color: var(--color-text-secondary);
+  color: color-mix(in srgb, var(--color-text-primary) 22%, var(--color-text-secondary));
+  font-size: 13px;
   font-weight: var(--font-weight-semibold);
   border-radius: var(--radius-md);
   letter-spacing: 0.01em;
@@ -200,9 +213,13 @@
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--color-text-tertiary);
+  color: color-mix(in srgb, var(--color-text-primary) 18%, var(--color-text-secondary));
   cursor: pointer;
   flex-shrink: 0;
+}
+
+.workspace-add-btn {
+  color: color-mix(in srgb, var(--color-text-primary) 18%, var(--color-text-secondary));
 }
 
 .workspace-count-toggle:hover {
@@ -233,7 +250,7 @@
   flex-shrink: 0;
   min-width: 0.75rem;
   color: inherit;
-  font-size: 12px;
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
   font-weight: 500;
   line-height: 1;
@@ -247,8 +264,8 @@
   width: 20px;
   height: 22px;
   flex: 0 0 20px;
-  color: var(--color-text-tertiary);
-  opacity: 0.85;
+  color: color-mix(in srgb, var(--color-text-primary) 16%, var(--color-text-secondary));
+  opacity: 1;
 }
 
 /* ── Conversations list ── */
@@ -658,7 +675,12 @@
   padding-left: 0.5rem;
   padding-right: 0.25rem;
   border-radius: var(--radius-md);
-  color: var(--color-text-tertiary);
+  color: color-mix(
+    in srgb,
+    var(--color-text-primary) 22%,
+    var(--color-text-secondary)
+  );
+  font-size: 14px;
   transition: color 0.15s ease;
   background: transparent;
   border: none;
@@ -1035,6 +1057,20 @@
   text-align: center;
 }
 
+@media (min-width: 769px) and (min-height: 700px) {
+  .new-conversation-page {
+    justify-content: stretch;
+  }
+
+  .new-conversation-stage {
+    height: 100%;
+  }
+
+  .new-conversation-heading {
+    margin: auto 0 0;
+  }
+}
+
 .new-conversation-page .composer-dock {
   position: relative;
   width: 100%;
@@ -1043,6 +1079,12 @@
   border-top: 0;
   background: transparent;
   backdrop-filter: none;
+}
+
+@media (min-width: 769px) and (min-height: 700px) {
+  .new-conversation-page .composer-dock {
+    margin-top: auto;
+  }
 }
 
 .new-conversation-page .composer {

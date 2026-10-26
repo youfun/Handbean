@@ -158,6 +158,7 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
       aria-label={gettext("Show workspace")}
       aria-pressed="false"
     >
+      <span class="workspace-panel-toggle-label">{gettext("Workspace")}</span>
       <svg
         width="16"
         height="16"

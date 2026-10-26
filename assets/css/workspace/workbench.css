@@ -26,11 +26,7 @@
 }
 
 .workspace-panel-label {
-  min-width: 0;
-  margin-left: auto;
-  padding-left: 12px;
-  color: var(--color-text-tertiary);
-  font-size: 11px;
+  display: none;
 }
 
 .workspace-tree-pane {
@@ -61,7 +57,7 @@
   border: 0;
   background: transparent;
   color: var(--color-text-secondary);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.25;
   text-align: left;
 }
@@ -945,6 +941,23 @@ button.workspace-file-row:hover,
 }
 
 /* ── Status bar ── */
+#status-bar,
+#status-bar .text-tertiary {
+  color: color-mix(in srgb, var(--color-text-primary) 22%, var(--color-text-secondary));
+}
+
+#status-bar {
+  font-size: 13px;
+}
+
+#workspace-shell:has(.new-conversation-page) #status-bar {
+  display: none;
+}
+
+#status-session-id {
+  display: none;
+}
+
 #status-bar .status-dot {
   display: inline-block;
   width: 0.5rem;

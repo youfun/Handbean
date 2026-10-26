@@ -596,12 +596,12 @@ textarea::placeholder {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
-  border: 1px solid transparent;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--color-border-light);
   border-radius: var(--sig-radius-lg);
-  background: transparent;
-  color: var(--color-text-tertiary);
+  background: var(--sig-bg-elevated);
+  color: var(--color-text-secondary);
   cursor: pointer;
   transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
@@ -614,14 +614,24 @@ textarea::placeholder {
 
 .workspace-panel-toggle.expanded {
   position: static;
-  flex: 0 0 30px;
-  margin-left: 6px;
+  flex: 0 0 34px;
+  margin-left: auto;
 }
 
 .workspace-panel-toggle.collapsed {
+  width: auto;
+  min-width: 34px;
+  padding: 0 10px;
+  gap: 6px;
   background: color-mix(in srgb, var(--color-bg-surface) 88%, transparent);
   border-color: var(--color-border-light);
   box-shadow: 0 1px 8px rgba(0, 0, 0, 0.06);
+}
+
+.workspace-panel-toggle-label {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
 }
 
 .handbean-desktop-shell .workspace-panel-header,
@@ -831,8 +841,9 @@ textarea::placeholder {
 }
 
 #workspace-panel.files-panel {
-  width: clamp(360px, 32vw, 440px);
-  max-width: 440px;
+  width: clamp(320px, 24vw, 380px);
+  min-width: 320px;
+  max-width: 380px;
 }
 
 #workspace-panel.files-panel.w-0 {
@@ -848,9 +859,9 @@ textarea::placeholder {
   }
 
   #workspace-panel.files-panel:not(.w-0) {
-    width: clamp(320px, 30vw, 380px);
-    min-width: 320px;
-    max-width: 380px;
+    width: clamp(300px, 28vw, 340px);
+    min-width: 300px;
+    max-width: 340px;
   }
 }
 

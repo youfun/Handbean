@@ -731,6 +731,22 @@
   max-width: 4.5rem;
 }
 
+.new-conversation-page .model-picker-compact .model-picker-trigger,
+.new-conversation-page #new-conversation-reasoning,
+.new-conversation-page #new-conversation-permission {
+  color: color-mix(in srgb, var(--sig-text-primary) 22%, var(--sig-text-secondary));
+  font-size: 14px;
+}
+
+.new-conversation-page .composer-turn-controls {
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.new-conversation-page .permission-menu-container {
+  margin-left: 0;
+}
+
 .model-picker:not([data-enhanced="true"]) #model-picker:hover,
 #reasoning-picker:hover,
 #new-conversation-reasoning:hover,
