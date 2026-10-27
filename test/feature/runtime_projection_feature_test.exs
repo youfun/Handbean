@@ -88,6 +88,92 @@ defmodule HandbeanWeb.Feature.RuntimeProjectionFeatureTest do
     send(ctx.provider, :finish)
   end
 
+  test "active-run recovery combines settled history with replayed run usage", ctx do
+    :ok =
+      Handbean.ConversationStore.record_run_usage(ctx.id, "historical-run", %{
+        input_tokens: 100,
+        output_tokens: 40,
+        cache_read_input_tokens: 200,
+        cache_creation_input_tokens: 100,
+        total_input_tokens: 400
+      })
+
+    :ok =
+      Handbean.ConversationStore.record_run_usage(ctx.id, ctx.run_id, %{
+        input_tokens: 50,
+        output_tokens: 10,
+        cache_read_input_tokens: 300,
+        cache_creation_input_tokens: 150,
+        total_input_tokens: 500
+      })
+
+    Session.broadcast_event(ctx.id, :usage_updated, %{
+      run_id: ctx.run_id,
+      usage: %{
+        input_tokens: 50,
+        output_tokens: 10,
+        cache_read_input_tokens: 300,
+        cache_creation_input_tokens: 150,
+        total_input_tokens: 500
+      }
+    })
+
+    # Evict both run_start and usage_updated from the bounded control snapshot.
+    # Recovery must use the independently retained latest usage for this run.
+    for index <- 1..505 do
+      Session.broadcast_event(ctx.id, :session_state, %{
+        run_id: ctx.run_id,
+        state: "checkpoint-#{index}"
+      })
+    end
+
+    bounded_snapshot = Session.snapshot(ctx.id)
+    refute Enum.any?(bounded_snapshot.control_events, &(&1.kind == :run_start))
+    refute Enum.any?(bounded_snapshot.control_events, &(&1.kind == :usage_updated))
+
+    snapshot = Session.recovery_snapshot(ctx.id)
+    refute Enum.any?(snapshot.control_events, &(&1.kind == :run_start))
+    assert Enum.any?(snapshot.control_events, &(&1.kind == :usage_updated))
+
+    ctx.conn
+    |> visit("/w/default/c/#{ctx.id}")
+    |> unwrap(fn view ->
+      assert Phoenix.LiveViewTest.has_element?(view, "#status-input-tokens", "150")
+      assert Phoenix.LiveViewTest.has_element?(view, "#status-output-tokens", "50")
+      assert Phoenix.LiveViewTest.has_element?(view, "#status-cache-hit-rate", "55.6%")
+      Phoenix.LiveViewTest.render(view)
+    end)
+
+    send(ctx.provider, :finish)
+  end
+
+  test "idle recovery replaces stale running usage with persisted totals", ctx do
+    page = visit(ctx.conn, "/w/default/c/#{ctx.id}")
+
+    page
+    |> unwrap(fn view ->
+      send(self(), {:stale_socket, :sys.get_state(view.pid).socket})
+      Phoenix.LiveViewTest.render(view)
+    end)
+
+    assert_receive {:stale_socket, stale_socket}
+    assert stale_socket.assigns.running
+
+    :ok = Session.subscribe(ctx.id)
+    send(ctx.provider, :finish)
+    assert %{status: :completed} = E2EHarness.await_run_end(ctx.id)
+
+    assert {:ok, persisted} = Handbean.ConversationStore.get_token_usage(ctx.id)
+    recovered = RuntimeProjection.restore_active_session(stale_socket)
+
+    refute recovered.assigns.running
+    assert recovered.assigns.status_info.input_tokens == persisted.input_tokens
+    assert recovered.assigns.status_info.output_tokens == persisted.output_tokens
+    assert recovered.assigns.status_info.total_input_tokens == persisted.total_input_tokens
+    assert recovered.assigns.run_usage_baseline.run_id == nil
+    assert recovered.assigns.run_usage_baseline.usage == persisted
+  end
+
   test "session restart recovers a lower seq without losing the active run", ctx do
     page = visit(ctx.conn, "/w/default/c/#{ctx.id}")
     previous = Session.snapshot(ctx.id)

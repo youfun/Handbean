@@ -17,6 +17,17 @@ defmodule Handbean.ConversationStore.Usage do
 
   def get_token_usage(_conversation_id), do: {:ok, empty_token_usage()}
 
+  def get_token_usage_excluding_run(conversation_id, run_id)
+      when is_binary(conversation_id) and conversation_id != "" and is_binary(run_id) and
+             run_id != "" do
+    if conversation_exists?(conversation_id),
+      do: {:ok, aggregate(conversation_id, run_id)},
+      else: {:error, :not_found}
+  end
+
+  def get_token_usage_excluding_run(conversation_id, _run_id),
+    do: get_token_usage(conversation_id)
+
   def add_token_usage(conversation_id, usage)
       when is_binary(conversation_id) and conversation_id != "" and is_map(usage) do
     normalized = normalize(usage)
@@ -205,9 +216,13 @@ defmodule Handbean.ConversationStore.Usage do
     }
   end
 
-  defp aggregate(conversation_id) do
-    conversation_id
-    |> then(fn id -> rows(id, "parent") ++ rows(id, "unkeyed") end)
+  defp aggregate(conversation_id, excluded_run_id \\ nil) do
+    parent =
+      conversation_id
+      |> rows("parent")
+      |> Enum.reject(&(&1.run_id == excluded_run_id))
+
+    (parent ++ rows(conversation_id, "unkeyed"))
     |> Enum.reduce(empty_token_usage(), &sum/2)
   end
 

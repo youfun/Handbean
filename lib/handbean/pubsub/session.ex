@@ -245,6 +245,12 @@ defmodule Handbean.PubSub.Session do
         |> Map.get("control_events", Map.get(loaded, "events", []))
         |> SnapshotCodec.events()
         |> Enum.reject(&(&1.kind in @high_freq_events)),
+      latest_usage_event:
+        loaded
+        |> Map.get("latest_usage_event")
+        |> List.wrap()
+        |> SnapshotCodec.events()
+        |> List.first(),
       meta: %{
         created_at: DateTime.utc_now(),
         status: :active,
@@ -289,11 +295,16 @@ defmodule Handbean.PubSub.Session do
   end
 
   def handle_call(:recovery_snapshot, _from, state) do
+    recovery_events =
+      [state.latest_usage_event | state.control_events]
+      |> Enum.reject(&is_nil/1)
+      |> RecoveryProjection.events(state.meta.run_id)
+
     {:reply,
      %{
        last_seq: state.seq,
        epoch: state.epoch,
-       control_events: RecoveryProjection.events(state.control_events, state.meta.run_id),
+       control_events: recovery_events,
        pending_events: RecoveryProjection.pending_events(state.control_events),
        meta: state.meta,
        extension_state: state.extension_state
@@ -325,6 +336,7 @@ defmodule Handbean.PubSub.Session do
       | agent_pid: agent_pid,
         queue_pid: queue_pid,
         model: active_model.model,
+        latest_usage_event: usage_event_for_run(state.latest_usage_event, run_id),
         meta: meta
     }
 
@@ -515,7 +527,14 @@ defmodule Handbean.PubSub.Session do
         model_switch_status: nil
     }
 
-    new_state = %{state | agent_pid: nil, queue_pid: nil, meta: meta}
+    new_state = %{
+      state
+      | agent_pid: nil,
+        queue_pid: nil,
+        latest_usage_event: nil,
+        meta: meta
+    }
+
     new_state = maybe_save(new_state)
     Logger.debug("[Session] run finished session=#{state.session_id}")
     {:reply, :ok, new_state}
@@ -549,12 +568,14 @@ defmodule Handbean.PubSub.Session do
   def handle_cast({:append, %AgentEvent{} = event}, state) do
     new_events = Enum.take([event | state.events], @max_snapshot_events)
 
-    new_state = %{
-      state
-      | seq: max(state.seq, event.seq),
-        events: new_events,
-        control_events: append_control(state.control_events, event)
-    }
+    new_state =
+      %{
+        state
+        | seq: max(state.seq, event.seq),
+          events: new_events,
+          control_events: append_control(state.control_events, event)
+      }
+      |> remember_latest_usage(event)
 
     Persistence.record_event(new_state, event)
 
@@ -621,7 +642,15 @@ defmodule Handbean.PubSub.Session do
 
         CandidateMessages.seal(state.queue_pid)
         meta = %{state.meta | running?: false, agent_pid: nil, queue_pid: nil, run_id: nil}
-        new_state = %{state | agent_pid: nil, queue_pid: nil, meta: meta}
+
+        new_state = %{
+          state
+          | agent_pid: nil,
+            queue_pid: nil,
+            latest_usage_event: nil,
+            meta: meta
+        }
+
         new_state = maybe_save(new_state)
         {:noreply, new_state}
 
@@ -663,12 +692,14 @@ defmodule Handbean.PubSub.Session do
 
     new_events = Enum.take([event | state.events], @max_snapshot_events)
 
-    new_state = %{
-      state
-      | seq: seq,
-        events: new_events,
-        control_events: append_control(state.control_events, event)
-    }
+    new_state =
+      %{
+        state
+        | seq: seq,
+          events: new_events,
+          control_events: append_control(state.control_events, event)
+      }
+      |> remember_latest_usage(event)
 
     Persistence.record_event(new_state, event)
     maybe_save_throttled(new_state, force?: Keyword.get(opts, :force_save?, true))
@@ -680,6 +711,17 @@ defmodule Handbean.PubSub.Session do
 
   defp append_control(events, event),
     do: Enum.take([event | events], @max_snapshot_events)
+
+  defp remember_latest_usage(state, %{kind: :usage_updated} = event),
+    do: %{state | latest_usage_event: event}
+
+  defp remember_latest_usage(state, _event), do: state
+
+  defp usage_event_for_run(%{payload: payload} = event, run_id) do
+    if payload_run_id(payload) == run_id, do: event, else: nil
+  end
+
+  defp usage_event_for_run(_event, _run_id), do: nil
 
   # Read registry metadata, never call Runner from Session init: Runner may be
   # waiting for this Session. Only a still-live, identified run is restored.
@@ -708,9 +750,16 @@ defmodule Handbean.PubSub.Session do
             registry_meta[:model_switch_revision] || state.meta.model_switch_revision
       }
 
-      %{state | agent_pid: pid, queue_pid: queue, model: meta.model, meta: meta}
+      %{
+        state
+        | agent_pid: pid,
+          queue_pid: queue,
+          model: meta.model,
+          latest_usage_event: usage_event_for_run(state.latest_usage_event, run_id),
+          meta: meta
+      }
     else
-      _ -> state
+      _ -> %{state | latest_usage_event: nil}
     end
   end
 

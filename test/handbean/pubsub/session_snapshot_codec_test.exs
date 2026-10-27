@@ -66,6 +66,13 @@ defmodule Handbean.PubSub.Session.SnapshotCodecTest do
 
   test "encodes the established snapshot schema without runtime-only fields" do
     event = %{AgentEvent.new("session:test", :run_start, %{}, 7) | epoch: "event-epoch"}
+
+    usage_event =
+      %{
+        AgentEvent.new("session:test", :usage_updated, %{run_id: "runtime-run"}, 8)
+        | epoch: "event-epoch"
+      }
+
     message = %Message{role: :user, content: "next", id: "message-id"}
 
     snapshot =
@@ -74,6 +81,7 @@ defmodule Handbean.PubSub.Session.SnapshotCodecTest do
         epoch: "runtime-epoch",
         events: [event],
         control_events: [event],
+        latest_usage_event: usage_event,
         meta: %{running?: true, run_id: "runtime-run"},
         model: "model-from-state",
         next_turn_messages: [message],
@@ -85,6 +93,7 @@ defmodule Handbean.PubSub.Session.SnapshotCodecTest do
                "seq",
                "events",
                "control_events",
+               "latest_usage_event",
                "running?",
                "model",
                "next_turn_messages",
@@ -96,6 +105,7 @@ defmodule Handbean.PubSub.Session.SnapshotCodecTest do
     refute Map.has_key?(snapshot, "epoch")
     refute Map.has_key?(snapshot, "run_id")
     assert [%{kind: :run_start, epoch: "event-epoch"}] = snapshot["events"]
+    assert %{kind: :usage_updated, epoch: "event-epoch"} = snapshot["latest_usage_event"]
     assert [%{role: :user, id: "message-id"}] = snapshot["next_turn_messages"]
   end
 end

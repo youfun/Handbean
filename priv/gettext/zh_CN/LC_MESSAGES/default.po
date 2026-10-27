@@ -1036,8 +1036,8 @@ msgstr "缓存命中"
 
 #: lib/handbean_web/live/workspace_live/overlay_components.ex:859
 #, elixir-autogen
-msgid "This run: cached input / total input (including cache reads and writes). Not a cost saving rate. — means no cache activity reported."
-msgstr "本次运行累计：缓存读取 token ÷ 总输入 token（含缓存读取与写入）。不是费用节省比例。— 表示未报告缓存活动。"
+msgid "Conversation total: cached input / total input (including cache reads and writes). Not a cost saving rate. — means cache data is unavailable or incomplete."
+msgstr "当前对话累计：缓存读取 token ÷ 总输入 token（含缓存读取与写入）。不是费用节省比例。— 表示缓存数据不可用或不完整。"
 
 #: lib/handbean_web/live/workspace_live/overlay_components.ex:763
 #, elixir-autogen

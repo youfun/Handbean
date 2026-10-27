@@ -196,7 +196,7 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection.Timeline do
         Map.get(usage, "cache_creation_input_tokens", 0)
       ) || 0
 
-    unknown? = Map.get(usage, :unknown?, Map.get(usage, "unknown?", false))
+    unknown? = Map.get(usage, :unknown?, Map.get(usage, "unknown?", false)) in [true, "true"]
 
     %{
       input_tokens: if(unknown?, do: :unknown, else: input),
@@ -207,7 +207,8 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection.Timeline do
         ),
       output_tokens: if(unknown?, do: :unknown, else: output),
       cache_read_tokens: read,
-      cache_write_tokens: write
+      cache_write_tokens: write,
+      usage_incomplete: unknown?
     }
   end
 
@@ -217,7 +218,8 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection.Timeline do
       total_input_tokens: 0,
       output_tokens: 0,
       cache_read_tokens: 0,
-      cache_write_tokens: 0
+      cache_write_tokens: 0,
+      usage_incomplete: false
     }
 
   def payload_value(payload, key, default \\ nil)

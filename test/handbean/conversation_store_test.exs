@@ -817,6 +817,14 @@ defmodule Handbean.ConversationStoreTest do
     assert totals.cache_write_tokens == 7
     refute totals.usage_incomplete
 
+    assert {:ok, baseline} =
+             ConversationStore.get_token_usage_excluding_run(conversation["id"], "run-1")
+
+    assert baseline.input_tokens == 10
+    assert baseline.output_tokens == 0
+    assert baseline.cache_read_tokens == 7
+    assert baseline.cache_write_tokens == 3
+
     assert Enum.any?(
              Handbean.Repo.all(ConversationRunUsage),
              &(&1.source == "parent" and &1.cache_read_tokens == 3 and

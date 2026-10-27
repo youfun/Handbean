@@ -568,6 +568,19 @@ defmodule HandbeanWeb.WorkspaceHelperTest do
              cache_read_tokens: 180,
              cache_write_tokens: 750
            }) == "18.0%"
+
+    assert WorkspaceHelper.format_cache_hit_rate(%{
+             total_input_tokens: :unknown,
+             cache_read_tokens: 180,
+             cache_write_tokens: 0
+           }) == "—"
+
+    assert WorkspaceHelper.format_cache_hit_rate(%{
+             total_input_tokens: 1000,
+             cache_read_tokens: 180,
+             cache_write_tokens: 0,
+             usage_incomplete: true
+           }) == "—"
   end
 
   # ── format_bytes/1 ──

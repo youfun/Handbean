@@ -367,8 +367,17 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationState do
     end
   end
 
-  def load_conversation_token_usage(conv_id) do
-    case Handbean.ConversationStore.get_token_usage(conv_id) do
+  def load_conversation_token_usage(conv_id, opts \\ []) do
+    result =
+      case Keyword.get(opts, :exclude_run_id) do
+        run_id when is_binary(run_id) and run_id != "" ->
+          Handbean.ConversationStore.get_token_usage_excluding_run(conv_id, run_id)
+
+        _ ->
+          Handbean.ConversationStore.get_token_usage(conv_id)
+      end
+
+    case result do
       {:ok, tokens} ->
         tokens
 

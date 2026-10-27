@@ -478,57 +478,196 @@ defmodule HandbeanWeb.WorkspaceLive.AgentEventsFilesAndRunsTest do
       assert has_element?(view, "#status-turns", "3")
     end
 
-    test "usage updates refresh the running footer and replace cumulative totals", %{conn: conn} do
+    test "usage updates add the current run to conversation totals without replay duplication", %{
+      conn: conn
+    } do
       {:ok, view, _html} = live(conn, "/")
-      create_default_conversation(view)
-      send(view.pid, {:agent_event, agent_event(:run_start, %{model: "fake"})})
+      conversation_id = create_default_conversation(view)
+
+      :ok =
+        Handbean.ConversationStore.record_run_usage(conversation_id, "run-history", %{
+          input_tokens: 100,
+          output_tokens: 40,
+          cache_read_input_tokens: 200,
+          cache_creation_input_tokens: 100,
+          total_input_tokens: 400
+        })
+
+      :ok =
+        Handbean.ConversationStore.record_run_usage(conversation_id, "run-current", %{
+          input_tokens: 50,
+          output_tokens: 10,
+          cache_read_input_tokens: 300,
+          cache_creation_input_tokens: 150,
+          total_input_tokens: 500
+        })
+
+      send(
+        view.pid,
+        {:agent_event, agent_event(:run_start, %{model: "fake", run_id: "run-current"})}
+      )
+
+      assert has_element?(view, "#status-input-tokens", "100")
+      assert has_element?(view, "#status-output-tokens", "40")
+      assert has_element?(view, "#status-cache-hit-rate", "50.0%")
 
       send(
         view.pid,
         {:agent_event,
-         agent_event(:usage_updated, %{usage: %{input_tokens: 10, output_tokens: 15}}, 2)}
+         agent_event(
+           :usage_updated,
+           %{
+             run_id: "run-current",
+             usage: %{
+               input_tokens: 50,
+               output_tokens: 10,
+               cache_read_input_tokens: 300,
+               cache_creation_input_tokens: 150,
+               total_input_tokens: 500
+             }
+           },
+           2
+         )}
       )
 
-      assert has_element?(view, "#status-input-tokens", "10")
-      assert has_element?(view, "#status-output-tokens", "15")
+      assert has_element?(view, "#status-input-tokens", "150")
+      assert has_element?(view, "#status-output-tokens", "50")
+      assert has_element?(view, "#status-cache-hit-rate", "55.6%")
       assert has_element?(view, "button[phx-click='stop_run']")
 
       payload = %{
+        "run_id" => "run-current",
         "usage" => %{
-          "input_tokens" => 25,
-          "output_tokens" => 35,
-          "cache_read_input_tokens" => 7,
-          "cache_creation_input_tokens" => 3
+          "input_tokens" => 50,
+          "output_tokens" => 10,
+          "cache_read_input_tokens" => 300,
+          "cache_creation_input_tokens" => 150,
+          "total_input_tokens" => 500
         }
       }
 
       for seq <- [3, 4] do
         send(view.pid, {:agent_event, agent_event(:usage_updated, payload, seq)})
-        assert has_element?(view, "#status-input-tokens", "25")
-        assert has_element?(view, "#status-output-tokens", "35")
+        assert has_element?(view, "#status-input-tokens", "150")
+        assert has_element?(view, "#status-output-tokens", "50")
+        assert has_element?(view, "#status-cache-hit-rate", "55.6%")
         refute has_element?(view, "#status-cache-tokens")
       end
 
       send(
         view.pid,
         {:agent_event,
-         agent_event(:run_end, %{status: "completed", turns: 2, usage: payload["usage"]}, 5)}
+         agent_event(
+           :run_end,
+           %{status: :interrupted, turns: 2, run_id: "run-current", usage: payload["usage"]},
+           5
+         )}
       )
 
-      assert has_element?(view, "#status-input-tokens", "0")
-      assert has_element?(view, "#status-output-tokens", "0")
+      assert has_element?(view, "#status-input-tokens", "150")
+      assert has_element?(view, "#status-output-tokens", "50")
+      assert has_element?(view, "#status-cache-hit-rate", "55.6%")
 
-      send(view.pid, {:agent_event, agent_event(:run_start, %{model: "fake"}, 6)})
-      assert has_element?(view, "#status-input-tokens", "0")
-      assert has_element?(view, "#status-output-tokens", "0")
+      send(
+        view.pid,
+        {:agent_event, agent_event(:run_resumed, %{run_id: "run-current"}, 6)}
+      )
 
-      send(view.pid, {:agent_event, agent_event(:run_end, %{status: :cancelled}, 7)})
-      send(view.pid, {:agent_event, agent_event(:usage_updated, payload, 8)})
-      assert has_element?(view, "#status-input-tokens", "0")
-      assert has_element?(view, "#status-output-tokens", "0")
+      send(view.pid, {:agent_event, agent_event(:usage_updated, payload, 7)})
+      assert has_element?(view, "#status-input-tokens", "150")
+      assert has_element?(view, "#status-output-tokens", "50")
+
+      send(
+        view.pid,
+        {:agent_event,
+         agent_event(
+           :run_end,
+           %{
+             status: "completed",
+             turns: 2,
+             run_id: "run-current",
+             usage: payload["usage"]
+           },
+           8
+         )}
+      )
+
+      assert has_element?(view, "#status-input-tokens", "150")
+      assert has_element?(view, "#status-output-tokens", "50")
+      assert has_element?(view, "#status-cache-hit-rate", "55.6%")
+
+      send(
+        view.pid,
+        {:agent_event, agent_event(:run_start, %{model: "fake", run_id: "run-next"}, 9)}
+      )
+
+      assert has_element?(view, "#status-input-tokens", "150")
+      assert has_element?(view, "#status-output-tokens", "50")
+
+      send(
+        view.pid,
+        {:agent_event, agent_event(:run_end, %{status: :cancelled, run_id: "run-next"}, 10)}
+      )
+
+      send(view.pid, {:agent_event, agent_event(:usage_updated, payload, 11)})
+      assert has_element?(view, "#status-input-tokens", "150")
+      assert has_element?(view, "#status-output-tokens", "50")
     end
 
-    test "cache hit rate follows cumulative usage through completion and resets for a new run", %{
+    test "unknown current usage keeps conversation cache rate unavailable", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/")
+      conversation_id = create_default_conversation(view)
+
+      :ok =
+        Handbean.ConversationStore.record_run_usage(conversation_id, "known-history", %{
+          input_tokens: 100,
+          output_tokens: 20,
+          cache_read_input_tokens: 200,
+          total_input_tokens: 300
+        })
+
+      send(
+        view.pid,
+        {:agent_event, agent_event(:run_start, %{model: "fake", run_id: "unknown-run"})}
+      )
+
+      payload = %{
+        run_id: "unknown-run",
+        usage: %{
+          unknown?: true,
+          cache_read_input_tokens: 10,
+          cache_creation_input_tokens: 5
+        }
+      }
+
+      for seq <- [2, 3] do
+        send(view.pid, {:agent_event, agent_event(:usage_updated, payload, seq)})
+        assert has_element?(view, "#status-input-tokens", "unknown")
+        assert has_element?(view, "#status-output-tokens", "unknown")
+        assert has_element?(view, "#status-cache-hit-rate", "—")
+      end
+
+      :ok =
+        Handbean.ConversationStore.record_run_usage(
+          conversation_id,
+          "unknown-run",
+          payload.usage
+        )
+
+      send(
+        view.pid,
+        {:agent_event,
+         agent_event(
+           :run_end,
+           %{status: :completed, run_id: "unknown-run", usage: payload.usage},
+           4
+         )}
+      )
+
+      assert has_element?(view, "#status-cache-hit-rate", "—")
+    end
+
+    test "cache hit rate follows cumulative usage through completion", %{
       conn: conn
     } do
       {:ok, view, _html} = live(conn, "/")

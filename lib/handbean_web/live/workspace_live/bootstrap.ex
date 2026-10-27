@@ -164,6 +164,7 @@ defmodule HandbeanWeb.WorkspaceLive.Bootstrap do
       |> assign(:composer_error, nil)
       |> assign(:running, false)
       |> assign(:running_conversation_id, nil)
+      |> assign(:run_usage_baseline, nil)
       |> assign(:stream_suppressed, false)
       |> assign(:pending_attachments, [])
       |> assign(:composer_drafts, %{})

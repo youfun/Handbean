@@ -857,7 +857,7 @@ defmodule HandbeanWeb.WorkspaceLive.OverlayComponents do
           class="whitespace-nowrap"
           title={
             gettext(
-              "This run: cached input / total input (including cache reads and writes). Not a cost saving rate. — means no cache activity reported."
+              "Conversation total: cached input / total input (including cache reads and writes). Not a cost saving rate. — means cache data is unavailable or incomplete."
             )
           }
         >

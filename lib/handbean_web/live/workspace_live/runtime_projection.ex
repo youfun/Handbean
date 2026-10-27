@@ -121,36 +121,43 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
     )
 
     model = model_display_from_payload(payload, socket)
+    run_id = payload_value(payload, :run_id)
+
+    baseline =
+      ConversationState.load_conversation_token_usage(socket.assigns.current_conversation_id,
+        exclude_run_id: run_id
+      )
 
     socket
     |> assign(:running, true)
     |> assign(:running_conversation_id, socket.assigns.current_conversation_id)
+    |> assign_run_usage_baseline(run_id, baseline)
     |> assign(:stream_suppressed, false)
     |> assign(:tools_active, %{})
     |> assign(:current_assistant_entry_id, nil)
     |> assign(:thinking_active, false)
     |> assign(:thinking_content, "")
     |> assign(:think_buffer, "")
-    |> update_status(%{
-      model: model,
-      active_model: model,
-      future_model:
-        ModelSelection.model_display_name(
-          socket.assigns.selected_model,
-          socket.assigns.available_models
-        ),
-      pending_model: nil,
-      pending_model_revision: nil,
-      model_switch_revision: payload_value(payload, :config_revision, 0),
-      status: :running,
-      status_detail: nil,
-      input_tokens: 0,
-      total_input_tokens: 0,
-      output_tokens: 0,
-      cache_read_tokens: 0,
-      cache_write_tokens: 0,
-      turns: 0
-    })
+    |> update_status(
+      Map.merge(
+        %{
+          model: model,
+          active_model: model,
+          future_model:
+            ModelSelection.model_display_name(
+              socket.assigns.selected_model,
+              socket.assigns.available_models
+            ),
+          pending_model: nil,
+          pending_model_revision: nil,
+          model_switch_revision: payload_value(payload, :config_revision, 0),
+          status: :running,
+          status_detail: nil,
+          turns: 0
+        },
+        baseline
+      )
+    )
   end
 
   def handle_agent_event(%{kind: :run_resumed}, socket) do
@@ -258,8 +265,13 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
     if socket.assigns.stream_suppressed do
       socket
     else
-      # Runtime usage is cumulative for this run; replace rather than add on replay.
-      update_status(socket, payload |> payload_value(:usage, %{}) |> usage_tokens())
+      # Runtime usage is cumulative for this run. Add it to the immutable
+      # pre-run baseline so replay replaces the current-run contribution
+      # instead of counting it again.
+      run_id = payload_value(payload, :run_id)
+      {socket, baseline} = run_usage_baseline(socket, run_id)
+      current = payload |> payload_value(:usage, %{}) |> usage_tokens()
+      update_status(socket, merge_token_usage(baseline, current))
     end
   end
 
@@ -585,10 +597,14 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
     turns = payload_value(payload, :turns, 0)
     run_error = payload_value(payload, :error)
     # Runtime already recorded a terminal run. Reload that conversation's
-    # totals. Interrupted is not terminal, so keep the in-flight figures.
+    # totals. Waiting is not terminal, so keep the baseline plus the in-flight
+    # run figures without persisting or double-counting them.
     usage =
-      if status == :interrupted do
-        payload |> payload_value(:usage, %{}) |> usage_tokens()
+      if AgentEvent.waiting_status?(status) do
+        run_id = payload_value(payload, :run_id)
+        {_socket, baseline} = run_usage_baseline(socket, run_id)
+        current = payload |> payload_value(:usage, %{}) |> usage_tokens()
+        merge_token_usage(baseline, current)
       else
         ConversationState.load_conversation_token_usage(socket.assigns.current_conversation_id)
       end
@@ -621,6 +637,71 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
     # must not be required for the first title.
     ConversationState.maybe_auto_title(socket, status)
   end
+
+  defp run_usage_baseline(socket, run_id) do
+    conversation_id = socket.assigns.current_conversation_id
+
+    case Map.get(socket.assigns, :run_usage_baseline) do
+      %{conversation_id: ^conversation_id, run_id: ^run_id, usage: usage} when is_map(usage) ->
+        {socket, usage}
+
+      _ ->
+        usage =
+          ConversationState.load_conversation_token_usage(conversation_id,
+            exclude_run_id: run_id
+          )
+
+        {assign_run_usage_baseline(socket, run_id, usage), usage}
+    end
+  end
+
+  defp assign_run_usage_baseline(socket, run_id, usage) do
+    assign(socket, :run_usage_baseline, %{
+      conversation_id: socket.assigns.current_conversation_id,
+      run_id: run_id,
+      usage: usage
+    })
+  end
+
+  defp reconcile_recovered_usage(socket, run_id, true) do
+    {_socket, baseline} = run_usage_baseline(socket, run_id)
+
+    socket
+    |> assign_run_usage_baseline(run_id, baseline)
+    |> update_status(baseline)
+  end
+
+  defp reconcile_recovered_usage(socket, _run_id, false) do
+    usage =
+      ConversationState.load_conversation_token_usage(socket.assigns.current_conversation_id)
+
+    socket
+    |> assign_run_usage_baseline(nil, usage)
+    |> update_status(usage)
+  end
+
+  defp merge_token_usage(baseline, current) do
+    %{
+      input_tokens: add_token_count(baseline[:input_tokens], current[:input_tokens]),
+      total_input_tokens:
+        add_token_count(baseline[:total_input_tokens], current[:total_input_tokens]),
+      output_tokens: add_token_count(baseline[:output_tokens], current[:output_tokens]),
+      cache_read_tokens:
+        add_token_count(baseline[:cache_read_tokens], current[:cache_read_tokens]),
+      cache_write_tokens:
+        add_token_count(baseline[:cache_write_tokens], current[:cache_write_tokens]),
+      usage_incomplete:
+        Map.get(baseline, :usage_incomplete, false) or
+          Map.get(current, :usage_incomplete, false)
+    }
+  end
+
+  defp add_token_count(:unknown, _value), do: :unknown
+  defp add_token_count(_value, :unknown), do: :unknown
+  defp add_token_count(left, right), do: numeric_token_count(left) + numeric_token_count(right)
+
+  defp numeric_token_count(value) when is_number(value), do: value
+  defp numeric_token_count(_value), do: 0
 
   def mark_run_cancelled(socket) do
     socket
@@ -677,6 +758,7 @@ defmodule HandbeanWeb.WorkspaceLive.RuntimeProjection do
           |> assign(:running_conversation_id, if(running?, do: conv_id))
           |> assign(:pending_approval, nil)
           |> assign(:tools_active, %{})
+          |> reconcile_recovered_usage(meta[:run_id], running?)
           |> assign(
             :current_assistant_entry_id,
             streaming_assistant_message_id(socket.assigns.timeline, meta[:run_id])

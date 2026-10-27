@@ -617,6 +617,10 @@ defmodule Handbean.ConversationStore do
   end
 
   def get_token_usage(conversation_id), do: Usage.get_token_usage(conversation_id)
+
+  def get_token_usage_excluding_run(conversation_id, run_id),
+    do: Usage.get_token_usage_excluding_run(conversation_id, run_id)
+
   def add_token_usage(conversation_id, usage), do: Usage.add_token_usage(conversation_id, usage)
 
   def record_run_usage(conversation_id, run_id, usage),

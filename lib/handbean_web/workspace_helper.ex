@@ -858,20 +858,23 @@ defmodule HandbeanWeb.WorkspaceHelper do
   end
 
   @doc """
-  Formats the run's token-weighted cache read rate, not a mean of request rates.
-  No reported cache activity (or no input) is shown as unavailable.
+  Formats the conversation's token-weighted cache read rate, not a mean of request rates.
+  No reported cache activity, incomplete usage, or no input is shown as unavailable.
 
   ## Examples
 
       iex> HandbeanWeb.WorkspaceHelper.format_cache_hit_rate(%{total_input_tokens: 1000, cache_read_tokens: 800, cache_write_tokens: 0})
       "80.0%"
   """
+  def format_cache_hit_rate(%{usage_incomplete: true}), do: "—"
+
   def format_cache_hit_rate(%{
         total_input_tokens: total,
         cache_read_tokens: read,
         cache_write_tokens: write
       })
-      when total > 0 and (read > 0 or write > 0) do
+      when is_number(total) and is_number(read) and is_number(write) and total > 0 and
+             (read > 0 or write > 0) do
     :erlang.float_to_binary(100 * read / total, decimals: 1) <> "%"
   end
 

@@ -36,12 +36,16 @@ defmodule Handbean.PubSub.Session.SnapshotCodec do
       "seq" => state.seq,
       "events" => Enum.map(state.events, &Map.from_struct/1),
       "control_events" => Enum.map(state.control_events, &Map.from_struct/1),
+      "latest_usage_event" => encode_event(state.latest_usage_event),
       "running?" => state.meta.running?,
       "model" => state.model,
       "next_turn_messages" => Enum.map(state.next_turn_messages, &Map.from_struct/1),
       "extension_state" => state.extension_state
     }
   end
+
+  defp encode_event(%AgentEvent{} = event), do: Map.from_struct(event)
+  defp encode_event(_event), do: nil
 
   defp atomize_known_keys(map) do
     Map.new(map, fn
