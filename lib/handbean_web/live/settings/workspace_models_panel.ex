@@ -53,7 +53,7 @@ defmodule HandbeanWeb.Live.Settings.WorkspaceModelsPanel do
             </form>
           </div>
 
-          <div class="settings-card">
+          <div class="settings-card settings-card-has-model-picker">
             <div class="settings-field-row">
               <div class="settings-field-copy">
                 <div class="settings-field-title">{gettext("访问模式")}</div>

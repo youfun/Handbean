@@ -1220,11 +1220,10 @@
 .new-conversation-projects {
   position: absolute;
   left: 6px;
-  top: calc(100% + 6px);
-  bottom: auto;
+  bottom: calc(100% + 6px);
   z-index: 5;
   width: min(28rem, calc(100% - 12px));
-  max-height: 16rem;
+  max-height: min(16rem, 50dvh);
   padding: 0.3rem;
   overflow: auto;
   border: 1px solid var(--color-border);

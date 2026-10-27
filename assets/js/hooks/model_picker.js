@@ -83,6 +83,12 @@ export const ModelPicker = {
       if (event.detail !== this.el.id) this.setOpen(false, { restoreFocus: false });
     };
 
+    this.onViewportChange = () => {
+      if (this.open) this.positionSettingsPanel();
+    };
+
+    window.addEventListener("resize", this.onViewportChange);
+    window.addEventListener("scroll", this.onViewportChange, true);
     this.el.addEventListener("click", this.onClick);
     this.el.addEventListener("input", this.onInput);
     document.addEventListener("keydown", this.onKeydown);
@@ -102,6 +108,7 @@ export const ModelPicker = {
       this.backdrop().hidden = false;
       this.trigger().setAttribute("aria-expanded", "true");
       this.filter(this.search()?.value || "");
+      this.positionSettingsPanel();
     }
   },
 
@@ -110,6 +117,8 @@ export const ModelPicker = {
     this.el.removeEventListener("input", this.onInput);
     document.removeEventListener("keydown", this.onKeydown);
     document.removeEventListener(OPEN_EVENT, this.onOtherPickerOpen);
+    window.removeEventListener("resize", this.onViewportChange);
+    window.removeEventListener("scroll", this.onViewportChange, true);
     document.documentElement.classList.remove("model-picker-is-open");
   },
 
@@ -159,6 +168,7 @@ export const ModelPicker = {
     document.documentElement.classList.toggle("model-picker-is-open", next);
 
     if (next) {
+      this.positionSettingsPanel();
       document.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: this.el.id }));
       const search = this.search();
       if (search) {
@@ -169,6 +179,26 @@ export const ModelPicker = {
     } else if (restoreFocus && document.activeElement && this.el.contains(document.activeElement)) {
       trigger.focus();
     }
+  },
+
+  positionSettingsPanel() {
+    if (!this.el.closest(".settings-card-has-model-picker")) return;
+
+    const panel = this.panel();
+    panel.style.removeProperty("top");
+    panel.style.removeProperty("bottom");
+    panel.style.removeProperty("max-height");
+    if (window.innerWidth <= 768) return;
+
+    const trigger = this.trigger().getBoundingClientRect();
+    const above = Math.max(0, trigger.top - 14);
+    const below = Math.max(0, window.innerHeight - trigger.bottom - 14);
+    const openAbove = panel.getBoundingClientRect().height > below && above > below;
+    if (openAbove) {
+      panel.style.top = "auto";
+      panel.style.bottom = "calc(100% + 6px)";
+    }
+    panel.style.maxHeight = `min(520px, 70vh, ${openAbove ? above : below}px)`;
   },
 
   select(value) {

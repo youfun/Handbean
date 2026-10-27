@@ -25,6 +25,7 @@ const dom = new JSDOM(`<!doctype html><html><body>
 </body></html>`, { pretendToBeVisual: true });
 
 globalThis.document = dom.window.document;
+globalThis.window = dom.window;
 globalThis.CustomEvent = dom.window.CustomEvent;
 globalThis.Event = dom.window.Event;
 globalThis.requestAnimationFrame = (callback) => {
@@ -77,6 +78,7 @@ hook.updated();
 assert.equal(bound.value, "off");
 
 delete globalThis.document;
+delete globalThis.window;
 delete globalThis.CustomEvent;
 delete globalThis.Event;
 delete globalThis.requestAnimationFrame;
