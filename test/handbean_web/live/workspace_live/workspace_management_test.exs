@@ -259,6 +259,7 @@ defmodule HandbeanWeb.WorkspaceLive.WorkspaceManagementTest do
         Path.join(System.tmp_dir!(), "sigil_added_project_#{System.unique_integer([:positive])}")
 
       File.mkdir_p!(project_dir)
+      File.write!(Path.join(project_dir, "PRD.md"), "Project requirements")
 
       try do
         {:ok, view, _html} = live(conn, "/")
@@ -274,6 +275,8 @@ defmodule HandbeanWeb.WorkspaceLive.WorkspaceManagementTest do
         assert rendered =~ "Added Project"
         refute rendered =~ "sid:none"
         assert rendered =~ "No messages yet"
+        render_click(view, "select_right_panel_view", %{"view" => "files"})
+        assert has_element?(view, "#workspace-files [role='treeitem']", "PRD.md")
         {:ok, added_ws} = Handbean.WorkspaceStore.get_by_path(project_dir)
         assert Handbean.WorkspaceSettings.builtin_memory_enabled(project_dir)
         assert [conversation] = Handbean.ConversationStore.list_for_workspace(added_ws["id"])
@@ -390,6 +393,8 @@ defmodule HandbeanWeb.WorkspaceLive.WorkspaceManagementTest do
         rendered = render(view)
 
         assert rendered =~ "Downloads Project"
+        render_click(view, "select_right_panel_view", %{"view" => "files"})
+        assert has_element?(view, "#workspace-files [role='treeitem']", "README.md")
         {:ok, added_ws} = Handbean.WorkspaceStore.get_by_path(imported)
         assert added_ws["name"] == "Downloads Project"
       after
