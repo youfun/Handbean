@@ -34,9 +34,11 @@ defmodule Handbean.Tool.Builtin.Browser do
       _ ->
         "Drive a real browser for web research, reading live docs, clicking, " <>
           "filling forms, taking screenshots, and extracting page content. " <>
-          "Pass CLI args after agent-browser (for example open, snapshot -i, click @eN, " <>
-          "fill @eN text, type @eN text, or keyboard type text). Keep each text payload " <>
-          "in one array item. Do not include --json or the binary name."
+          "To search the web, use open with a URL-encoded HTTPS search-results URL " <>
+          "(for example open https://www.google.com/search?q=vitamin%20D3), then snapshot -i; " <>
+          "there is no search command. Pass other CLI args after agent-browser (for example " <>
+          "click @eN, fill @eN text, type @eN text, or keyboard type text). Keep each text " <>
+          "payload in one array item. Do not include --json or the binary name."
     end
   end
 
@@ -360,7 +362,7 @@ defmodule Handbean.Tool.Builtin.Browser do
           type: "array",
           items: %{type: "string"},
           description:
-            "Arguments passed after agent-browser. For fill/type use separate selector and text items; focused keyboard type uses keyboard, type, text. Keep each text payload in one item. Do not include --json or the binary name."
+            "Arguments passed after agent-browser. To search the web, use open with a URL-encoded HTTPS search-results URL; there is no search command. For fill/type use separate selector and text items; focused keyboard type uses keyboard, type, text. Keep each text payload in one item. Do not include --json or the binary name."
         },
         timeout_ms: %{
           type: "integer",

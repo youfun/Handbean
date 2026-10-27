@@ -281,6 +281,37 @@ defmodule Handbean.Permissions.ToolPolicyTest do
            ) == :deny
   end
 
+  test "free chat automatically allows public web fetch and browser search navigation" do
+    search_url = "https://www.google.com/search?q=vitamin%20D3"
+    policy = ToolPolicy.from_workspace(nil)
+
+    assert ToolPolicy.decision(
+             policy,
+             call("web_fetch", %{"url" => "https://example.com"})
+           ) == :auto
+
+    assert ToolPolicy.decision(policy, call("browser", %{"args" => ["open", search_url]})) ==
+             :auto
+
+    assert ToolPolicy.decision(policy, call("browser", %{"args" => ["eval", "1"]})) ==
+             :prompt
+
+    workspace_prompt =
+      ToolPolicy.from_settings(%{"tools" => %{"default_mode" => "prompt"}})
+
+    assert ToolPolicy.decision(
+             workspace_prompt,
+             call("browser", %{"args" => ["open", search_url]})
+           ) == :prompt
+
+    workspace_deny = ToolPolicy.from_settings(%{"tools" => %{"default_mode" => "deny"}})
+
+    assert ToolPolicy.decision(
+             workspace_deny,
+             call("browser", %{"args" => ["open", search_url]})
+           ) == :deny
+  end
+
   # Failure list for bash `unsandboxed: true` (written before the implementation):
   #   - full-access workspaces (`default_mode: auto`) still prompt;
   #   - read-only workspaces (`default_mode: deny`) deny;

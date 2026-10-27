@@ -41,6 +41,8 @@ defmodule Handbean.Tool.Builtin.BrowserTest do
       assert Browser.concurrent?() == false
       assert is_binary(Browser.description())
       assert Browser.description() =~ "web"
+      assert Browser.description() =~ "open https://www.google.com/search?q="
+      assert Browser.description() =~ "there is no search command"
     end
 
     test "schema is args plus timeout and session_mode" do
@@ -48,6 +50,8 @@ defmodule Handbean.Tool.Builtin.BrowserTest do
       assert schema.type == "object"
       assert schema.required == ["args"]
       assert schema.properties.args.type == "array"
+      assert schema.properties.args.description =~ "URL-encoded HTTPS search-results URL"
+      assert schema.properties.args.description =~ "there is no search command"
       assert schema.properties.timeout_ms.type == "integer"
       assert schema.properties.session_mode.enum == ["auto", "fresh"]
     end
