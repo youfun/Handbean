@@ -61,12 +61,15 @@ end
 defmodule HandbeanProbe.TestDB do
   @moduledoc false
 
-  # `conversations.parent_conversation_id` is ON DELETE RESTRICT, so a
-  # blanket DELETE fails while any child still points at its parent. SQLite
-  # checks that constraint per deleted row, so depth order inside one DELETE
-  # is not enough. Null the self-reference first; every other conversation
+  # Two conversation foreign keys are ON DELETE RESTRICT, so a blanket DELETE
+  # fails while either still points at a row: `conversations.parent_conversation_id`
+  # (delegated / handoff children) and `conversation_media.conversation_id`.
+  # SQLite checks the constraint per deleted row, so ordering inside one DELETE
+  # is not enough. Clear both restrict edges first; every other conversation
   # foreign key is ON DELETE CASCADE.
   def reset_conversations! do
+    {:ok, _} = Handbean.Repo.query("DELETE FROM conversation_media")
+
     {:ok, _} =
       Handbean.Repo.query(
         "UPDATE conversations SET parent_conversation_id = NULL WHERE parent_conversation_id IS NOT NULL"
