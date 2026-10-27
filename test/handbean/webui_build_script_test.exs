@@ -20,6 +20,89 @@ defmodule Handbean.WebUIBuildScriptTest do
     assert before?(source, export_path, compile)
   end
 
+  if match?({:unix, _}, :os.type()) do
+    test "Unix build selects the native package without starting a server" do
+      fixture = unix_fixture()
+
+      for {os, arch, target} <- [
+            {"Darwin", "arm64", "macos-arm64"},
+            {"Linux", "x86_64", "linux-x86_64"},
+            {"Linux", "aarch64", "linux-arm64"},
+            {"Linux", "arm64", "linux-arm64"}
+          ] do
+        assert {output, 0} = run_unix_build(fixture, [], os, arch)
+        assert output =~ "PACKAGE #{target}"
+        assert output =~ "build complete"
+        refute output =~ "SERVER STARTED"
+      end
+
+      assert {output, 7} = run_unix_build(fixture, [], "Darwin", "arm64", "7")
+      refute output =~ "build complete"
+      refute output =~ "SERVER STARTED"
+    end
+
+    test "Unix build help, invalid arguments and unsupported platforms do not build" do
+      fixture = unix_fixture()
+
+      assert {help, 0} = run_unix_build(fixture, ["--help"], "Darwin", "arm64")
+      assert help =~ "Usage:"
+      refute help =~ "PACKAGE "
+
+      for {args, os, arch} <- [
+            {["--Lan", "192.0.2.10"], "Darwin", "arm64"},
+            {[], "Darwin", "x86_64"},
+            {[], "Linux", "riscv64"}
+          ] do
+        assert {output, 2} = run_unix_build(fixture, args, os, arch)
+        refute output =~ "PACKAGE "
+        refute output =~ "SERVER STARTED"
+      end
+    end
+
+    defp unix_fixture do
+      root = Path.join(System.tmp_dir!(), "handbean build #{System.unique_integer([:positive])}")
+      scripts = Path.join(root, "scripts")
+      bin = Path.join(root, "bin")
+      File.mkdir_p!(scripts)
+      File.mkdir_p!(bin)
+      on_exit(fn -> File.rm_rf!(root) end)
+      File.cp!(Path.join(@root, "scripts/build_webui.sh"), Path.join(scripts, "build_webui.sh"))
+
+      File.write!(Path.join(scripts, "pack_webui.sh"), """
+      printf 'PACKAGE %s\\n' "$1"
+      exit "$BUILD_TEST_EXIT"
+      """)
+
+      File.write!(Path.join(scripts, "start.sh"), "echo 'SERVER STARTED'\n")
+      uname = Path.join(bin, "uname")
+
+      File.write!(uname, """
+      #!/usr/bin/env bash
+      case "$1" in
+        -s) echo "$BUILD_TEST_OS" ;;
+        -m) echo "$BUILD_TEST_ARCH" ;;
+        *) exit 2 ;;
+      esac
+      """)
+
+      File.chmod!(uname, 0o755)
+      root
+    end
+
+    defp run_unix_build(root, args, os, arch, exit_status \\ "0") do
+      System.cmd("bash", [Path.join(root, "scripts/build_webui.sh") | args],
+        cd: System.tmp_dir!(),
+        stderr_to_stdout: true,
+        env: [
+          {"PATH", Path.join(root, "bin") <> ":" <> System.fetch_env!("PATH")},
+          {"BUILD_TEST_OS", os},
+          {"BUILD_TEST_ARCH", arch},
+          {"BUILD_TEST_EXIT", exit_status}
+        ]
+      )
+    end
+  end
+
   if match?({:win32, _}, :os.type()) and
        (System.find_executable("pwsh") || System.find_executable("powershell")) do
     @script Path.join(@root, "scripts/build_webui.ps1")
