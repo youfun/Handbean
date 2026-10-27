@@ -555,6 +555,7 @@ defmodule HandbeanProbe.HomeScreen.Nav do
     {_generation, socket} = Requests.bump(socket, :mcp_settings)
     {_generation, socket} = Requests.bump(socket, :git_settings)
     {_generation, socket} = Requests.bump(socket, :workspace_memory)
+    socket = Settings.workspace_changed(socket, workspace)
 
     unsubscribe(a.chat)
     socket = reset_composer(socket)

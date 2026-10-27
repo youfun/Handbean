@@ -7,9 +7,10 @@ defmodule HandbeanProbe.HomeScreen.Settings do
   `HandbeanProbe.TaskSupervisor`; their task refs are registered under the
   `:models` scope of `HandbeanProbe.PendingRequests` (`HomeScreen.Requests`),
   so a stale reply is dropped before it reaches this module, and a loaded
-  result is also dropped when an unsaved form is open. Subscription device
-  login uses the same table under `:subscription_login`: start, poll, persist,
-  and catalog discovery are tasks, and the next poll is armed with
+  result is also dropped when an unsaved form is open. Catalog fetches use a
+  separate scope so model updates can reload settings without discarding the
+  fetch outcome. Subscription device login uses `:subscription_login`: start,
+  poll, persist, and catalog discovery are tasks, and the next poll is armed with
   `{:pending_request_timeout, ref}`. Cancel bumps that scope so a late poll is
   dropped. Copy uses `Mob.Clipboard.put/2`. Opening the verification link uses
   `Platform.open_url/4`.
@@ -25,6 +26,7 @@ defmodule HandbeanProbe.HomeScreen.Settings do
   alias HandbeanProbe.Platform
 
   @scope :models
+  @fetch_scope :model_catalog_fetch
   @subscription_scope :subscription_login
 
   @settings_pages [:models, :settings, :model_ai, :workspace_models]
@@ -109,6 +111,22 @@ defmodule HandbeanProbe.HomeScreen.Settings do
   end
 
   def settings_page?(page), do: page in @settings_pages
+
+  @doc "Invalidate a catalog result when switching workspaces."
+  def workspace_changed(socket, workspace) do
+    current = socket.assigns.workspace
+
+    if current && workspace &&
+         {current["id"], current["path"]} == {workspace["id"], workspace["path"]} do
+      socket
+    else
+      {_generation, socket} = Requests.bump(socket, @fetch_scope)
+
+      if socket.assigns.models.notice == gettext("Fetching models…"),
+        do: put_models_notice(socket, nil),
+        else: socket
+    end
+  end
 
   # ── async ──
 
@@ -223,7 +241,7 @@ defmodule HandbeanProbe.HomeScreen.Settings do
   end
 
   defp fetch_subscription_catalog(socket, provider_id) do
-    {generation, socket} = Requests.bump(socket, @scope)
+    {generation, socket} = Requests.bump(socket, @fetch_scope)
 
     task =
       Task.Supervisor.async_nolink(HandbeanProbe.TaskSupervisor, fn ->
@@ -233,7 +251,7 @@ defmodule HandbeanProbe.HomeScreen.Settings do
     socket
     |> clear_fetch_error()
     |> put_models_notice(gettext("Fetching models…"))
-    |> Requests.register(task.ref, :models_fetched, scope: @scope, generation: generation)
+    |> Requests.register(task.ref, :models_fetched, scope: @fetch_scope, generation: generation)
   end
 
   defp refresh_subscription_catalog(provider_id) do
@@ -253,7 +271,7 @@ defmodule HandbeanProbe.HomeScreen.Settings do
   end
 
   defp fetch_models(socket, provider_id) do
-    {generation, socket} = Requests.bump(socket, @scope)
+    {generation, socket} = Requests.bump(socket, @fetch_scope)
     opts = catalog_discover_opts()
 
     task =
@@ -266,7 +284,7 @@ defmodule HandbeanProbe.HomeScreen.Settings do
     |> clear_fetch_error()
     |> action({:fetch_models, provider_id})
     |> put_models_notice(gettext("Fetching models…"))
-    |> Requests.register(task.ref, :models_fetched, scope: @scope, generation: generation)
+    |> Requests.register(task.ref, :models_fetched, scope: @fetch_scope, generation: generation)
   end
 
   defp clear_fetch_error(socket) do

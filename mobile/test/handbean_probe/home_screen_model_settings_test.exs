@@ -2,7 +2,13 @@ defmodule HandbeanProbe.HomeScreenModelSettingsTest do
   use HandbeanProbe.HomeScreenCase
 
   alias HandbeanProbe.{HomeScreen, ModelSettings, PendingRequests}
-  alias HandbeanProbe.HomeScreen.{Notice, Settings}
+  alias HandbeanProbe.HomeScreen.{Notice, Requests, Settings}
+
+  defmodule CatalogRequest do
+    def get(_url, _opts) do
+      {:ok, %{status: 200, body: %{"data" => [%{"id" => "discovered-model"}]}}}
+    end
+  end
 
   test "settings hub calendar status is not shown as an unread attachment", %{view: view} do
     install_platform_fake(fn _req, _opts -> {:ok, :async} end)
@@ -135,6 +141,122 @@ defmodule HandbeanProbe.HomeScreenModelSettingsTest do
 
     assert socket.assigns.notice.kind == :share
     assert socket.assigns.models.selected_provider == "alpha"
+  end
+
+  test "successful model discovery survives the model update notification", %{view: view} do
+    previous_req = Application.get_env(:handbean, :catalog_req_module)
+    Application.put_env(:handbean, :catalog_req_module, CatalogRequest)
+
+    on_exit(fn ->
+      if previous_req,
+        do: Application.put_env(:handbean, :catalog_req_module, previous_req),
+        else: Application.delete_env(:handbean, :catalog_req_module)
+    end)
+
+    assert :ok =
+             Handbean.Agent.ModelConfig.write_config(%{
+               "defaultProvider" => "fixture",
+               "providers" => %{
+                 "fixture" => %{
+                   "name" => "Fixture",
+                   "baseUrl" => "https://example.com/v1",
+                   "apiKey" => "fixture-key",
+                   "api" => "openai-chat-completions",
+                   "models" => []
+                 }
+               }
+             })
+
+    assert_receive {:models_updated}
+    models = ModelSettings.load(assigns(view).workspace)
+    view = %{view | socket: Mob.Socket.assign(view.socket, :models, models)}
+    {:noreply, socket} = HomeScreen.handle_info({:tap, {:page, :models}}, view.socket)
+    view = settle(%{view | socket: socket})
+    {:noreply, socket} = HomeScreen.handle_info({:tap, {:fetch_models, "fixture"}}, view.socket)
+    assert socket.assigns.models.notice == gettext("Fetching models…")
+
+    assert_receive {:models_updated}, 5_000
+
+    assert_receive {ref, {:models_fetched, generation, {:ok, %{added: 1, total: 1}}} = result},
+                   5_000
+
+    {:noreply, socket} = HomeScreen.handle_info({:models_updated}, socket)
+    {:noreply, socket} = HomeScreen.handle_info({ref, result}, socket)
+    view = settle(%{view | socket: socket})
+
+    assert assigns(view).models.notice == nil
+
+    assert notice_text(view) ==
+             gettext("Fetched %{total} models, %{added} new", total: 1, added: 1)
+
+    assert {:ok, config} = Handbean.Agent.ModelConfig.read_config()
+    assert [%{"id" => "discovered-model"}] = config["providers"]["fixture"]["models"]
+    assert Enum.any?(assigns(view).models.models, &(&1.id == "fixture/discovered-model"))
+    refute text(view) =~ gettext("Fetching models…")
+    assert is_integer(generation)
+  end
+
+  test "a failed model fetch clears the loading notice", %{view: view} do
+    ref = make_ref()
+    {generation, socket} = Requests.bump(view.socket, :model_catalog_fetch)
+
+    socket =
+      socket
+      |> Mob.Socket.assign(:models, %{assigns(view).models | notice: gettext("Fetching models…")})
+      |> Requests.register(ref, :models_fetched,
+        scope: :model_catalog_fetch,
+        generation: generation
+      )
+
+    {:noreply, socket} = HomeScreen.handle_info({:DOWN, ref, :process, self(), :crashed}, socket)
+    assert socket.assigns.models.notice == nil
+    assert Notice.text(socket.assigns.notice) == gettext("Model discovery failed")
+  end
+
+  test "switching workspaces clears loading and ignores the previous fetch result", %{view: view} do
+    ref = make_ref()
+    {generation, socket} = Requests.bump(view.socket, :model_catalog_fetch)
+
+    socket =
+      socket
+      |> Mob.Socket.assign(:models, %{assigns(view).models | notice: gettext("Fetching models…")})
+      |> Requests.register(ref, :models_fetched,
+        scope: :model_catalog_fetch,
+        generation: generation
+      )
+      |> Settings.workspace_changed(%{"id" => "another", "path" => "/another"})
+
+    assert socket.assigns.models.notice == nil
+    {:noreply, socket} = HomeScreen.handle_info({ref, {:models_fetched, generation, :ok}}, socket)
+    assert socket.assigns.models.notice == nil
+    assert socket.assigns.notice == nil
+  end
+
+  test "an older fetch cannot replace the latest fetch outcome", %{view: view} do
+    old_ref = make_ref()
+    new_ref = make_ref()
+    {old_generation, socket} = Requests.bump(view.socket, :model_catalog_fetch)
+    socket = Requests.register(socket, old_ref, :models_fetched, scope: :model_catalog_fetch)
+    {new_generation, socket} = Requests.bump(socket, :model_catalog_fetch)
+
+    socket =
+      socket
+      |> Mob.Socket.assign(:models, %{assigns(view).models | notice: gettext("Fetching models…")})
+      |> Requests.register(new_ref, :models_fetched, scope: :model_catalog_fetch)
+
+    {:noreply, socket} =
+      HomeScreen.handle_info({old_ref, {:models_fetched, old_generation, :ok}}, socket)
+
+    assert socket.assigns.models.notice == gettext("Fetching models…")
+
+    {:noreply, socket} =
+      HomeScreen.handle_info(
+        {new_ref, {:models_fetched, new_generation, {:error, "fixture error"}}},
+        socket
+      )
+
+    assert socket.assigns.models.notice == nil
+    assert Notice.text(socket.assigns.notice) == "fixture error"
   end
 
   test "model validation rejects HTTP and corrupt config without losing form", %{view: view} do

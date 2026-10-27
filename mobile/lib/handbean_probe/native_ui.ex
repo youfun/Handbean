@@ -638,9 +638,9 @@ defmodule HandbeanProbe.NativeUI do
 
   def field(label, value, tag, props \\ []) do
     {placeholder, props} = Keyword.pop(props, :placeholder, "")
+    {grouped?, props} = Keyword.pop(props, :grouped, false)
 
-    node(:column, [fill_width: true, padding_bottom: 12], [
-      text(label, text_size: 13, text_color: color(:muted), padding_bottom: 6),
+    control =
       node(
         :text_field,
         Keyword.merge(
@@ -660,7 +660,15 @@ defmodule HandbeanProbe.NativeUI do
           props
         )
       )
-    ])
+
+    if grouped? do
+      settings_form_field(label, control)
+    else
+      node(:column, [fill_width: true, padding_bottom: 12], [
+        text(label, text_size: 13, text_color: color(:muted), padding_bottom: 6),
+        control
+      ])
+    end
   end
 
   def page(children, props \\ []),

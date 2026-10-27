@@ -13,7 +13,8 @@ defmodule HandbeanProbe.HomeScreen do
   `HandbeanProbe.TaskSupervisor` comes back as `{ref, {tag, generation, result}}`
   (see `HandbeanProbe.HomeScreen.Async`) and is correlated through
   `HandbeanProbe.HomeScreen.Requests` before it is routed by `tag`; stale or
-  mismatched replies are dropped and the matching `:DOWN` is ignored.
+  mismatched replies are dropped. A catalog task that exits without a reply
+  clears its loading notice and shows an error; other `:DOWN` messages are ignored.
   `{:pending_request_timeout, ref}` expires a request whose deadline passed.
   """
 
@@ -155,7 +156,25 @@ defmodule HandbeanProbe.HomeScreen do
     task_result(socket, ref, tag, generation, {target, result})
   end
 
-  defp dispatch({:DOWN, _ref, :process, _pid, _reason}, socket), do: socket
+  defp dispatch({:DOWN, ref, :process, _pid, _reason}, socket) do
+    case PendingRequests.fetch(Requests.table(socket), ref) do
+      {:ok, %PendingRequests.Entry{kind: :models_fetched}} ->
+        case Requests.take(socket, ref) do
+          {:ok, _entry, socket} ->
+            Settings.handle_subscription(
+              :models_fetched,
+              {:error, gettext("Model discovery failed")},
+              socket
+            )
+
+          {:error, _reason, socket} ->
+            socket
+        end
+
+      _ ->
+        socket
+    end
+  end
 
   defp dispatch({@timeout_message, ref}, socket) do
     case Requests.expire(socket, ref) do

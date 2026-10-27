@@ -101,14 +101,16 @@ defmodule HandbeanProbe.ModelSettings.RenderForms do
     [
       settings_section(title),
       settings_group([
-        field(gettext("Display name"), f.name, {:model_field, :name}),
+        field(gettext("Display name"), f.name, {:model_field, :name}, grouped: true),
         field(gettext("Base URL (HTTPS)"), f.base_url, {:model_field, :base_url},
+          grouped: true,
           keyboard: "url"
         ),
         field(
           gettext("API Key"),
           f.api_key,
           {:model_field, :api_key},
+          grouped: true,
           secure: true,
           placeholder: f.key_preview || ""
         )
