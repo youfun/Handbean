@@ -25,9 +25,37 @@ defmodule Mix.Tasks.Mob.PackApkTest do
     assert phoenix_ecto in dirs
   end
 
-  test "root asset build uses the mobile target so desktop native deps stay out" do
-    assert Mix.Tasks.Mob.PackApk.handbean_assets_command() ==
-             {"mix", ["assets.build"], [{"MIX_TARGET", "mobile"}]}
+  test "Android packaging excludes root Web assets and preserves runtime and mobile resources" do
+    root = Path.join(System.tmp_dir!(), "pack_priv_#{System.unique_integer([:positive])}")
+    root_priv = Path.join(root, "root_priv")
+    mobile_priv = Path.join(root, "mobile_priv")
+    dest = Path.join(root, "staging")
+
+    for {base, path, content} <- [
+          {root_priv, "static/assets/js/app.js", "stale web bundle"},
+          {root_priv, "static/cache_manifest.json", "stale web manifest"},
+          {root_priv, "repo/migrations/root.exs", "root migration"},
+          {root_priv, "skills/example/SKILL.md", "skill"},
+          {mobile_priv, "repo/migrations/mobile.exs", "mobile migration"},
+          {mobile_priv, "static/native.txt", "mobile resource"},
+          {mobile_priv, "static/assets/js/app.js", "stale mobile web bundle"},
+          {mobile_priv, "static/cache_manifest.json", "stale mobile web manifest"}
+        ] do
+      file = Path.join(base, path)
+      File.mkdir_p!(Path.dirname(file))
+      File.write!(file, content)
+    end
+
+    on_exit(fn -> File.rm_rf(root) end)
+    Mix.Tasks.Mob.PackApk.merge_priv!(dest, root_priv, mobile_priv)
+
+    assert File.read!(Path.join(dest, "priv/repo/migrations/root.exs")) == "root migration"
+    assert File.read!(Path.join(dest, "priv/repo/migrations/mobile.exs")) == "mobile migration"
+    assert File.read!(Path.join(dest, "priv/skills/example/SKILL.md")) == "skill"
+    assert File.read!(Path.join(dest, "priv/static/native.txt")) == "mobile resource"
+    refute File.exists?(Path.join(dest, "priv/static/assets/js/app.js"))
+    refute File.exists?(Path.join(dest, "priv/static/cache_manifest.json"))
+    assert File.exists?(Path.join(root_priv, "static/assets/js/app.js"))
   end
 
   test "default assemble args do not select the foundation test app" do

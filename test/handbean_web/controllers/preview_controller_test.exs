@@ -25,6 +25,25 @@ defmodule HandbeanWeb.PreviewControllerTest do
     assert html_response(conn, 200) =~ "handbean://c/conv-http"
   end
 
+  test "preview is served when the host has no Web static assets", %{conn: conn, root: root} do
+    previous_host = Application.get_env(:handbean, :host)
+    Handbean.Host.put!(Map.put(previous_host || %{}, :priv_dir, root))
+
+    on_exit(fn ->
+      if previous_host,
+        do: Application.put_env(:handbean, :host, previous_host),
+        else: Application.delete_env(:handbean, :host)
+    end)
+
+    {:ok, record} = Preview.register_files("conv-http", root, title: "Native preview")
+    conn = get(conn, "/preview/#{record.id}")
+    assert html_response(conn, 200) =~ ~s(sandbox="allow-scripts")
+    assert html_response(conn, 200) =~ "/preview/#{record.id}/files/index.html"
+
+    conn = conn |> recycle() |> get("/preview/#{record.id}/files/index.html")
+    assert html_response(conn, 200) =~ "generated"
+  end
+
   test "files responses carry CSP sandbox and reject traversal", %{conn: conn, root: root} do
     {:ok, record} = Preview.register_files("conv-http", root)
     conn = get(conn, "/preview/#{record.id}/files/ok.txt")

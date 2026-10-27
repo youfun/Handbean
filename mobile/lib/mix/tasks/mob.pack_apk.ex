@@ -72,7 +72,6 @@ defmodule Mix.Tasks.Mob.PackApk do
     Mix.Task.run("mob.write_mob_exs")
     # The Zig link can succeed with a stale table while project NIFs fail to load.
     Mix.Task.run("mob.regen_driver_tab")
-    ensure_handbean_assets!()
     ensure_developer_assets!(opts)
 
     slim? = Keyword.get(opts, :slim, true)
@@ -245,22 +244,6 @@ defmodule Mix.Tasks.Mob.PackApk do
 
   defp zip_path, do: Path.expand("android/app/src/debug/assets/otp.zip")
 
-  @doc false
-  def handbean_assets_command do
-    {"mix", ["assets.build"], [{"MIX_TARGET", "mobile"}]}
-  end
-
-  defp ensure_handbean_assets! do
-    sigil = Path.expand("..", File.cwd!())
-    {command, args, env} = handbean_assets_command()
-    Mix.shell().info("  building Handbean assets…")
-
-    case System.cmd(command, args, cd: sigil, env: env, stderr_to_stdout: true) do
-      {_, 0} -> :ok
-      {out, rc} -> Mix.raise("sigil asset build failed (#{rc}): #{out}")
-    end
-  end
-
   defp stage(otp_dir, app_name, opts) do
     staging =
       Path.join(System.tmp_dir!(), "mob_pack_apk_#{:erlang.unique_integer([:positive])}")
@@ -337,26 +320,28 @@ defmodule Mix.Tasks.Mob.PackApk do
       else: []
   end
 
-  defp merge_priv!(dest) do
+  @doc false
+  def merge_priv!(dest, root_priv \\ Path.expand("../priv"), mobile_priv \\ Path.expand("priv")) do
     dest_priv = Path.join(dest, "priv")
     File.mkdir_p!(dest_priv)
 
-    Enum.each(priv_sources(), fn source ->
-      if File.dir?(source) do
-        cp!(source <> "/.", dest_priv)
-      end
-    end)
+    # Android uses native screens; root static assets are for the Web UI.
+    # Keep the remaining root runtime resources and overlay mobile priv as before.
+    if File.dir?(root_priv) do
+      root_priv
+      |> File.ls!()
+      |> Enum.reject(&(&1 == "static"))
+      |> Enum.each(&cp!(Path.join(root_priv, &1), dest_priv))
+    end
+
+    if File.dir?(mobile_priv), do: cp!(mobile_priv <> "/.", dest_priv)
+    # Also discard old Web build output left in the mobile overlay or OTP tree.
+    File.rm_rf!(Path.join(dest_priv, "static/assets"))
+    File.rm_rf!(Path.join(dest_priv, "static/cache_manifest.json"))
 
     if System.get_env("HANDBEAN_MIX_TOOLCHAIN_PREPACKED") == "1" do
       validate_mix_toolchain_manifest!(Path.join(dest_priv, "mix_toolchain/manifest.json"))
     end
-  end
-
-  defp priv_sources do
-    [
-      Path.expand("../priv", File.cwd!()),
-      Path.join(File.cwd!(), "priv")
-    ]
   end
 
   defp add_exqlite!(staging), do: add_dep_lib!(staging, :exqlite)

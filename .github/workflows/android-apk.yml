@@ -52,19 +52,6 @@ jobs:
           otp-version: "29.0"
           elixir-version: "1.20.1"
 
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "24"
-          cache: npm
-
-      - name: Frontend assets
-        working-directory: .
-        run: |
-          mix local.hex --force
-          mix local.rebar --force
-          mix deps.get
-          npm ci
-
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
