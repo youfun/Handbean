@@ -201,8 +201,12 @@ defmodule HandbeanProbe.NativeChatTest do
     opts = run_opts(id)
     assert opts[:chat_scope] == :workspace
     assert opts[:workspace_id] == workspace["id"]
-    assert opts[:workspace_path] == workspace["path"]
-    assert opts[:working_directory] == workspace["path"]
+    canonical = fn path ->
+      path |> Path.expand() |> Handbean.Security.PathValidator.resolve_symlink()
+    end
+
+    assert canonical.(opts[:workspace_path]) == canonical.(workspace["path"])
+    assert canonical.(opts[:working_directory]) == canonical.(workspace["path"])
     assert opts[:tools] == Handbean.Agent.default_tools()
   end
 

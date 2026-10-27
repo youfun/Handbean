@@ -51,19 +51,19 @@ impl = ensure(
 nif = load("mob_nif.m").replace('#import "MobDemo-Bridging-Header.h"\n', "", 1)
 nif = ensure(
     nif,
-    "    MOB_PROP_side_offset,\n    MOB_PROP__COUNT\n",
+    "    MOB_PROP_side_offset,\n    // zoomable image\n",
     "    MOB_PROP_side_offset,\n"
     "    MOB_PROP_markdown,\n"
     "    MOB_PROP_markdown_streaming,\n"
-    "    MOB_PROP__COUNT\n",
+    "    // zoomable image\n",
     "mob_nif.m enum",
 )
 nif = ensure(
     nif,
-    '[MOB_PROP_width] = @"width"};\n',
+    '[MOB_PROP_width] = @"width",\n',
     '[MOB_PROP_width] = @"width",\n'
     '          [MOB_PROP_markdown] = @"markdown",\n'
-    '          [MOB_PROP_markdown_streaming] = @"markdown_streaming"};\n',
+    '          [MOB_PROP_markdown_streaming] = @"markdown_streaming",\n',
     "mob_nif.m names",
 )
 nif = ensure(

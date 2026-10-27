@@ -224,10 +224,14 @@ defmodule HandbeanProbe.HomeScreenModelSettingsTest do
       Application.put_env(:handbean_probe, :locale, "en")
       view = settle(mount_screen(HomeScreen))
       assert Gettext.get_locale(HandbeanProbe.Gettext) == "en"
-      assert text(view) =~ "Start a new conversation"
+      assert text(view) =~ gettext("Start a new conversation")
 
+      # English is the msgid. Compare a string that actually differs in zh_CN,
+      # otherwise the refute is true for both locales.
       refute text(view) =~
-               Gettext.with_locale("zh_CN", fn -> gettext("Start a new conversation") end)
+               Gettext.with_locale(HandbeanProbe.Gettext, "zh_CN", fn ->
+                 gettext("Send a message and work with AI")
+               end)
     end
 
     test "unknown locale values fall back to the default" do

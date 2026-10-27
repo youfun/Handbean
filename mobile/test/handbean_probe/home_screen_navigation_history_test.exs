@@ -583,7 +583,10 @@ defmodule HandbeanProbe.HomeScreenNavigationHistoryTest do
     assert Enum.any?(listed, &(&1["id"] == conv_b["id"]))
     view = info(view, {:tap, {:conversation, conv_b["id"]}})
     assert assigns(view).workspace["id"] == workspace_b["id"]
-    assert assigns(view).workspace["path"] == Path.expand(path_b)
+
+    assert Path.expand(assigns(view).workspace["path"]) ==
+             path_b |> Path.expand() |> Handbean.Security.PathValidator.resolve_symlink()
+
     assert assigns(view).chat.conversation["id"] == conv_b["id"]
     assert assigns(view).draft == ""
     assert assigns(view).permission_mode == :prompt
@@ -634,8 +637,9 @@ defmodule HandbeanProbe.HomeScreenNavigationHistoryTest do
     id = assigns(view).chat.conversation["id"]
     assert {:ok, %{run_pid: runner, running?: true}} = Handbean.Agent.Coordinator.status(id)
     opts = :sys.get_state(runner).opts
-    assert opts[:workspace_path] == Path.expand(path_b)
-    assert opts[:working_directory] == Path.expand(path_b)
+    canonical_b = path_b |> Path.expand() |> Handbean.Security.PathValidator.resolve_symlink()
+    assert Path.expand(opts[:workspace_path]) == canonical_b
+    assert Path.expand(opts[:working_directory]) == canonical_b
     assert opts[:workspace_id] == workspace_b["id"]
     send(request, :respond)
     send(request, :finish)

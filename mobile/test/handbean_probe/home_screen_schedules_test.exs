@@ -15,7 +15,7 @@ defmodule HandbeanProbe.HomeScreenSchedulesTest do
   setup do
     Handbean.Repo.delete_all(Run)
     Handbean.Repo.delete_all(Entry)
-    Handbean.Repo.delete_all(Handbean.Storage.Conversation)
+    HandbeanProbe.TestDB.reset_conversations!()
 
     dir = Path.join(System.tmp_dir!(), "native_schedules_#{System.unique_integer([:positive])}")
     File.mkdir_p!(dir)
@@ -25,7 +25,10 @@ defmodule HandbeanProbe.HomeScreenSchedulesTest do
 
     HandbeanProbe.NativePlatform.put!(:android)
     Handbean.Host.put!(%{data_dir: dir, shell: false, mcp: false})
-    Gettext.put_locale(HandbeanProbe.Gettext, "en")
+    # Mount reads the persisted UI locale and applies it to this process.
+    # Gettext.put_locale/2 alone does not survive HomeScreen.mount/3.
+    :ok = Handbean.Settings.UI.save_locale("en")
+    HandbeanProbe.Gettext.apply("en")
 
     vars = %{
       "HANDBEAN_WORKSPACE" => Path.join(dir, "workspace"),
@@ -40,7 +43,8 @@ defmodule HandbeanProbe.HomeScreenSchedulesTest do
     on_exit(fn ->
       HandbeanProbe.RuntimeCleanup.stop!()
 
-      Gettext.put_locale(HandbeanProbe.Gettext, previous_locale)
+      _ = Handbean.Settings.UI.save_locale(previous_locale)
+      HandbeanProbe.Gettext.apply(previous_locale)
       Application.delete_env(:handbean, :schedule_now)
 
       if host,
@@ -89,12 +93,12 @@ defmodule HandbeanProbe.HomeScreenSchedulesTest do
     tree = NativeSchedules.render(state)
     blob = flatten_text(tree)
 
-    assert blob =~ "Scheduled tasks"
+    assert blob =~ gettext("Scheduled tasks")
     assert blob =~ "Morning report"
-    assert blob =~ "Enabled"
+    assert blob =~ gettext("Enabled")
     assert blob =~ "Morning chat"
     assert blob =~ "Handbean"
-    assert blob =~ "Next: "
+    assert blob =~ gettext("Next: %{at}", at: "")
     assert tap?(tree, {:schedule_open, "sched-active"})
     assert tap?(tree, {:schedule_pause, "sched-active"})
     assert tap?(tree, {:schedule_run_now, "sched-active"})
@@ -102,7 +106,7 @@ defmodule HandbeanProbe.HomeScreenSchedulesTest do
     assert tap?(tree, {:schedule_ask_delete, "sched-active"})
 
     assert blob =~ "Evening report"
-    assert blob =~ "Paused"
+    assert blob =~ gettext("Paused")
     assert tap?(tree, {:schedule_resume, "sched-paused"})
     refute tap?(tree, {:schedule_pause, "sched-paused"})
   end
@@ -132,12 +136,12 @@ defmodule HandbeanProbe.HomeScreenSchedulesTest do
       )
 
     tree = NativeSchedules.render(state)
-    assert flatten_text(tree) =~ "Failed"
+    assert flatten_text(tree) =~ gettext("Failed")
     assert tap?(tree, {:schedule_toggle_instruction, "sched-active"})
-    assert flatten_text(tree) =~ "Expand"
+    assert flatten_text(tree) =~ gettext("Expand")
 
     expanded = NativeSchedules.toggle_instruction(state, "sched-active")
-    assert flatten_text(NativeSchedules.render(expanded)) =~ "Collapse"
+    assert flatten_text(NativeSchedules.render(expanded)) =~ gettext("Collapse")
   end
 
   test "renders the empty state and the delete confirmation sheet" do
@@ -147,7 +151,7 @@ defmodule HandbeanProbe.HomeScreenSchedulesTest do
       NativeSchedules.new()
       |> NativeSchedules.loaded({:ok, loaded_data([], now)})
 
-    assert flatten_text(NativeSchedules.render(empty)) =~ "No scheduled tasks yet"
+    assert flatten_text(NativeSchedules.render(empty)) =~ gettext("No scheduled tasks yet")
 
     task = entry(%{})
 
@@ -157,7 +161,10 @@ defmodule HandbeanProbe.HomeScreenSchedulesTest do
       |> NativeSchedules.ask_delete(task.id)
 
     tree = NativeSchedules.render(confirming)
-    assert flatten_text(tree) =~ "Delete scheduled task \"Morning report\"?"
+
+    assert flatten_text(tree) =~
+             gettext("Delete scheduled task \"%{name}\"?", name: "Morning report")
+
     assert tap?(tree, :schedule_delete)
     assert tap?(tree, :schedule_dismiss_confirm)
   end
@@ -195,13 +202,13 @@ defmodule HandbeanProbe.HomeScreenSchedulesTest do
     assert {:ok, paused} = Store.get(task.id)
     assert paused.status == "paused"
     refute assigns(view).schedules.busy?
-    assert text(view) =~ "Paused"
+    assert text(view) =~ gettext("Paused")
 
     view = info(view, {:tap, {:schedule_resume, task.id}})
     assert {:ok, resumed} = Store.get(task.id)
     assert resumed.status == "active"
     assert resumed.next_run_at
-    assert text(view) =~ "Enabled"
+    assert text(view) =~ gettext("Enabled")
   end
 
   test "deletes a schedule after confirmation", %{view: view} do
@@ -213,7 +220,7 @@ defmodule HandbeanProbe.HomeScreenSchedulesTest do
 
     view = info(view, {:tap, {:schedule_ask_delete, task.id}})
     assert assigns(view).schedules.confirming == task.id
-    assert text(view) =~ "Delete scheduled task"
+    assert text(view) =~ gettext("Delete scheduled task")
 
     view = info(view, {:tap, :schedule_dismiss_confirm})
     assert assigns(view).schedules.confirming == nil
@@ -223,7 +230,7 @@ defmodule HandbeanProbe.HomeScreenSchedulesTest do
     view = info(view, {:tap, :schedule_delete})
     assert {:error, :not_found} = Store.get(task.id)
     assert assigns(view).schedules.confirming == nil
-    assert text(view) =~ "No scheduled tasks yet"
+    assert text(view) =~ gettext("No scheduled tasks yet")
   end
 
   test "run now claims a manual run and reports it queued", %{view: view} do
@@ -245,7 +252,7 @@ defmodule HandbeanProbe.HomeScreenSchedulesTest do
              &(&1.kind == "manual" and &1.status == "skipped" and &1.reason == "model_not_allowed")
            )
 
-    assert text(view) =~ "Skipped"
+    assert text(view) =~ gettext("Skipped")
   end
 
   test "opens the schedule conversation, switching workspace when needed", %{
@@ -299,7 +306,7 @@ defmodule HandbeanProbe.HomeScreenSchedulesTest do
 
     view = info(view, {:tap, {:page, :schedules}})
     view = info(view, {:tap, {:page, :chat}})
-    assert text(view) =~ "Handbean"
+    assert text(view) =~ gettext("Start a new conversation")
   end
 
   # ── helpers ──

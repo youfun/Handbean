@@ -161,14 +161,16 @@ defmodule HandbeanProbe.HomeScreenCase do
   end
 
   def setup_home_screen(_context) do
-    Handbean.Repo.delete_all(Handbean.Storage.Conversation)
+    HandbeanProbe.TestDB.reset_conversations!()
 
     dir = Path.join(System.tmp_dir!(), "native_chat_#{System.unique_integer([:positive])}")
     File.mkdir_p!(dir)
     host = Application.get_env(:handbean, :host)
     previous_platform = Application.get_env(:handbean_probe, :native_platform)
+    previous_locale = HandbeanProbe.Gettext.locale()
     HandbeanProbe.NativePlatform.put!(:android)
     Handbean.Host.put!(%{data_dir: dir, shell: false, mcp: false})
+    HandbeanProbe.Gettext.apply(previous_locale)
 
     vars = %{
       "HANDBEAN_WORKSPACE" => Path.join(dir, "workspace"),
@@ -190,6 +192,8 @@ defmodule HandbeanProbe.HomeScreenCase do
       if previous_platform,
         do: Application.put_env(:handbean_probe, :native_platform, previous_platform),
         else: Application.delete_env(:handbean_probe, :native_platform)
+
+      HandbeanProbe.Gettext.apply(previous_locale)
 
       Enum.each(previous, fn {key, value} ->
         if value, do: System.put_env(key, value), else: System.delete_env(key)

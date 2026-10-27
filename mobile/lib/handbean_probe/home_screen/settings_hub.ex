@@ -132,7 +132,7 @@ defmodule HandbeanProbe.HomeScreen.SettingsHub do
   defp git_value(%{loading?: true}), do: gettext("Loading…")
 
   defp git_value(%{identity: identity}) when is_map(identity) do
-    name = identity["name"] || identity[:name] || ""
+    name = identity["name"] || ""
 
     if String.trim(to_string(name)) == "" do
       gettext("Not set")
