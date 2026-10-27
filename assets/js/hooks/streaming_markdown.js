@@ -11,6 +11,7 @@ import {
 } from "../streaming_markdown/mermaid_blocks.js";
 import { decorateHtmlPreviews, handleHtmlPreviewClick, resizeHtmlPreview } from "../streaming_markdown/html_previews.js";
 import { workspaceFileFromHref } from "../streaming_markdown/workspace_file_link.js";
+import { copyText } from "./copy_text.js";
 
 const MAX_WIDGET_STATE_BYTES = 16 * 1024;
 const MAX_WIDGET_STATES = 256;
@@ -213,8 +214,7 @@ export const StreamingMarkdown = {
 
   handleCopyClick(btn) {
     if (btn.classList.contains("msg-copy-btn")) {
-      this.handleMsgCopyClick(btn);
-      return;
+      return this.handleMsgCopyClick(btn);
     }
     const wrapper = btn.closest(".code-block-wrapper");
     if (!wrapper) return;
@@ -222,7 +222,9 @@ export const StreamingMarkdown = {
     if (!code) return;
     const text = code.textContent || "";
 
-    navigator.clipboard.writeText(text).then(() => {
+    return copyText(text, this.el.ownerDocument).then((copied) => {
+      if (!copied) return;
+
       btn.classList.add("copied");
       const origTitle = btn.getAttribute("title");
       btn.setAttribute("title", "Copied!");
@@ -244,8 +246,6 @@ export const StreamingMarkdown = {
           '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>' +
           '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
       }, 2000);
-    }).catch(() => {
-      // Clipboard API failed silently — user can still select and copy manually
     });
   },
 
@@ -253,7 +253,9 @@ export const StreamingMarkdown = {
     const text = this.el.dataset.source || "";
     if (!text) return;
 
-    navigator.clipboard.writeText(text).then(() => {
+    return copyText(text, this.el.ownerDocument).then((copied) => {
+      if (!copied) return;
+
       btn.classList.add("copied");
       const origTitle = btn.getAttribute("title") || "复制回复";
       btn.setAttribute("title", "Copied!");
@@ -274,8 +276,6 @@ export const StreamingMarkdown = {
           '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>' +
           '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
       }, 2000);
-    }).catch(() => {
-      // Clipboard API failed silently
     });
   },
 

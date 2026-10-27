@@ -267,4 +267,41 @@ function after(fn) {
   delete globalThis.cancelAnimationFrame;
 }
 
+{
+  const clipboardDescriptor = Object.getOwnPropertyDescriptor(dom.window.navigator, "clipboard");
+  Object.defineProperty(dom.window.navigator, "clipboard", { configurable: true, value: undefined });
+  const originalExecCommand = document.execCommand;
+  const fallbackCopies = [];
+  document.execCommand = (command) => {
+    assert.equal(command, "copy");
+    fallbackCopies.push(document.querySelector("textarea")?.value);
+    return false;
+  };
+
+  const source = "```js\nconst x = 1;\n```";
+  const el = document.createElement("div");
+  el.dataset.source = source;
+  el.dataset.final = "true";
+  el.dataset.streaming = "false";
+  el.innerHTML =
+    '<button class="msg-copy-btn" type="button">Copy reply</button>' +
+    '<div data-markdown-target></div>';
+  document.body.appendChild(el);
+
+  const hook = { ...StreamingMarkdown, el };
+  hook.mounted();
+  await hook.handleCopyClick(el.querySelector(".code-block-copy"));
+  await hook.handleCopyClick(el.querySelector(".msg-copy-btn"));
+
+  assert.deepEqual(fallbackCopies, ["const x = 1;\n", source]);
+  assert.equal(document.querySelector("textarea"), null, "fallback textarea is always removed");
+
+  hook.destroyed();
+  el.remove();
+  if (originalExecCommand === undefined) delete document.execCommand;
+  else document.execCommand = originalExecCommand;
+  if (clipboardDescriptor) Object.defineProperty(dom.window.navigator, "clipboard", clipboardDescriptor);
+  else delete dom.window.navigator.clipboard;
+}
+
 console.log("streaming_markdown_hook_test passed");

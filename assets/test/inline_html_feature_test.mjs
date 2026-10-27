@@ -10,9 +10,13 @@ const dom = new JSDOM("<!doctype html><body></body>");
 globalThis.window = dom.window;
 globalThis.document = dom.window.document;
 let copied = "";
+Object.defineProperty(dom.window.navigator, "clipboard", {
+  configurable: true,
+  value: { writeText: async (text) => { copied = text; } }
+});
 Object.defineProperty(globalThis, "navigator", {
   configurable: true,
-  value: { clipboard: { writeText: async (text) => { copied = text; } } }
+  value: dom.window.navigator
 });
 
 const el = document.createElement("div");
