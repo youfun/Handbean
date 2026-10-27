@@ -30,6 +30,10 @@ defmodule Mix.Tasks.Mob.PackApkTest do
     root_priv = Path.join(root, "root_priv")
     mobile_priv = Path.join(root, "mobile_priv")
     dest = Path.join(root, "staging")
+    versions = File.read!(".tool-versions")
+    [_, elixir] = Regex.run(~r/^elixir\s+([^-\s]+)/m, versions)
+    [_, otp] = Regex.run(~r/^erlang\s+(\d+)/m, versions)
+    manifest = Handbean.JSON.encode!(%{"elixir" => elixir, "otp" => otp})
 
     for {base, path, content} <- [
           {root_priv, "static/assets/js/app.js", "stale web bundle"},
@@ -37,6 +41,7 @@ defmodule Mix.Tasks.Mob.PackApkTest do
           {root_priv, "repo/migrations/root.exs", "root migration"},
           {root_priv, "skills/example/SKILL.md", "skill"},
           {mobile_priv, "repo/migrations/mobile.exs", "mobile migration"},
+          {mobile_priv, "mix_toolchain/manifest.json", manifest},
           {mobile_priv, "static/native.txt", "mobile resource"},
           {mobile_priv, "static/assets/js/app.js", "stale mobile web bundle"},
           {mobile_priv, "static/cache_manifest.json", "stale mobile web manifest"}
@@ -52,6 +57,7 @@ defmodule Mix.Tasks.Mob.PackApkTest do
     assert File.read!(Path.join(dest, "priv/repo/migrations/root.exs")) == "root migration"
     assert File.read!(Path.join(dest, "priv/repo/migrations/mobile.exs")) == "mobile migration"
     assert File.read!(Path.join(dest, "priv/skills/example/SKILL.md")) == "skill"
+    assert File.read!(Path.join(dest, "priv/mix_toolchain/manifest.json")) == manifest
     assert File.read!(Path.join(dest, "priv/static/native.txt")) == "mobile resource"
     refute File.exists?(Path.join(dest, "priv/static/assets/js/app.js"))
     refute File.exists?(Path.join(dest, "priv/static/cache_manifest.json"))
