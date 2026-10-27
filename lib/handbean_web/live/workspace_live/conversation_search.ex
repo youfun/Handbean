@@ -120,6 +120,9 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSearch do
         {:noreply,
          put_search_error(socket, gettext("The matching message is no longer available."))}
 
+      {:error, %Phoenix.LiveView.Socket{} = blocked_socket} ->
+        {:noreply, blocked_socket}
+
       {:error, _reason} ->
         {:noreply, put_search_error(socket, gettext("This conversation is no longer available."))}
     end
@@ -238,20 +241,21 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSearch do
   end
 
   defp switch_to_target(socket, %{scope: "free", conversation_id: conversation_id}) do
-    socket = ConversationRouting.drop_composer_for_switch(socket, conversation_id)
+    with {:ok, socket} <-
+           ConversationRouting.drop_composer_for_switch(socket, conversation_id) do
+      {socket, selected_id} =
+        ConversationSwitching.select_free_conversation(socket, conversation_id)
 
-    {socket, selected_id} =
-      ConversationSwitching.select_free_conversation(socket, conversation_id)
-
-    if selected_id == conversation_id do
-      {:ok,
-       socket
-       |> WorkspaceNavigation.enter_free_chat()
-       |> RuntimeProjection.subscribe_session()
-       |> ConversationRouting.restore_session()
-       |> WorkspaceNavigation.close_mobile_sheets()}
-    else
-      {:error, :not_accessible}
+      if selected_id == conversation_id do
+        {:ok,
+         socket
+         |> WorkspaceNavigation.enter_free_chat()
+         |> RuntimeProjection.subscribe_session()
+         |> ConversationRouting.restore_session()
+         |> WorkspaceNavigation.close_mobile_sheets()}
+      else
+        {:error, :not_accessible}
+      end
     end
   end
 
@@ -260,20 +264,21 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationSearch do
          workspace_id: workspace_id,
          conversation_id: conversation_id
        }) do
-    socket = ConversationRouting.drop_composer_for_switch(socket, conversation_id)
+    with {:ok, socket} <-
+           ConversationRouting.drop_composer_for_switch(socket, conversation_id) do
+      {socket, selected_id} =
+        ConversationSwitching.select_conversation(socket, workspace_id, conversation_id)
 
-    {socket, selected_id} =
-      ConversationSwitching.select_conversation(socket, workspace_id, conversation_id)
-
-    if selected_id == conversation_id do
-      {:ok,
-       socket
-       |> WorkspaceNavigation.after_switch()
-       |> RuntimeProjection.subscribe_session()
-       |> ConversationRouting.restore_session()
-       |> WorkspaceNavigation.close_mobile_sheets()}
-    else
-      {:error, :not_accessible}
+      if selected_id == conversation_id do
+        {:ok,
+         socket
+         |> WorkspaceNavigation.after_switch()
+         |> RuntimeProjection.subscribe_session()
+         |> ConversationRouting.restore_session()
+         |> WorkspaceNavigation.close_mobile_sheets()}
+      else
+        {:error, :not_accessible}
+      end
     end
   end
 

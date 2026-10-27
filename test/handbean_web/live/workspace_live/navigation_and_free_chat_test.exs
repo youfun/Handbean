@@ -577,6 +577,179 @@ defmodule HandbeanWeb.WorkspaceLive.NavigationAndFreeChatTest do
   end
 
   describe "new conversation first message" do
+    test "workspace and free-chat drafts expose the image uploader", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/")
+
+      view |> element("#new-conversation-picker-toggle") |> render_click()
+
+      assert has_element?(
+               view,
+               "#new-conversation-composer input[type='file'][name='images']"
+             )
+
+      render_click(view, "close_new_conversation", %{})
+      view |> element("#new-free-conversation") |> render_click()
+
+      assert has_element?(
+               view,
+               "#new-conversation-composer input[type='file'][name='images']"
+             )
+    end
+
+    test "opening and cancelling a new-conversation draft restores the current composer attachment",
+         %{
+           conn: conn
+         } do
+      workspace = Handbean.WorkspaceStore.list() |> List.first()
+      assert {:ok, conversation} = Handbean.ConversationStore.create(workspace["id"])
+
+      {:ok, view, _html} =
+        live(conn, "/w/#{workspace["id"]}/c/#{conversation["id"]}")
+
+      png_path =
+        Path.join(
+          System.tmp_dir!(),
+          "existing_chat_upload_#{System.unique_integer([:positive])}.png"
+        )
+
+      File.write!(png_path, <<0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0>>)
+
+      upload =
+        file_input(view, "#composer", :images, [
+          %{
+            path: png_path,
+            name: "existing-draft.png",
+            type: "image/png",
+            content: File.read!(png_path)
+          }
+        ])
+
+      render_upload(upload, "existing-draft.png")
+      assert has_element?(view, "#composer-attachments span.sr-only", "existing-draft.png")
+
+      view |> element("#new-conversation-picker-toggle") |> render_click()
+
+      refute has_element?(
+               view,
+               "#new-conversation-attachments span.sr-only",
+               "existing-draft.png"
+             )
+
+      render_click(view, "close_new_conversation", %{})
+      assert has_element?(view, "#composer-attachments img[alt='existing-draft.png']")
+
+      view |> element("#new-conversation-picker-toggle") |> render_click()
+
+      new_upload =
+        file_input(view, "#new-conversation-composer", :images, [
+          %{
+            path: png_path,
+            name: "discard-new-draft.png",
+            type: "image/png",
+            content: File.read!(png_path)
+          }
+        ])
+
+      render_upload(new_upload, "discard-new-draft.png")
+
+      render_click(view, "select_conversation", %{
+        "id" => conversation["id"],
+        "ws_id" => workspace["id"]
+      })
+
+      refute has_element?(view, "#new-conversation-page")
+      assert has_element?(view, "#composer-attachments img[alt='existing-draft.png']")
+      refute has_element?(view, "#composer-attachments img[alt='discard-new-draft.png']")
+    end
+
+    test "in-progress current uploads are guarded during new-page entry and direct switching", %{
+      conn: conn
+    } do
+      workspace = Handbean.WorkspaceStore.list() |> List.first()
+      assert {:ok, conversation} = Handbean.ConversationStore.create(workspace["id"])
+      assert {:ok, other_conversation} = Handbean.ConversationStore.create(workspace["id"])
+
+      {:ok, view, _html} =
+        live(conn, "/w/#{workspace["id"]}/c/#{conversation["id"]}")
+
+      png_path =
+        Path.join(
+          System.tmp_dir!(),
+          "upload_in_progress_#{System.unique_integer([:positive])}.png"
+        )
+
+      File.write!(png_path, :binary.copy(<<0x89, 0x50, 0x4E, 0x47>>, 512))
+
+      upload =
+        file_input(view, "#composer", :images, [
+          %{
+            path: png_path,
+            name: "still-uploading.png",
+            type: "image/png",
+            content: File.read!(png_path)
+          }
+        ])
+
+      render_upload(upload, "still-uploading.png", 50)
+      view |> element("#new-conversation-picker-toggle") |> render_click()
+
+      refute has_element?(view, "#new-conversation-page")
+      assert render(view) =~ "Wait for image uploads to finish."
+
+      render_click(view, "select_conversation", %{
+        "id" => other_conversation["id"],
+        "ws_id" => workspace["id"]
+      })
+
+      assert :sys.get_state(view.pid).socket.assigns.current_conversation_id ==
+               other_conversation["id"]
+
+      refute has_element?(view, "#composer-attachments span.sr-only", "still-uploading.png")
+    end
+
+    test "an image-only first message is persisted and rendered in a new free chat", %{conn: conn} do
+      isolate_conversation_home!()
+      {:ok, view, _html} = live(conn, "/")
+
+      view |> element("#new-free-conversation") |> render_click()
+
+      png_path =
+        Path.join(System.tmp_dir!(), "new_chat_upload_#{System.unique_integer([:positive])}.png")
+
+      File.write!(png_path, <<0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0>>)
+
+      upload =
+        file_input(view, "#new-conversation-composer", :images, [
+          %{
+            path: png_path,
+            name: "first-image.png",
+            type: "image/png",
+            content: File.read!(png_path)
+          }
+        ])
+
+      render_upload(upload, "first-image.png")
+
+      assert has_element?(view, "#new-conversation-attachments")
+      assert has_element?(view, "#new-conversation-attachments span.sr-only", "first-image.png")
+
+      view
+      |> form("#new-conversation-composer", %{message: ""})
+      |> render_submit()
+
+      conversation_id = :sys.get_state(view.pid).socket.assigns.current_conversation_id
+      assert {:ok, entries} = Handbean.ConversationTranscriptStore.list(conversation_id)
+
+      entry = Enum.find(entries, &(&1["source"] == "new_conversation_draft"))
+      assert entry["content"] in [nil, ""]
+
+      assert [%{"filename" => "first-image.png", "url" => "/uploads/" <> _}] =
+               entry["attachments"]
+
+      assert render(view) =~ "/uploads/"
+      assert render(view) =~ "msg-shot"
+    end
+
     test "a terminal staging failure restores the submitted text", %{conn: conn} do
       configure_test_models!()
       {:ok, view, _html} = live(conn, "/")

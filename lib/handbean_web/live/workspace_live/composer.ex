@@ -25,6 +25,49 @@ defmodule HandbeanWeb.WorkspaceLive.Composer do
     assign(socket, :pending_attachments, attachments)
   end
 
+  def enter_new_conversation(%{assigns: %{current_conversation_id: id}} = socket)
+      when is_binary(id) do
+    cond do
+      image_upload_in_progress?(socket) ->
+        {:error, assign(socket, :composer_error, gettext("Wait for image uploads to finish."))}
+
+      true ->
+        case materialize_uploads_result(socket) do
+          {:ok, socket} ->
+            {:ok,
+             socket
+             |> stash_current()
+             |> reset_for_new_conversation()
+             |> cancel_image_uploads()}
+
+          {:error, socket} ->
+            {:error, socket}
+        end
+    end
+  end
+
+  def enter_new_conversation(socket) do
+    {:ok,
+     socket
+     |> stash_current()
+     |> reset_for_new_conversation()}
+  end
+
+  defp reset_for_new_conversation(socket) do
+    socket
+    |> invalidate_speech()
+    |> assign(:pending_attachments, [])
+    |> assign(:input_value, "")
+    |> assign(:composer_error, nil)
+    |> assign(:skill_suggestions, [])
+  end
+
+  def leave_new_conversation(socket) do
+    socket
+    |> invalidate_speech()
+    |> load_draft(socket.assigns[:current_conversation_id])
+  end
+
   def switch_conversation(socket, next_id) do
     current_id = socket.assigns[:current_conversation_id]
 
@@ -147,20 +190,31 @@ defmodule HandbeanWeb.WorkspaceLive.Composer do
   defp drafts(socket), do: socket.assigns[:composer_drafts] || %{}
 
   def materialize_uploads(socket) do
+    case materialize_uploads_result(socket) do
+      {:ok, socket} -> socket
+      {:error, socket} -> socket
+    end
+  end
+
+  def materialize_uploads_result(socket) do
     workspace_root = socket.assigns[:workspace_root]
 
     cond do
       not has_upload_entries?(socket) ->
-        socket
+        {:ok, socket}
+
+      image_upload_in_progress?(socket) ->
+        {:error, assign(socket, :composer_error, gettext("Wait for image uploads to finish."))}
 
       socket.assigns[:chat_scope] != :free and not is_binary(workspace_root) ->
-        socket
-        |> assign(:composer_error, gettext("This conversation checkout is unavailable."))
-        |> cancel_image_uploads()
+        {:error,
+         assign(socket, :composer_error, gettext("This conversation checkout is unavailable."))}
 
       true ->
-        {socket, _attachments} = consume_images(socket, workspace_root)
-        socket
+        case consume_images(socket, workspace_root) do
+          {:ok, socket, _attachments} -> {:ok, socket}
+          {:error, socket} -> {:error, socket}
+        end
     end
   end
 
@@ -222,9 +276,13 @@ defmodule HandbeanWeb.WorkspaceLive.Composer do
 
   defp cancel_upload_entry(socket, name, entry) do
     if upload_channel_alive?(socket, name, entry) do
-      cancel_upload(socket, name, entry.ref)
+      try do
+        cancel_upload(socket, name, entry.ref)
+      catch
+        :exit, _reason -> drop_inactive_upload_entry(socket, name, entry)
+      end
     else
-      socket
+      drop_inactive_upload_entry(socket, name, entry)
     end
   end
 
@@ -235,6 +293,16 @@ defmodule HandbeanWeb.WorkspaceLive.Composer do
     end
   end
 
+  defp drop_inactive_upload_entry(socket, name, entry) do
+    upload = Phoenix.LiveView.UploadConfig.drop_entry(socket.assigns.uploads[name], entry)
+
+    Phoenix.LiveView.Utils.assign(
+      socket,
+      :uploads,
+      Map.put(socket.assigns.uploads, name, upload)
+    )
+  end
+
   def has_upload_entries?(socket) do
     case socket.assigns.uploads[:images] do
       %{entries: entries} when is_list(entries) -> entries != []
@@ -242,9 +310,26 @@ defmodule HandbeanWeb.WorkspaceLive.Composer do
     end
   end
 
-  def prepare(socket, message, workspace_path) do
-    {socket, attachments} = consume_images(socket, workspace_path)
+  def discard_image_uploads(socket), do: cancel_image_uploads(socket)
 
+  def image_upload_in_progress?(socket) do
+    case socket.assigns.uploads[:images] do
+      %{entries: entries} when is_list(entries) -> Enum.any?(entries, &(not &1.done?))
+      _ -> false
+    end
+  end
+
+  def prepare(socket, message, workspace_path) do
+    case consume_images(socket, workspace_path) do
+      {:ok, socket, attachments} ->
+        build_message(socket, message, attachments, workspace_path)
+
+      {:error, socket} ->
+        {:error, socket}
+    end
+  end
+
+  defp build_message(socket, message, attachments, workspace_path) do
     case Handbean.Attachments.MessageBuilder.build(
            message,
            attachments,
@@ -415,38 +500,60 @@ defmodule HandbeanWeb.WorkspaceLive.Composer do
     free? = socket.assigns[:chat_scope] == :free
     workspace_id = socket.assigns.current_workspace_id
 
-    new =
+    results =
       consume_uploaded_entries(socket, :images, fn meta, entry ->
         if extension(entry) == "bin" do
-          {:postpone, nil}
+          {:postpone, {:error, gettext("Unsupported file type (images only)")}}
         else
-          id = Ecto.UUID.generate()
-          directory = upload_directory!(free?, workspace_path, conversation_id)
-          filename = "#{id}.#{extension(entry)}"
-          path = Path.join(directory, filename)
-          File.cp!(meta.path, path)
-
-          {:ok,
-           %{
-             id: id,
-             kind: "image",
-             mime_type: entry.client_type,
-             size_bytes: entry.client_size,
-             filename: entry.client_name,
-             storage_path: path,
-             relative_path: upload_relative(free?, path, workspace_path),
-             url: upload_url(free?, conversation_id, filename, workspace_id)
-           }}
+          copy_uploaded_image(meta, entry, free?, workspace_path, conversation_id, workspace_id)
         end
       end)
-      |> Enum.reject(&is_nil/1)
 
+    new = for {:ok, attachment} <- results, do: attachment
+    errors = for {:error, reason} <- results, do: reason
     attachments = Enum.take(socket.assigns.pending_attachments ++ new, 4)
-    {assign(socket, :pending_attachments, attachments), attachments}
+    socket = assign(socket, :pending_attachments, attachments)
+
+    case errors do
+      [] -> {:ok, socket, attachments}
+      [reason | _] -> {:error, assign(socket, :composer_error, reason)}
+    end
+  end
+
+  defp copy_uploaded_image(
+         meta,
+         entry,
+         free?,
+         workspace_path,
+         conversation_id,
+         workspace_id
+       ) do
+    id = Ecto.UUID.generate()
+    directory = upload_directory!(free?, workspace_path, conversation_id)
+    filename = "#{id}.#{extension(entry)}"
+    path = Path.join(directory, filename)
+
+    case File.cp(meta.path, path) do
+      :ok ->
+        {:ok,
+         {:ok,
+          %{
+            id: id,
+            kind: "image",
+            mime_type: entry.client_type,
+            size_bytes: entry.client_size,
+            filename: entry.client_name,
+            storage_path: path,
+            relative_path: upload_relative(free?, path, workspace_path),
+            url: upload_url(free?, conversation_id, filename, workspace_id)
+          }}}
+
+      {:error, reason} ->
+        {:postpone, {:error, gettext("Attachment failed: %{reason}", reason: inspect(reason))}}
+    end
   rescue
     error in File.Error ->
-      socket = assign(socket, :composer_error, Exception.message(error))
-      {socket, socket.assigns.pending_attachments}
+      {:postpone, {:error, Exception.message(error)}}
   end
 
   defp upload_directory!(true, _workspace_path, conversation_id),

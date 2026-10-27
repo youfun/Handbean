@@ -99,7 +99,11 @@ defmodule HandbeanWeb.WorkspaceLive.ChatComponents do
         show_file_browser={@show_file_browser}
       />
       <%= if @new_conversation_draft do %>
-        <SidebarCheckoutComponents.new_conversation_page draft={@new_conversation_draft} />
+        <SidebarCheckoutComponents.new_conversation_page
+          draft={@new_conversation_draft}
+          uploads={@uploads}
+          composer_error={@composer_error}
+        />
       <% else %>
         <ChatTimelineComponents.timeline
           current_assistant_entry_id={@current_assistant_entry_id}

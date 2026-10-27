@@ -70,19 +70,20 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRouting do
     else
       case workspace_by_id(socket, ws_id) do
         %{"id" => ^ws_id} ->
-          socket = drop_composer_for_switch(socket)
-          socket = WorkspaceNavigation.expand_group(socket, ws_id)
-          {socket, conv_id} = ConversationSwitching.select_workspace(socket, ws_id)
+          with {:ok, socket} <- drop_composer_for_switch(socket) do
+            socket = WorkspaceNavigation.expand_group(socket, ws_id)
+            {socket, conv_id} = ConversationSwitching.select_workspace(socket, ws_id)
 
-          {:ok,
-           socket
-           |> WorkspaceNavigation.after_switch()
-           |> RuntimeProjection.subscribe_session()
-           |> restore_session()
-           |> WorkspaceNavigation.close_mobile_sheets()
-           |> assign(:show_schedules, true)
-           |> Schedules.reload()
-           |> push_patch(to: "/w/#{ws_id}/c/#{conv_id}")}
+            {:ok,
+             socket
+             |> WorkspaceNavigation.after_switch()
+             |> RuntimeProjection.subscribe_session()
+             |> restore_session()
+             |> WorkspaceNavigation.close_mobile_sheets()
+             |> assign(:show_schedules, true)
+             |> Schedules.reload()
+             |> push_patch(to: "/w/#{ws_id}/c/#{conv_id}")}
+          end
 
         _missing ->
           {:error, assign(socket, :schedule_error, gettext("找不到工作区"))}
@@ -99,17 +100,19 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRouting do
 
     case workspace_by_id(socket, ws_id) do
       %{"id" => ^ws_id} ->
-        socket = CliSelection.prepare_switch(socket)
+        with {:ok, socket} <- drop_composer_for_switch(socket) do
+          socket = CliSelection.prepare_switch(socket)
 
-        {socket, conv_id} =
-          ConversationSwitching.new_conversation(socket, ws_id, ModelSelection.switching_opts())
+          {socket, conv_id} =
+            ConversationSwitching.new_conversation(socket, ws_id, ModelSelection.switching_opts())
 
-        socket =
-          socket
-          |> attach_created_conversation(ws_id)
-          |> WorkspaceNavigation.close_mobile_sheets()
+          socket =
+            socket
+            |> attach_created_conversation(ws_id)
+            |> WorkspaceNavigation.close_mobile_sheets()
 
-        {:ok, socket, ws_id, conv_id}
+          {:ok, socket, ws_id, conv_id}
+        end
 
       _missing ->
         {:error, assign(socket, :schedule_error, gettext("找不到工作区"))}
@@ -125,19 +128,60 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRouting do
   def begin_conversation_in_workspace(socket, ws_id, opts) do
     source = Keyword.get(opts, :source, :sidebar)
 
-    socket =
-      if Keyword.get(opts, :close_sheets?, false),
-        do: WorkspaceNavigation.close_mobile_sheets(socket),
-        else: socket
+    with {:ok, socket} <- prepare_new_conversation_page(socket) do
+      socket =
+        if Keyword.get(opts, :close_sheets?, false),
+          do: WorkspaceNavigation.close_mobile_sheets(socket),
+          else: socket
 
-    socket =
-      NewConversationDraft.open(socket,
-        workspace_id: ws_id,
-        source: source
-      )
+      socket =
+        NewConversationDraft.open(socket,
+          workspace_id: ws_id,
+          source: source
+        )
 
-    {:noreply, socket}
+      {:noreply, socket}
+    else
+      {:error, socket} -> {:noreply, socket}
+    end
   end
+
+  def begin_free_conversation(socket, opts \\ []) do
+    source = Keyword.get(opts, :source, :sidebar)
+
+    with {:ok, socket} <- prepare_new_conversation_page(socket) do
+      socket =
+        socket
+        |> WorkspaceNavigation.close_mobile_sheets()
+        |> NewConversationDraft.open_free(source: source)
+
+      {:noreply, socket}
+    else
+      {:error, socket} -> {:noreply, socket}
+    end
+  end
+
+  def toggle_new_conversation_page(socket) do
+    if socket.assigns[:new_conversation_draft] do
+      close_new_conversation(socket)
+    else
+      begin_conversation_in_workspace(socket, socket.assigns.current_workspace_id,
+        source: :header
+      )
+    end
+  end
+
+  def close_new_conversation(socket) do
+    {:noreply,
+     socket
+     |> NewConversationDraft.close()
+     |> Composer.leave_new_conversation()}
+  end
+
+  defp prepare_new_conversation_page(%{assigns: %{new_conversation_draft: nil}} = socket),
+    do: Composer.enter_new_conversation(socket)
+
+  defp prepare_new_conversation_page(socket), do: {:ok, socket}
 
   def submit_new_conversation(socket, params) do
     case NewConversationDraft.prepare_submit(socket, params) do
@@ -145,8 +189,6 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRouting do
         {:noreply, socket}
 
       {:ok, socket, draft} ->
-        socket = drop_composer_for_switch(socket)
-
         initialize_model = fn new_socket ->
           NewConversationDraft.apply_model_selection(new_socket, draft)
         end
@@ -176,7 +218,15 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRouting do
       |> assign(:new_conversation_draft, nil)
       |> assign(:input_value, "")
       |> assign(:permission_mode, draft.permission_mode)
-      |> stage_pending_new_conversation_message(conv_id, draft)
+
+    socket =
+      case Composer.prepare(socket, draft.message, draft.checkout_path) do
+        {:ok, prepared, _dispatch_content, attachments} ->
+          stage_pending_new_conversation_message(prepared, conv_id, draft, attachments)
+
+        {:error, prepared} ->
+          assign(prepared, :input_value, draft.message)
+      end
 
     {:noreply, push_patch(socket, to: "/w/#{draft.workspace_id}/c/#{conv_id}")}
   end
@@ -200,17 +250,20 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRouting do
       |> assign(:new_conversation_draft, nil)
       |> assign(:input_value, "")
       |> assign(:permission_mode, draft.permission_mode)
-      |> stage_pending_new_conversation_message(conv_id, draft)
+
+    socket =
+      case Composer.prepare(socket, draft.message, nil) do
+        {:ok, prepared, _dispatch_content, attachments} ->
+          stage_pending_new_conversation_message(prepared, conv_id, draft, attachments)
+
+        {:error, prepared} ->
+          assign(prepared, :input_value, draft.message)
+      end
 
     {:noreply, push_patch(socket, to: "/c/#{conv_id}")}
   end
 
-  defp attach_created_conversation(socket, ws_id, opts \\ []) do
-    socket =
-      if Keyword.get(opts, :drop_composer?, true),
-        do: drop_composer_for_switch(socket),
-        else: socket
-
+  defp attach_created_conversation(socket, ws_id, _opts \\ []) do
     socket
     |> NewConversationDraft.close()
     |> WorkspaceNavigation.expand_group(ws_id)
@@ -227,8 +280,8 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRouting do
       {:ok, socket}
     else
       with {:ok, %{"workspace_id" => ^ws_id}} <-
-             Handbean.ConversationStore.get(conv_id, include_timeline?: false) do
-        socket = drop_composer_for_switch(socket, conv_id)
+             Handbean.ConversationStore.get(conv_id, include_timeline?: false),
+           {:ok, socket} <- drop_composer_for_switch(socket, conv_id) do
         {socket, _conv_id} = ConversationSwitching.select_conversation(socket, ws_id, conv_id)
 
         {:ok,
@@ -238,6 +291,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRouting do
          |> restore_session()
          |> WorkspaceNavigation.close_mobile_sheets()}
       else
+        {:error, %Phoenix.LiveView.Socket{} = blocked_socket} -> {:error, blocked_socket}
         _ -> {:error, assign(socket, :schedule_error, gettext("找不到对话"))}
       end
     end
@@ -270,11 +324,41 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRouting do
   end
 
   def drop_composer_for_switch(socket, next_id \\ :new) do
+    new_conversation_page? = not is_nil(socket.assigns[:new_conversation_draft])
+    socket = leave_new_conversation_page(socket)
+
+    materialized =
+      cond do
+        new_conversation_page? ->
+          {:ok, socket}
+
+        Composer.image_upload_in_progress?(socket) ->
+          {:ok, Composer.discard_image_uploads(socket)}
+
+        true ->
+          Composer.materialize_uploads_result(socket)
+      end
+
+    case materialized do
+      {:ok, socket} ->
+        {:ok,
+         socket
+         |> assign(:conversation_list_boot, nil)
+         |> Composer.switch_conversation(next_id)
+         |> CliSelection.prepare_switch()}
+
+      {:error, socket} ->
+        {:error, socket}
+    end
+  end
+
+  defp leave_new_conversation_page(%{assigns: %{new_conversation_draft: nil}} = socket),
+    do: socket
+
+  defp leave_new_conversation_page(socket) do
     socket
-    |> assign(:conversation_list_boot, nil)
-    |> Composer.materialize_uploads()
-    |> Composer.switch_conversation(next_id)
-    |> CliSelection.prepare_switch()
+    |> NewConversationDraft.close()
+    |> Composer.leave_new_conversation()
   end
 
   def restore_session(socket) do
@@ -296,10 +380,10 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRouting do
     end
   end
 
-  defp stage_pending_new_conversation_message(socket, conversation_id, draft) do
+  defp stage_pending_new_conversation_message(socket, conversation_id, draft, attachments) do
     request_id = "new-conversation-message-#{draft.id}"
     message_id = request_id
-    dispatch_content = Skills.expand(draft.message, socket.assigns[:available_skills] || [])
+    dispatch_text = Skills.expand(draft.message, socket.assigns[:available_skills] || [])
 
     entry = %{
       "id" => message_id,
@@ -308,7 +392,8 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRouting do
       "role" => "user",
       "direction" => "inbound",
       "content" => draft.message,
-      "dispatch_content" => dispatch_content,
+      "dispatch_content" => dispatch_text,
+      "attachments" => attachments,
       "delivery_status" => "pending",
       "request_id" => request_id,
       "source" => @pending_message_source,
@@ -317,8 +402,9 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRouting do
 
     case Handbean.ConversationTranscriptStore.append(conversation_id, entry) do
       {:ok, persisted} ->
-        assign(
-          socket,
+        socket
+        |> assign(:pending_attachments, [])
+        |> assign(
           :pending_new_conversation_message,
           pending_from_entry(conversation_id, persisted)
         )
@@ -332,8 +418,12 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRouting do
   end
 
   defp pending_new_conversation_message(socket) do
-    socket.assigns[:pending_new_conversation_message] ||
-      load_pending_new_conversation_message(socket.assigns[:current_conversation_id])
+    current_conversation_id = socket.assigns[:current_conversation_id]
+
+    case socket.assigns[:pending_new_conversation_message] do
+      %{conversation_id: ^current_conversation_id} = pending -> pending
+      _other -> load_pending_new_conversation_message(current_conversation_id)
+    end
   end
 
   defp load_pending_new_conversation_message(conversation_id) when is_binary(conversation_id) do
@@ -362,7 +452,8 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRouting do
       message_id: entry["id"],
       request_id: entry["request_id"],
       message: entry["content"],
-      dispatch_content: entry["dispatch_content"] || entry["content"]
+      dispatch_content: entry["dispatch_content"] || entry["content"],
+      attachments: entry["attachments"] || []
     }
   end
 
@@ -391,19 +482,34 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRouting do
   end
 
   defp deliver_pending_new_conversation_message(socket, pending) do
-    case pending_run_opts(socket, pending) do
-      {:ok, opts} ->
-        case Handbean.Agent.Coordinator.add_message(
-               pending.conversation_id,
-               pending.dispatch_content,
-               opts
-             ) do
-          {:ok, _ack} -> accept_pending_new_conversation_message(socket, pending)
-          {:error, reason} -> handle_pending_delivery_error(socket, pending, reason)
-        end
+    with {:ok, content} <- pending_dispatch_content(socket, pending),
+         {:ok, opts} <- pending_run_opts(socket, pending) do
+      case Handbean.Agent.Coordinator.add_message(
+             pending.conversation_id,
+             content,
+             opts
+           ) do
+        {:ok, _ack} -> accept_pending_new_conversation_message(socket, pending)
+        {:error, reason} -> handle_pending_delivery_error(socket, pending, reason)
+      end
+    else
+      {:error, reason} -> handle_pending_delivery_error(socket, pending, reason)
+    end
+  end
 
-      {:error, reason} ->
-        handle_pending_delivery_error(socket, pending, reason)
+  defp pending_dispatch_content(_socket, %{attachments: []} = pending),
+    do: {:ok, pending.dispatch_content}
+
+  defp pending_dispatch_content(socket, pending) do
+    workspace_path = ConversationState.current_checkout_path(socket)
+
+    case Handbean.Attachments.MessageBuilder.build(
+           pending.dispatch_content,
+           pending.attachments,
+           Composer.build_opts(socket, workspace_path)
+         ) do
+      {:ok, content, _persistable} -> {:ok, content}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -498,7 +604,10 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationRouting do
         socket
         |> assign(:pending_new_conversation_message, nil)
         |> RuntimeProjection.restore_active_session()
-        |> Composer.prefill_text(pending.message)
+        |> Composer.restore_draft(%{
+          content: pending.message,
+          attachments: pending.attachments
+        })
         |> assign(:composer_error, "Message not delivered: #{inspect(reason)}")
 
       {:error, cleanup_reason} ->

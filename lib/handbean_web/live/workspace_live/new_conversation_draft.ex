@@ -6,6 +6,7 @@ defmodule HandbeanWeb.WorkspaceLive.NewConversationDraft do
   import Phoenix.Component, only: [assign: 3]
 
   alias Handbean.Permissions.ConversationMode
+  alias HandbeanWeb.WorkspaceLive.Composer
   alias HandbeanWeb.WorkspaceLive.ConversationSwitching.CheckoutMetadata
   alias HandbeanWeb.WorkspaceLive.ModelSelection
 
@@ -228,7 +229,7 @@ defmodule HandbeanWeb.WorkspaceLive.NewConversationDraft do
   end
 
   defp validate_workspace_submit(socket, draft, message) do
-    with :ok <- require_message(message),
+    with :ok <- require_content(socket, message),
          {:ok, workspace} <- Handbean.WorkspaceStore.refresh_identity(draft.workspace_id),
          {:ok, checkout_path} <- validate_checkout(workspace, draft.checkout_path),
          {:ok, models, model} <- validate_model(workspace, draft.model),
@@ -257,7 +258,7 @@ defmodule HandbeanWeb.WorkspaceLive.NewConversationDraft do
   defp validate_free_submit(socket, draft, message) do
     model_root = draft.workspace_path
 
-    with :ok <- require_message(message),
+    with :ok <- require_content(socket, message),
          {:ok, models, model} <- validate_free_model(model_root, draft.model),
          {:ok, reasoning_levels, reasoning} <-
            validate_reasoning(models, model, draft.reasoning),
@@ -298,8 +299,13 @@ defmodule HandbeanWeb.WorkspaceLive.NewConversationDraft do
     end
   end
 
-  defp require_message(""), do: {:error, gettext("请输入消息")}
-  defp require_message(_message), do: :ok
+  defp require_content(socket, "") do
+    if Composer.has_upload_entries?(socket),
+      do: :ok,
+      else: {:error, gettext("请输入消息或添加图片")}
+  end
+
+  defp require_content(_socket, _message), do: :ok
 
   defp validate_checkout(workspace, checkout_path) do
     checkouts = CheckoutMetadata.checkouts_for(workspace)

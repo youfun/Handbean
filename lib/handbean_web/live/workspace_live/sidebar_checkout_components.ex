@@ -61,6 +61,8 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarCheckoutComponents do
   end
 
   attr :draft, :any, default: nil
+  attr :uploads, :any, required: true
+  attr :composer_error, :any, default: nil
 
   def new_conversation_page(assigns) do
     ~H"""
@@ -79,12 +81,16 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarCheckoutComponents do
             id="new-conversation-composer"
             phx-submit="submit_new_conversation"
             phx-change="update_new_conversation_draft"
-            class="composer"
+            phx-drop-target={@uploads.images.ref}
+            class="composer dropzone"
           >
             <input type="hidden" name="draft_id" value={@draft.id} />
 
-            <div :if={@draft.error} class="composer-error" role="alert">
-              <span class="truncate">{@draft.error}</span>
+            <div :if={@draft.error || @composer_error} class="composer-error" role="alert">
+              <span class="truncate">{@draft.error || @composer_error}</span>
+              <button :if={@composer_error} type="button" phx-click="clear_composer_error">
+                {gettext("关闭")}
+              </button>
             </div>
 
             <div class="composer-turn-controls">
@@ -155,11 +161,57 @@ defmodule HandbeanWeb.WorkspaceLive.SidebarCheckoutComponents do
                   value={@draft.message}
                   placeholder={gettext("输入消息")}
                   phx-debounce="120"
+                  phx-hook="ComposerPasteUpload"
+                  data-upload-name="images"
                   autofocus
                 >{Phoenix.HTML.Form.normalize_value("textarea", @draft.message)}</textarea>
               </div>
               <div class="composer-toolbar">
+                <div
+                  id="new-conversation-attachments"
+                  class={[
+                    "composer-thumbs",
+                    @uploads.images.entries != [] && "visible"
+                  ]}
+                >
+                  <div :for={entry <- @uploads.images.entries} class="composer-thumb">
+                    <.live_img_preview entry={entry} />
+                    <span class="sr-only">{entry.client_name}</span>
+                    <button
+                      type="button"
+                      phx-click="cancel_upload"
+                      phx-value-ref={entry.ref}
+                      class="composer-thumb-remove"
+                      aria-label={gettext("移除 %{name}", name: entry.client_name)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+
                 <div class="composer-toolbar-actions">
+                  <label
+                    id="new-conversation-attachment-button"
+                    class="composer-icon-btn"
+                    title={gettext("添加图片")}
+                  >
+                    <span class="sr-only">{gettext("添加图片")}</span>
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M21.44 11.05l-8.49 8.49a5.25 5.25 0 0 1-7.42-7.42l8.48-8.49a3.5 3.5 0 0 1 4.95 4.95l-8.48 8.49a1.75 1.75 0 1 1-2.47-2.47l7.78-7.78" />
+                    </svg>
+                    <.live_file_input upload={@uploads.images} class="hidden" />
+                  </label>
+
                   <button
                     id="new-conversation-send"
                     type="submit"

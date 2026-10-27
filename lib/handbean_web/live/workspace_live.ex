@@ -216,25 +216,15 @@ defmodule HandbeanWeb.WorkspaceLive do
         %{assigns: %{live_action: :free}} = socket
       ) do
     with {:ok, conv} <- Handbean.ConversationStore.get(conv_id, include_timeline?: false),
-         true <- Handbean.ConversationStore.free?(conv) do
-      socket =
-        if socket.assigns.current_conversation_id == conv_id and
-             socket.assigns.chat_scope == :free do
-          socket
-        else
-          socket = ConversationRouting.drop_composer_for_switch(socket, conv_id)
-          {socket, _conv_id} = ConversationSwitching.select_free_conversation(socket, conv_id)
-
-          socket
-          |> WorkspaceNavigation.enter_free_chat()
-          |> RuntimeProjection.subscribe_session()
-          |> ConversationRouting.restore_session()
-          |> WorkspaceNavigation.close_mobile_sheets()
-        end
-
+         true <- Handbean.ConversationStore.free?(conv),
+         {:ok, socket} <- switch_free_route(socket, conv_id) do
       {:noreply, ConversationRouting.flush_pending_new_conversation_message(socket)}
     else
-      _ -> {:noreply, push_patch(socket, to: "/")}
+      {:error, %Phoenix.LiveView.Socket{} = blocked_socket} ->
+        {:noreply, patch_current_conversation(blocked_socket)}
+
+      _ ->
+        {:noreply, push_patch(socket, to: "/")}
     end
   end
 
@@ -247,8 +237,8 @@ defmodule HandbeanWeb.WorkspaceLive do
          socket.assigns.current_conversation_id != conv_id do
       with {:ok, ws} <- Handbean.WorkspaceStore.get(ws_id),
            {:ok, conv} <- Handbean.ConversationStore.get(conv_id, include_timeline?: false),
-           true <- conv["workspace_id"] == ws_id do
-        socket = ConversationRouting.drop_composer_for_switch(socket, conv_id)
+           true <- conv["workspace_id"] == ws_id,
+           {:ok, socket} <- ConversationRouting.drop_composer_for_switch(socket, conv_id) do
         {socket, _conv_id} = ConversationSwitching.select_conversation(socket, ws_id, conv_id)
 
         socket =
@@ -262,7 +252,11 @@ defmodule HandbeanWeb.WorkspaceLive do
 
         {:noreply, socket}
       else
-        _ -> {:noreply, socket}
+        {:error, %Phoenix.LiveView.Socket{} = blocked_socket} ->
+          {:noreply, patch_current_conversation(blocked_socket)}
+
+        _ ->
+          {:noreply, socket}
       end
     else
       {:noreply, ConversationRouting.flush_pending_new_conversation_message(socket)}
@@ -270,6 +264,38 @@ defmodule HandbeanWeb.WorkspaceLive do
   end
 
   def handle_params(_params, _uri, socket), do: {:noreply, socket}
+
+  defp switch_free_route(socket, conv_id) do
+    if socket.assigns.current_conversation_id == conv_id and socket.assigns.chat_scope == :free do
+      {:ok, socket}
+    else
+      with {:ok, socket} <- ConversationRouting.drop_composer_for_switch(socket, conv_id) do
+        {socket, _conv_id} = ConversationSwitching.select_free_conversation(socket, conv_id)
+
+        {:ok,
+         socket
+         |> WorkspaceNavigation.enter_free_chat()
+         |> RuntimeProjection.subscribe_session()
+         |> ConversationRouting.restore_session()
+         |> WorkspaceNavigation.close_mobile_sheets()}
+      end
+    end
+  end
+
+  defp patch_current_conversation(socket) do
+    case {socket.assigns[:chat_scope], socket.assigns[:current_workspace_id],
+          socket.assigns[:current_conversation_id]} do
+      {:free, _workspace_id, conversation_id} when is_binary(conversation_id) ->
+        push_patch(socket, to: "/c/#{conversation_id}")
+
+      {_scope, workspace_id, conversation_id}
+      when is_binary(workspace_id) and is_binary(conversation_id) ->
+        push_patch(socket, to: "/w/#{workspace_id}/c/#{conversation_id}")
+
+      _ ->
+        push_patch(socket, to: "/")
+    end
+  end
 
   def handle_progress(:speech_audio, entry, socket) do
     errors = upload_errors(socket.assigns.uploads.speech_audio, entry)

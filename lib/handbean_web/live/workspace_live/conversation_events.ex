@@ -52,18 +52,23 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationEvents do
   def handle("drop_workspace_path", _params, socket), do: {:noreply, socket}
 
   def handle("select_workspace", %{"id" => ws_id}, socket) do
-    socket = ConversationRouting.drop_composer_for_switch(socket)
-    socket = WorkspaceNavigation.expand_group(socket, ws_id)
-    {socket, conv_id} = ConversationSwitching.select_workspace(socket, ws_id)
+    case ConversationRouting.drop_composer_for_switch(socket) do
+      {:ok, socket} ->
+        socket = WorkspaceNavigation.expand_group(socket, ws_id)
+        {socket, conv_id} = ConversationSwitching.select_workspace(socket, ws_id)
 
-    socket =
-      socket
-      |> WorkspaceNavigation.after_switch()
-      |> RuntimeProjection.subscribe_session()
-      |> ConversationRouting.restore_session()
-      |> WorkspaceNavigation.close_mobile_sheets()
+        socket =
+          socket
+          |> WorkspaceNavigation.after_switch()
+          |> RuntimeProjection.subscribe_session()
+          |> ConversationRouting.restore_session()
+          |> WorkspaceNavigation.close_mobile_sheets()
 
-    {:noreply, push_patch(socket, to: "/w/#{ws_id}/c/#{conv_id}")}
+        {:noreply, push_patch(socket, to: "/w/#{ws_id}/c/#{conv_id}")}
+
+      {:error, socket} ->
+        {:noreply, socket}
+    end
   end
 
   def handle("load_history_around", %{"entry_id" => entry_id}, socket)
@@ -100,8 +105,8 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationEvents do
 
   def handle("select_conversation", %{"id" => conv_id, "ws_id" => ws_id}, socket) do
     with {:ok, %{"workspace_id" => ^ws_id}} <-
-           Handbean.ConversationStore.get(conv_id, include_timeline?: false) do
-      socket = ConversationRouting.drop_composer_for_switch(socket, conv_id)
+           Handbean.ConversationStore.get(conv_id, include_timeline?: false),
+         {:ok, socket} <- ConversationRouting.drop_composer_for_switch(socket, conv_id) do
       {socket, _conv_id} = ConversationSwitching.select_conversation(socket, ws_id, conv_id)
 
       socket =
@@ -113,6 +118,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationEvents do
 
       {:noreply, push_patch(socket, to: "/w/#{ws_id}/c/#{conv_id}")}
     else
+      {:error, %Phoenix.LiveView.Socket{} = blocked_socket} -> {:noreply, blocked_socket}
       _ -> {:noreply, socket}
     end
   end
@@ -120,24 +126,28 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationEvents do
   def handle("select_archived_conversation", %{"id" => conv_id} = params, socket) do
     with {:ok, conv} <- Handbean.ConversationStore.get(conv_id, include_timeline?: false) do
       if Handbean.ConversationStore.free?(conv) do
-        socket = ConversationRouting.drop_composer_for_switch(socket, conv_id)
-        {socket, _conv_id} = ConversationSwitching.select_free_conversation(socket, conv_id)
+        case ConversationRouting.drop_composer_for_switch(socket, conv_id) do
+          {:ok, socket} ->
+            {socket, _conv_id} = ConversationSwitching.select_free_conversation(socket, conv_id)
 
-        socket =
-          socket
-          |> WorkspaceNavigation.enter_free_chat()
-          |> RuntimeProjection.subscribe_session()
-          |> ConversationRouting.restore_session()
-          |> WorkspaceNavigation.close_mobile_sheets()
+            socket =
+              socket
+              |> WorkspaceNavigation.enter_free_chat()
+              |> RuntimeProjection.subscribe_session()
+              |> ConversationRouting.restore_session()
+              |> WorkspaceNavigation.close_mobile_sheets()
 
-        {:noreply, push_patch(socket, to: "/c/#{conv_id}")}
+            {:noreply, push_patch(socket, to: "/c/#{conv_id}")}
+
+          {:error, socket} ->
+            {:noreply, socket}
+        end
       else
         ws_id = params["ws"] || conv["workspace_id"]
 
         with true <- is_binary(ws_id),
-             {:ok, %{"workspace_id" => ^ws_id}} <- {:ok, conv} do
-          socket = ConversationRouting.drop_composer_for_switch(socket, conv_id)
-
+             {:ok, %{"workspace_id" => ^ws_id}} <- {:ok, conv},
+             {:ok, socket} <- ConversationRouting.drop_composer_for_switch(socket, conv_id) do
           {socket, _conv_id} =
             ConversationSwitching.select_archived_conversation(socket, ws_id, conv_id)
 
@@ -150,6 +160,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationEvents do
 
           {:noreply, push_patch(socket, to: "/w/#{ws_id}/c/#{conv_id}")}
         else
+          {:error, %Phoenix.LiveView.Socket{} = blocked_socket} -> {:noreply, blocked_socket}
           _ -> {:noreply, socket}
         end
       end
@@ -509,20 +520,17 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationEvents do
   end
 
   def handle("toggle_new_conversation_picker", _params, socket) do
-    {:noreply, ConversationSwitching.toggle_new_conversation_picker(socket)}
+    ConversationRouting.toggle_new_conversation_page(socket)
   end
 
   def handle("new_free_conversation", _params, socket) do
-    {:noreply,
-     socket
-     |> WorkspaceNavigation.close_mobile_sheets()
-     |> NewConversationDraft.open_free(source: :sidebar)}
+    ConversationRouting.begin_free_conversation(socket, source: :sidebar)
   end
 
   def handle("select_free_conversation", %{"id" => conv_id}, socket) do
     with {:ok, conv} <- Handbean.ConversationStore.get(conv_id, include_timeline?: false),
-         true <- Handbean.ConversationStore.free?(conv) do
-      socket = ConversationRouting.drop_composer_for_switch(socket, conv_id)
+         true <- Handbean.ConversationStore.free?(conv),
+         {:ok, socket} <- ConversationRouting.drop_composer_for_switch(socket, conv_id) do
       {socket, _conv_id} = ConversationSwitching.select_free_conversation(socket, conv_id)
 
       socket =
@@ -534,6 +542,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationEvents do
 
       {:noreply, push_patch(socket, to: "/c/#{conv_id}")}
     else
+      {:error, %Phoenix.LiveView.Socket{} = blocked_socket} -> {:noreply, blocked_socket}
       _ -> {:noreply, socket}
     end
   end
@@ -575,7 +584,7 @@ defmodule HandbeanWeb.WorkspaceLive.ConversationEvents do
   end
 
   def handle("close_new_conversation", _params, socket) do
-    {:noreply, NewConversationDraft.close(socket)}
+    ConversationRouting.close_new_conversation(socket)
   end
 
   def handle("open_settings", _, socket) do
