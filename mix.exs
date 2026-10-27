@@ -89,7 +89,7 @@ defmodule Handbean.MixProject do
       {:jason, "~> 1.2"},
       {:websockex, "~> 0.5.1"},
       {:dns_cluster, "~> 0.3.1"},
-      {:bandit, "~> 1.13"},
+      {:bandit, "~> 1.14"},
       {:rustler_precompiled, "~> 0.10", override: true, optional: true},
 
       # 程序依赖图 / 发布安全检查
