@@ -94,14 +94,13 @@
       <!-- Model / AI Tab — reuse existing ModelAIPanel component -->
       <div :if={@active_tab == :model_ai} class="settings-content-wrap">
         <div class="settings-content-card">
-          <ModelAIPanel.render
-            form={@form}
-            available_models={@available_models}
-            errors={@errors}
-            scope={:global}
-          />
-
-          <div class="settings-page-actions">
+          <header class="settings-content-header">
+            <div>
+              <h1>{gettext("Model & AI")}</h1>
+              <p>
+                {gettext("Choose the models and reasoning levels Handbean uses for each role.")}
+              </p>
+            </div>
             <button
               phx-click="save_settings"
               disabled={@saving}
@@ -109,7 +108,13 @@
             >
               {if @saving, do: gettext("Saving..."), else: gettext("Save")}
             </button>
-          </div>
+          </header>
+          <ModelAIPanel.render
+            form={@form}
+            available_models={@available_models}
+            errors={@errors}
+            scope={:global}
+          />
         </div>
       </div>
 

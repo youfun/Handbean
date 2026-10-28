@@ -63,7 +63,7 @@ defmodule HandbeanWeb.Live.Settings.ModelAIPanel do
           </div>
           <div class="settings-field-row">
             <div class="settings-field-copy">
-              <div class="settings-field-title">{gettext("Reasoning")}</div>
+              <div class="settings-field-title">{gettext("Default reasoning")}</div>
               <div class="settings-field-desc">
                 {gettext("How much internal reasoning the model should use.")}
               </div>
@@ -129,7 +129,7 @@ defmodule HandbeanWeb.Live.Settings.ModelAIPanel do
           </div>
           <div class="settings-field-row">
             <div class="settings-field-copy">
-              <div class="settings-field-title">{gettext("Think level")}</div>
+              <div class="settings-field-title">{gettext("Advisor reasoning")}</div>
               <div class="settings-field-desc">
                 {gettext("Reasoning level used by the advisor model.")}
               </div>
@@ -218,7 +218,7 @@ defmodule HandbeanWeb.Live.Settings.ModelAIPanel do
           </div>
           <div class="settings-field-row">
             <div class="settings-field-copy">
-              <div class="settings-field-title">{gettext("Think level")}</div>
+              <div class="settings-field-title">{gettext("Subagent reasoning")}</div>
               <div class="settings-field-desc">
                 {gettext("Think level for the subagent default model.")}
               </div>
@@ -318,7 +318,7 @@ defmodule HandbeanWeb.Live.Settings.ModelAIPanel do
           </div>
           <div class="settings-field-row">
             <div class="settings-field-copy">
-              <div class="settings-field-title">{gettext("Think level")}</div>
+              <div class="settings-field-title">{gettext("Memory reasoning")}</div>
               <div class="settings-field-desc">
                 {gettext("Reasoning level used for memory reflection.")}
               </div>
@@ -425,7 +425,8 @@ defmodule HandbeanWeb.Live.Settings.ModelAIPanel do
           ModelPicker.option(
             selected,
             unavailable_model_label(selected),
-            model_provider(selected)
+            model_provider(selected),
+            status: :unavailable
           )
         ]
       else

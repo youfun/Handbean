@@ -227,6 +227,44 @@
   color: var(--sig-text-primary);
 }
 
+#ai-messages #timeline-stream,
+#ai-messages > .turn-header,
+#ai-messages > .history-window-banner,
+#ai-messages > .history-window-more,
+#ai-messages > #agent-working {
+  width: min(100%, 760px);
+  margin-inline: auto;
+}
+
+#ai-messages .msg-assistant .markdown-body > p:first-child:not(:last-child),
+#ai-messages .msg-assistant .markdown-body > p:has(+ :is(ul, ol)) {
+  color: var(--sig-text-primary);
+  font-weight: 600;
+}
+
+#ai-messages .msg-assistant .markdown-body > p:has(+ :is(ul, ol)) {
+  margin-bottom: 0.25rem;
+}
+
+#ai-messages .msg-assistant .markdown-body > p:last-child:not(:first-child) {
+  margin-top: 0.75rem;
+  font-weight: 500;
+}
+
+#ai-messages .msg-assistant .markdown-body li > p:first-child {
+  margin: 0;
+  font-weight: 500;
+}
+
+#ai-messages .msg-assistant .markdown-body > :is(ul, ol) > li + li {
+  margin-top: 0.55rem;
+}
+
+#ai-messages .msg-assistant .markdown-body li > :is(ul, ol) {
+  margin: 0.25rem 0;
+  padding-left: 1.1rem;
+}
+
 #ai-messages .msg-bubble.msg-system {
   width: 100%;
   max-width: none;

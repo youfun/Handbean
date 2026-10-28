@@ -66,6 +66,22 @@
   outline-offset: 2px;
 }
 
+.model-picker-trigger.is-unavailable {
+  border-color: color-mix(in srgb, var(--sig-warning) 48%, var(--sig-border-default));
+  background: var(--sig-warning-bg);
+  color: var(--sig-warning);
+}
+
+.model-picker-trigger.is-unavailable > svg {
+  color: currentColor;
+}
+
+.model-picker-trigger .model-picker-status-icon {
+  width: 18px;
+  height: 18px;
+  flex-basis: 18px;
+}
+
 .model-picker-trigger-label {
   min-width: 0;
   overflow: hidden;
@@ -78,6 +94,10 @@
   height: 16px;
   flex: 0 0 16px;
   color: var(--sig-text-tertiary);
+}
+
+.model-picker-option.is-unavailable {
+  color: var(--sig-warning);
 }
 
 .model-picker-panel {

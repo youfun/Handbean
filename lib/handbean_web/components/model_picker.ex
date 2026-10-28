@@ -24,6 +24,7 @@ defmodule HandbeanWeb.Components.ModelPicker do
       assigns
       |> assign(:groups, group_options(assigns.options))
       |> assign(:selected_label, selected_label(assigns.options, assigns.value))
+      |> assign(:selected_status, selected_status(assigns.options, assigns.value))
       |> assign(:model_count, Enum.count(assigns.options, &(&1.value != "")))
       |> assign(:target_attrs, event_target_attrs(assigns.target))
       |> assign(:refresh_attrs, refresh_attrs(assigns.refresh))
@@ -71,15 +72,24 @@ defmodule HandbeanWeb.Components.ModelPicker do
       <button
         id={"#{@id}-trigger"}
         type="button"
-        class="model-picker-trigger"
+        class={[
+          "model-picker-trigger",
+          @selected_status == :unavailable && "is-unavailable"
+        ]}
         aria-haspopup="dialog"
         aria-expanded="false"
         aria-controls={"#{@id}-panel"}
+        aria-invalid={if @selected_status == :unavailable, do: "true", else: nil}
         data-model-picker-trigger
         {@refresh_attrs}
       >
         <span class="model-picker-trigger-label">{@selected_label}</span>
-        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+        <svg
+          :if={@selected_status != :unavailable}
+          viewBox="0 0 20 20"
+          fill="none"
+          aria-hidden="true"
+        >
           <path
             d="m6 8 4 4 4-4"
             stroke="currentColor"
@@ -87,6 +97,22 @@ defmodule HandbeanWeb.Components.ModelPicker do
             stroke-linecap="round"
             stroke-linejoin="round"
           />
+        </svg>
+        <svg
+          :if={@selected_status == :unavailable}
+          class="model-picker-status-icon"
+          viewBox="0 0 20 20"
+          fill="none"
+          aria-hidden="true"
+        >
+          <path
+            d="M10 3.25 17.25 16H2.75L10 3.25Z"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linejoin="round"
+          />
+          <path d="M10 7.25v4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          <circle cx="10" cy="14" r=".85" fill="currentColor" />
         </svg>
       </button>
 
@@ -156,7 +182,11 @@ defmodule HandbeanWeb.Components.ModelPicker do
             <button
               :for={option <- options}
               type="button"
-              class={["model-picker-option", option.value == (@value || "") && "is-selected"]}
+              class={[
+                "model-picker-option",
+                option.value == (@value || "") && "is-selected",
+                Map.get(option, :status) == :unavailable && "is-unavailable"
+              ]}
               data-model-picker-option
               data-value={option.value}
               data-search={search_text(option, group)}
@@ -186,8 +216,9 @@ defmodule HandbeanWeb.Components.ModelPicker do
     """
   end
 
-  def option(value, label, group \\ nil) do
+  def option(value, label, group \\ nil, attrs \\ []) do
     %{value: value || "", label: label, group: group}
+    |> Map.merge(Map.new(attrs))
   end
 
   defp group_options(options) do
@@ -205,6 +236,15 @@ defmodule HandbeanWeb.Components.ModelPicker do
     case Enum.find(options, &(&1.value == selected_value)) do
       nil -> gettext("Choose a model")
       option -> option.label
+    end
+  end
+
+  defp selected_status(options, value) do
+    selected_value = value || ""
+
+    case Enum.find(options, &(&1.value == selected_value)) do
+      nil -> nil
+      option -> Map.get(option, :status)
     end
   end
 

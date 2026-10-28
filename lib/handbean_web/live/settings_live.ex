@@ -34,7 +34,7 @@ defmodule HandbeanWeb.SettingsLive do
     %{id: :available_models, label_key: "Available Models"},
     %{id: :local_webgpu, label_key: "Local WebGPU"},
     %{id: :computer_use, label_key: "Computer Control"},
-    %{id: :plugins, label_key: "插件"},
+    %{id: :plugins, label_key: "Plugins"},
     %{id: :git, label_key: "Git"},
     %{id: :ui, label_key: "UI"}
   ]
@@ -421,8 +421,8 @@ defmodule HandbeanWeb.SettingsLive do
   def tab_label(:available_models), do: gettext("Available Models")
   def tab_label(:local_webgpu), do: gettext("Advanced")
   def tab_label(:computer_use), do: gettext("Computer Control")
-  def tab_label(:plugins), do: gettext("插件")
-  def tab_label(:mcp), do: gettext("插件")
+  def tab_label(:plugins), do: gettext("Plugins")
+  def tab_label(:mcp), do: gettext("Plugins")
   def tab_label(:git), do: gettext("Git")
   def tab_label(:ui), do: gettext("UI")
   def tab_label(:sns), do: gettext("SNS")

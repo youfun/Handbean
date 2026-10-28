@@ -3,15 +3,16 @@
 .settings-model-ai-form {
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 6px;
 }
 
 .settings-model-section {
-  padding-bottom: 22px;
+  padding-bottom: 6px;
   border-bottom: 1px solid var(--color-border);
 }
 
 .settings-model-section:last-of-type {
+  padding-bottom: 0;
   border-bottom: none;
 }
 
@@ -28,12 +29,12 @@
 }
 
 .settings-model-section-title {
-  margin: 0 0 10px;
+  margin: 0 0 4px;
   color: var(--sig-text-primary);
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0;
-  line-height: 1.4;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.005em;
+  line-height: 1.35;
 }
 
 .settings-model-grid {

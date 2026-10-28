@@ -18,7 +18,7 @@
   width: 2rem;
   height: 1rem;
   border-radius: var(--sig-radius-full);
-  background: var(--color-text-tertiary);
+  background: var(--sig-text-secondary);
   transition: background-color 150ms ease;
 }
 
@@ -817,6 +817,34 @@ select.settings-input {
   width: 100%;
 }
 
+.settings-content-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 24px;
+  margin-bottom: 14px;
+}
+
+.settings-content-header > div {
+  min-width: 0;
+}
+
+.settings-content-header h1 {
+  margin: 0;
+  color: var(--sig-text-primary);
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+}
+
+.settings-content-header p {
+  margin: 5px 0 0;
+  color: color-mix(in srgb, var(--sig-text-primary) 45%, var(--sig-text-secondary));
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .settings-form-section {
   display: flex;
   flex-direction: column;
@@ -834,8 +862,8 @@ select.settings-input {
 
 .settings-help-text {
   margin-top: 4px;
-  color: var(--color-text-tertiary);
-  font-size: 12px;
+  color: color-mix(in srgb, var(--sig-text-primary) 45%, var(--sig-text-secondary));
+  font-size: 13px;
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -988,9 +1016,21 @@ select.settings-input {
 
 .settings-field-desc {
   margin-top: 3px;
-  color: var(--sig-text-tertiary);
-  font-size: 12px;
+  color: color-mix(in srgb, var(--sig-text-primary) 45%, var(--sig-text-secondary));
+  font-size: 13px;
   line-height: 1.45;
+}
+
+.settings-model-ai-form .settings-field-control {
+  flex: 0 0 min(38%, 420px);
+}
+
+.settings-model-ai-form .settings-field-row {
+  padding: 10px 14px;
+}
+
+.settings-model-ai-form .model-picker {
+  width: 100%;
 }
 
 .settings-field-control {
@@ -1049,6 +1089,12 @@ select.settings-input {
   .settings-field-control {
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .settings-model-ai-form .settings-field-control {
+    flex-grow: 0;
+    flex-shrink: 0;
+    flex-basis: auto;
   }
 }
 
@@ -1109,8 +1155,8 @@ select.settings-input {
 .settings-page-actions {
   display: flex;
   justify-content: flex-end;
-  margin-top: 24px;
-  padding-top: 16px;
+  margin-top: 10px;
+  padding-top: 8px;
   border-top: 1px solid var(--color-border);
 }
 
