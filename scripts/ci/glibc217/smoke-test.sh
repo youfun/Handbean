@@ -14,8 +14,8 @@ tar -C "$work_root/release" -xzf "$archive"
 release="$work_root/release"
 sys_config=$(find "$release/releases" -mindepth 2 -maxdepth 2 -name sys.config -print -quit)
 test -n "$sys_config"
-grep -Fq '{chrome_relay_port,17643}' "$sys_config"
-sed -i "s/{chrome_relay_port,17643}/{chrome_relay_port,$relay_port}/" "$sys_config"
+grep -Fq '{chrome_relay_port,17688}' "$sys_config"
+sed -i "s/{chrome_relay_port,17688}/{chrome_relay_port,$relay_port}/" "$sys_config"
 export PATH=/usr/bin:/bin
 unset LD_LIBRARY_PATH ERL_LIBS ERL_AFLAGS ERL_ZFLAGS MIX_HOME HEX_HOME CARGO_HOME RUSTUP_HOME ZIG_GLOBAL_CACHE_DIR ZIG_LOCAL_CACHE_DIR
 export HOME="$work_root/home"

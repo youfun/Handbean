@@ -13,7 +13,7 @@ config :handbean,
   generators: [timestamp_type: :utc_datetime],
   session_store: Handbean.SessionStore.SQLite,
   telemetry_adapter: HandbeanWeb.Telemetry,
-  chrome_relay_port: 17_643
+  chrome_relay_port: if(config_env() == :dev, do: 17_699, else: 17_688)
 
 config :error_tracker,
   repo: Handbean.Repo,

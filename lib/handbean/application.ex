@@ -123,7 +123,7 @@ defmodule Handbean.Application do
                plug: Handbean.Browser.ChromeRelay.Router,
                scheme: :http,
                ip: {127, 0, 0, 1},
-               port: Application.get_env(:handbean, :chrome_relay_port, 17_643),
+               port: Application.get_env(:handbean, :chrome_relay_port, 17_688),
                startup_log: false,
                thousand_island_options: [
                  supervisor_options: [name: Handbean.Browser.ChromeRelay.Listener]

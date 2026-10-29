@@ -51,7 +51,11 @@ path. Chrome for Testing may still be used for automated acceptance.
 
 ## Protocol and boundaries
 
-The relay binds only to `127.0.0.1` (port `17643` by default):
+The relay binds only to `127.0.0.1`: production uses port `17688`, while
+`mix phx.server` uses `17699`. Web UI ports are unchanged.
+After changing a relay port, copy the new pairing URL into the extension.
+To control Chrome from both instances simultaneously, pair separate Chrome
+profiles with their respective instances.
 
 ```text
 browser tool
