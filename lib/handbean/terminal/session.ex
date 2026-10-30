@@ -11,11 +11,12 @@ defmodule Handbean.Terminal.Session do
 
   use GenServer
 
-  # Mobile and Windows builds intentionally omit the optional Ghostty dependency.
+  # Mobile builds intentionally omit the optional Ghostty dependency.
   @compile {:no_warn_undefined, Ghostty.PTY}
   @compile {:no_warn_undefined, Ghostty.Terminal}
 
-  alias Handbean.Platform.ProcessRunner
+  alias Handbean.Platform
+  alias Handbean.Platform.{CommandEnvironment, ProcessRunner}
   alias Handbean.Terminal.Registry
 
   @pubsub Handbean.PubSub
@@ -155,6 +156,8 @@ defmodule Handbean.Terminal.Session do
       Ghostty.PTY.start_link(
         cmd: pty_cmd,
         args: pty_args,
+        cwd: pty_cwd(cwd),
+        env: pty_env(),
         cols: cols,
         rows: rows,
         reader_start_timeout: @pty_reader_timeout
@@ -189,7 +192,7 @@ defmodule Handbean.Terminal.Session do
   @impl true
   def handle_call({:send_input, input}, _from, state) do
     if state.status in [:running, :starting] do
-      Ghostty.PTY.write(state.pty, input)
+      Ghostty.PTY.write(state.pty, normalize_input(input))
       {:reply, :ok, touch(state)}
     else
       {:reply, {:error, :not_running}, state}
@@ -265,7 +268,7 @@ defmodule Handbean.Terminal.Session do
   @impl true
   def handle_info({:pty_write, data}, state) do
     if state.pty do
-      Ghostty.PTY.write(state.pty, data)
+      Ghostty.PTY.write(state.pty, normalize_input(data))
     end
 
     {:noreply, state}
@@ -297,8 +300,16 @@ defmodule Handbean.Terminal.Session do
   end
 
   defp do_cleanup(state) do
+    if Platform.windows?() and is_pid(state.pty) and Process.alive?(state.pty) do
+      try do
+        Ghostty.PTY.close(state.pty)
+      catch
+        :exit, _ -> :ok
+      end
+    end
+
     # Ghostty.PTY.close/1 hangs on macOS (NIF reader thread issue).
-    # Skip explicit PTY cleanup; the linked process tree handles it.
+    # Skip explicit PTY cleanup on Unix; the linked process tree handles it.
     # Terminal cleanup works fine.
     if state.term && Process.alive?(state.term) do
       Process.exit(state.term, :normal)
@@ -308,32 +319,66 @@ defmodule Handbean.Terminal.Session do
   # ── Helpers ──
 
   defp default_shell do
-    System.get_env("SHELL", "/bin/sh")
+    if Platform.windows?() do
+      System.get_env("COMSPEC") || "cmd.exe"
+    else
+      System.get_env("SHELL", "/bin/sh")
+    end
   end
 
   defp default_shell_args(cmd) do
-    case cmd |> Path.basename() |> String.downcase() do
+    case cmd |> Path.basename() |> String.downcase() |> Path.rootname() do
       "fish" -> ["-i", "-l"]
       "nu" -> []
-      base when base in ["sh", "dash"] -> []
+      base when base in ["sh", "dash", "cmd"] -> []
+      base when base in ["powershell", "pwsh"] -> ["-NoLogo"]
       base when base in ["zsh", "bash", "ksh"] -> ["-il"]
       _ -> []
     end
   end
 
   defp build_pty_command(cmd, args, cwd) do
-    exec = Enum.map_join([cmd | args], " ", &shell_escape/1)
+    if Platform.windows?() do
+      {cmd, args}
+    else
+      exec = Enum.map_join([cmd | args], " ", &shell_escape/1)
 
-    cd =
-      if is_binary(cwd) and cwd != "" and cwd != File.cwd!() do
-        "cd #{shell_escape(cwd)} && "
-      else
-        ""
-      end
+      cd =
+        if is_binary(cwd) and cwd != "" and cwd != File.cwd!() do
+          "cd #{shell_escape(cwd)} && "
+        else
+          ""
+        end
 
-    # PTY children inherit the desktop release environment. Clear it before exec
-    # so mix/iex use the machine OTP instead of release/bin/start.boot.
-    {"/bin/sh", ["-c", "#{ProcessRunner.shell_prelude()}; #{cd}exec #{exec}"]}
+      # PTY children inherit the desktop release environment. Clear it before exec
+      # so mix/iex use the machine OTP instead of release/bin/start.boot.
+      {"/bin/sh", ["-c", "#{ProcessRunner.shell_prelude()}; #{cd}exec #{exec}"]}
+    end
+  end
+
+  defp pty_cwd(cwd) when is_binary(cwd), do: cwd
+  defp pty_cwd(_cwd), do: ""
+
+  defp pty_env do
+    unsets = CommandEnvironment.system_cmd_unsets()
+
+    case System.get_env("PATH") do
+      path when is_binary(path) and path != "" ->
+        [{"PATH", CommandEnvironment.strip_release_erts(path)} | unsets]
+
+      _ ->
+        unsets
+    end
+  end
+
+  defp normalize_input(input) when is_binary(input) do
+    if Platform.windows?() do
+      input
+      |> String.replace("\r\n", "\r")
+      |> String.replace("\n", "\r")
+    else
+      input
+    end
   end
 
   defp shell_escape(str) do

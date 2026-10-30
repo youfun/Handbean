@@ -94,7 +94,34 @@ if (-not (Test-Path $tar)) {
 }
 Write-Host "tar: $tar"
 
-# 4) MSVC C++ 工具链（NIF 编译需要 cl 和 nmake）
+# 4) Zig 0.16.0（Ghostty 终端 NIF 编译需要固定版本 0.16.0）
+$zigResolved = $false
+$zigCmd = Get-Command zig -ErrorAction SilentlyContinue
+if ($zigCmd -and (((& $zigCmd.Source version 2>$null) -join "").Trim() -eq "0.16.0")) {
+  $zigResolved = $true
+} else {
+  $zigCandidates = @(
+    $env:GHOSTTY_ZIG_DIR,
+    "D:\tools\zig-x86_64-windows-0.16.0",
+    (Join-Path $env:LOCALAPPDATA "zigler\Cache\zig-x86_64-windows-0.16.0"),
+    (Join-Path $env:LOCALAPPDATA "mise\installs\zig\0.16.0"),
+    (Join-Path $env:USERPROFILE ".version-fox\cache\zig\current")
+  ) | Where-Object { $_ -and (Test-Path -LiteralPath (Join-Path $_ "zig.exe")) }
+  foreach ($dir in $zigCandidates) {
+    $zigExe = Join-Path $dir "zig.exe"
+    if ((((& $zigExe version 2>$null) -join "").Trim() -eq "0.16.0")) {
+      $env:PATH = "$dir;$env:PATH"
+      $zigResolved = $true
+      break
+    }
+  }
+}
+if (-not $zigResolved) {
+  Stop-Build "未找到 Zig 0.16.0；Ghostty 终端 NIF 编译需要固定版本 0.16.0（见 mise.toml）。请先安装 Zig 0.16.0 或设置 GHOSTTY_ZIG_DIR，然后重新运行。" "Zig 0.16.0 not found; Ghostty terminal NIF build requires Zig 0.16.0 (see mise.toml). Install Zig 0.16.0 or set GHOSTTY_ZIG_DIR first, then run again."
+}
+Write-Host "Zig: $(& zig version 2>$null)"
+
+# 5) MSVC C++ 工具链（NIF 编译需要 cl 和 nmake）
 $vcvars = $null
 $cl = Get-Command cl -ErrorAction SilentlyContinue
 $nmake = Get-Command nmake -ErrorAction SilentlyContinue

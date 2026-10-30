@@ -197,8 +197,9 @@ func (c *Controller) spawn(generation int) error {
 		return err
 	}
 	exited := make(chan struct{})
+	var waitErr error
 	go func() {
-		_ = cmd.Wait()
+		waitErr = cmd.Wait()
 		close(exited)
 	}()
 	c.mu.Lock()
@@ -216,13 +217,13 @@ func (c *Controller) spawn(generation int) error {
 	c.mu.Unlock()
 	c.writePidFile(cmd.Process.Pid)
 	shell.Log(fmt.Sprintf("spawned backend pid %d port %d", cmd.Process.Pid, c.port))
-	go c.watchExit(exited)
+	go c.watchExit(cmd.Process.Pid, exited, &waitErr)
 	return nil
 }
 
 // watchExit mirrors the macOS termination handler: a backend that exits
 // without the shell stopping it is a failure, unless a boot is superseded.
-func (c *Controller) watchExit(exited chan struct{}) {
+func (c *Controller) watchExit(pid int, exited chan struct{}, waitErr *error) {
 	<-exited
 	c.mu.Lock()
 	intentional := c.intentionalStop
@@ -231,6 +232,7 @@ func (c *Controller) watchExit(exited chan struct{}) {
 	if intentional {
 		return
 	}
+	shell.Log(fmt.Sprintf("backend pid %d exited unexpectedly: %v", pid, *waitErr))
 	c.fail(generation, fmt.Sprintf("后端已退出。日志：%s", c.logPathValue()))
 }
 
@@ -426,6 +428,7 @@ func (c *Controller) fail(generation int, message string) {
 	c.failure = message
 	fn := c.onChange
 	c.mu.Unlock()
+	shell.Log(fmt.Sprintf("backend fail: %s", message))
 	if fn != nil {
 		fn(Failed, "", false, message)
 	}

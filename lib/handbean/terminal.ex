@@ -4,8 +4,8 @@ defmodule Handbean.Terminal do
   @doc """
   True when the host declared a terminal and this build can load Ghostty.
 
-  Ghostty publishes NIFs for Linux and macOS only. A Windows package still
-  boots the Web UI; it just does not offer the in-browser terminal.
+  Desktop builds (Linux, macOS, and Windows) compile Ghostty NIFs; mobile
+  builds omit the dependency and do not offer the in-browser terminal.
   """
   @spec available?() :: boolean()
   def available? do

@@ -26,7 +26,7 @@
   "fine": {:hex, :fine, "0.1.6", "4bf7151493443c454aac9f2fa2f34f5fefd0346a83fb5586a016c4a135c63247", [:mix], [], "hexpm", "5638eb4495488e885ebec167fa57973e5c35e1a50c344eb7666c90ec1c4e3b12"},
   "floki": {:hex, :floki, "0.38.4", "10f98971e892aed2c2f1b3a0f928e488e3797e1c6dd3dfd98db40b14e9a78bcf", [:mix], [], "hexpm", "bdb34645eee8e79845c7edaca2d4099a52804ee4d4a3ecc683a69451f0244973"},
   "gettext": {:hex, :gettext, "1.0.2", "5457e1fd3f4abe47b0e13ff85086aabae760497a3497909b8473e0acee57673b", [:mix], [{:expo, "~> 0.5.1 or ~> 1.0", [hex: :expo, repo: "hexpm", optional: false]}], "hexpm", "eab805501886802071ad290714515c8c4a17196ea76e5afc9d06ca85fb1bfeb3"},
-  "ghostty": {:git, "https://github.com/youfun/ghostty_ex.git", "d92852ccfdaf2f78c3d694b194287441066672db", [branch: "upgrade/ghostty-22fa134"]},
+  "ghostty": {:git, "https://github.com/youfun/ghostty_ex.git", "0e7c5e4f9892a25952ccb5e3d80099cd2da74063", [branch: "upgrade/ghostty-22fa134"]},
   "hpax": {:hex, :hpax, "1.1.0", "782931867cc23217c68fb5f68fe1a11f5e7544c7fda82c8a7019a5df5a4a1cdf", [:mix], [], "hexpm", "0b8d0f05832f55571d65ac720f79bf8994138ffbb133209dc4685eae0ad456a8"},
   "jason": {:hex, :jason, "1.4.5", "2e3a008590b0b8d7388c20293e9dcc9cf3e5d642fd2a114e4cbbb52e595d940a", [:mix], [{:decimal, "~> 1.0 or ~> 2.0 or ~> 3.0", [hex: :decimal, repo: "hexpm", optional: true]}], "hexpm", "b0c823996102bcd0239b3c2444eb00409b72f6a140c1950bc8b457d836b30684"},
   "json_codec": {:hex, :json_codec, "0.3.1", "81f738e212308c85344e11da00af6d8b52bd486224ee24c1f51b95df0604aeae", [:mix], [{:jason, "~> 1.4", [hex: :jason, repo: "hexpm", optional: true]}, {:json_spec, "~> 1.2", [hex: :json_spec, repo: "hexpm", optional: false]}], "hexpm", "dffea3198d3f1fe9a39aa176ab0d6988b8c80dd85a67e913b323d4ec7c57ca9d"},

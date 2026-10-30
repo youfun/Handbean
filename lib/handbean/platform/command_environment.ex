@@ -21,11 +21,17 @@ defmodule Handbean.Platform.CommandEnvironment do
   @internal_env @release_env ++ @desktop_internal_env
   @inherited_backend_env @internal_env ++ @backend_env
 
+  alias Handbean.Platform
+
+  @default_windows_pathext ".COM;.EXE;.BAT;.CMD"
+
   @spec sanitize(map()) :: map()
   def sanitize(environment) when is_map(environment) do
+    path_key = Platform.path_env_key(environment)
+
     environment
     |> Map.drop(@internal_env)
-    |> Map.update("PATH", nil, &strip_release_erts/1)
+    |> Map.update(path_key, nil, &strip_release_erts/1)
     |> Map.reject(fn {_key, value} -> is_nil(value) end)
   end
 
@@ -73,25 +79,85 @@ defmodule Handbean.Platform.CommandEnvironment do
 
   @spec find_executable(String.t(), map()) :: String.t() | nil
   def find_executable(name, environment) when is_binary(name) and is_map(environment) do
-    environment
-    |> Map.get("PATH", "")
-    |> String.split(":", trim: true)
-    |> Enum.find_value(fn dir ->
-      path = Path.join(dir, name)
+    candidates = executable_candidates(name, environment)
 
-      case File.stat(path) do
-        {:ok, %File.Stat{type: :regular, mode: mode}} when Bitwise.band(mode, 0o111) != 0 -> path
-        _ -> nil
-      end
+    environment
+    |> Platform.path_env()
+    |> String.split(path_separator(), trim: true)
+    |> Enum.find_value(fn dir ->
+      Enum.find_value(candidates, fn candidate ->
+        path = Path.join(dir, candidate)
+
+        case File.stat(path) do
+          {:ok, stat} -> if executable_stat?(stat), do: path
+          _ -> nil
+        end
+      end)
     end)
   end
 
+  defp executable_candidates(name, environment) do
+    if Platform.windows?() do
+      exts = windows_pathext(environment)
+      ext_candidates = Enum.map(exts, &(name <> &1))
+
+      if Path.extname(name) == "" do
+        ext_candidates ++ [name]
+      else
+        [name | ext_candidates]
+      end
+    else
+      [name]
+    end
+  end
+
+  defp windows_pathext(environment) do
+    raw =
+      non_empty_string(Map.get(environment, "PATHEXT")) ||
+        non_empty_string(Map.get(environment, "Pathext")) ||
+        non_empty_string(Map.get(environment, "pathext")) ||
+        non_empty_string(System.get_env("PATHEXT")) ||
+        @default_windows_pathext
+
+    raw
+    |> String.split(";", trim: true)
+    |> Enum.map(fn ext ->
+      ext = ext |> String.trim() |> String.downcase()
+      if String.starts_with?(ext, "."), do: ext, else: "." <> ext
+    end)
+    |> Enum.reject(&(&1 == "."))
+    |> Enum.uniq()
+  end
+
+  defp non_empty_string(value) when is_binary(value) do
+    trimmed = String.trim(value)
+    if trimmed == "", do: nil, else: trimmed
+  end
+
+  defp non_empty_string(_), do: nil
+
+  defp executable_stat?(%File.Stat{type: :regular, mode: mode}) do
+    if Platform.windows?() do
+      true
+    else
+      Bitwise.band(mode, 0o111) != 0
+    end
+  end
+
+  defp executable_stat?(_stat), do: false
+
   @spec strip_release_erts(String.t()) :: String.t()
   def strip_release_erts(path) when is_binary(path) do
+    separator = path_separator()
+
     path
-    |> String.split(":", trim: true)
+    |> String.split(separator, trim: true)
     |> Enum.reject(&release_erts_dir?/1)
-    |> Enum.join(":")
+    |> Enum.join(separator)
+  end
+
+  defp path_separator do
+    if Platform.windows?(), do: ";", else: ":"
   end
 
   defp release_erts_dir?(dir) do

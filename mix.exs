@@ -143,22 +143,24 @@ defmodule Handbean.MixProject do
       else: []
   end
 
-  # Ghostty NIFs exist for Linux and macOS only. Windows Web UI packages
-  # omit the dep so `mix release` can build; the terminal stays unavailable.
+  # The upgrade branch has no precompiled release; build its pinned engine.
   defp maybe_ghostty do
+    [
+      {:ghostty,
+       git: "https://github.com/youfun/ghostty_ex.git",
+       branch: "upgrade/ghostty-22fa134",
+       compile: ghostty_compile_command(),
+       optional: true,
+       targets: :host},
+      {:zigler, "~> 0.16.0", runtime: false, optional: true, targets: :host}
+    ]
+  end
+
+  defp ghostty_compile_command do
     if match?({:win32, _}, :os.type()) do
-      []
+      ~s(powershell -NoProfile -ExecutionPolicy Bypass -File "#{__DIR__}/scripts/compile_ghostty.ps1")
     else
-      # The upgrade branch has no precompiled release; build its pinned engine.
-      [
-        {:ghostty,
-         git: "https://github.com/youfun/ghostty_ex.git",
-         branch: "upgrade/ghostty-22fa134",
-         compile: ~s(bash "#{__DIR__}/scripts/compile_ghostty.sh"),
-         optional: true,
-         targets: :host},
-        {:zigler, "~> 0.16.0", runtime: false, optional: true, targets: :host}
-      ]
+      ~s(bash "#{__DIR__}/scripts/compile_ghostty.sh")
     end
   end
 

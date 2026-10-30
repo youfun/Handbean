@@ -9,7 +9,7 @@ defmodule HandbeanWeb.Live.TerminalPanel do
 
   use HandbeanWeb, :live_component
 
-  # Mobile and Windows builds intentionally omit the optional Ghostty dependency.
+  # Mobile builds intentionally omit the optional Ghostty dependency.
   @compile {:no_warn_undefined, Ghostty.LiveTerminal.Component}
 
   alias Handbean.Terminal.{Session, Supervisor}
@@ -539,7 +539,11 @@ defmodule HandbeanWeb.Live.TerminalPanel do
   defp shell_session?(_), do: false
 
   defp shell_cmd?(cmd) when is_binary(cmd) do
-    cmd |> Path.basename() |> String.downcase() |> Kernel.in(~w(zsh bash sh fish dash ksh nu))
+    cmd
+    |> Path.basename()
+    |> String.downcase()
+    |> Path.rootname()
+    |> Kernel.in(~w(zsh bash sh fish dash ksh nu cmd powershell pwsh))
   end
 
   defp shell_cmd?(_), do: false

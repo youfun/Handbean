@@ -3,6 +3,14 @@ defmodule Handbean.WebUIBuildScriptTest do
 
   @root Path.expand("../..", __DIR__)
   @pack_script Path.join(@root, "scripts/pack_webui.ps1")
+  @pack_workflow Path.join(@root, ".github/workflows/pack.yml")
+
+  test "pack workflow installs Zig 0.16.0 for Windows web packaging" do
+    workflow = File.read!(@pack_workflow)
+
+    assert workflow =~
+             ~r/uses:\s*goto-bus-stop\/setup-zig@v2\s+if:.*startsWith\(matrix\.target,\s*'windows-'\).*version:\s*"0\.16\.0"/s
+  end
 
   test "package build uses a clean target-owned Mix build path" do
     source = File.read!(@pack_script)

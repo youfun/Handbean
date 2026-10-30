@@ -60,7 +60,7 @@ h1 { font-size: 20px; }
 <body>
 <h1>正在启动 Handbean…</h1>
 <p>正在选择回环端口并启动本地服务。</p>
-</body></html>`, "about:blank")
+</body></html>`, "")
 }
 
 // LoadApp navigates to the ready backend. attached is true only when this
@@ -80,8 +80,9 @@ func (h *HostWindow) LoadApp(pageURL string, attached bool) {
 }
 
 // ShowError replaces the page with a failure notice, mirroring the macOS
-// shell's failed state. The base URL is about:blank so the navigation
-// policy does not treat the notice as an off-origin http page.
+// shell's failed state. The empty base URL loads at about:blank via
+// NavigateToString on WebView2 so the navigation policy does not treat the
+// notice as an off-origin http page.
 func (h *HostWindow) ShowError(message, logPath, logTail string) {
 	h.origin = core.NewAppOrigin("about:blank")
 	h.Win.SetTitle("Handbean — 启动失败")
@@ -103,7 +104,7 @@ code { background: #111; padding: 2px 4px; }
 <p>%s</p>
 <p>日志：<code>%s</code></p>
 %s
-</body></html>`, htmlEscape(message), htmlEscape(logPath), detail), "about:blank")
+</body></html>`, htmlEscape(message), htmlEscape(logPath), detail), "")
 }
 
 func htmlEscape(s string) string {
