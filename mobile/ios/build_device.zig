@@ -127,9 +127,15 @@ pub fn build(b: *std.Build) void {
     swift_run.addArg(b.fmt("{s}/ios", .{mob_dir}));
     swift_run.addArgs(&.{ "-parse-as-library", "-wmo" });
     // Explicit list: zig 0.17-dev.2131 dropped std.fs.cwd / Build.graph.io globbing.
-    // MobRootView is the patched copy; the other two stay stock.
+    // MobRootView is the patched copy; the other renderers stay stock.
     swift_run.addFileArg(markdown_overlay.root);
-    inline for (.{ "MobViewModel.swift", "MobGpuView.swift" }) |name| {
+    inline for (.{
+        "MobViewModel.swift",
+        "MobGpuView.swift",
+        "MobAnchored.swift",
+        "MobInputEvents.swift",
+        "MobZoomableImage.swift",
+    }) |name| {
         swift_run.addFileArg(.{ .cwd_relative = b.fmt("{s}/ios/{s}", .{ mob_dir, name }) });
     }
     swift_run.addFileArg(.{ .cwd_relative = b.fmt("{s}/HandbeanMarkdown.swift", .{project_ios_dir}) });
