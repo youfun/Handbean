@@ -16,6 +16,11 @@ defmodule Handbean.WorkspaceChangeCapture do
   alias Handbean.Security.PathValidator
 
   @max_file_bytes 1_000_000
+  @max_baseline_files 128
+  @max_baseline_bytes 8_000_000
+  @max_capture_files 32
+  @max_candidate_files 128
+  @max_capture_bytes 8_000_000
 
   @type capture :: map() | nil
 
@@ -23,12 +28,21 @@ defmodule Handbean.WorkspaceChangeCapture do
   def start(workspace) when is_binary(workspace) and workspace != "" do
     workspace = Path.expand(workspace)
 
-    with {:ok, repo} <- CLI.open(workspace, ceiling: Path.dirname(workspace)),
-         {:ok, repo_root} <- CLI.workdir(repo),
+    case CLI.open(workspace, ceiling: Path.dirname(workspace)) do
+      {:ok, repo} -> start_repo(repo, workspace)
+      {:error, _reason} -> nil
+    end
+  end
+
+  def start(_workspace), do: nil
+
+  defp start_repo(repo, workspace) do
+    with {:ok, repo_root} <- CLI.workdir(repo),
          true <- inside?(workspace, repo_root),
          {:ok, status} <- CLI.status(repo),
          {:ok, tracked} <- CLI.tracked_files(repo) do
-      paths = status_paths(status, repo_root, workspace)
+      paths = status_paths(status, repo_root, workspace) |> Enum.sort()
+      {before, _bytes} = capture_baseline(paths, workspace)
 
       head =
         case CLI.head_oid(repo) do
@@ -43,45 +57,82 @@ defmodule Handbean.WorkspaceChangeCapture do
         head: head,
         tracked: tracked,
         before_paths: MapSet.new(paths),
-        before: Map.new(paths, &{&1, file_state(&1, workspace)})
+        before: before
       }
     else
-      _ -> nil
+      _ -> %{unavailable: true}
     end
   end
 
-  def start(_workspace), do: nil
+  @spec finish(capture(), map()) :: map()
+  def finish(nil, _context), do: empty_result()
 
-  @spec finish(capture(), map()) :: [map()]
-  def finish(nil, _context), do: []
+  def finish(%{unavailable: true}, _context) do
+    Map.merge(empty_result(), %{
+      truncated: true,
+      omitted_paths: nil,
+      reason: "baseline_unavailable"
+    })
+  end
 
   def finish(capture, context) when is_map(capture) and is_map(context) do
     with {:ok, status} <- CLI.status(capture.repo) do
       after_paths = status_paths(status, capture.repo_root, capture.workspace)
       committed_paths = committed_paths(capture)
 
-      capture.before_paths
-      |> MapSet.union(MapSet.new(after_paths))
-      |> MapSet.union(MapSet.new(committed_paths))
-      |> Enum.sort()
-      |> Enum.flat_map(&record_change(&1, capture, context))
+      paths =
+        capture.before_paths
+        |> MapSet.union(MapSet.new(after_paths))
+        |> MapSet.union(MapSet.new(committed_paths))
+        |> Enum.sort()
+
+      result = Enum.reduce(paths, empty_result(), &record_change(&1, capture, context, &2))
+      %{result | changes: Enum.reverse(result.changes)}
     else
-      _ -> []
+      _ ->
+        Map.merge(empty_result(), %{
+          truncated: true,
+          omitted_paths: nil,
+          reason: "status_unavailable"
+        })
     end
   end
 
-  def finish(_capture, _context), do: []
+  def finish(_capture, _context), do: empty_result()
 
-  @spec persist([map()], map(), keyword()) :: :ok
-  def persist(changes, context, opts \\ [])
+  defp empty_result do
+    %{changes: [], truncated: false, omitted_paths: 0, snapshot_bytes: 0, examined_paths: 0}
+  end
 
-  def persist(changes, context, opts) when is_list(changes) and is_map(context) do
+  defp capture_baseline(paths, workspace) do
+    paths
+    |> Enum.take(@max_baseline_files)
+    |> Enum.reduce({%{}, 0}, fn path, {before, bytes} ->
+      state = file_state(path, workspace)
+      size = state_bytes(state)
+
+      if bytes + size <= @max_baseline_bytes do
+        {Map.put(before, path, state), bytes + size}
+      else
+        {before, bytes}
+      end
+    end)
+  end
+
+  defp state_bytes({:file, content}), do: byte_size(content)
+  defp state_bytes(_state), do: 0
+
+  @spec persist(map(), map(), keyword()) :: map()
+  def persist(result, context, opts \\ [])
+
+  def persist(%{changes: changes} = result, context, opts) when is_map(context) do
     conversation_id = context[:conversation_id] || context["conversation_id"]
     run_id = context[:run_id] || context["run_id"]
     tool_call_id = context[:tool_call_id] || context["tool_call_id"]
     entry_id = Keyword.get(opts, :entry_id) || effect_entry_id(tool_call_id)
 
-    if changes != [] and is_binary(conversation_id) and is_binary(entry_id) do
+    if (changes != [] or result.truncated) and is_binary(conversation_id) and
+         is_binary(entry_id) do
       entry = %{
         "id" => entry_id,
         "role" => "system",
@@ -89,26 +140,79 @@ defmodule Handbean.WorkspaceChangeCapture do
         "status" => "completed",
         "run_id" => run_id,
         "tool_call_id" => tool_call_id,
-        "details" => %{"changes" => changes}
+        "details" => %{
+          "changes" => changes,
+          "truncated" => result.truncated,
+          "omitted_paths" => result.omitted_paths,
+          "snapshot_bytes" => result.snapshot_bytes,
+          "reason" => Map.get(result, :reason)
+        }
       }
 
       try do
-        case Handbean.ConversationTranscriptStore.append(conversation_id, entry) do
-          {:ok, _entry} -> :ok
-          {:error, :duplicate_id} -> :ok
-          {:error, _reason} -> :ok
+        case Handbean.ConversationTranscriptStore.append(
+               conversation_id,
+               entry,
+               Keyword.take(opts, [:transcript_store])
+             ) do
+          {:ok, _entry} ->
+            result
+
+          {:error, reason} when reason in [:duplicate_id, :not_found] ->
+            if Handbean.ConversationTranscriptStore.impl(opts) ==
+                 Handbean.ConversationTranscriptStore.ConversationStore do
+              discard_uncommitted(result)
+            else
+              result
+            end
+
+          {:error, _reason} ->
+            result
         end
       rescue
-        _error -> :ok
+        _error -> result
       catch
-        :exit, _reason -> :ok
+        :exit, _reason -> result
       end
     else
-      :ok
+      result
     end
   end
 
-  def persist(_changes, _context, _opts), do: :ok
+  def persist(result, _context, _opts), do: result
+
+  defp discard_uncommitted(result) do
+    outcomes =
+      result.changes
+      |> Enum.map(&Map.get(&1, :change_snapshot_ref))
+      |> Enum.filter(&is_binary/1)
+      |> ChangeSnapshot.delete_uncommitted_batch()
+      |> Map.new()
+
+    changes =
+      Enum.map(result.changes, fn change ->
+        ref = Map.get(change, :change_snapshot_ref)
+
+        case Map.fetch(outcomes, ref) do
+          {:ok, {:error, :snapshot_referenced}} ->
+            change
+
+          {:ok, _outcome} ->
+            change
+            |> Map.delete(:change_snapshot_ref)
+            |> Map.merge(%{
+              reversible: false,
+              revert_status: "unavailable",
+              revert_reason: "snapshot_unavailable"
+            })
+
+          :error ->
+            change
+        end
+      end)
+
+    %{result | changes: changes}
+  end
 
   defp effect_entry_id(tool_call_id) when is_binary(tool_call_id) and tool_call_id != "" do
     digest = :crypto.hash(:sha256, tool_call_id) |> Base.url_encode64(padding: false)
@@ -117,24 +221,71 @@ defmodule Handbean.WorkspaceChangeCapture do
 
   defp effect_entry_id(_tool_call_id), do: nil
 
-  defp record_change(path, capture, context) do
-    before = before_state(path, capture)
-    after_state = file_state(path, capture.workspace)
+  defp record_change(_path, _capture, _context, %{changes: changes} = result)
+       when length(changes) >= @max_capture_files do
+    omit_path(result)
+  end
 
-    if before == after_state do
-      []
+  defp record_change(_path, _capture, _context, %{examined_paths: count} = result)
+       when count >= @max_candidate_files do
+    omit_path(result)
+  end
+
+  defp record_change(path, capture, context, result) do
+    result = %{result | examined_paths: result.examined_paths + 1}
+    before = before_state(path, capture)
+
+    if before in [:unknown, :unsupported] do
+      omit_path(result)
     else
-      case snapshot(path, before, after_state) do
-        nil -> []
-        snapshot -> [ChangeSnapshot.result_details(snapshot, context)]
+      after_state = file_state(path, capture.workspace)
+
+      cond do
+        after_state == :unsupported ->
+          omit_path(result)
+
+        before == after_state ->
+          result
+
+        true ->
+          case snapshot(path, before, after_state) do
+            nil -> omit_path(result)
+            snapshot -> add_snapshot(snapshot, context, result)
+          end
       end
     end
   end
 
+  defp add_snapshot(snapshot, context, result) do
+    encoded = Handbean.JSON.encode!(Handbean.JsonSafe.normalize(snapshot))
+    bytes = byte_size(encoded)
+
+    if result.snapshot_bytes + bytes > @max_capture_bytes do
+      omit_path(result)
+    else
+      change = ChangeSnapshot.result_details(snapshot, context)
+
+      %{
+        result
+        | changes: [change | result.changes],
+          snapshot_bytes: result.snapshot_bytes + bytes
+      }
+    end
+  end
+
+  defp omit_path(result) do
+    %{result | truncated: true, omitted_paths: result.omitted_paths + 1}
+  end
+
   defp before_state(path, capture) do
     case Map.fetch(capture.before, path) do
-      {:ok, state} -> state
-      :error -> head_state(path, capture)
+      {:ok, state} ->
+        state
+
+      :error ->
+        if MapSet.member?(capture.before_paths, path),
+          do: :unknown,
+          else: head_state(path, capture)
     end
   end
 
@@ -149,10 +300,13 @@ defmodule Handbean.WorkspaceChangeCapture do
         :unsupported
 
       true ->
-        case CLI.read_revision_file(capture.repo, capture.head, relative) do
-          {:ok, content} when byte_size(content) <= @max_file_bytes -> {:file, content}
-          {:ok, _content} -> :unsupported
-          {:error, _reason} -> :unsupported
+        with {:ok, size} <- CLI.revision_file_size(capture.repo, capture.head, relative),
+             true <- size <= @max_file_bytes,
+             {:ok, content} <- CLI.read_revision_file(capture.repo, capture.head, relative),
+             true <- byte_size(content) <= @max_file_bytes do
+          {:file, content}
+        else
+          _ -> :unsupported
         end
     end
   end
@@ -169,9 +323,15 @@ defmodule Handbean.WorkspaceChangeCapture do
   defp read_file_state(path) do
     case File.lstat(path) do
       {:ok, %File.Stat{type: :regular, size: size}} when size <= @max_file_bytes ->
-        case File.read(path) do
-          {:ok, content} -> {:file, content}
-          {:error, _reason} -> :unsupported
+        case File.open(path, [:read, :binary], &IO.binread(&1, @max_file_bytes + 1)) do
+          {:ok, content} when is_binary(content) and byte_size(content) <= @max_file_bytes ->
+            {:file, content}
+
+          {:ok, :eof} ->
+            {:file, ""}
+
+          _ ->
+            :unsupported
         end
 
       {:error, :enoent} ->

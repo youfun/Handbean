@@ -1,9 +1,12 @@
 defmodule Handbean.ConversationArtifacts.Cleaner do
   @moduledoc """
-  Periodically applies retention and capacity limits to conversation tool-result spills.
+  Periodically applies retention and capacity limits to conversation artifacts.
+  Stale snapshot temporary files are removed. Final snapshots are retained because
+  asynchronous publishers may outlive the registered run; orphan pruning requires
+  a caller that can establish there are no pending publishers.
 
-  Newly written files have a minimum retention window, so capacity cleanup does not
-  remove results from current or recently completed runs.
+  Newly written tool-result spills have a minimum retention window, so capacity
+  cleanup does not remove results from current or recently completed runs.
   """
 
   use GenServer
@@ -53,6 +56,16 @@ defmodule Handbean.ConversationArtifacts.Cleaner do
         min_retention_seconds:
           configured(:min_tool_result_retention_seconds, @default_min_retention_seconds)
       )
+
+    snapshots =
+      Handbean.ConversationArtifacts.prune_change_snapshots(
+        retention_seconds: configured(:retention_days, @default_retention_days) * 24 * 60 * 60,
+        max_bytes: configured(:max_change_snapshot_bytes, @default_max_bytes),
+        min_retention_seconds:
+          configured(:min_change_snapshot_retention_seconds, @default_min_retention_seconds)
+      )
+
+    result = Map.merge(result, snapshots, fn _key, first, second -> first + second end)
 
     if result.failed > 0 do
       Logger.warning(

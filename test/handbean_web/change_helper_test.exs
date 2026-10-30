@@ -208,6 +208,53 @@ defmodule HandbeanWeb.ChangeHelperTest do
       assert result["revert_status"] == "available"
     end
 
+    test "marks an unloadable snapshot reference unavailable despite recorded metadata" do
+      for entry <- [
+            %{
+              "change" => %{
+                "change_id" => "missing-change",
+                "change_snapshot_ref" => "invalid-ref",
+                "reversible" => true,
+                "revert_status" => "available"
+              }
+            },
+            %{
+              "change" => %{change_id: "missing-change"},
+              "details" => %{
+                change_snapshot_ref: "invalid-ref",
+                reversible: true,
+                revert_status: "available"
+              }
+            }
+          ] do
+        change = ChangeHelper.change_from_entry(entry)
+
+        assert change["change_id"] == "missing-change"
+        assert change["reversible"] == false
+        assert change["revert_status"] == "unavailable"
+        assert change["revert_reason"] == "snapshot_unavailable"
+      end
+    end
+
+    test "preserves legacy inline snapshots when there is no reference" do
+      entry = %{
+        "change" => %{
+          "change_id" => "legacy-change",
+          "before_content" => "before",
+          "after_content" => "after",
+          "reversible" => true,
+          "revert_status" => "available"
+        }
+      }
+
+      change = ChangeHelper.change_from_entry(entry)
+
+      assert change["before_content"] == "before"
+      assert change["after_content"] == "after"
+      assert change["reversible"] == true
+      assert change["revert_status"] == "available"
+    end
+
     test "reads change from nested details map" do
       entry = %{
         "id" => "tool-xyz",

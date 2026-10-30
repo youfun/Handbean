@@ -41,6 +41,28 @@ defmodule HandbeanWeb.FileChangeCardTest do
     end
   end
 
+  test "a missing referenced snapshot becomes review-only in the change card" do
+    conversation_id = "missing-snapshot-#{System.unique_integer([:positive])}"
+    snapshot = ChangeSnapshot.build_edit_snapshot("lib/app.ex", "before\n", "after\n")
+    details = ChangeSnapshot.result_details(snapshot, %{conversation_id: conversation_id})
+    entry = %{"id" => "edit-1", "tool_name" => "edit", "details" => details}
+
+    available =
+      Phoenix.LiveViewTest.render_component(&FileChangeCard.card/1, entry: entry, open?: true)
+
+    assert available =~ ~s(phx-click="confirm_revert_change")
+    assert available =~ "available"
+
+    assert :ok = Handbean.ConversationArtifacts.delete_items([conversation_id])
+
+    unavailable =
+      Phoenix.LiveViewTest.render_component(&FileChangeCard.card/1, entry: entry, open?: true)
+
+    assert unavailable =~ "unavailable"
+    assert unavailable =~ "review-only and cannot be reverted"
+    refute unavailable =~ ~s(phx-click="confirm_revert_change")
+  end
+
   describe "relative_display_path/2" do
     test "absolute paths inside the workspace keep their directory" do
       root = "/tmp/handbean"

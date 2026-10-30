@@ -66,15 +66,16 @@ defmodule Handbean.ChangeSnapshot do
   def persist(%{reversible: true, change_id: change_id} = snapshot, context)
       when is_map(context) do
     with conversation_id when is_binary(conversation_id) <- conversation_id(context),
-         true <- safe_id?(conversation_id) and safe_id?(change_id),
-         path <- snapshot_path(conversation_id, change_id),
-         :ok <- File.mkdir_p(Path.dirname(path)),
          {:ok, encoded} <- encode_snapshot(snapshot),
-         :ok <- atomic_write(path, encoded) do
+         :ok <-
+           Handbean.ConversationArtifacts.persist_change_snapshot(
+             conversation_id,
+             change_id,
+             encoded
+           ) do
       {:ok, encode_ref(conversation_id, change_id)}
     else
       nil -> {:error, :missing_conversation_id}
-      false -> {:error, :invalid_snapshot_id}
       {:error, _reason} = error -> error
     end
   end
@@ -84,10 +85,9 @@ defmodule Handbean.ChangeSnapshot do
   @doc "Loads a persisted change snapshot from an opaque reference."
   @spec load(String.t()) :: {:ok, snapshot()} | {:error, term()}
   def load(@ref_prefix <> encoded) do
-    with {:ok, decoded} <- Base.url_decode64(encoded, padding: false),
-         [conversation_id, change_id] <- :binary.split(decoded, <<0>>, [:global]),
-         true <- safe_id?(conversation_id) and safe_id?(change_id),
-         {:ok, body} <- File.read(snapshot_path(conversation_id, change_id)),
+    with {:ok, conversation_id, change_id} <- decode_ref(encoded),
+         {:ok, body} <-
+           Handbean.ConversationArtifacts.load_change_snapshot(conversation_id, change_id),
          {:ok, snapshot} <- Handbean.JSON.decode(body),
          true <- is_map(snapshot) do
       {:ok, snapshot}
@@ -100,6 +100,57 @@ defmodule Handbean.ChangeSnapshot do
   end
 
   def load(_ref), do: {:error, :invalid_snapshot_ref}
+
+  @doc """
+  Deletes a newly created snapshot after a known duplicate or known failed append.
+
+  Call only for a reference returned by a successful `persist/2` in the current
+  operation, when no writer can still publish it. Never call after an exception or
+  any uncertain append outcome. The durable reference scan is fail-closed and
+  refuses to delete referenced snapshots. Returns `:ok` after deletion,
+  `{:error, :snapshot_referenced}` if referenced, `{:error, :invalid_snapshot_ref}`
+  for a malformed reference, `{:error, :enoent}` if missing,
+  `{:error, :snapshot_scan_inside_transaction}` when called inside an existing
+  database transaction, or `{:error, reason}` for another scan, locking, path,
+  or filesystem failure.
+  """
+  @spec delete_uncommitted(String.t()) :: :ok | {:error, term()}
+  def delete_uncommitted(ref) do
+    [{^ref, result}] = delete_uncommitted_batch([ref])
+    result
+  end
+
+  @doc """
+  Deletes multiple newly created, known-uncommitted snapshots with one durable
+  reference scan. The safety conditions and result values are the same as
+  `delete_uncommitted/1`. Results are `{ref, result}` pairs in input order;
+  duplicate references are deleted once and receive the same result.
+  """
+  @spec delete_uncommitted_batch([term()]) :: [{term(), :ok | {:error, term()}}]
+  def delete_uncommitted_batch(refs) when is_list(refs) do
+    unique_refs = Enum.uniq(refs)
+
+    {valid, invalid} =
+      Enum.reduce(unique_refs, {[], %{}}, fn ref, {valid, invalid} ->
+        case decode_snapshot_ref(ref) do
+          {:ok, conversation_id, change_id} ->
+            {[{conversation_id, change_id, ref} | valid], invalid}
+
+          {:error, _reason} = error ->
+            {valid, Map.put(invalid, ref, error)}
+        end
+      end)
+
+    results =
+      valid
+      |> Handbean.ConversationArtifacts.delete_uncommitted_change_snapshots()
+      |> Enum.into(invalid)
+
+    Enum.map(refs, &{&1, Map.fetch!(results, &1)})
+  end
+
+  defp decode_snapshot_ref(@ref_prefix <> encoded), do: decode_ref(encoded)
+  defp decode_snapshot_ref(_ref), do: {:error, :invalid_snapshot_ref}
 
   @doc "Returns bounded result details and stores full revert data when possible."
   @spec result_details(snapshot(), map()) :: map()
@@ -201,41 +252,27 @@ defmodule Handbean.ChangeSnapshot do
     error -> {:error, error}
   end
 
-  defp atomic_write(path, body) do
-    temp = path <> ".tmp-" <> Integer.to_string(System.unique_integer([:positive]))
-
-    with :ok <- File.write(temp, body),
-         :ok <- File.rename(temp, path) do
-      :ok
-    else
-      {:error, reason} ->
-        _ = File.rm(temp)
-        {:error, reason}
-    end
-  end
-
   defp encode_ref(conversation_id, change_id) do
     @ref_prefix <> Base.url_encode64(conversation_id <> <<0>> <> change_id, padding: false)
   end
 
-  defp snapshot_path(conversation_id, change_id) do
-    Path.join([
-      snapshot_root(),
-      "items",
-      conversation_id,
-      "change-snapshots",
-      change_id <> ".json"
-    ])
-  end
-
-  defp snapshot_root do
-    Handbean.ConversationArtifacts.root()
+  defp decode_ref(encoded) do
+    with {:ok, decoded} <- Base.url_decode64(encoded, padding: false),
+         [conversation_id, change_id] <- :binary.split(decoded, <<0>>, [:global]),
+         true <- safe_id?(conversation_id) and safe_id?(change_id),
+         true <- encode_ref(conversation_id, change_id) == @ref_prefix <> encoded do
+      {:ok, conversation_id, change_id}
+    else
+      _ -> {:error, :invalid_snapshot_ref}
+    end
   end
 
   defp conversation_id(context),
     do: Handbean.Utils.SafeMap.get_any(context, :conversation_id, "conversation_id")
 
-  defp safe_id?(id) when is_binary(id), do: Regex.match?(~r/\A[A-Za-z0-9_.:-]+\z/, id)
+  defp safe_id?(id) when is_binary(id) and id not in [".", ".."],
+    do: Regex.match?(~r/\A[A-Za-z0-9_.:-]+\z/, id)
+
   defp safe_id?(_id), do: false
 
   @doc """

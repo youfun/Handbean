@@ -286,26 +286,39 @@ defmodule Handbean.Tool.Builtin.Bash do
         else: opts
 
     result = Handbean.Platform.ProcessRunner.run_bash(command, cwd, timeout_ms, opts)
-    changes = Handbean.WorkspaceChangeCapture.finish(capture, context)
-    :ok = Handbean.WorkspaceChangeCapture.persist(changes, context)
+    capture_result = Handbean.WorkspaceChangeCapture.finish(capture, context)
+    capture_result = Handbean.WorkspaceChangeCapture.persist(capture_result, context)
+    changes = capture_result.changes
 
     case result do
       {:ok, output, %{exit_code: code} = meta} when sandboxed? and code != 0 ->
-        {:ok, output <> sandbox_hint(output), put_changes(meta, changes)}
+        {:ok, output <> sandbox_hint(output), put_changes(meta, capture_result)}
 
       {:ok, output, meta} ->
-        {:ok, output, put_changes(meta, changes)}
+        {:ok, output, put_changes(meta, capture_result)}
 
-      {:error, reason} when changes != [] ->
-        {:error, reason, %{changes: changes, side_effect: :unknown}}
+      {:error, reason} when changes != [] or capture_result.truncated ->
+        {:error, reason, put_changes(%{side_effect: :unknown}, capture_result)}
 
       {:error, reason} ->
         {:error, reason}
     end
   end
 
-  defp put_changes(meta, []), do: meta
-  defp put_changes(meta, changes), do: Map.put(meta, :changes, changes)
+  defp put_changes(meta, %{changes: changes} = capture) do
+    meta = if changes == [], do: meta, else: Map.put(meta, :changes, changes)
+
+    if capture.truncated do
+      Map.merge(meta, %{
+        truncated: true,
+        partial: true,
+        omitted_paths: capture.omitted_paths,
+        capture_reason: Map.get(capture, :reason)
+      })
+    else
+      meta
+    end
+  end
 
   defp sandbox_description do
     if Handbean.Platform.ProcessSandbox.os_enforced?() do

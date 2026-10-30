@@ -8,6 +8,7 @@ defmodule Handbean.Jobs.Server do
 
   @terminal [:completed, :failed, :cancelled, :timed_out]
   @retention_ms 900_000
+  @capture_finalize_timeout_ms 30_000
   @retained_per_conversation 32
   @retained_globally 256
 
@@ -268,28 +269,38 @@ defmodule Handbean.Jobs.Server do
     end
   end
 
-  def handle_info({:changes_finalized, id, changes}, state) do
+  def handle_info({:changes_finalized, id, capture_result}, state) do
     case state.jobs[id] do
       %{changes_pending: true} = job ->
-        {conversation_id, run_id, _workspace} = job.owner
+        Process.cancel_timer(job.capture_timer)
+        Process.demonitor(job.capture_monitor, [:flush])
 
-        :ok =
-          WorkspaceChangeCapture.persist(
-            changes,
-            %{
-              conversation_id: conversation_id,
-              run_id: run_id,
-              tool_call_id: job.call_id
-            },
-            entry_id: "file-effects-#{job.id}"
-          )
+        job = %{
+          job
+          | changes: capture_result.changes,
+            capture_truncated: capture_result.truncated,
+            capture_omitted_paths: capture_result.omitted_paths,
+            capture_reason: Map.get(capture_result, :reason),
+            capture_pid: nil,
+            capture_timer: nil,
+            capture_monitor: nil,
+            changes_pending: false
+        }
 
-        job = %{job | changes: changes, changes_pending: false}
         {:noreply, state |> put_in([:jobs, id], job) |> notify_terminal_waiters(id)}
 
       _ ->
         {:noreply, state}
     end
+  end
+
+  def handle_info({:capture_finalize_timeout, id, pid}, state) do
+    case state.jobs[id] do
+      %{changes_pending: true, capture_pid: ^pid} -> Process.exit(pid, :kill)
+      _ -> :ok
+    end
+
+    {:noreply, state}
   end
 
   def handle_info({:DOWN, ref, :process, _pid, _reason}, %{cleaner_monitor: ref} = state) do
@@ -340,6 +351,29 @@ defmodule Handbean.Jobs.Server do
       end)
 
     state =
+      Enum.reduce(state.jobs, state, fn {id, job}, acc ->
+        if job[:capture_monitor] == ref and job.changes_pending do
+          Process.cancel_timer(job.capture_timer)
+
+          job = %{
+            job
+            | changes: [],
+              capture_truncated: true,
+              capture_omitted_paths: nil,
+              capture_reason: "finalizer_unavailable",
+              capture_pid: nil,
+              capture_timer: nil,
+              capture_monitor: nil,
+              changes_pending: false
+          }
+
+          acc |> put_in([:jobs, id], job) |> notify_terminal_waiters(id)
+        else
+          acc
+        end
+      end)
+
+    state =
       Enum.reduce(state.scopes, state, fn {owner, scope}, acc ->
         if scope.monitor == ref do
           acc = close_scope(acc, owner)
@@ -366,7 +400,8 @@ defmodule Handbean.Jobs.Server do
   def handle_info(:prune, state) do
     jobs =
       Map.reject(state.jobs, fn {_id, job} ->
-        job.state in @terminal and job.finished_at + @retention_ms < now() and
+        job.state in @terminal and not job.changes_pending and
+          job.finished_at + @retention_ms < now() and
           not match?(%{open?: true}, state.scopes[job.owner])
       end)
 
@@ -406,6 +441,12 @@ defmodule Handbean.Jobs.Server do
           cleanup_error: nil,
           change_capture: capture,
           changes: nil,
+          capture_truncated: false,
+          capture_omitted_paths: 0,
+          capture_reason: nil,
+          capture_pid: nil,
+          capture_timer: nil,
+          capture_monitor: nil,
           changes_pending: false,
           created_at: now(),
           sequence: System.unique_integer([:positive, :monotonic]),
@@ -470,6 +511,12 @@ defmodule Handbean.Jobs.Server do
               cleanup_error: nil,
               change_capture: capture,
               changes: nil,
+              capture_truncated: false,
+              capture_omitted_paths: 0,
+              capture_reason: nil,
+              capture_pid: nil,
+              capture_timer: nil,
+              capture_monitor: nil,
               changes_pending: false,
               created_at: now(),
               sequence: System.unique_integer([:positive, :monotonic]),
@@ -616,7 +663,16 @@ defmodule Handbean.Jobs.Server do
     Buffer.read(job.buffer, cursor, job.state in @terminal)
     |> Map.merge(%{job_id: job.id, state: job.state, cleanup_error: job.cleanup_error})
     |> Map.merge(timing)
-    |> Map.merge(Map.take(job, [:result, :result_truncated, :changes]))
+    |> Map.merge(
+      Map.take(job, [
+        :result,
+        :result_truncated,
+        :changes,
+        :capture_truncated,
+        :capture_omitted_paths,
+        :capture_reason
+      ])
+    )
     |> Map.merge(Map.get(job, :result_details, %{}))
     |> then(fn result ->
       if is_integer(job.exit_code), do: Map.put(result, :exit_code, job.exit_code), else: result
@@ -626,26 +682,59 @@ defmodule Handbean.Jobs.Server do
   defp begin_finalize_changes(job, terminal_state) do
     server = self()
     capture = job.change_capture
-    {conversation_id, _run_id, _workspace} = job.owner
+    {conversation_id, run_id, _workspace} = job.owner
 
-    spawn(fn ->
-      changes =
-        try do
-          WorkspaceChangeCapture.finish(capture, %{conversation_id: conversation_id})
-        rescue
-          _error -> []
-        catch
-          :exit, _reason -> []
-        end
+    {pid, monitor} =
+      spawn_monitor(fn ->
+        capture_result =
+          try do
+            context = %{
+              conversation_id: conversation_id,
+              run_id: run_id,
+              tool_call_id: job.call_id
+            }
 
-      send(server, {:changes_finalized, job.id, changes})
-    end)
+            capture
+            |> WorkspaceChangeCapture.finish(context)
+            |> WorkspaceChangeCapture.persist(context, entry_id: "file-effects-#{job.id}")
+          rescue
+            _error ->
+              %{
+                changes: [],
+                truncated: true,
+                omitted_paths: nil,
+                snapshot_bytes: 0,
+                reason: "finalizer_unavailable"
+              }
+          catch
+            :exit, _reason ->
+              %{
+                changes: [],
+                truncated: true,
+                omitted_paths: nil,
+                snapshot_bytes: 0,
+                reason: "finalizer_unavailable"
+              }
+          end
+
+        send(server, {:changes_finalized, job.id, capture_result})
+      end)
+
+    timer =
+      Process.send_after(
+        server,
+        {:capture_finalize_timeout, job.id, pid},
+        @capture_finalize_timeout_ms
+      )
 
     %{
       job
       | state: terminal_state,
         target: terminal_state,
         change_capture: nil,
+        capture_pid: pid,
+        capture_timer: timer,
+        capture_monitor: monitor,
         changes_pending: true
     }
   end
@@ -653,8 +742,9 @@ defmodule Handbean.Jobs.Server do
   defp active_capacity?(state, owner) do
     jobs = Map.values(state.jobs)
 
-    Enum.count(jobs, &(&1.state not in @terminal)) >= 16 or
-      Enum.count(jobs, &(&1.owner == owner and &1.state not in @terminal)) >= 4
+    Enum.count(jobs, &(&1.state not in @terminal or &1.changes_pending)) >= 16 or
+      Enum.count(jobs, &(&1.owner == owner and (&1.state not in @terminal or &1.changes_pending))) >=
+        4
   end
 
   defp make_retention_room(state, owner) do
@@ -681,7 +771,7 @@ defmodule Handbean.Jobs.Server do
     ids =
       jobs
       |> Map.values()
-      |> Enum.filter(&(&1.state in @terminal and visible?.(&1)))
+      |> Enum.filter(&(&1.state in @terminal and not &1.changes_pending and visible?.(&1)))
       |> Enum.sort_by(order)
       |> Enum.take(remove_count)
       |> Enum.map(& &1.id)

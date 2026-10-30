@@ -9,6 +9,16 @@ defmodule Handbean.JobsTest do
 
   @terminal_states [:completed, :failed, :cancelled, :timed_out]
 
+  defmodule BlockingTranscript do
+    def append(_conversation_id, _entry, _opts) do
+      send(Application.fetch_env!(:handbean, :capture_test_parent), {:capture_blocked, self()})
+
+      receive do
+        :release -> {:error, :unavailable}
+      end
+    end
+  end
+
   setup do
     unless Process.whereis(Cleaner), do: start_supervised!(Cleaner)
     unless Process.whereis(Server), do: start_supervised!(Server)
@@ -148,6 +158,53 @@ defmodule Handbean.JobsTest do
     assert length(projected.changes) == 2
   end
 
+  test "a stalled capture finalizer releases its job and reports an incomplete capture", %{
+    context: context,
+    runner: runner
+  } do
+    repo =
+      Path.join(
+        System.tmp_dir!(),
+        "handbean-stalled-capture-#{System.unique_integer([:positive])}"
+      )
+
+    File.mkdir_p!(repo)
+    git!(repo, ["init"])
+    git!(repo, ["config", "user.email", "test@example.com"])
+    git!(repo, ["config", "user.name", "Handbean Test"])
+    File.write!(Path.join(repo, "tracked.txt"), "before\n")
+    git!(repo, ["add", "."])
+    git!(repo, ["commit", "-m", "fixture"])
+
+    previous = Application.fetch_env(:handbean, :conversation_transcript_store)
+    Application.put_env(:handbean, :conversation_transcript_store, BlockingTranscript)
+    Application.put_env(:handbean, :capture_test_parent, self())
+    scoped = %{context | working_directory: repo, tool_call_id: "stalled-capture"}
+    assert :ok = Jobs.open_run(scoped, runner)
+
+    on_exit(fn ->
+      Jobs.close_run(scoped, :completed)
+      Application.delete_env(:handbean, :capture_test_parent)
+
+      case previous do
+        {:ok, store} -> Application.put_env(:handbean, :conversation_transcript_store, store)
+        :error -> Application.delete_env(:handbean, :conversation_transcript_store)
+      end
+
+      File.rm_rf!(repo)
+    end)
+
+    assert {:ok, job} = Jobs.start("printf after > tracked.txt", repo, 30_000, 500, scoped)
+    assert_receive {:capture_blocked, finalizer}, 5_000
+    send(Server, {:capture_finalize_timeout, job.job_id, finalizer})
+    assert {:ok, result} = Jobs.status(job.job_id, 0, 5_000, scoped)
+    assert result.state == :completed
+    assert result.capture_truncated
+    assert result.capture_omitted_paths == nil
+    assert result.capture_reason == "finalizer_unavailable"
+    refute Process.alive?(finalizer)
+  end
+
   test "large change batches retain an explicit count when tool details are bounded" do
     changes =
       for index <- 1..33 do
@@ -167,6 +224,30 @@ defmodule Handbean.JobsTest do
     assert projected.partial == true
     assert projected.change_count == 33
     assert length(Map.get(projected, :changes, [])) <= 32
+  end
+
+  test "details budget reports captured changes that cannot be projected" do
+    changes =
+      for index <- 1..32 do
+        %{
+          file_path: String.duplicate("long-path-", 100) <> Integer.to_string(index),
+          change_snapshot_ref: "snapshot-#{index}",
+          reversible: true
+        }
+      end
+
+    projected =
+      Handbean.Agent.Tool.ResultContract.project_details(%{
+        changes: changes,
+        truncated: true,
+        omitted_paths: 100
+      })
+
+    assert projected.partial
+    assert projected.truncated
+    assert projected.omitted_paths == 100
+    assert projected.change_count == 32
+    refute Map.has_key?(projected, :changes)
   end
 
   test "launch wait ignores output while status returns unread output immediately", %{

@@ -102,6 +102,7 @@ defmodule Handbean.Jobs do
     details =
       %{job: result}
       |> maybe_put_changes(result[:changes])
+      |> maybe_put_capture(result)
 
     {:ok, text, details}
   end
@@ -112,6 +113,17 @@ defmodule Handbean.Jobs do
     do: Map.put(details, :changes, changes)
 
   defp maybe_put_changes(details, _changes), do: details
+
+  defp maybe_put_capture(details, %{capture_truncated: true} = result) do
+    Map.merge(details, %{
+      truncated: true,
+      partial: true,
+      omitted_paths: result.capture_omitted_paths,
+      capture_reason: result.capture_reason
+    })
+  end
+
+  defp maybe_put_capture(details, _result), do: details
 
   def wait_budget(requested, context) when is_integer(requested) and requested >= 0 do
     case context[:tool_timeout] do

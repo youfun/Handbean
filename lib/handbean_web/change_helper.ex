@@ -90,32 +90,43 @@ defmodule HandbeanWeb.ChangeHelper do
     raw_change = value(entry, "change") || value(details, "change") || %{}
     ref = value(raw_change, "change_snapshot_ref") || value(details, "change_snapshot_ref")
 
-    raw_change =
+    {raw_change, snapshot_unavailable?} =
       case Handbean.ChangeSnapshot.load(ref) do
         {:ok, snapshot} ->
           metadata =
             raw_change |> stringify_keys() |> Map.reject(fn {_key, value} -> is_nil(value) end)
 
-          Map.merge(snapshot, metadata)
+          {Map.merge(snapshot, metadata), false}
 
         {:error, _reason} ->
-          raw_change
+          {raw_change, not is_nil(ref)}
       end
 
-    raw_change
-    |> stringify_keys()
-    |> put_if_missing("change_id", value(entry, "change_id") || value(details, "change_id"))
-    |> put_if_missing("change_type", TranscriptEntry.tool_name(entry))
-    |> put_if_missing("file_path", value(entry, "file_path") || value(details, "file_path"))
-    |> put_if_missing("diff_lines", value(entry, "diff_lines") || value(details, "diff_lines"))
-    |> Map.update("diff_lines", nil, &normalize_diff_lines/1)
-    |> put_if_missing("diff_stat", value(entry, "diff_stat") || value(details, "diff_stat"))
-    |> Map.update("diff_stat", nil, &normalize_diff_stat/1)
-    |> put_if_missing("reversible", value(entry, "reversible") || value(details, "reversible"))
-    |> put_if_missing(
-      "revert_status",
-      value(entry, "revert_status") || value(details, "revert_status") || "unavailable"
-    )
+    change =
+      raw_change
+      |> stringify_keys()
+      |> put_if_missing("change_id", value(entry, "change_id") || value(details, "change_id"))
+      |> put_if_missing("change_type", TranscriptEntry.tool_name(entry))
+      |> put_if_missing("file_path", value(entry, "file_path") || value(details, "file_path"))
+      |> put_if_missing("diff_lines", value(entry, "diff_lines") || value(details, "diff_lines"))
+      |> Map.update("diff_lines", nil, &normalize_diff_lines/1)
+      |> put_if_missing("diff_stat", value(entry, "diff_stat") || value(details, "diff_stat"))
+      |> Map.update("diff_stat", nil, &normalize_diff_stat/1)
+      |> put_if_missing("reversible", value(entry, "reversible") || value(details, "reversible"))
+      |> put_if_missing(
+        "revert_status",
+        value(entry, "revert_status") || value(details, "revert_status") || "unavailable"
+      )
+
+    if snapshot_unavailable? do
+      Map.merge(change, %{
+        "reversible" => false,
+        "revert_status" => "unavailable",
+        "revert_reason" => "snapshot_unavailable"
+      })
+    else
+      change
+    end
   end
 
   @doc """

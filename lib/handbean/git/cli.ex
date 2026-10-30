@@ -103,6 +103,17 @@ defmodule Handbean.Git.CLI do
   def read_head_file(repo, path) when is_binary(path), do: read_revision_file(repo, "HEAD", path)
 
   @doc false
+  def revision_file_size(repo, revision, path) when is_binary(revision) and is_binary(path) do
+    with {:ok, output} <- git(["cat-file", "-s", "#{revision}:./#{path}"], cwd: cwd(repo)),
+         {size, ""} when size >= 0 <- Integer.parse(String.trim(output)) do
+      {:ok, size}
+    else
+      {:error, _reason} = error -> error
+      _ -> {:error, "invalid Git object size"}
+    end
+  end
+
+  @doc false
   def read_revision_file(repo, revision, path)
       when is_binary(revision) and is_binary(path) do
     git(

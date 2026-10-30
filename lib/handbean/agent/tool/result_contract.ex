@@ -345,20 +345,33 @@ defmodule Handbean.Agent.Tool.ResultContract do
     if byte_size(encoded) <= @max_details_bytes do
       details
     else
-      Map.take(details, [
-        :file_path,
-        :change_snapshot_ref,
-        :change_count,
-        :diff_stat,
-        :partial,
-        :artifact_ref,
-        :artifact_unavailable,
-        :exit_code,
-        :started_at,
-        :completed_at,
-        :duration_ms,
-        :timing_fidelity
-      ])
+      reduced =
+        Map.take(details, [
+          :file_path,
+          :change_snapshot_ref,
+          :change_count,
+          :omitted_paths,
+          :truncated,
+          :diff_stat,
+          :partial,
+          :artifact_ref,
+          :artifact_unavailable,
+          :exit_code,
+          :started_at,
+          :completed_at,
+          :duration_ms,
+          :timing_fidelity
+        ])
+
+      case Map.get(details, :changes) do
+        changes when is_list(changes) and changes != [] ->
+          reduced
+          |> Map.put_new(:change_count, length(changes))
+          |> Map.put(:partial, true)
+
+        _ ->
+          reduced
+      end
     end
   end
 
