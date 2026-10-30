@@ -39,16 +39,24 @@ esac
 
 parent="$(dirname "$dest")"
 mkdir -p "$parent"
-tmp="$(mktemp -d "${TMPDIR:-/tmp}/handbean-linux-web.XXXXXX")"
-stage="$(mktemp -d "$parent/.handbean-web-stage.XXXXXX")"
+tmp=""
+stage=""
+publish_stage=""
 cleanup() {
-  rm -rf "$tmp"
-  if [[ -n "$stage" ]]; then
-    find "$stage" -type d -exec chmod u+rwx {} \; 2>/dev/null || true
-    rm -rf "$stage"
+  if [[ -n "$tmp" ]]; then
+    find "$tmp" -type d -exec chmod u+rwx {} \; 2>/dev/null || true
+    rm -rf "$tmp"
+  fi
+  if [[ -n "$publish_stage" ]]; then
+    find "$publish_stage" -type d -exec chmod u+rwx {} \; 2>/dev/null || true
+    rm -rf "$publish_stage"
   fi
 }
 trap cleanup EXIT
+
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/handbean-linux-web.XXXXXX")"
+stage="$tmp/stage"
+mkdir "$stage"
 
 archive="$tmp/handbean-web-linux-x86_64.tar.gz"
 sidecar="$archive.sha256"
@@ -120,14 +128,20 @@ launcher="$stage/bin/handbean"
   exit 1
 }
 
+# Stage the final rename on the destination filesystem. The extraction and
+# validation above happen outside the worktree; this short-lived copy is
+# ignored when importing into the default resources directory.
+publish_stage="$(mktemp -d "$parent/.handbean-web-stage.XXXXXX")"
+cp -a "$stage/." "$publish_stage/"
+
 backup=""
 if [[ -e "$dest" ]]; then
   backup="$(mktemp -d "$parent/.handbean-web-backup.XXXXXX")"
   rmdir "$backup"
   mv -- "$dest" "$backup"
 fi
-if mv -- "$stage" "$dest"; then
-  stage=""
+if mv -- "$publish_stage" "$dest"; then
+  publish_stage=""
   if [[ -n "$backup" ]]; then
     rm -rf "$backup"
   fi

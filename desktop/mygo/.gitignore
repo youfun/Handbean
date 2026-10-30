@@ -1,6 +1,8 @@
 build/
 dist/
 resources/handbean-web/
+resources/.handbean-web-stage.*/
+resources/.handbean-web-backup.*/
 Handbean-windows-amd64-experimental.zip
 Handbean-windows-amd64-experimental.zip.sha256
 Handbean-linux-amd64-experimental.tar.gz
