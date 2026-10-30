@@ -50,6 +50,7 @@ defmodule Handbean.Runtime.TaskTrackerTest do
     assert [task] = snapshot.tasks
     assert task.title == "Summary notification"
     assert task.workspace_id == "default"
+    assert task.scope == "workspace"
     assert task.conversation_id == sid
     assert task.run_id == "summary-run"
     assert_received {:notify_action, {:update_running, ^snapshot}}
@@ -63,6 +64,18 @@ defmodule Handbean.Runtime.TaskTrackerTest do
 
     assert length(queries) == 1,
            "Expected one summary SELECT, got #{length(queries)}: #{inspect(queries)}"
+  end
+
+  test "free conversation scope survives through the completion notification" do
+    {:ok, conversation} = Handbean.ConversationStore.create_free(title: "Free notification")
+    sid = conversation["id"]
+    {snapshot, _queries} = capture_event_queries(sid, :run_start, %{run_id: "free-run"})
+
+    assert [%{conversation_id: ^sid, scope: "free", workspace_id: nil} = task] = snapshot.tasks
+    assert task.title == "Free notification"
+
+    capture_event_queries(sid, :run_end, %{run_id: "free-run", status: "completed"})
+    assert_received {:notify_action, {:system_ended, ^task, :completed}}
   end
 
   test "internal conversations do not produce task notifications" do
@@ -136,7 +149,10 @@ defmodule Handbean.Runtime.TaskTrackerTest do
 
     for sid <- ["task-missing-#{System.unique_integer([:positive])}", deleted["id"]] do
       {snapshot, _queries} = capture_event_queries(sid, :run_start, %{run_id: sid})
-      assert [%{title: nil, workspace_id: nil, conversation_id: ^sid} = task] = snapshot.tasks
+
+      assert [%{title: nil, workspace_id: nil, scope: nil, conversation_id: ^sid} = task] =
+               snapshot.tasks
+
       capture_event_queries(sid, :run_end, %{run_id: sid, status: "completed"})
       assert_received {:notify_action, {:system_ended, ^task, :completed}}
     end

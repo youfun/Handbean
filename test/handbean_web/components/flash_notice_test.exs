@@ -42,6 +42,18 @@ defmodule HandbeanWeb.FlashNoticeTest do
     refute html =~ ~s([[&quot;patch&quot;)
   end
 
+  test "structured notices without a destination show their text" do
+    for {kind, path} <- [{"info", nil}, {"info", ""}, {"error", nil}, {"error", ""}] do
+      html =
+        render_component(&HandbeanWeb.Layouts.flash_group/1, %{
+          flash: %{kind => %{body: "Background task finished", navigate: path}}
+        })
+
+      assert html =~ "Background task finished"
+      refute html =~ "data-flash-open"
+    end
+  end
+
   test "a plain notice stays non-navigating" do
     html =
       render_component(&HandbeanWeb.Layouts.flash_group/1, %{

@@ -136,6 +136,7 @@ defmodule Handbean.Runtime.TaskTracker do
       conversation_id: conversation_id,
       run_id: resolve_run_id(payload, conversation_id, conversation_id),
       workspace_id: summary["workspace_id"],
+      scope: summary["scope"],
       title: summary["title"],
       status: :running,
       waiting_episode: nil

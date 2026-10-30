@@ -348,7 +348,8 @@ defmodule HandbeanWeb.SettingsLive do
   end
 
   def handle_info({:in_app_ended, task, reason}, socket) do
-    {:noreply, put_flash(socket, :info, in_app_ended_flash(task, reason))}
+    {:noreply,
+     put_flash(socket, :info, HandbeanWeb.InAppNotification.ended_flash(task, reason, :navigate))}
   end
 
   # ── Public helpers (used in template) ──
@@ -388,31 +389,6 @@ defmodule HandbeanWeb.SettingsLive do
 
   defp runtime_banner_text(%{running_count: running}) do
     ngettext("Running 1 task", "Running %{count} tasks", running, count: running)
-  end
-
-  defp in_app_ended_flash(task, reason) do
-    %{
-      body: in_app_ended_message(task, reason),
-      navigate: in_app_ended_path(task),
-      navigate_with: :navigate
-    }
-  end
-
-  defp in_app_ended_path(%{conversation_id: conv_id, workspace_id: ws_id})
-       when is_binary(conv_id) and is_binary(ws_id) and conv_id != "" and ws_id != "" do
-    "/w/#{ws_id}/c/#{conv_id}"
-  end
-
-  defp in_app_ended_path(_task), do: nil
-
-  defp in_app_ended_message(task, reason) do
-    title = task[:title] || gettext("conversation")
-
-    case reason do
-      :cancelled -> gettext("Agent stopped in %{title}.", title: title)
-      :failed -> gettext("This run ended in %{title}.", title: title)
-      _ -> gettext("Agent replied in %{title}.", title: title)
-    end
   end
 
   def tab_label(:model_ai), do: gettext("Model / AI")

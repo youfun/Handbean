@@ -45,7 +45,12 @@ defmodule HandbeanWeb.Layouts do
       >
         {flash_body(@info)}
       </.flash>
-      <.flash :if={!@info_navigate} kind={:info} flash={@flash} />
+      <.flash
+        :if={!@info_navigate}
+        kind={:info}
+        title={flash_title(@info)}
+        flash={%{"info" => flash_body(@info)}}
+      />
       <.flash
         :if={@error_navigate}
         kind={:error}
@@ -55,7 +60,12 @@ defmodule HandbeanWeb.Layouts do
       >
         {flash_body(@error)}
       </.flash>
-      <.flash :if={!@error_navigate} kind={:error} flash={@flash} />
+      <.flash
+        :if={!@error_navigate}
+        kind={:error}
+        title={flash_title(@error)}
+        flash={%{"error" => flash_body(@error)}}
+      />
     </div>
     """
   end
@@ -79,4 +89,5 @@ defmodule HandbeanWeb.Layouts do
 
   defp flash_body(%{body: body}) when is_binary(body), do: body
   defp flash_body(message) when is_binary(message), do: message
+  defp flash_body(_message), do: nil
 end

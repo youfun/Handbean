@@ -92,7 +92,8 @@ defmodule HandbeanWeb.WorkspaceLive.InfoEvents do
     if task.conversation_id == socket.assigns.current_conversation_id do
       {:noreply, socket}
     else
-      {:noreply, put_flash(socket, :info, in_app_ended_flash(task, reason))}
+      {:noreply,
+       put_flash(socket, :info, HandbeanWeb.InAppNotification.ended_flash(task, reason, :patch))}
     end
   end
 
@@ -424,31 +425,6 @@ defmodule HandbeanWeb.WorkspaceLive.InfoEvents do
        )}
     else
       {:noreply, socket}
-    end
-  end
-
-  defp in_app_ended_flash(task, reason) do
-    %{
-      body: in_app_ended_message(task, reason),
-      navigate: in_app_ended_path(task),
-      navigate_with: :patch
-    }
-  end
-
-  defp in_app_ended_path(%{conversation_id: conv_id, workspace_id: ws_id})
-       when is_binary(conv_id) and is_binary(ws_id) and conv_id != "" and ws_id != "" do
-    "/w/#{ws_id}/c/#{conv_id}"
-  end
-
-  defp in_app_ended_path(_task), do: nil
-
-  defp in_app_ended_message(task, reason) do
-    title = task[:title] || gettext("conversation")
-
-    case reason do
-      :cancelled -> gettext("Agent stopped in %{title}.", title: title)
-      :failed -> gettext("This run ended in %{title}.", title: title)
-      _ -> gettext("Agent replied in %{title}.", title: title)
     end
   end
 end

@@ -11,6 +11,7 @@ defmodule Handbean.Runtime.Notify do
           required(:conversation_id) => String.t(),
           required(:run_id) => String.t(),
           optional(:workspace_id) => String.t() | nil,
+          optional(:scope) => String.t() | nil,
           optional(:title) => String.t() | nil,
           optional(:status) => :running | :waiting_confirmation,
           optional(:waiting_episode) => pos_integer() | nil
